@@ -503,7 +503,12 @@
       }
 
       const custom = run.custom || {};
-      const badge = statusBadge(custom.status || run.overall);
+      let runStatus = custom.status || run.overall;
+      if (typeof custom.passed === 'boolean') {
+        if (custom.passed) runStatus = 'Passed';
+        else if (!runStatus || runStatus === 'Passed') runStatus = 'Wrong Answer';
+      }
+      const badge = statusBadge(runStatus);
       if (status) status.innerHTML = `<span class="badge-soft ${badge.cls}">${esc(badge.text)}</span>`;
       if (out) out.textContent = custom.output || '';
       if (expected) expected.textContent = custom.expected || '';

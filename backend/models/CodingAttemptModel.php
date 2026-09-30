@@ -12,6 +12,17 @@ class CodingAttemptModel extends BaseModel
 {
     private static bool $tableReady = false;
 
+    public static function normalizeStatus(mixed $status): string
+    {
+        $raw = strtoupper(trim((string) $status));
+        return match ($raw) {
+            'ACTIVE', 'IN_PROGRESS' => 'ACTIVE',
+            'SUBMITTED', 'COMPLETED' => 'SUBMITTED',
+            'EXPIRED' => 'EXPIRED',
+            default => $raw,
+        };
+    }
+
     protected function collectionName(): string
     {
         return Collections::CODING_ATTEMPTS;
@@ -55,26 +66,81 @@ class CodingAttemptModel extends BaseModel
             'contestStartTime' => (string) ($data['contestStartTime'] ?? '09:00'),
             'periodKey' => (string) ($data['periodKey'] ?? ''),
             'contestWindowBounds' => is_array($data['contestWindowBounds'] ?? null) ? $data['contestWindowBounds'] : [],
-            'status' => 'in_progress',
+            'status' => 'ACTIVE',
             'startedAt' => DocumentHelper::now(),
             'endsAt' => $data['endsAt'] ?? null,
+            'lastSavedAt' => DocumentHelper::now(),
+            'answers' => is_array($data['answers'] ?? null) ? $data['answers'] : [],
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $draft
+     */
+    public function saveDraft(string $id, array $draft): bool
+    {
+        if (!Security::isValidId($id)) {
+            return false;
+        }
+        $attempt = $this->findById($id);
+        if (!$attempt || self::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            return false;
+        }
+        $answers = is_array($attempt['answers'] ?? null) ? $attempt['answers'] : [];
+        $questionId = trim((string) ($draft['questionId'] ?? ''));
+        if ($questionId === '') {
+            return false;
+        }
+        $current = is_array($answers[$questionId] ?? null) ? $answers[$questionId] : [];
+        if (array_key_exists('language', $draft)) {
+            $current['language'] = (string) $draft['language'];
+        }
+        if (array_key_exists('code', $draft)) {
+            $current['code'] = (string) $draft['code'];
+        }
+        if (array_key_exists('customInput', $draft)) {
+            $current['customInput'] = (string) $draft['customInput'];
+        }
+        $current['lastSavedAt'] = DocumentHelper::now();
+        $answers[$questionId] = $current;
+
+        return $this->update($id, [
+            'answers' => $answers,
+            'lastSavedAt' => DocumentHelper::now(),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function findLatestForUserTest(string $userId, string $testId): ?array
+    {
+        if (!Security::isValidId($userId) || !Security::isValidId($testId)) {
+            return null;
+        }
+        return $this->findOne(['userId' => $userId, 'testId' => $testId], ['sort' => ['updatedAt' => -1]]);
     }
 
     /**
      * @param array<string, mixed> $result
      */
-    public function complete(string $id, array $result): bool
+    public function complete(string $id, array $result, string $status = 'SUBMITTED'): bool
     {
         if (!Security::isValidId($id)) {
             return false;
         }
-        if (isset($result['status']) && $result['status'] !== 'submitted') {
-            $result['resultStatus'] = (string) $result['status'];
+        $status = self::normalizeStatus($status);
+        if (!in_array($status, ['SUBMITTED', 'EXPIRED'], true)) {
+            $status = 'SUBMITTED';
         }
-        $result['status'] = 'submitted';
+        $result['resultStatus'] = $status;
+        $result['status'] = $status;
         $result['submittedAt'] = DocumentHelper::now();
         $result['completedAt'] = DocumentHelper::now();
+        $result['lastSavedAt'] = DocumentHelper::now();
+        if ($status === 'EXPIRED') {
+            $result['expiredAt'] = $result['completedAt'];
+        }
         return $this->update($id, $result);
     }
 }

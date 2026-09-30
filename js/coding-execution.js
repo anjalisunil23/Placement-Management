@@ -1,6 +1,5 @@
 /* PlaceHub — code execution adapter
- * Browser UI → CodeExecutionService.run() → (future) POST /coding/execute → sandbox
- * Mock path never uses eval(), Function(), or other in-browser code execution.
+ * Browser UI → CodeExecutionService.run() → POST /coding/execute (when enabled) or Skulpt (Python).
  */
 (function (global) {
   const API_ENABLED = false;
@@ -169,90 +168,111 @@
       && !/\bbreak\b/.test(s);
   }
 
-  function isStarter(source, starter) {
-    return !String(source || '').trim() || String(source).trim() === String(starter || '').trim();
-  }
+  let skulptLoadPromise = null;
 
-  function keywordHits(source, keywords) {
-    const hay = String(source || '');
-    return (keywords || []).filter((token) => hay.toLowerCase().includes(String(token).toLowerCase()));
-  }
-
-  function readsStdin(source, language) {
-    const s = String(source || '');
-    if (language === 'Python') return /\binput\s*\(|\bsys\.stdin\b/.test(s);
-    if (language === 'JavaScript') return /\bprompt\s*\(|\breadline\b/.test(s);
-    if (language === 'Java') return /\bScanner\b|\bSystem\.in\b/.test(s);
-    return /\bscanf\s*\(|\bcin\s*>>/.test(s);
-  }
-
-  function parsePyLiteral(token) {
-    const text = String(token || '').trim();
-    if (/^-?\d+(\.\d+)?$/.test(text)) return text;
-    const str = text.match(/^(['"])(.*)\1$/);
-    if (str) return str[2];
-    return null;
-  }
-
-  function pythonConstantStdout(source) {
-    const env = new Map();
-    const outs = [];
-    let printed = false;
-    const lines = String(source || '').split('\n');
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i].replace(/#.*$/, '').trim();
-      if (!line || /^(import|from)\b/.test(line)) continue;
-      const assign = line.match(/^([A-Za-z_]\w*)\s*=\s*(.+)$/);
-      if (assign) {
-        const rhs = assign[2].trim();
-        if (/[=+\-*/%]/.test(rhs.replace(/^[+\-]/, ''))) return null;
-        const lit = parsePyLiteral(rhs);
-        if (lit == null) return null;
-        env.set(assign[1], lit);
-        continue;
-      }
-      const call = line.match(/^print\s*\((.*)\)\s*$/);
-      if (!call) return null;
-      const arg = call[1].trim();
-      printed = true;
-      if (!arg) {
-        outs.push('');
-        continue;
-      }
-      const lit = parsePyLiteral(arg);
-      if (lit != null) {
-        outs.push(lit);
-        continue;
-      }
-      if (/^[A-Za-z_]\w*$/.test(arg) && env.has(arg)) {
-        outs.push(env.get(arg));
-        continue;
-      }
-      return null;
+  function loadSkulpt() {
+    if (global.Sk && global.Sk.builtin) {
+      return Promise.resolve();
     }
-    return printed ? outs.join('\n') : null;
+    if (skulptLoadPromise) return skulptLoadPromise;
+    skulptLoadPromise = new Promise((resolve, reject) => {
+      const urls = [
+        'https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt.min.js',
+        'https://cdn.jsdelivr.net/npm/skulpt@1.2.0/dist/skulpt-stdlib.js',
+      ];
+      let i = 0;
+      const next = () => {
+        if (i >= urls.length) {
+          if (global.Sk) resolve();
+          else reject(new Error('Skulpt failed to load'));
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = urls[i];
+        script.onload = () => {
+          i += 1;
+          next();
+        };
+        script.onerror = () => reject(new Error('Skulpt failed to load'));
+        document.head.appendChild(script);
+      };
+      next();
+    });
+    return skulptLoadPromise;
   }
 
-  function looksLikeSolution(source, language, keywords, starter) {
-    if (isStarter(source, starter)) return false;
-    const tokens = keywords || [];
-    if (!tokens.length) {
-      const prints = /print\s*\(|console\.log|cout\s*<<|printf\s*\(|System\.out/.test(source);
-      return prints && readsStdin(source, language);
+  function skulptErrorMessage(err) {
+    const raw = err && typeof err.toString === 'function' ? err.toString() : String(err || '');
+    if (/SyntaxError|IndentationError/i.test(raw)) {
+      return { status: 'Syntax Error', message: raw };
     }
-    const hits = keywordHits(source, tokens);
-    return hits.length >= Math.max(1, Math.ceil(tokens.length * 0.4));
+    if (/EOFError|ValueError|ZeroDivisionError|NameError|TypeError|IndexError|KeyError|AttributeError/i.test(raw)) {
+      return { status: 'Runtime Error', message: raw };
+    }
+    return { status: 'Runtime Error', message: raw || 'Runtime Error' };
   }
 
-  function mutateWrong(expected) {
-    const text = String(expected || '');
-    if (!text) return '';
-    const lines = text.split('\n');
-    if (lines.length === 1 && /^-?\d+(\.\d+)?$/.test(lines[0])) {
-      const n = Number(lines[0]);
-      return String(Number.isFinite(n) ? n - 5 : text + ' ');
+  async function runPythonSource(source, stdin) {
+    await loadSkulpt();
+    const Sk = global.Sk;
+    const lines = String(stdin ?? '').replace(/\r\n/g, '\n').split('\n');
+    let lineIdx = 0;
+    let stdout = '';
+    Sk.configure({
+      output: (text) => {
+        stdout += text;
+      },
+      read: (file) => {
+        if (Sk.builtinFiles === undefined || Sk.builtinFiles.files[file] === undefined) {
+          throw new Error(`File not found: ${file}`);
+        }
+        return Sk.builtinFiles.files[file];
+      },
+      __future__: Sk.python3,
+    });
+    Sk.builtins.input = new Sk.builtin.func(function inputFunc() {
+      if (lineIdx >= lines.length) {
+        throw new Sk.builtin.EOFError('EOF when reading a line');
+      }
+      const line = lines[lineIdx];
+      lineIdx += 1;
+      return new Sk.builtin.str(line);
+    });
+    try {
+      await Sk.misceval.asyncToPromise(() => Sk.importMainWithBody('__main__', false, String(source || ''), true));
+      return { ok: true, status: 'OK', stdout, stderr: '' };
+    } catch (err) {
+      const parsed = skulptErrorMessage(err);
+      return { ok: false, status: parsed.status, stdout: '', stderr: parsed.message };
     }
-    return lines[0].slice(0, Math.max(0, lines[0].length - 1));
+  }
+
+  async function runJavaScriptSource(source, stdin) {
+    const lines = String(stdin ?? '').replace(/\r\n/g, '\n').split('\n');
+    let lineIdx = 0;
+    const logs = [];
+    const consoleShim = {
+      log(...args) {
+        logs.push(args.map((v) => String(v)).join(' '));
+      },
+    };
+    const requireShim = (name) => {
+      if (name === 'fs') {
+        return {
+          readFileSync: () => String(stdin ?? ''),
+        };
+      }
+      throw new Error(`Cannot find module '${name}'`);
+    };
+    try {
+      const fn = new Function('console', 'require', String(source || ''));
+      fn(consoleShim, requireShim);
+      return { ok: true, status: 'OK', stdout: logs.join('\n'), stderr: '' };
+    } catch (err) {
+      const msg = String(err?.message || err || 'Runtime Error');
+      const status = /SyntaxError|Unexpected token/i.test(msg) ? 'Syntax Error' : 'Runtime Error';
+      return { ok: false, status, stdout: '', stderr: msg };
+    }
   }
 
   function sourceLineWith(source, re) {
@@ -335,26 +355,28 @@
 
     await delay(spin);
 
-    const expected = String(mock.expectedStdout ?? '');
+    let ran;
     if (language === 'Python') {
-      const printed = pythonConstantStdout(source);
-      if (printed != null) {
-        return {
-          ok: true,
-          status: 'OK',
-          stdout: printed,
-          stderr: '',
-          timedOut: false,
-          durationMs: nowMs() - started,
-        };
-      }
-    }
-    if (looksLikeSolution(source, language, mock.keywords, mock.starterCode)) {
+      ran = await runPythonSource(source, stdin);
+    } else if (language === 'JavaScript') {
+      ran = await runJavaScriptSource(source, stdin);
+    } else {
       return {
-        ok: true,
-        status: 'OK',
-        stdout: expected,
-        stderr: '',
+        ok: false,
+        status: 'Runtime Error',
+        stdout: '',
+        stderr: `Running ${language} requires the server execution service. Use Python for Run Code here, or submit to grade all languages.`,
+        timedOut: false,
+        durationMs: nowMs() - started,
+      };
+    }
+
+    if (!ran.ok) {
+      return {
+        ok: false,
+        status: ran.status,
+        stdout: ran.stdout || '',
+        stderr: ran.stderr || ran.status,
         timedOut: false,
         durationMs: nowMs() - started,
       };
@@ -363,7 +385,7 @@
     return {
       ok: true,
       status: 'OK',
-      stdout: isStarter(source, mock.starterCode) ? '' : mutateWrong(expected),
+      stdout: ran.stdout,
       stderr: '',
       timedOut: false,
       durationMs: nowMs() - started,
@@ -383,7 +405,7 @@
     if (!res?.success) throw new Error(res?.message || 'Execution failed.');
     const data = res.data || {};
     return {
-      ok: data.ok !== false && !data.timedOut && !data.stderr,
+      ok: data.ok !== false && !data.timedOut && (data.status === 'OK' || !data.status),
       status: data.status || (data.timedOut ? 'Time Limit Exceeded' : 'OK'),
       stdout: data.stdout || '',
       stderr: data.stderr || '',

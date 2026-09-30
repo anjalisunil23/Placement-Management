@@ -748,26 +748,26 @@
         accuracy: r.userId === 'u-s2' ? 65 : 74,
         recentScore: r.userId === 'u-s2' ? 72 : 74,
       }));
-      const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
-      const avg = (key) => {
-        if (!withAttempts.length) return 0;
-        const sum = withAttempts.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
-        return Math.round((sum / withAttempts.length) * 10) / 10;
-      };
-      const bestScores = withAttempts.map((r) => Number(r.bestScore) || 0);
-      return {
-        rows,
-        summary: {
-          students: rows.length,
-          withAttempts: withAttempts.length,
-          totalAttempts: withAttempts.reduce((acc, r) => acc + (Number(r.testsAttempted) || 0), 0),
-          avgPercentage: avg('averageScore'),
-          avgBestScore: avg('bestScore'),
-          highestBestScore: bestScores.length ? Math.max(...bestScores) : 0,
-        },
-        noClass: false,
-      };
-    }
+    const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
+    const avg = (key) => {
+      if (!withAttempts.length) return 0;
+      const sum = withAttempts.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
+      return Math.round((sum / withAttempts.length) * 10) / 10;
+    };
+    const bestScores = withAttempts.map((r) => Number(r.bestScore) || 0);
+    return {
+      rows,
+      summary: {
+        students: rows.length,
+        withAttempts: withAttempts.length,
+        totalAttempts: withAttempts.reduce((acc, r) => acc + (Number(r.testsAttempted) || 0), 0),
+        avgPercentage: avg('averageScore'),
+        avgBestScore: avg('bestScore'),
+        highestBestScore: bestScores.length ? Math.max(...bestScores) : 0,
+      },
+      noClass: false,
+    };
+  }
 
     const titles = [
       'Quantitative Aptitude — Basics',
@@ -5927,28 +5927,28 @@
   async function loadTests() {
     if (testsInflight) return testsInflight;
     testsInflight = (async () => {
-      if (Auth.hasRealAuth() && !Auth.isDemo()) {
-        const res = await api('/aptitude/tests').catch(() => null);
-        if (res?.success) {
-          tests = res.data?.tests || [];
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/tests').catch(() => null);
+      if (res?.success) {
+        tests = res.data?.tests || [];
           writeSessionCache(APT_TESTS_CACHE_KEY, tests);
-          return;
-        }
+        return;
+      }
         if (!tests.length) {
           tests = [];
           toast(res?.message || 'Could not load aptitude tests from the server.', 'error');
         }
         return;
-      }
-      tests = loadDemoTestsStore().map((t) => {
-        const copy = JSON.parse(JSON.stringify(t));
+    }
+    tests = loadDemoTestsStore().map((t) => {
+      const copy = JSON.parse(JSON.stringify(t));
         if (!access.canManage && typeof AptitudeExam !== 'undefined' && AptitudeExam.stripExamQuestions) {
           copy.questions = AptitudeExam.stripExamQuestions(copy.questions || []);
         } else if (!access.canManage) {
-          copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
-        }
-        return copy;
-      });
+        copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
+      }
+      return copy;
+    });
     })().finally(() => {
       testsInflight = null;
     });
@@ -6102,7 +6102,7 @@
           ? `No ${contestLabel} contests are open today, or you have already taken them.`
           : `No ${contestLabel} aptitude contests are available yet.`)
         : (Auth.role() === 'student'
-          ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
+        ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
           : 'No published aptitude tests yet.');
       root.innerHTML = `<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">${msg}</p>`;
       return;
@@ -6710,7 +6710,7 @@
     if (cacheKey === dirResultsCacheKey && dirResultsCache) {
       data = dirResultsCache;
     } else {
-      const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
+    const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
       if (seq !== dirLoadSeq) return;
       data = res?.success ? res.data : null;
       if (data) {
@@ -7280,7 +7280,7 @@
       if (payload.status !== 'published') {
         toast('Test saved as unpublished. Set status to Published for students to see it.', 'info');
       } else {
-        toast('Test saved.', 'success');
+      toast('Test saved.', 'success');
       }
       testFormModal.hide();
       await loadTests();

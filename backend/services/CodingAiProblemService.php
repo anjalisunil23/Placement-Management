@@ -315,7 +315,17 @@ PROMPT;
         $h1Out = (string) ($q['hiddenExpected1'] ?? ($cases[1]['expected'] ?? ''));
         $h2In = (string) ($q['hiddenInput2'] ?? ($cases[2]['input'] ?? ''));
         $h2Out = (string) ($q['hiddenExpected2'] ?? ($cases[2]['expected'] ?? ''));
-
+        $starter = is_array($q['starterCode'] ?? null) ? $q['starterCode'] : [];
+        $draft = [
+            'examples' => [['input' => $sampleIn, 'output' => $sampleOut]],
+            'testCases' => [
+                ['input' => $sampleIn, 'expected' => $sampleOut, 'sample' => true],
+            ],
+        ];
+        $python = (string) ($q['pythonStarter'] ?? $starter['Python'] ?? '');
+        if (trim($python) === '' || !str_contains($python, 'input(')) {
+            $python = \PMS\Utils\CodingStarterTemplates::pythonFromProblem($draft);
+        }
         $testCases = [
             ['id' => 's1', 'label' => 'Sample Test Case', 'input' => $sampleIn, 'expected' => $sampleOut, 'sample' => true],
             ['id' => 'h1', 'input' => $h1In, 'expected' => $h1Out, 'sample' => false],
@@ -325,8 +335,6 @@ PROMPT;
             return null;
         }
 
-        $starter = is_array($q['starterCode'] ?? null) ? $q['starterCode'] : [];
-        $python = (string) ($q['pythonStarter'] ?? $starter['Python'] ?? "# Write your solution\n");
         return [
             'title' => $title,
             'description' => $description,

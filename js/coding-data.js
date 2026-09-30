@@ -5,11 +5,65 @@
   function defaultStarters(pythonBody) {
     return {
       Python: pythonBody,
-      Java: 'import java.util.*;\npublic class Main {\n  public static void main(String[] args) {\n    Scanner sc = new Scanner(System.in);\n    // Write your solution\n  }\n}\n',
-      C: '#include <stdio.h>\nint main() {\n  // Write your solution\n  return 0;\n}\n',
-      'C++': '#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n  ios::sync_with_stdio(false);\n  cin.tie(nullptr);\n  // Write your solution\n  return 0;\n}\n',
-      JavaScript: "const input = require('fs').readFileSync(0, 'utf8').trim();\n// Write your solution\n",
+      Java: 'import java.util.*;\npublic class Main {\n  public static void main(String[] args) {\n    Scanner sc = new Scanner(System.in);\n    // Write your logic below\n  }\n}\n',
+      C: '#include <stdio.h>\nint main() {\n  // Write your logic below\n  return 0;\n}\n',
+      'C++': '#include <bits/stdc++.h>\nusing namespace std;\nint main() {\n  ios::sync_with_stdio(false);\n  cin.tie(nullptr);\n  // Write your logic below\n  return 0;\n}\n',
+      JavaScript: "const input = require('fs').readFileSync(0, 'utf8').trim();\n// Write your logic below\n",
     };
+  }
+
+  function pythonStarterFromSampleInput(sampleIn) {
+    const raw = String(sampleIn || '').replace(/\r\n/g, '\n').trim();
+    if (!raw) return '# Write your logic below\n';
+    const lines = raw.split('\n');
+    const first = (lines[0] || '').trim();
+    if (lines.length >= 2 && /^\d+$/.test(first)) {
+      const n = parseInt(first, 10);
+      const nums = (lines[1] || '').trim().split(/\s+/).filter(Boolean);
+      if (n > 0 && nums.length === n) {
+        return 'n = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+      }
+      if (n > 0 && nums.length === 2 * n) {
+        return 'n = int(input())\nnums = list(map(int, input().split()))\n\n# Write your logic below\n';
+      }
+      if (lines.length >= 3 && /^\d+$/.test((lines[1] || '').trim())) {
+        const m = parseInt((lines[1] || '').trim(), 10);
+        const row = (lines[2] || '').trim().split(/\s+/).filter(Boolean);
+        if (m > 0 && row.length === m) {
+          return 'n = int(input())\nm = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+        }
+        return 'n = int(input())\nm = int(input())\n\n# Write your logic below\n';
+      }
+    }
+    if (lines.length === 1) {
+      const line = first;
+      if (/^-?\d+$/.test(line)) return 'n = int(input())\n\n# Write your logic below\n';
+      if (/^-?\d+\s+-?\d+$/.test(line)) return 'a, b = map(int, input().split())\n\n# Write your logic below\n';
+      if (/^-?\d+\s+-?\d+\s+-?\d+$/.test(line)) return 'a, b, c = map(int, input().split())\n\n# Write your logic below\n';
+      if (line.includes(' ')) return 'parts = input().split()\n\n# Write your logic below\n';
+      return 's = input().strip()\n\n# Write your logic below\n';
+    }
+    return '# Write your logic below\n';
+  }
+
+  function pythonStarterFromProblem(problem) {
+    const ex = (problem?.examples || [])[0];
+    if (ex?.input) return pythonStarterFromSampleInput(ex.input);
+    const sample = (problem?.testCases || []).find((tc) => tc.sample);
+    if (sample?.input) return pythonStarterFromSampleInput(sample.input);
+    const any = (problem?.testCases || []).find((tc) => tc.input);
+    return pythonStarterFromSampleInput(any?.input || '');
+  }
+
+  function enrichProblemStarters(problem) {
+    const starter = { ...(problem.starterCode || {}) };
+    const py = String(starter.Python || '').trim();
+    const needs = !py || /^#\s*Write your solution\s*$/m.test(py) || !/input\s*\(/.test(py);
+    if (needs) {
+      const python = pythonStarterFromProblem(problem);
+      Object.assign(starter, defaultStarters(python));
+    }
+    return { ...problem, starterCode: starter };
   }
 
   function clone(value) {
@@ -119,6 +173,9 @@
     },
     DIFFICULTIES: ['Easy', 'Medium', 'Hard'],
     defaultStarters,
+    pythonStarterFromSampleInput,
+    pythonStarterFromProblem,
+    enrichProblemStarters,
     publicQuestion,
   };
 })(window);

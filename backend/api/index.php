@@ -560,6 +560,7 @@ $routes = [
     ['DELETE','/coding/problem-bank/{id}',    [CodingController::class, 'deleteBankProblem']],
     ['POST', '/coding/problem-bank/bulk-delete', [CodingController::class, 'bulkDeleteBankProblems']],
     ['POST', '/coding/tests/{id}/start',      [CodingController::class, 'start']],
+    ['POST', '/coding/attempts/{id}/draft',   [CodingController::class, 'saveDraft']],
     ['POST', '/coding/attempts/{id}/submit',  [CodingController::class, 'submit']],
     ['GET',  '/coding/attempts/{id}/result',  [CodingController::class, 'attemptResult']],
     ['GET',  '/coding/me',                    [CodingController::class, 'myProgress']],

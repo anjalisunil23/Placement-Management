@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Models;
 
 use PMS\Schemas\Collections;
+use PMS\Utils\CodingStarterTemplates;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Security;
 
@@ -510,7 +511,7 @@ class CodingTestModel extends BaseModel
             if ($title === '') {
                 continue;
             }
-            $items[] = [
+            $items[] = CodingStarterTemplates::enrichItem([
                 'id' => (string) ($q['id'] ?? ('p-' . ($i + 1))),
                 'title' => $title,
                 'description' => (string) ($q['description'] ?? ''),
@@ -524,7 +525,7 @@ class CodingTestModel extends BaseModel
                 'marks' => (float) ($q['marks'] ?? 2),
                 'difficulty' => (string) ($q['difficulty'] ?? 'Medium'),
                 'category' => self::normalizeCategory((string) ($q['category'] ?? $data['category'] ?? 'Algorithms')),
-            ];
+            ]);
         }
         $marks = 0.0;
         foreach ($items as $item) {
@@ -628,7 +629,7 @@ class CodingTestModel extends BaseModel
                     ];
                 }
             }
-            $row = $item;
+            $row = CodingStarterTemplates::enrichItem($item);
             $row['testCases'] = $cases;
             $row['category'] = self::normalizeCategory((string) ($item['category'] ?? $test['category'] ?? 'Algorithms'));
             $items[] = $row;
