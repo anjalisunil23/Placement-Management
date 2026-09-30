@@ -118,6 +118,7 @@ try {
     $moduleB = $service->createModule($staff, $tutorial['id'], ['title' => 'Next', 'content' => '<p>Next</p>']);
     $exercise = $service->createExercise($staff, $tutorial['id'], $moduleA['id'], [
         'title' => 'Print',
+        'instructions' => 'Print a line.',
         'language' => 'c',
         'boilerplate' => "int main(){return 0;}\n",
     ]);

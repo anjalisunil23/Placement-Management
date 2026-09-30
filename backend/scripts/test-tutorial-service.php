@@ -264,6 +264,7 @@ try {
     $draftModule = $service->createModule($admin, $byAdmin['id'], ['title' => 'Draft module']);
     $draftExercise = $service->createExercise($admin, $byAdmin['id'], $draftModule['id'], [
         'title' => 'Hidden exercise',
+        'instructions' => 'Hidden until published.',
         'language' => 'c',
     ]);
     $throws(fn () => $service->exerciseForStudent($studentUsers['cse2027'], $draftExercise['id']), 404);

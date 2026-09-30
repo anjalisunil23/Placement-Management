@@ -6,6 +6,7 @@
     { value: 'python', label: 'Python' },
     { value: 'javascript', label: 'JavaScript' },
     { value: 'php', label: 'PHP' },
+    { value: 'sql', label: 'SQL' },
   ];
   const state = {
     categories: [],
@@ -356,14 +357,15 @@
     }
     root.innerHTML = modules.map((module, index) => {
       const exercises = module.exercises || [];
-      const exerciseHtml = exercises.map((exercise) => {
+      const exerciseHtml = exercises.map((exercise, exerciseIndex) => {
         const cases = exercise.testCases || [];
-        const badges = cases.map((item) => (
-          `<span class="badge ${item.sample ? 'text-bg-primary' : 'text-bg-dark'}">${item.sample ? 'PUBLIC' : 'HIDDEN'}</span>`
-        )).join(' ');
-        return `<div class="d-flex flex-wrap justify-content-between gap-2 border-top pt-2 mt-2">
-          <div><div class="fw-semibold">${esc(exercise.title)}</div><div class="small text-muted-2">${esc(languageLabel(exercise.language))} ${badges}</div></div>
-          <div class="d-flex gap-1">
+        const sampleCount = cases.filter((item) => item.sample).length;
+        return `<div class="d-flex flex-wrap justify-content-between gap-2 border rounded p-2 mt-2">
+          <div><div class="fw-semibold">${exerciseIndex + 1}. ${esc(exercise.title)}</div><div class="small text-muted-2">${esc(languageLabel(exercise.language))} · ${sampleCount} sample test${sampleCount === 1 ? '' : 's'}</div></div>
+          <div class="d-flex flex-wrap gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-exercise-up="${esc(module.id)}" data-exercise="${esc(exercise.id)}" ${exerciseIndex === 0 ? 'disabled' : ''}>Up</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-exercise-down="${esc(module.id)}" data-exercise="${esc(exercise.id)}" ${exerciseIndex === exercises.length - 1 ? 'disabled' : ''}>Down</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-preview-exercise="${esc(module.id)}" data-exercise="${esc(exercise.id)}">Preview</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-exercise="${esc(module.id)}" data-exercise="${esc(exercise.id)}">Edit</button>
             <button type="button" class="btn btn-sm btn-outline-danger" data-delete-exercise="${esc(module.id)}" data-exercise="${esc(exercise.id)}">Delete</button>
           </div>
@@ -381,6 +383,7 @@
           </div>
         </div>
         ${exerciseHtml || '<p class="small text-muted-2 mb-0 mt-2">No exercises yet.</p>'}
+        <div class="border rounded p-3 mt-3 d-none" data-exercise-preview="${esc(module.id)}"></div>
       </div>`;
     }).join('');
     root.querySelectorAll('[data-edit-module]').forEach((btn) => btn.addEventListener('click', () => openModule(btn.getAttribute('data-edit-module'))));
@@ -389,7 +392,47 @@
     root.querySelectorAll('[data-down]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-down'), 1)));
     root.querySelectorAll('[data-add-exercise]').forEach((btn) => btn.addEventListener('click', () => openExercise(btn.getAttribute('data-add-exercise'), '')));
     root.querySelectorAll('[data-edit-exercise]').forEach((btn) => btn.addEventListener('click', () => openExercise(btn.getAttribute('data-edit-exercise'), btn.getAttribute('data-exercise'))));
-    root.querySelectorAll('[data-delete-exercise]').forEach((btn) => btn.addEventListener('click', () => deleteExercise(btn.getAttribute('data-edit-exercise'), btn.getAttribute('data-exercise'))));
+    root.querySelectorAll('[data-delete-exercise]').forEach((btn) => btn.addEventListener('click', () => deleteExercise(btn.getAttribute('data-delete-exercise'), btn.getAttribute('data-exercise'))));
+    root.querySelectorAll('[data-exercise-up]').forEach((btn) => btn.addEventListener('click', () => moveExercise(btn.getAttribute('data-exercise-up'), btn.getAttribute('data-exercise'), -1)));
+    root.querySelectorAll('[data-exercise-down]').forEach((btn) => btn.addEventListener('click', () => moveExercise(btn.getAttribute('data-exercise-down'), btn.getAttribute('data-exercise'), 1)));
+    root.querySelectorAll('[data-preview-exercise]').forEach((btn) => btn.addEventListener('click', () => previewExercise(btn.getAttribute('data-preview-exercise'), btn.getAttribute('data-exercise'))));
+  }
+
+  async function moveExercise(moduleId, exerciseId, direction) {
+    if (!state.active) return;
+    const module = (state.active.modules || []).find((row) => row.id === moduleId);
+    if (!module) return;
+    const exercises = [...(module.exercises || [])];
+    const index = exercises.findIndex((row) => row.id === exerciseId);
+    const next = index + direction;
+    if (index < 0 || next < 0 || next >= exercises.length) return;
+    const swap = exercises[index];
+    exercises[index] = exercises[next];
+    exercises[next] = swap;
+    try {
+      await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(moduleId)}/exercises/reorder`, {
+        method: 'POST',
+        body: { exerciseIds: exercises.map((row) => row.id) },
+      });
+      toast('Exercise order saved.', 'success');
+      await openModules(state.active.id);
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  function previewExercise(moduleId, exerciseId) {
+    const exercise = findExercise(moduleId, exerciseId);
+    const host = document.querySelector(`[data-exercise-preview="${moduleId}"]`);
+    if (!exercise || !host) return;
+    const samples = (exercise.testCases || []).filter((item) => item.sample);
+    host.classList.remove('d-none');
+    host.innerHTML = `<div class="small text-warning fw-semibold mb-2">STAFF PREVIEW</div>
+      <div class="fw-semibold">${esc(exercise.title)}</div>
+      <div class="small text-muted-2 mb-2">Language: ${esc(languageLabel(exercise.language))}</div>
+      <pre class="mb-2">${esc(exercise.boilerplate || '')}</pre>
+      ${samples.length ? samples.map((item, index) => `<div class="small mb-2"><div class="fw-semibold">Sample ${index + 1}</div><div>Input</div><pre>${esc(item.stdin) || '-'}</pre><div>Expected output</div><pre class="mb-0">${esc(item.expectedOutput)}</pre></div>`).join('') : '<p class="small text-muted-2 mb-0">No public sample tests.</p>'}
+      <p class="small text-muted-2 mb-0">Preview does not save a student attempt.</p>`;
   }
 
   function languageLabel(value) {
@@ -518,11 +561,13 @@
   function renderTestCases(exercise) {
     const list = document.getElementById('testCaseList');
     const cases = (exercise && exercise.testCases) || [];
-    list.innerHTML = cases.map((item) => (
+    list.innerHTML = cases.map((item, index) => (
       `<div class="border rounded p-2">
         <div class="d-flex justify-content-between gap-2 mb-1">
           <span class="badge ${item.sample ? 'text-bg-primary' : 'text-bg-dark'}">${item.sample ? 'PUBLIC' : 'HIDDEN'}</span>
           <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-case-up="${esc(item.id)}" ${index === 0 ? 'disabled' : ''}>Up</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-case-down="${esc(item.id)}" ${index === cases.length - 1 ? 'disabled' : ''}>Down</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-case="${esc(item.id)}">Edit</button>
             <button type="button" class="btn btn-sm btn-outline-danger" data-delete-case="${esc(item.id)}">Delete</button>
           </div>
@@ -537,6 +582,29 @@
     list.querySelectorAll('[data-delete-case]').forEach((btn) => {
       btn.addEventListener('click', () => deleteTestCase(btn.getAttribute('data-delete-case')));
     });
+    list.querySelectorAll('[data-case-up]').forEach((btn) => btn.addEventListener('click', () => moveTestCase(btn.getAttribute('data-case-up'), -1, cases)));
+    list.querySelectorAll('[data-case-down]').forEach((btn) => btn.addEventListener('click', () => moveTestCase(btn.getAttribute('data-case-down'), 1, cases)));
+  }
+
+  async function moveTestCase(id, direction, cases) {
+    const exerciseId = document.getElementById('exerciseId').value;
+    const index = cases.findIndex((row) => row.id === id);
+    const next = index + direction;
+    if (!exerciseId || index < 0 || next < 0 || next >= cases.length) return;
+    const order = cases.map((row) => row.id);
+    const swap = order[index];
+    order[index] = order[next];
+    order[next] = swap;
+    try {
+      await call(`/tutorials/manage/exercises/${encodeURIComponent(exerciseId)}/test-cases/reorder`, {
+        method: 'POST',
+        body: { testCaseIds: order },
+      });
+      await openModules(state.active.id);
+      renderTestCases(findExercise(document.getElementById('exerciseModuleId').value, exerciseId));
+    } catch (err) {
+      fail(err);
+    }
   }
 
   function openExercise(moduleId, exerciseId) {
@@ -910,24 +978,37 @@
       document.getElementById('studentExerciseTitle').dataset.language = exercise.language || '';
       setLessonHtml(document.getElementById('studentExerciseInstructions'), exercise.instructions || '');
       const code = document.getElementById('studentCode');
+      const examples = (exercise.testCases || []).filter((item) => item.sample !== false);
+      document.getElementById('studentExamples').innerHTML = examples.length
+        ? `<div class="fw-semibold mb-2">Sample test cases</div>${examples.map((item, index) => (
+          `<div class="border rounded p-2 mb-2"><div class="small fw-semibold">Test case ${index + 1}</div><div class="small text-muted-2">Input</div><pre class="mb-2">${esc(item.stdin) || '-'}</pre><div class="small text-muted-2">Expected output</div><pre class="mb-0">${esc(item.expectedOutput)}</pre></div>`
+        )).join('')}`
+        : '<p class="small text-muted-2 mb-0">No public sample tests.</p>';
+      let history = [];
+      try {
+        history = await call(`/tutorials/exercises/${encodeURIComponent(exercise.id)}/attempts`) || [];
+      } catch { history = []; }
+      learn.attemptHistory = history;
       if (learn.drafts[exercise.id] == null) {
-        let source = exercise.boilerplate || '';
-        try {
-          const history = await call(`/tutorials/exercises/${encodeURIComponent(exercise.id)}/attempts`);
-          if (history && history[0] && history[0].sourceCode) source = history[0].sourceCode;
-        const note = document.getElementById('studentAttemptNote');
-        if (note) note.textContent = history && history.length ? '' : 'No saved attempts yet.';
-        } catch { /* keep the starter code */ }
-        learn.drafts[exercise.id] = source;
+        learn.drafts[exercise.id] = history[0] && history[0].sourceCode ? history[0].sourceCode : (exercise.boilerplate || '');
       }
       code.value = learn.drafts[exercise.id];
       code.oninput = () => { learn.drafts[exercise.id] = code.value; };
-      const examples = exercise.testCases || [];
-      document.getElementById('studentExamples').innerHTML = examples.length
-        ? `<div class="fw-semibold mb-2">Examples</div>${examples.map((item, index) => (
-          `<div class="border rounded p-2 mb-2"><div class="small fw-semibold">Example ${index + 1}</div><div class="small text-muted-2">Input</div><pre class="mb-2">${esc(item.stdin)}</pre><div class="small text-muted-2">Expected output</div><pre class="mb-0">${esc(item.expectedOutput)}</pre></div>`
-        )).join('')}`
-        : '';
+      const note = document.getElementById('studentAttemptNote');
+      if (note) note.textContent = history.length ? '' : 'No saved attempts yet.';
+      const historyRoot = document.getElementById('studentAttemptHistory');
+      historyRoot.innerHTML = history.length ? history.map((item, index) => (
+        `<div class="border rounded p-2 d-flex justify-content-between gap-2"><div><div class="fw-semibold">Attempt #${history.length - index}</div><div class="small text-muted-2">${esc(item.submittedAt || '')} · ${esc(languageLabel(item.language))} · Attempted</div></div><button type="button" class="btn btn-sm btn-outline-secondary" data-open-attempt="${index}">Open</button></div>`
+      )).join('') : '<p class="text-muted-2 mb-0">No saved attempts yet.</p>';
+      historyRoot.querySelectorAll('[data-open-attempt]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const item = learn.attemptHistory[Number(btn.getAttribute('data-open-attempt'))];
+          if (!item) return;
+          code.value = item.sourceCode || '';
+          learn.drafts[exercise.id] = code.value;
+          toast('Opened in the editor. Save Attempt stores a new copy.', 'success');
+        });
+      });
     } catch (err) {
       fail(err);
     }
@@ -1024,7 +1105,8 @@
             language: document.getElementById('studentExerciseTitle').dataset.language,
           },
         });
-        toast(saved && saved.status === 'ATTEMPTED' ? 'Attempt saved. It was not graded.' : 'Attempt saved.', 'success');
+        toast(saved && saved.message ? saved.message : 'Your attempt has been saved.', 'success');
+        await openStudentExercise(title);
       } catch (err) {
         fail(err);
       }

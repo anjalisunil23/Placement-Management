@@ -192,6 +192,20 @@ final class TutorialController
         Response::success(null, 'Exercise deleted.');
     }
 
+    public function reorderExercises(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        Response::success($this->service->reorderExercises($user, $tutorialId, $moduleId, (array) ($body['exerciseIds'] ?? [])));
+    }
+
+    public function reorderTestCases(string $exerciseId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        Response::success($this->service->reorderTestCases($user, $exerciseId, (array) ($body['testCaseIds'] ?? [])));
+    }
+
     public function createTestCase(string $exerciseId): void
     {
         $user = AuthMiddleware::authenticate();

@@ -318,6 +318,7 @@ final class TutorialService
      */
     public function saveAttempt(array $user, string $exerciseId, array $input): array
     {
+        unset($input['studentId'], $input['departmentId'], $input['passingYear']);
         $exercise = $this->requireExercise($exerciseId);
         $module = $this->requireModule((string) ($exercise['moduleId'] ?? ''));
         $tutorialId = (string) ($module['tutorialId'] ?? '');
@@ -347,6 +348,7 @@ final class TutorialService
             'attemptId' => (string) ($row['_id'] ?? ''),
             'status' => 'ATTEMPTED',
             'submittedAt' => (string) ($row['submittedAt'] ?? ''),
+            'message' => 'Your attempt has been saved.',
         ];
     }
 
@@ -596,6 +598,10 @@ final class TutorialService
     {
         $this->ownedTutorial($user, $tutorialId);
         $this->moduleOnTutorial($tutorialId, $moduleId);
+        $instructions = trim(strip_tags(self::sanitizeHtml((string) ($input['instructions'] ?? ''))));
+        if ($instructions === '') {
+            throw new \InvalidArgumentException('Exercise instructions are required.');
+        }
         $limits = $this->limits($input, 5000, 128000);
         $row = $this->exercises->create([
             'moduleId' => $moduleId,
@@ -639,6 +645,96 @@ final class TutorialService
         }
 
         return $this->managedExercise($row, false);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<int, mixed> $exerciseIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function reorderExercises(array $user, string $tutorialId, string $moduleId, array $exerciseIds): array
+    {
+        $this->ownedTutorial($user, $tutorialId);
+        $this->moduleOnTutorial($tutorialId, $moduleId);
+        $existing = $this->exercises->listByModule($moduleId);
+        $known = [];
+        foreach ($existing as $exercise) {
+            $known[(string) ($exercise['_id'] ?? '')] = $exercise;
+        }
+        $clean = [];
+        foreach ($exerciseIds as $exerciseId) {
+            $exerciseId = trim((string) $exerciseId);
+            if (!isset($known[$exerciseId]) || isset($clean[$exerciseId])) {
+                throw new \InvalidArgumentException('Reorder list must contain each exercise of this module once.');
+            }
+            $clean[$exerciseId] = true;
+        }
+        if (count($clean) !== count($known)) {
+            throw new \InvalidArgumentException('Reorder list must contain each exercise of this module once.');
+        }
+        $order = 1;
+        foreach (array_keys($clean) as $exerciseId) {
+            $exercise = $known[$exerciseId];
+            $this->exercises->updateExercise($exerciseId, [
+                'moduleId' => $moduleId,
+                'title' => (string) ($exercise['title'] ?? ''),
+                'instructions' => (string) ($exercise['instructions'] ?? ''),
+                'language' => (string) ($exercise['language'] ?? ''),
+                'boilerplate' => (string) ($exercise['boilerplate'] ?? ''),
+                'timeLimitMs' => (int) ($exercise['timeLimitMs'] ?? 5000),
+                'memoryLimitKb' => (int) ($exercise['memoryLimitKb'] ?? 128000),
+                'sortOrder' => $order,
+            ]);
+            $order++;
+        }
+
+        return array_map(
+            fn (array $exercise): array => $this->managedExercise($exercise, true),
+            $this->exercises->listByModule($moduleId)
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<int, mixed> $testCaseIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function reorderTestCases(array $user, string $exerciseId, array $testCaseIds): array
+    {
+        $this->ownedExercise($user, $exerciseId);
+        $existing = $this->testCases->listByExercise($exerciseId);
+        $known = [];
+        foreach ($existing as $case) {
+            $known[(string) ($case['_id'] ?? '')] = $case;
+        }
+        $clean = [];
+        foreach ($testCaseIds as $testCaseId) {
+            $testCaseId = trim((string) $testCaseId);
+            if (!isset($known[$testCaseId]) || isset($clean[$testCaseId])) {
+                throw new \InvalidArgumentException('Reorder list must contain each test case once.');
+            }
+            $clean[$testCaseId] = true;
+        }
+        if (count($clean) !== count($known)) {
+            throw new \InvalidArgumentException('Reorder list must contain each test case once.');
+        }
+        $order = 1;
+        foreach (array_keys($clean) as $testCaseId) {
+            $case = $known[$testCaseId];
+            $this->testCases->updateTestCase($testCaseId, [
+                'exerciseId' => $exerciseId,
+                'stdin' => (string) ($case['stdin'] ?? ''),
+                'expectedOutput' => (string) ($case['expectedOutput'] ?? ''),
+                'sample' => ($case['sample'] ?? false) === true,
+                'sortOrder' => $order,
+            ]);
+            $order++;
+        }
+
+        return array_map(
+            fn (array $case): array => $this->managedTestCase($case),
+            $this->testCases->listByExercise($exerciseId)
+        );
     }
 
     /**
