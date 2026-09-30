@@ -30,9 +30,22 @@ final class CodingExecutionConfig
         $wall = max($timeSec + 1, min(20, (int) ($_ENV['CODING_WALL_CLOCK_SEC'] ?? ($timeSec + 3))));
 
         $remoteRaw = strtolower(trim((string) ($_ENV['CODING_REMOTE_BACKENDS'] ?? '')));
-        $remote = $remoteRaw === '' || $remoteRaw === 'none'
-            ? []
-            : array_values(array_filter(array_map('trim', explode(',', $remoteRaw))));
+        if ($remoteRaw === 'none') {
+            $remote = [];
+        } elseif ($remoteRaw === '') {
+            $remote = ['wandbox'];
+        } else {
+            $remote = array_values(array_filter(array_map('trim', explode(',', $remoteRaw))));
+            if ($remote === []) {
+                $remote = ['wandbox'];
+            } elseif (!in_array('wandbox', $remote, true) && !in_array('none', $remote, true)) {
+                $pistonOnly = $remote === ['piston'];
+                $pistonUrl = strtolower(trim((string) ($_ENV['CODING_PISTON_URL'] ?? '')));
+                if ($pistonOnly && ($pistonUrl === '' || str_contains($pistonUrl, 'emkc.org'))) {
+                    array_unshift($remote, 'wandbox');
+                }
+            }
+        }
 
         $root = trim((string) ($_ENV['CODING_SANDBOX_ROOT'] ?? ''));
         if ($root === '') {

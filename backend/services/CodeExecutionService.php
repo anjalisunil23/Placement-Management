@@ -336,8 +336,15 @@ final class CodeExecutionService
     ): ?array {
         $this->lastRemoteErrors = '';
         $errors = [];
-        foreach (CodingExecutionConfig::limits($timeLimitMs)['remote_backends'] as $backend) {
+        $backends = CodingExecutionConfig::limits($timeLimitMs)['remote_backends'];
+        if ($this->wandboxEnabled() && !in_array('wandbox', $backends, true)) {
+            array_unshift($backends, 'wandbox');
+        }
+        foreach ($backends as $backend) {
             if ($backend === 'wandbox') {
+                if (!$this->wandboxEnabled()) {
+                    continue;
+                }
                 $client = new WandboxExecutionClient();
                 $result = $client->run($language, $source, $stdin, $timeLimitMs, $started);
                 if ($result !== null) {
@@ -369,6 +376,12 @@ final class CodeExecutionService
         $this->lastRemoteErrors = implode(' | ', $errors);
 
         return null;
+    }
+
+    private function wandboxEnabled(): bool
+    {
+        $flag = strtolower(trim((string) ($_ENV['CODING_WANDBOX_ENABLED'] ?? 'true')));
+        return $flag !== 'false' && $flag !== '0' && $flag !== 'off';
     }
 
     private function remoteFallbackEnabled(): bool

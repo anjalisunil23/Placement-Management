@@ -16,6 +16,17 @@ function pms_load_backend_services(string $backendDir): void
         require_once $serviceFile;
     }
 
+    foreach (['WandboxExecutionClient.php', 'PistonExecutionClient.php'] as $serviceFile) {
+        $class = 'PMS\\Services\\' . basename($serviceFile, '.php');
+        if (class_exists($class, false)) {
+            continue;
+        }
+        $path = $servicesDir . '/' . $serviceFile;
+        if (is_readable($path)) {
+            require_once $path;
+        }
+    }
+
     foreach (['AesApiService.php', 'AesLoginService.php', 'OfficerDataService.php', 'StaffContext.php', 'StaffService.php', 'StaffDataService.php'] as $serviceFile) {
         $class = 'PMS\\Services\\' . basename($serviceFile, '.php');
         if (class_exists($class, false)) {
@@ -87,7 +98,6 @@ function pms_load_module_controllers(string $backendDir): void
         'PMS\\Api\\JobFeedController'    => 'api/JobFeedController.php',
         'PMS\\Api\\InternalJobController' => 'api/InternalJobController.php',
         'PMS\\Api\\CertificationController' => 'api/CertificationController.php',
-        'PMS\\Api\\TutorialController' => 'api/TutorialController.php',
         'PMS\\Api\\AptitudeController'   => 'api/AptitudeController.php',
         'PMS\\Api\\CodingController'     => 'api/CodingController.php',
     ];

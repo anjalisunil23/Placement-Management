@@ -349,13 +349,17 @@ final class CodingController
         }
         $body = $this->body();
         $language = trim((string) ($body['language'] ?? 'Python'));
-        $source = (string) ($body['source_code'] ?? $body['source'] ?? '');
-        $stdin = (string) ($body['input'] ?? $body['stdin'] ?? '');
-        $timeLimitMs = max(500, min(15000, (int) ($body['time_limit_ms'] ?? $body['timeLimitMs'] ?? 3000)));
+        $source = (string) ($body['source'] ?? '');
+        $stdin = (string) ($body['stdin'] ?? '');
+        $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 3000)));
         if (trim($source) === '') {
             Response::error('Source code is required.', 422);
         }
         $runner = new CodeExecutionService();
-        Response::success($runner->run($language, $source, $stdin, $timeLimitMs));
+        $result = $runner->run($language, $source, $stdin, $timeLimitMs);
+        if (is_array($result)) {
+            $result['execBackend'] = 'wandbox-fallback-v1';
+        }
+        Response::success($result);
     }
 }
