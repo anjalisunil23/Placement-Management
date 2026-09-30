@@ -772,21 +772,15 @@
       const ans = attempt.answers[question.id] || {};
       const language = ans.language || 'Python';
       const code = ans.code || '';
-      const graded = await gradePracticeSolution(question, language, code);
       const taken = Number.isFinite(timeTakenSeconds)
         ? timeTakenSeconds
         : Math.max(0, Math.round((Date.now() - attempt.startedAt) / 1000));
+      let graded = null;
       const payload = {
         bankProblemId: attempt.bankProblemId,
         problemTitle: question.title,
         language,
-        accepted: graded.accepted,
-        status: graded.status,
-        testsPassed: graded.testsPassed,
-        testsTotal: graded.testsTotal,
-        score: graded.score,
-        totalMarks: graded.totalMarks,
-        percentage: graded.percentage,
+        sourceCode: code,
         timeTakenSeconds: taken,
         submittedAt: new Date().toISOString(),
       };
@@ -796,11 +790,42 @@
           body: JSON.stringify(payload),
         }).catch(() => null);
         if (!res?.success) {
-          payload.saveWarning = res?.message || 'Result shown locally; server save failed.';
+          graded = await gradePracticeSolution(question, language, code);
+          Object.assign(payload, {
+            accepted: graded.accepted,
+            status: graded.status,
+            testsPassed: graded.testsPassed,
+            testsTotal: graded.testsTotal,
+            score: graded.score,
+            totalMarks: graded.totalMarks,
+            percentage: graded.percentage,
+            saveWarning: res?.message || 'Result shown locally; server save failed.',
+          });
         } else {
-          Object.assign(payload, res.data || {});
+          const data = res.data || {};
+          graded = {
+            accepted: !!data.accepted,
+            status: data.status || (data.accepted ? 'Accepted' : 'Wrong Answer'),
+            testsPassed: data.testsPassed ?? 0,
+            testsTotal: data.testsTotal ?? 0,
+            score: data.score ?? 0,
+            totalMarks: data.totalMarks ?? question.marks ?? 2,
+            percentage: data.percentage ?? 0,
+            caseResults: data.caseResults || [],
+          };
+          Object.assign(payload, data, graded);
         }
       } else {
+        graded = await gradePracticeSolution(question, language, code);
+        Object.assign(payload, {
+          accepted: graded.accepted,
+          status: graded.status,
+          testsPassed: graded.testsPassed,
+          testsTotal: graded.testsTotal,
+          score: graded.score,
+          totalMarks: graded.totalMarks,
+          percentage: graded.percentage,
+        });
         const rows = loadPracticeSubmissions();
         rows.unshift({ id: 'ps-' + Date.now(), ...payload, dateLabel: formatDate(payload.submittedAt) });
         savePracticeSubmissions(rows.slice(0, 100));

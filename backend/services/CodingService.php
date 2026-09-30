@@ -2435,21 +2435,32 @@ final class CodingService
             Response::notFound('Problem not found.');
         }
         $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
-        $testsPassed = max(0, (int) ($body['testsPassed'] ?? 0));
-        $testsTotal = max(0, (int) ($body['testsTotal'] ?? 0));
-        $accepted = !empty($body['accepted']) || ($testsTotal > 0 && $testsPassed === $testsTotal);
+        $language = trim((string) ($body['language'] ?? 'Python'));
+        $sourceCode = (string) ($body['sourceCode'] ?? $body['source_code'] ?? $body['code'] ?? '');
+        if (trim($sourceCode) === '') {
+            Response::error('Source code is required for submit.', 422);
+        }
+
+        $problem = CodingProblemBankModel::normalize($row);
+        $grader = new CodingSubmissionGrader();
+        $graded = $grader->grade($problem, $language, $sourceCode);
+        $accepted = !empty($graded['accepted']);
         $payload = [
             'userId' => $uid,
             'bankProblemId' => $bankProblemId,
             'problemTitle' => (string) ($body['problemTitle'] ?? $row['title'] ?? ''),
-            'language' => (string) ($body['language'] ?? 'Python'),
+            'language' => $language,
+            'sourceCode' => $sourceCode,
             'status' => $accepted ? 'accepted' : 'wrong',
             'accepted' => $accepted,
-            'testsPassed' => $testsPassed,
-            'testsTotal' => $testsTotal,
-            'score' => (float) ($body['score'] ?? ($accepted ? ($row['marks'] ?? 2) : 0)),
-            'totalMarks' => (float) ($body['totalMarks'] ?? ($row['marks'] ?? 2)),
-            'percentage' => (float) ($body['percentage'] ?? ($accepted ? 100 : 0)),
+            'testsPassed' => (int) ($graded['testsPassed'] ?? 0),
+            'testsTotal' => (int) ($graded['testsTotal'] ?? 0),
+            'score' => (float) ($graded['score'] ?? 0),
+            'totalMarks' => (float) ($graded['totalMarks'] ?? ($row['marks'] ?? 2)),
+            'percentage' => (float) ($graded['percentage'] ?? 0),
+            'executionTimeMs' => (int) ($graded['executionTimeMs'] ?? 0),
+            'memoryUsedKb' => (int) ($graded['memoryUsedKb'] ?? 0),
+            'gradeStatus' => (string) ($graded['status'] ?? 'Wrong Answer'),
             'timeTakenSeconds' => max(0, (int) ($body['timeTakenSeconds'] ?? 0)),
         ];
         $submissionId = $this->practiceSubmissions->record($payload);
@@ -2459,12 +2470,14 @@ final class CodingService
             'submissionId' => $submissionId,
             'bankProblemId' => $bankProblemId,
             'accepted' => $accepted,
-            'status' => $accepted ? 'Accepted' : 'Wrong Answer',
-            'testsPassed' => $testsPassed,
-            'testsTotal' => $testsTotal,
+            'status' => (string) ($graded['status'] ?? ($accepted ? 'Accepted' : 'Wrong Answer')),
+            'testsPassed' => (int) ($graded['testsPassed'] ?? 0),
+            'testsTotal' => (int) ($graded['testsTotal'] ?? 0),
             'score' => $payload['score'],
             'totalMarks' => $payload['totalMarks'],
             'percentage' => $payload['percentage'],
+            'executionTimeMs' => (int) ($graded['executionTimeMs'] ?? 0),
+            'caseResults' => $graded['caseResults'] ?? [],
             'practiceStatus' => $stat ? (string) ($stat['status'] ?? 'attempted') : ($accepted ? 'solved' : 'attempted'),
             'attemptCount' => $stat ? (int) ($stat['attemptCount'] ?? 0) : 1,
         ];

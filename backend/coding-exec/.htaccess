@@ -1,0 +1,2 @@
+# Block web access — run worker only via CLI from CodeExecutionService.
+Require all denied
