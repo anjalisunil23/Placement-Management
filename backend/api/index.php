@@ -108,6 +108,7 @@ use PMS\Api\AptitudeController;
 use PMS\Api\CodingController;
 use PMS\Api\InternalJobController;
 use PMS\Api\CertificationController;
+use PMS\Api\TutorialController;
 use PMS\Api\JobFeedController;
 use PMS\Api\PublicController;
 use PMS\Auth\AuthController;
@@ -602,6 +603,38 @@ $routes = [
     ['GET',    '/certifications/{id}',              [CertificationController::class, 'show']],
     ['PUT',    '/certifications/{id}',              [CertificationController::class, 'update']],
     ['DELETE', '/certifications/{id}',              [CertificationController::class, 'delete']],
+
+    ['GET',    '/tutorial-categories',              [TutorialController::class, 'listCategories']],
+    ['POST',   '/tutorial-categories',              [TutorialController::class, 'createCategory']],
+    ['PUT',    '/tutorial-categories/{id}',         [TutorialController::class, 'updateCategory']],
+    ['DELETE', '/tutorial-categories/{id}',         [TutorialController::class, 'deleteCategory']],
+    ['GET',    '/tutorials/manage',                 [TutorialController::class, 'manageIndex']],
+    ['POST',   '/tutorials/manage',                 [TutorialController::class, 'manageCreate']],
+    ['POST',   '/tutorials/manage/{id}/publish',    [TutorialController::class, 'publish']],
+    ['POST',   '/tutorials/manage/{id}/unpublish',  [TutorialController::class, 'unpublish']],
+    ['POST',   '/tutorials/manage/{tutorialId}/modules/reorder', [TutorialController::class, 'reorderModules']],
+    ['POST',   '/tutorials/manage/{tutorialId}/modules', [TutorialController::class, 'createModule']],
+    ['PUT',    '/tutorials/manage/{tutorialId}/modules/{moduleId}', [TutorialController::class, 'updateModule']],
+    ['DELETE', '/tutorials/manage/{tutorialId}/modules/{moduleId}', [TutorialController::class, 'deleteModule']],
+    ['POST',   '/tutorials/manage/{tutorialId}/modules/{moduleId}/exercises', [TutorialController::class, 'createExercise']],
+    ['PUT',    '/tutorials/manage/{tutorialId}/modules/{moduleId}/exercises/{exerciseId}', [TutorialController::class, 'updateExercise']],
+    ['DELETE', '/tutorials/manage/{tutorialId}/modules/{moduleId}/exercises/{exerciseId}', [TutorialController::class, 'deleteExercise']],
+    ['POST',   '/tutorials/manage/exercises/{exerciseId}/test-cases', [TutorialController::class, 'createTestCase']],
+    ['PUT',    '/tutorials/manage/exercises/{exerciseId}/test-cases/{testCaseId}', [TutorialController::class, 'updateTestCase']],
+    ['DELETE', '/tutorials/manage/exercises/{exerciseId}/test-cases/{testCaseId}', [TutorialController::class, 'deleteTestCase']],
+    ['GET',    '/tutorials/manage/{id}',            [TutorialController::class, 'manageShow']],
+    ['PUT',    '/tutorials/manage/{id}',            [TutorialController::class, 'manageUpdate']],
+    ['DELETE', '/tutorials/manage/{id}',            [TutorialController::class, 'manageDelete']],
+    ['GET',    '/tutorials/exercises/{id}/attempts', [TutorialController::class, 'listAttempts']],
+    ['POST',   '/tutorials/exercises/{id}/attempt', [TutorialController::class, 'saveAttempt']],
+    ['GET',    '/tutorials/exercises/{id}',         [TutorialController::class, 'showExercise']],
+    ['GET',    '/tutorials',                        [TutorialController::class, 'index']],
+    ['POST',   '/tutorials/{id}/progress/start',    [TutorialController::class, 'startProgress']],
+    ['GET',    '/tutorials/{id}/progress',          [TutorialController::class, 'progress']],
+    ['POST',   '/tutorials/{id}/modules/{moduleId}/progress', [TutorialController::class, 'moduleProgress']],
+    ['POST',   '/tutorials/{id}/complete',          [TutorialController::class, 'completeTutorial']],
+    ['GET',    '/tutorials/{tutorialId}/modules/{moduleId}', [TutorialController::class, 'showModule']],
+    ['GET',    '/tutorials/{id}',                   [TutorialController::class, 'show']],
 
     // Health & public
     ['POST', '/aes/check-login',        [PublicController::class, 'aesCheckLogin']],

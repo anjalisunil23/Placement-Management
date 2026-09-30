@@ -50,6 +50,14 @@ final class Collections
     public const CODING_PROBLEM_BANK = 'coding_problem_bank';
     public const CODING_PRACTICE_SUBMISSIONS = 'coding_practice_submissions';
     public const CODING_COMPANY_PROBLEM_SETS = 'coding_company_problem_sets';
+    public const TUTORIAL_CATEGORIES = 'tutorial_categories';
+    public const TUTORIALS = 'tutorials';
+    public const TUTORIAL_MODULES = 'tutorial_modules';
+    public const TUTORIAL_EXERCISES = 'tutorial_exercises';
+    public const TUTORIAL_TEST_CASES = 'tutorial_test_cases';
+    public const STUDENT_TUTORIAL_PROGRESS = 'student_tutorial_progress';
+    public const STUDENT_TUTORIAL_MODULE_PROGRESS = 'student_tutorial_module_progress';
+    public const STUDENT_EXERCISE_ATTEMPTS = 'student_exercise_attempts';
     public const RESUME_CAREER_OBJECTIVES = 'resume_career_objectives';
     public const RESUME_SKILLS = 'resume_skills';
     public const RESUME_PROJECTS = 'resume_projects';
@@ -358,6 +366,101 @@ final class Collections
                 'proofPath' => 'string',
                 'proofFileName' => 'string',
                 'completedAt' => 'UTCDateTime|null',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_CATEGORIES => [
+                '_id' => 'ObjectId',
+                'name' => 'string',
+                'slug' => 'string (unique)',
+                'description' => 'string',
+                'status' => 'string (active|inactive)',
+                'createdBy' => 'ObjectId|empty',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIALS => [
+                '_id' => 'ObjectId',
+                'title' => 'string',
+                'categoryId' => 'ObjectId',
+                'topic' => 'string (free text, not a language enum)',
+                'description' => 'string',
+                'thumbnail' => 'string',
+                'status' => 'string (draft|published|unpublished)',
+                'visibility' => 'string (all|scoped)',
+                'departmentIds' => 'array of existing department ids',
+                'passingYears' => 'array of four-digit passout years',
+                'createdBy' => 'ObjectId|empty',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_MODULES => [
+                '_id' => 'ObjectId',
+                'tutorialId' => 'ObjectId',
+                'title' => 'string',
+                'sortOrder' => 'int',
+                'content' => 'string (HTML stored for a later editor)',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_EXERCISES => [
+                '_id' => 'ObjectId',
+                'moduleId' => 'ObjectId',
+                'title' => 'string',
+                'instructions' => 'string',
+                'language' => 'string (normalized label, not a compiler id)',
+                'boilerplate' => 'string',
+                'timeLimitMs' => 'int',
+                'memoryLimitKb' => 'int',
+                'sortOrder' => 'int',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_TEST_CASES => [
+                '_id' => 'ObjectId',
+                'exerciseId' => 'ObjectId',
+                'stdin' => 'string',
+                'expectedOutput' => 'string (may be empty)',
+                'sample' => 'bool (true = public sample, false = hidden)',
+                'sortOrder' => 'int',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::STUDENT_TUTORIAL_PROGRESS => [
+                '_id' => 'ObjectId',
+                'studentId' => 'ObjectId (student profile, one row per tutorial)',
+                'tutorialId' => 'ObjectId',
+                'pairKey' => 'string (studentId:tutorialId, unique)',
+                'startedAt' => 'UTCDateTime|null',
+                'completedAt' => 'UTCDateTime|null',
+                'lastVisitedModuleId' => 'ObjectId|null',
+                'progressPercent' => 'int (server calculated)',
+                'status' => 'string (NOT_STARTED|IN_PROGRESS|COMPLETED)',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::STUDENT_TUTORIAL_MODULE_PROGRESS => [
+                '_id' => 'ObjectId',
+                'studentId' => 'ObjectId',
+                'tutorialId' => 'ObjectId',
+                'moduleId' => 'ObjectId',
+                'pairKey' => 'string (studentId:moduleId, unique)',
+                'completedAt' => 'UTCDateTime',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::STUDENT_EXERCISE_ATTEMPTS => [
+                '_id' => 'ObjectId',
+                'studentId' => 'ObjectId',
+                'tutorialId' => 'ObjectId',
+                'moduleId' => 'ObjectId',
+                'exerciseId' => 'ObjectId',
+                'language' => 'string',
+                'sourceCode' => 'string',
+                'status' => 'string (ATTEMPTED)',
+                'testsPassed' => 'null until an execution engine exists',
+                'testsTotal' => 'null until an execution engine exists',
+                'submittedAt' => 'UTCDateTime',
                 'createdAt' => 'UTCDateTime',
                 'updatedAt' => 'UTCDateTime',
             ],

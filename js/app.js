@@ -88,6 +88,13 @@ const NAV = [
         roles: ['admin', 'placement_officer', 'student'],
         children: [],
       },
+      {
+        group: "tutorials",
+        label: "Tutorials",
+        href: "tutorials.html",
+        roles: ['admin', 'placement_officer', 'student', 'staff'],
+        children: [],
+      },
     ],
   },
 
@@ -173,6 +180,7 @@ const PAGE_LABELS = {
   'coding.html#progress': 'Practice · Coding · Progress',
   'coding.html#manage': 'Practice · Coding · Manage',
   'certifications.html': 'Practice · Certification',
+  'tutorials.html': 'Practice · Tutorials',
 };
 
 function initials(name = '') {

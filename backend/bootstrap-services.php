@@ -87,6 +87,7 @@ function pms_load_module_controllers(string $backendDir): void
         'PMS\\Api\\JobFeedController'    => 'api/JobFeedController.php',
         'PMS\\Api\\InternalJobController' => 'api/InternalJobController.php',
         'PMS\\Api\\CertificationController' => 'api/CertificationController.php',
+        'PMS\\Api\\TutorialController' => 'api/TutorialController.php',
         'PMS\\Api\\AptitudeController'   => 'api/AptitudeController.php',
         'PMS\\Api\\CodingController'     => 'api/CodingController.php',
     ];
