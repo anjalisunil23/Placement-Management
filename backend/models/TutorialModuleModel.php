@@ -83,6 +83,14 @@ class TutorialModuleModel extends BaseModel
         return $this->findAll(['tutorialId' => $tutorialId], 500, 0, ['sortOrder' => 1]);
     }
 
+    public function countForTutorial(string $tutorialId): int
+    {
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM `tutorial_modules` WHERE `tutorial_id` = ?');
+        $stmt->execute([$tutorialId]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
     /**
      * @param array<string, mixed> $data
      * @return array<string, mixed>

@@ -47,7 +47,7 @@ final class TutorialController
     public function index(): void
     {
         $user = AuthMiddleware::authenticate();
-        Response::success($this->service->listForStudent($user));
+        Response::success($this->service->listForStudent($user, $_GET));
     }
 
     public function show(string $id): void
@@ -133,6 +133,12 @@ final class TutorialController
         $user = AuthMiddleware::authenticate();
         $this->service->deleteTutorial($user, $id);
         Response::success(null, 'Tutorial deleted.');
+    }
+
+    public function publishChecklist(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->publishChecklist($user, $id));
     }
 
     public function publish(string $id): void

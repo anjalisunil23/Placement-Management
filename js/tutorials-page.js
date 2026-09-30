@@ -15,6 +15,8 @@
     active: null,
     years: [],
     quill: null,
+    statusFilter: '',
+    publishId: '',
   };
 
   function role() {
@@ -135,15 +137,18 @@
 
   function renderTutorials() {
     const body = document.getElementById('tutorialRows');
-    if (!state.tutorials.length) {
-      body.innerHTML = '<tr><td colspan="9" class="text-muted-2 p-4">No courses yet.</td></tr>';
+    const rows = state.tutorials.filter((row) => !state.statusFilter || row.status === state.statusFilter);
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="9" class="text-muted-2 p-4">No courses in this list. Create a course to begin.</td></tr>';
       return;
     }
-    body.innerHTML = state.tutorials.map((row) => {
+    body.innerHTML = rows.map((row) => {
       const status = row.status || 'draft';
       const publish = status === 'published'
         ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-unpublish="${esc(row.id)}">Unpublish</button>`
         : `<button type="button" class="btn btn-sm btn-outline-primary" data-publish="${esc(row.id)}">Publish</button>`;
+      const edit = status === 'published' ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-edit-tutorial="${esc(row.id)}">Edit</button>`;
+      const manage = `<button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">${status === 'published' ? 'Manage' : 'Manage Modules'}</button>`;
       const remove = status === 'published'
         ? ''
         : `<button type="button" class="btn btn-sm btn-outline-danger" data-delete-tutorial="${esc(row.id)}">Delete</button>`;
@@ -159,8 +164,8 @@
         <td>${esc(updated)}</td>
         <td class="text-nowrap">
           <div class="d-flex flex-wrap gap-1 justify-content-end">
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-tutorial="${esc(row.id)}">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">Manage Modules</button>
+            ${edit}
+            ${manage}
             <button type="button" class="btn btn-sm btn-outline-secondary" data-preview="${esc(row.id)}">Preview</button>
             ${publish}
             ${remove}
@@ -251,10 +256,25 @@
   }
 
   async function publishTutorial(id, publish) {
+    if (!publish) {
+      try {
+        await call(`/tutorials/manage/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} });
+        toast('Tutorial unpublished.', 'success');
+        await refreshList();
+      } catch (err) {
+        fail(err);
+      }
+      return;
+    }
     try {
-      await call(`/tutorials/manage/${encodeURIComponent(id)}/${publish ? 'publish' : 'unpublish'}`, { method: 'POST', body: {} });
-      toast(publish ? 'Tutorial published.' : 'Tutorial unpublished.', 'success');
-      await refreshList();
+      const check = await call(`/tutorials/manage/${encodeURIComponent(id)}/checklist`);
+      state.publishId = id;
+      document.getElementById('publishChecks').innerHTML = (check.checks || []).map((item) => (
+        `<div>${item.ok ? '✓' : '✕'} ${esc(item.label)}</div>`
+      )).join('');
+      document.getElementById('publishWarnings').innerHTML = (check.warnings || []).map((item) => `<div>⚠ ${esc(item)}</div>`).join('');
+      document.getElementById('confirmPublishBtn').disabled = !check.canPublish;
+      modal('publishModal').show();
     } catch (err) {
       fail(err);
     }
@@ -740,6 +760,27 @@
     document.getElementById('addCategoryBtn').addEventListener('click', () => modal('categoryModal').show());
     document.getElementById('addModuleBtn').addEventListener('click', () => openModule(''));
     document.getElementById('addTestCaseBtn').addEventListener('click', addTestCase);
+    document.getElementById('confirmPublishBtn').addEventListener('click', async () => {
+      if (!state.publishId) return;
+      try {
+        await call(`/tutorials/manage/${encodeURIComponent(state.publishId)}/publish`, { method: 'POST', body: {} });
+        modal('publishModal').hide();
+        toast('Course published.', 'success');
+        await refreshList();
+      } catch (err) {
+        fail(err);
+      }
+    });
+    document.querySelectorAll('[data-staff-status]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.statusFilter = btn.getAttribute('data-staff-status') || '';
+        document.querySelectorAll('[data-staff-status]').forEach((item) => {
+          item.classList.toggle('btn-primary', item === btn);
+          item.classList.toggle('btn-outline-secondary', item !== btn);
+        });
+        renderTutorials();
+      });
+    });
     document.getElementById('backFromPreview').addEventListener('click', () => {
       document.getElementById('previewView').classList.add('d-none');
       document.getElementById('tutorialListView').classList.remove('d-none');
@@ -787,13 +828,7 @@
   }
 
   function filteredTutorials() {
-    const q = learn.query.trim().toLowerCase();
-    return learn.tutorials.filter((row) => {
-      if (learn.categoryId && (row.category && row.category.id) !== learn.categoryId) return false;
-      if (!q) return true;
-      const hay = `${row.title || ''} ${row.topic || ''} ${row.description || ''} ${row.category ? row.category.name : ''}`.toLowerCase();
-      return hay.includes(q);
-    });
+    return learn.tutorials;
   }
 
   function renderStudentFilters() {
@@ -806,7 +841,7 @@
       btn.addEventListener('click', () => {
         learn.categoryId = btn.getAttribute('data-student-category') || '';
         renderStudentFilters();
-        renderStudentCards();
+        loadStudentList().catch(fail);
       });
     });
   }
@@ -815,11 +850,10 @@
     const root = document.getElementById('studentTutorialCards');
     const rows = filteredTutorials();
     if (!learn.tutorials.length) {
-      root.innerHTML = '<div class="col-12"><div class="card-surface p-4 text-muted-2">No tutorials are available for you yet.</div></div>';
-      return;
-    }
-    if (!rows.length) {
-      root.innerHTML = '<div class="col-12"><div class="card-surface p-4 text-muted-2">No tutorials match this search.</div></div>';
+      const message = learn.query || learn.categoryId
+        ? 'No tutorials match this search.'
+        : 'No tutorials are currently available for your department and passing year.';
+      root.innerHTML = `<div class="col-12"><div class="card-surface p-4 text-muted-2">${esc(message)}</div></div>`;
       return;
     }
     root.innerHTML = rows.map((row) => {
@@ -835,8 +869,8 @@
         <div class="small fw-semibold mb-2">${esc(row.topic || '')}</div>
         <p class="small text-muted-2 flex-grow-1">${esc(row.description || '')}</p>
         <div class="small mb-2">${esc(count)} modules · ${esc(row.exerciseCount || 0)} exercises</div>
-        <div class="small mb-3">${esc(learn.progressById[row.id] ? `${learn.progressById[row.id].progressPercent || 0}% complete` : 'Not started')}</div>
-        <button type="button" class="btn btn-primary" data-start-tutorial="${esc(row.id)}">${esc(learn.continueIds[row.id] ? 'Continue Learning' : 'Start Learning')}</button>
+        <div class="small mb-3">${esc(row.progress && row.progress.status !== 'NOT_STARTED' ? `${row.progress.progressPercent || 0}% complete` : 'Not started')}</div>
+        <button type="button" class="btn btn-primary" data-start-tutorial="${esc(row.id)}">${esc(row.progress && row.progress.lastVisitedModuleId ? 'Continue Learning' : 'Start Course')}</button>
       </div></div>`;
     }).join('');
     root.querySelectorAll('[data-start-tutorial]').forEach((btn) => {
@@ -848,21 +882,15 @@
     const root = document.getElementById('studentTutorialCards');
     root.innerHTML = '<div class="col-12"><div class="card-surface p-4 text-muted-2">Loading tutorials…</div></div>';
     try {
+      const params = new URLSearchParams();
+      if (learn.query.trim()) params.set('search', learn.query.trim());
+      if (learn.categoryId) params.set('category', learn.categoryId);
       const [tutorials, categories] = await Promise.all([
-        call('/tutorials'),
+        call('/tutorials' + (params.toString() ? `?${params}` : '')),
         call('/tutorial-categories'),
       ]);
       learn.tutorials = tutorials || [];
       learn.categories = categories || [];
-      learn.continueIds = {};
-      learn.progressById = {};
-      await Promise.all(learn.tutorials.map(async (row) => {
-        try {
-          const progress = await call(`/tutorials/${encodeURIComponent(row.id)}/progress`);
-          learn.progressById[row.id] = progress;
-          if (progress && progress.lastVisitedModuleId && progress.status !== 'NOT_STARTED') learn.continueIds[row.id] = true;
-        } catch { /* listing still works if one progress read fails */ }
-      }));
       renderStudentFilters();
       renderStudentCards();
     } catch (err) {
@@ -889,7 +917,12 @@
       document.getElementById('overviewExercises').textContent = `${detail.exerciseCount || 0} exercises`;
       document.getElementById('overviewProgress').textContent = progress.completed
         ? 'Course complete'
-        : `Progress: ${progress.progressPercent || 0}% · ${progress.completedModules || 0} / ${progress.totalModules || 0} modules`;
+        : `Progress: ${progress.progressPercent || 0}% · ${progress.completedModules || 0} of ${progress.totalModules || 0} modules completed`;
+      const done = new Set(progress.completedModuleIds || []);
+      document.getElementById('overviewOutline').innerHTML = (detail.modules || []).map((module) => {
+        const mark = done.has(module.id) ? '✓' : (progress.lastVisitedModuleId === module.id ? '●' : '○');
+        return `<div>${mark} ${esc(module.title)}</div>`;
+      }).join('') || '<p class="text-muted-2 mb-0">This course has no modules yet.</p>';
       const button = document.getElementById('overviewContinue');
       button.textContent = progress.completed ? 'Review course' : (progress.lastVisitedModuleId ? 'Continue Learning' : 'Start Learning');
       showStudentScreen('overview');
@@ -1045,7 +1078,8 @@
   function bindStudent() {
     document.getElementById('studentSearch').addEventListener('input', (event) => {
       learn.query = event.target.value;
-      renderStudentCards();
+      clearTimeout(learn.searchTimer);
+      learn.searchTimer = setTimeout(() => loadStudentList().catch(fail), 250);
     });
     document.getElementById('studentBackFromOverview').addEventListener('click', () => showStudentScreen('list'));
     document.getElementById('overviewContinue').addEventListener('click', () => {

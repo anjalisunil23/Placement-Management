@@ -114,6 +114,8 @@ try {
         'passingYears' => ['2027'],
     ]);
     $tutorialIds[] = $tutorial['id'];
+    $blocked = $service->publishChecklist($staff, $tutorial['id']);
+    $check($blocked['canPublish'] === false, 'a course without modules cannot be published');
     $moduleA = $service->createModule($staff, $tutorial['id'], ['title' => 'Basics', 'content' => '<p>Basics</p>']);
     $moduleB = $service->createModule($staff, $tutorial['id'], ['title' => 'Next', 'content' => '<p>Next</p>']);
     $exercise = $service->createExercise($staff, $tutorial['id'], $moduleA['id'], [
@@ -123,6 +125,10 @@ try {
         'boilerplate' => "int main(){return 0;}\n",
     ]);
     $service->publish($staff, $tutorial['id']);
+    $found = $service->listForStudent($owner, ['search' => $suffix, 'category' => $categoryId]);
+    $check(in_array($tutorial['id'], array_column($found, 'id'), true), 'search and category stay inside the authorized published list');
+    $hidden = $service->listForStudent($wrongYear, ['search' => $suffix]);
+    $check($hidden === [], 'search does not reveal a course outside the student year');
 
     $throws(fn () => $service->startProgress($wrongYear, $tutorial['id']));
     $throws(fn () => $service->progressForStudent($staff, $tutorial['id']));

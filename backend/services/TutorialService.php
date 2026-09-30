@@ -178,17 +178,58 @@ final class TutorialService
      * @param array<string, mixed> $user
      * @return array<int, array<string, mixed>>
      */
-    public function listForStudent(array $user): array
+    public function listForStudent(array $user, array $query = []): array
     {
         $student = $this->requireStudent($user);
+        $studentId = (string) ($student['_id'] ?? '');
         $departmentId = (string) ($student['departmentId'] ?? '');
         $year = self::passoutYear((string) ($student['classBatch'] ?? ''));
+        $search = strtolower(trim((string) ($query['search'] ?? '')));
+        $categoryId = trim((string) ($query['category'] ?? ''));
+        $progressByTutorial = [];
+        $completedByTutorial = [];
+        foreach ($this->moduleProgress->findAll(['studentId' => $studentId], 2000) as $row) {
+            $key = (string) ($row['tutorialId'] ?? '');
+            if ($key !== '') {
+                $completedByTutorial[$key] = ($completedByTutorial[$key] ?? 0) + 1;
+            }
+        }
+        foreach ($this->progress->findAll(['studentId' => $studentId], 500) as $row) {
+            $progressByTutorial[(string) ($row['tutorialId'] ?? '')] = $row;
+        }
         $out = [];
         foreach ($this->tutorials->listByStatus('published') as $row) {
             if (!$this->visibleToStudent($row, $departmentId, $year)) {
                 continue;
             }
-            $out[] = $this->studentTutorial($row, false);
+            $view = $this->studentTutorial($row, false);
+            if ($categoryId !== '' && (string) (($view['category']['id'] ?? '')) !== $categoryId) {
+                continue;
+            }
+            if ($search !== '') {
+                $hay = strtolower(($view['title'] ?? '') . ' ' . ($view['description'] ?? '') . ' ' . ($view['category']['name'] ?? '') . ' ' . ($view['topic'] ?? ''));
+                if (!str_contains($hay, $search)) {
+                    continue;
+                }
+            }
+            $tutorialId = (string) ($view['id'] ?? '');
+            $stored = $progressByTutorial[$tutorialId] ?? null;
+            $total = (int) ($view['moduleCount'] ?? 0);
+            $completed = min($total, (int) ($completedByTutorial[$tutorialId] ?? 0));
+            $percent = $total === 0 ? 0 : (int) round(($completed / $total) * 100);
+            $status = 'NOT_STARTED';
+            if (is_array($stored)) {
+                $status = ($stored['completedAt'] ?? null) && $total > 0 && $completed === $total ? 'COMPLETED' : 'IN_PROGRESS';
+            }
+            $view['progress'] = [
+                'status' => $status,
+                'progressPercent' => $status === 'COMPLETED' ? 100 : $percent,
+                'completedModules' => $completed,
+                'totalModules' => $total,
+                'lastVisitedModuleId' => is_array($stored) ? ($stored['lastVisitedModuleId'] ?? null) : null,
+                'completed' => $status === 'COMPLETED',
+            ];
+            $out[] = $view;
         }
 
         return $out;
@@ -393,7 +434,7 @@ final class TutorialService
         foreach ($rows as $row) {
             $view = $this->managedTutorial($row, false);
             $view['updatedAt'] = (string) ($row['updatedAt'] ?? '');
-            $view['moduleCount'] = count($this->modules->listByTutorial((string) ($row['_id'] ?? '')));
+            $view['moduleCount'] = $this->modules->countForTutorial((string) ($row['_id'] ?? ''));
             $view['exerciseCount'] = $this->exerciseCount((string) ($row['_id'] ?? ''));
             $out[] = $view;
         }
@@ -453,9 +494,6 @@ final class TutorialService
         foreach ($this->modules->listByTutorial($id) as $module) {
             $this->deleteModuleTree((string) ($module['_id'] ?? ''));
         }
-        $this->progress->deleteMany(['tutorialId' => $id]);
-        $this->moduleProgress->deleteMany(['tutorialId' => $id]);
-        $this->attempts->deleteMany(['tutorialId' => $id]);
         $this->tutorials->delete($id);
     }
 
@@ -465,12 +503,10 @@ final class TutorialService
      */
     public function publish(array $user, string $id): array
     {
-        $existing = $this->ownedTutorial($user, $id);
-        if (trim((string) ($existing['title'] ?? '')) === '' || trim((string) ($existing['description'] ?? '')) === '') {
-            throw new \InvalidArgumentException('A tutorial needs a title and description before it can be published.');
-        }
-        if ($this->categories->findById((string) ($existing['categoryId'] ?? '')) === null) {
-            throw new \InvalidArgumentException('Tutorial categoryId is required.');
+        $this->ownedTutorial($user, $id);
+        $check = $this->publishChecklist($user, $id);
+        if (!$check['canPublish']) {
+            throw new \InvalidArgumentException($check['errors'][0] ?? 'This course cannot be published yet.');
         }
         $row = $this->tutorials->updateTutorial($id, ['status' => 'published']);
         if ($row === null) {
@@ -478,6 +514,82 @@ final class TutorialService
         }
 
         return $this->managedTutorial($row, false);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array{canPublish: bool, checks: list<array{label: string, ok: bool}>, warnings: list<string>, errors: list<string>}
+     */
+    public function publishChecklist(array $user, string $id): array
+    {
+        $existing = $this->ownedTutorial($user, $id);
+        $checks = [];
+        $errors = [];
+        $warnings = [];
+        $titleOk = trim((string) ($existing['title'] ?? '')) !== '';
+        $checks[] = ['label' => 'Course title', 'ok' => $titleOk];
+        if (!$titleOk) {
+            $errors[] = 'A course title is required.';
+        }
+        $category = $this->categories->findById((string) ($existing['categoryId'] ?? ''));
+        $categoryOk = is_array($category);
+        $checks[] = ['label' => 'Category', 'ok' => $categoryOk];
+        if (!$categoryOk) {
+            $errors[] = 'Choose a valid category.';
+        }
+        $descriptionOk = trim((string) ($existing['description'] ?? '')) !== '';
+        $checks[] = ['label' => 'Description', 'ok' => $descriptionOk];
+        if (!$descriptionOk) {
+            $errors[] = 'A description is required.';
+        }
+        $visibility = (string) ($existing['visibility'] ?? '');
+        $departments = (array) ($existing['departmentIds'] ?? []);
+        $years = (array) ($existing['passingYears'] ?? []);
+        $visibilityOk = $visibility === 'all' || ($visibility === 'scoped' && ($departments !== [] || $years !== []));
+        $checks[] = ['label' => 'Visibility', 'ok' => $visibilityOk];
+        if (!$visibilityOk) {
+            $errors[] = 'Choose who can learn this course.';
+        }
+        $modules = $this->modules->listByTutorial($id);
+        $moduleOk = $modules !== [];
+        $checks[] = ['label' => count($modules) . ' modules', 'ok' => $moduleOk];
+        if (!$moduleOk) {
+            $errors[] = 'Add at least one module before publishing.';
+        }
+        $orderOk = true;
+        $seen = [];
+        foreach ($modules as $module) {
+            $order = (int) ($module['sortOrder'] ?? 0);
+            $moduleTitle = trim((string) ($module['title'] ?? ''));
+            if ($moduleTitle === '' || $order < 1 || isset($seen[$order])) {
+                $orderOk = false;
+            }
+            $seen[$order] = true;
+            $exerciseRows = $this->exercises->listByModule((string) ($module['_id'] ?? ''));
+            if ($exerciseRows === []) {
+                $warnings[] = ($moduleTitle !== '' ? $moduleTitle : 'A module') . ' has no exercise.';
+            }
+            foreach ($exerciseRows as $exercise) {
+                $exerciseTitle = trim((string) ($exercise['title'] ?? ''));
+                $instructions = trim(strip_tags((string) ($exercise['instructions'] ?? '')));
+                $language = trim((string) ($exercise['language'] ?? ''));
+                if ($exerciseTitle === '' || $instructions === '' || $language === '') {
+                    $errors[] = 'Every exercise needs a title, instructions, and language.';
+                    break 2;
+                }
+            }
+        }
+        $checks[] = ['label' => 'Module order', 'ok' => $moduleOk && $orderOk];
+        if ($moduleOk && !$orderOk) {
+            $errors[] = 'Each module needs a title and a unique order.';
+        }
+
+        return [
+            'canPublish' => $errors === [],
+            'checks' => $checks,
+            'warnings' => $warnings,
+            'errors' => $errors,
+        ];
     }
 
     /**
@@ -1161,7 +1273,6 @@ final class TutorialService
         foreach ($this->exercises->listByModule($moduleId) as $exercise) {
             $this->deleteExerciseTree((string) ($exercise['_id'] ?? ''));
         }
-        $this->moduleProgress->deleteMany(['moduleId' => $moduleId]);
         $this->modules->delete($moduleId);
     }
 
@@ -1170,18 +1281,12 @@ final class TutorialService
         foreach ($this->testCases->listByExercise($exerciseId) as $case) {
             $this->testCases->delete((string) ($case['_id'] ?? ''));
         }
-        $this->attempts->deleteMany(['exerciseId' => $exerciseId]);
         $this->exercises->delete($exerciseId);
     }
 
     private function exerciseCount(string $tutorialId): int
     {
-        $count = 0;
-        foreach ($this->modules->listByTutorial($tutorialId) as $module) {
-            $count += count($this->exercises->listByModule((string) ($module['_id'] ?? '')));
-        }
-
-        return $count;
+        return $this->exercises->countForTutorial($tutorialId);
     }
 
     private function nextModuleOrder(string $tutorialId): int
@@ -1259,7 +1364,7 @@ final class TutorialService
             $view['moduleCount'] = count($view['modules']);
             $view['exerciseCount'] = $this->exerciseCount((string) ($row['_id'] ?? ''));
         } else {
-            $view['moduleCount'] = count($this->modules->listByTutorial((string) ($row['_id'] ?? '')));
+            $view['moduleCount'] = $this->modules->countForTutorial((string) ($row['_id'] ?? ''));
             $view['exerciseCount'] = $this->exerciseCount((string) ($row['_id'] ?? ''));
         }
 

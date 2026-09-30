@@ -613,6 +613,7 @@ $routes = [
     ['DELETE', '/tutorial-categories/{id}',         [TutorialController::class, 'deleteCategory']],
     ['GET',    '/tutorials/manage',                 [TutorialController::class, 'manageIndex']],
     ['POST',   '/tutorials/manage',                 [TutorialController::class, 'manageCreate']],
+    ['GET',    '/tutorials/manage/{id}/checklist', [TutorialController::class, 'publishChecklist']],
     ['POST',   '/tutorials/manage/{id}/publish',    [TutorialController::class, 'publish']],
     ['POST',   '/tutorials/manage/{id}/unpublish',  [TutorialController::class, 'unpublish']],
     ['POST',   '/tutorials/manage/{tutorialId}/modules/reorder', [TutorialController::class, 'reorderModules']],
