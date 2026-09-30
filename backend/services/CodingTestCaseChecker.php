@@ -36,6 +36,9 @@ final class CodingTestCaseChecker
         if ($status === 'Memory Limit Exceeded') {
             return 'Memory Limit Exceeded';
         }
+        if ($status === 'Output Limit Exceeded') {
+            return 'Output Limit Exceeded';
+        }
         if ($status !== 'OK' || empty($execResult['ok'])) {
             return 'Runtime Error';
         }

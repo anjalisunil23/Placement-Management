@@ -17,8 +17,7 @@ final class PistonExecutionClient
 
     public function __construct(?string $baseUrl = null, int $timeoutSec = 25)
     {
-        // Public emkc.org Piston is whitelist-only; set CODING_PISTON_URL to a self-hosted instance.
-        $url = trim((string) ($baseUrl ?? $_ENV['CODING_PISTON_URL'] ?? ''));
+        $url = trim((string) ($baseUrl ?? CodingExecutionConfig::executionServiceUrl()));
         $this->baseUrl = rtrim($url, '/');
         $this->timeoutSec = max(5, min(60, $timeoutSec));
     }

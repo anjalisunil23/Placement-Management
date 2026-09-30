@@ -1,0 +1,25 @@
+# Self-hosted code execution (Piston) for the placement coding platform.
+# PHP backend calls CODE_EXECUTION_URL over the Docker network — do not expose publicly.
+#
+# Start: docker compose -f docker-compose.coding-exec.yml up -d
+# Health: curl http://127.0.0.1:2000/api/v2/runtimes | head
+#
+# In .env (PHP app on host):
+#   CODE_EXECUTION_URL=http://127.0.0.1:2000
+#   CODING_EXEC_MODE=remote_only
+#   CODING_REMOTE_BACKENDS=piston
+#
+# In .env (PHP app in Docker on same compose network):
+#   CODE_EXECUTION_URL=http://piston:2000
+#   CODING_EXEC_MODE=remote_only
+
+services:
+  piston:
+    image: ghcr.io/engineer-man/piston:latest
+    container_name: pms-piston
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "127.0.0.1:2000:2000"
+    # Piston runs each submission in an isolated container with no network by default.
+    # Keep this service off the public internet; only the PHP backend should reach it.

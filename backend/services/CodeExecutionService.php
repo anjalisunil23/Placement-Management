@@ -7,8 +7,9 @@ namespace PMS\Services;
 /**
  * Code execution facade for the PHP API layer.
  *
- * Student code is never compiled inside the web/FPM request: jobs run in
- * backend/coding-exec/worker.php (CLI) with CodingSandboxEngine isolation.
+ * Student code is not compiled in the PHP-FPM request when CODING_EXEC_MODE=remote_only
+ * (recommended with self-hosted Piston). Otherwise jobs may run via CLI worker +
+ * CodingSandboxEngine, then fall back to the configured execution service.
  */
 final class CodeExecutionService
 {
@@ -24,6 +25,22 @@ final class CodeExecutionService
         $limits = CodingExecutionConfig::limits($timeLimitMs);
         $source = substr($source, 0, $limits['max_source_bytes']);
         $stdin = substr($stdin, 0, $limits['max_io_bytes']);
+
+        if ($this->remoteOnly()) {
+            $remote = $this->runRemoteExecution($language, $source, $stdin, $timeLimitMs, $started);
+            if ($remote !== null) {
+                return $this->normalizeApiShape($remote);
+            }
+
+            return $this->failMsg(
+                'Runtime Error',
+                $this->sanitizeStudentMessage(
+                    'Code execution service unavailable. '
+                    . trim($this->lastRemoteErrors ?: 'Configure CODE_EXECUTION_URL to your self-hosted Piston instance.')
+                ),
+                $started
+            );
+        }
 
         $job = [
             'language' => $language,
@@ -69,6 +86,16 @@ final class CodeExecutionService
         return $this->maybeRemote($language, $source, $stdin, $timeLimitMs, $started, $fail);
     }
 
+    private function remoteOnly(): bool
+    {
+        $mode = strtolower(trim((string) ($_ENV['CODING_EXEC_MODE'] ?? '')));
+        if ($mode === 'remote_only' || $mode === 'piston_only' || $mode === 'remote') {
+            return CodingExecutionConfig::remoteExecutionConfigured();
+        }
+
+        return false;
+    }
+
     /**
      * @param array<string, mixed>|null $local
      */
@@ -85,14 +112,20 @@ final class CodeExecutionService
 
     private function useWorkerProcess(): bool
     {
-        $mode = strtolower(trim((string) ($_ENV['CODING_EXEC_MODE'] ?? 'worker_then_inline')));
+        if ($this->remoteOnly()) {
+            return false;
+        }
+        $mode = strtolower(trim((string) ($_ENV['CODING_EXEC_MODE'] ?? 'worker_then_remote')));
 
-        return $mode === 'worker' || $mode === 'worker_then_inline' || $mode === 'auto';
+        return $mode === 'worker' || $mode === 'worker_then_remote' || $mode === 'worker_then_inline' || $mode === 'auto';
     }
 
     private function useInlineSandbox(): bool
     {
-        $mode = strtolower(trim((string) ($_ENV['CODING_EXEC_MODE'] ?? 'worker_then_inline')));
+        if ($this->remoteOnly()) {
+            return false;
+        }
+        $mode = strtolower(trim((string) ($_ENV['CODING_EXEC_MODE'] ?? 'worker_then_remote')));
 
         return $mode === 'inline' || $mode === 'worker_then_inline' || $mode === 'auto';
     }
@@ -110,8 +143,8 @@ final class CodeExecutionService
             $engine = new CodingSandboxEngine();
 
             return $this->normalizeApiShape($engine->execute($job));
-        } catch (\Throwable $e) {
-            return $this->failMsg('Runtime Error', 'Sandbox execution failed: ' . $e->getMessage(), microtime(true));
+        } catch (\Throwable) {
+            return $this->failMsg('Runtime Error', 'Sandbox execution failed.', microtime(true));
         }
     }
 
@@ -260,17 +293,46 @@ final class CodeExecutionService
      */
     private function normalizeApiShape(array $result): array
     {
+        $stdout = (string) ($result['stdout'] ?? '');
+        $maxIo = CodingExecutionConfig::limits()['max_io_bytes'];
+        if (strlen($stdout) > $maxIo) {
+            return [
+                'ok' => false,
+                'status' => 'Output Limit Exceeded',
+                'stdout' => substr($stdout, 0, $maxIo),
+                'stderr' => 'Output Limit Exceeded',
+                'timedOut' => false,
+                'durationMs' => (int) ($result['durationMs'] ?? 0),
+                'exit_code' => 1,
+                'memory_used_kb' => (int) ($result['memory_used_kb'] ?? 0),
+                'execution_time' => round(((int) ($result['durationMs'] ?? 0)) / 1000, 3),
+            ];
+        }
+
         return [
             'ok' => ($result['ok'] ?? false) === true,
             'status' => (string) ($result['status'] ?? 'Runtime Error'),
-            'stdout' => (string) ($result['stdout'] ?? ''),
-            'stderr' => (string) ($result['stderr'] ?? ''),
+            'stdout' => $stdout,
+            'stderr' => $this->sanitizeStudentMessage((string) ($result['stderr'] ?? '')),
             'timedOut' => !empty($result['timedOut']),
             'durationMs' => (int) ($result['durationMs'] ?? 0),
             'exit_code' => (int) ($result['exit_code'] ?? 0),
             'memory_used_kb' => (int) ($result['memory_used_kb'] ?? 0),
             'execution_time' => round(((int) ($result['durationMs'] ?? 0)) / 1000, 3),
         ];
+    }
+
+    private function sanitizeStudentMessage(string $message): string
+    {
+        $message = trim($message);
+        if ($message === '') {
+            return '';
+        }
+        if (preg_match('/\b(\/var\/|\/home\/|C:\\\\|\.env|mongodb|mysql|password|secret|stack trace)/i', $message)) {
+            return 'Runtime Error';
+        }
+
+        return $message;
     }
 
     /**
@@ -288,7 +350,8 @@ final class CodeExecutionService
             || str_contains($stderr, 'failed to start')
             || str_contains($stderr, 'sandbox worker')
             || str_contains($stderr, 'execution host')
-            || str_contains($stderr, 'proc_open');
+            || str_contains($stderr, 'proc_open')
+            || str_contains($stderr, 'compiler');
     }
 
     /**
@@ -309,15 +372,15 @@ final class CodeExecutionService
         if (!$this->remoteFallbackEnabled()) {
             return $local;
         }
-        $remote = $this->runRemoteChain($language, $source, $stdin, $timeLimitMs, $started);
+        $remote = $this->runRemoteExecution($language, $source, $stdin, $timeLimitMs, $started);
         if ($remote !== null) {
             return $this->normalizeApiShape($remote);
         }
 
         $detail = trim($this->lastRemoteErrors);
         $hint = $detail !== ''
-            ? ' Remote runners: ' . $detail
-            : ' Install compilers on the execution host or set CODING_REMOTE_BACKENDS=wandbox for optional API fallback.';
+            ? ' Execution service: ' . $this->sanitizeStudentMessage($detail)
+            : ' Set CODE_EXECUTION_URL to your self-hosted Piston instance.';
 
         return $this->failMsg(
             'Runtime Error',
@@ -327,7 +390,7 @@ final class CodeExecutionService
     }
 
     /** @return array<string, mixed>|null */
-    private function runRemoteChain(
+    private function runRemoteExecution(
         string $language,
         string $source,
         string $stdin,
@@ -335,53 +398,27 @@ final class CodeExecutionService
         float $started
     ): ?array {
         $this->lastRemoteErrors = '';
-        $errors = [];
+        if (!CodingExecutionConfig::remoteExecutionConfigured()) {
+            $this->lastRemoteErrors = 'CODE_EXECUTION_URL (or CODING_PISTON_URL) is not configured.';
+
+            return null;
+        }
+
         $backends = CodingExecutionConfig::limits($timeLimitMs)['remote_backends'];
-        if ($this->wandboxEnabled() && !in_array('wandbox', $backends, true)) {
-            array_unshift($backends, 'wandbox');
+        if ($backends === [] || !in_array('piston', $backends, true)) {
+            $this->lastRemoteErrors = 'Remote execution disabled (CODING_REMOTE_BACKENDS=none).';
+
+            return null;
         }
-        foreach ($backends as $backend) {
-            if ($backend === 'wandbox') {
-                if (!$this->wandboxEnabled()) {
-                    continue;
-                }
-                $client = new WandboxExecutionClient();
-                $result = $client->run($language, $source, $stdin, $timeLimitMs, $started);
-                if ($result !== null) {
-                    return $result;
-                }
-                $err = trim($client->lastError());
-                if ($err !== '') {
-                    $errors[] = 'Wandbox: ' . $err;
-                }
-                continue;
-            }
-            if ($backend === 'piston') {
-                $pistonUrl = trim((string) ($_ENV['CODING_PISTON_URL'] ?? ''));
-                if ($pistonUrl === '' || str_contains(strtolower($pistonUrl), 'emkc.org')) {
-                    $errors[] = 'Piston: skipped (use self-hosted CODING_PISTON_URL).';
-                    continue;
-                }
-                $client = new PistonExecutionClient($pistonUrl);
-                $result = $client->run($language, $source, $stdin, $timeLimitMs, $started);
-                if ($result !== null) {
-                    return $result;
-                }
-                $err = trim($client->lastError());
-                if ($err !== '') {
-                    $errors[] = 'Piston: ' . $err;
-                }
-            }
+
+        $client = new PistonExecutionClient(CodingExecutionConfig::executionServiceUrl());
+        $result = $client->run($language, $source, $stdin, $timeLimitMs, $started);
+        if ($result !== null) {
+            return $result;
         }
-        $this->lastRemoteErrors = implode(' | ', $errors);
+        $this->lastRemoteErrors = trim($client->lastError()) ?: 'Execution service did not respond.';
 
         return null;
-    }
-
-    private function wandboxEnabled(): bool
-    {
-        $flag = strtolower(trim((string) ($_ENV['CODING_WANDBOX_ENABLED'] ?? 'true')));
-        return $flag !== 'false' && $flag !== '0' && $flag !== 'off';
     }
 
     private function remoteFallbackEnabled(): bool
@@ -390,11 +427,14 @@ final class CodeExecutionService
         if ($mode === 'local' || $mode === 'local_only') {
             return false;
         }
+        if (!CodingExecutionConfig::remoteExecutionConfigured()) {
+            return false;
+        }
         $backends = CodingExecutionConfig::limits()['remote_backends'];
         if ($backends === []) {
             return false;
         }
-        $flag = trim((string) ($_ENV['CODING_PISTON_FALLBACK'] ?? 'true'));
+        $flag = trim((string) ($_ENV['CODING_REMOTE_FALLBACK'] ?? $_ENV['CODING_PISTON_FALLBACK'] ?? 'true'));
         if ($flag === '') {
             return true;
         }
@@ -409,7 +449,7 @@ final class CodeExecutionService
             'ok' => false,
             'status' => $status,
             'stdout' => '',
-            'stderr' => $message,
+            'stderr' => $this->sanitizeStudentMessage($message),
             'timedOut' => false,
             'durationMs' => (int) round((microtime(true) - $started) * 1000),
             'exit_code' => 1,

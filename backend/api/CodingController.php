@@ -358,7 +358,7 @@ final class CodingController
         $runner = new CodeExecutionService();
         $result = $runner->run($language, $source, $stdin, $timeLimitMs);
         if (is_array($result)) {
-            $result['execBackend'] = 'wandbox-fallback-v1';
+            $result['execBackend'] = 'self-hosted-piston-v1';
         }
         Response::success($result);
     }
