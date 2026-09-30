@@ -26,8 +26,12 @@ final class AesSyllabusCipher
             0,
             self::iv()
         );
-
-        return is_string($encoded) ? $encoded : '';
+        if (!is_string($encoded) || $encoded === '') {
+            return '';
+        }
+        // syllabusDownload.php decrypts with openssl_decrypt(base64_decode($id), ..., 0).
+        // openssl_encrypt(..., 0) is already base64, so the URL id is wrapped once more.
+        return base64_encode($encoded);
     }
 
     public static function decrypt(string $encoded): string
