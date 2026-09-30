@@ -4,16 +4,22 @@
 (function (global) {
   const API_ENABLED = false;
 
+  function isCompiledServerLanguage(language) {
+    const raw = String(language || '').toLowerCase().trim();
+    return raw === 'c' || raw === 'c++' || raw === 'cpp' || raw === 'java';
+  }
+
   function canServerExecute(language) {
+    if (!isCompiledServerLanguage(language) && !API_ENABLED) return false;
+    if (typeof global.api !== 'function') return false;
     try {
-      if (typeof global.api !== 'function') return false;
-      if (typeof global.Auth === 'undefined' || typeof Auth.hasRealAuth !== 'function') return false;
-      if (!Auth.hasRealAuth() || Auth.isDemo()) return false;
+      if (typeof global.Auth !== 'undefined' && typeof Auth.isDemo === 'function' && Auth.isDemo()) {
+        return false;
+      }
     } catch {
       return false;
     }
-    const lang = String(language || 'Python');
-    return lang === 'C' || lang === 'C++' || lang === 'Java' || API_ENABLED;
+    return true;
   }
   const DEFAULT_TIME_LIMIT_MS = 3000;
   const MOCK_SPIN_MS = [650, 1100];
