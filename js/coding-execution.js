@@ -178,11 +178,67 @@
     return (keywords || []).filter((token) => hay.toLowerCase().includes(String(token).toLowerCase()));
   }
 
+  function readsStdin(source, language) {
+    const s = String(source || '');
+    if (language === 'Python') return /\binput\s*\(|\bsys\.stdin\b/.test(s);
+    if (language === 'JavaScript') return /\bprompt\s*\(|\breadline\b/.test(s);
+    if (language === 'Java') return /\bScanner\b|\bSystem\.in\b/.test(s);
+    return /\bscanf\s*\(|\bcin\s*>>/.test(s);
+  }
+
+  function parsePyLiteral(token) {
+    const text = String(token || '').trim();
+    if (/^-?\d+(\.\d+)?$/.test(text)) return text;
+    const str = text.match(/^(['"])(.*)\1$/);
+    if (str) return str[2];
+    return null;
+  }
+
+  function pythonConstantStdout(source) {
+    const env = new Map();
+    const outs = [];
+    let printed = false;
+    const lines = String(source || '').split('\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i].replace(/#.*$/, '').trim();
+      if (!line || /^(import|from)\b/.test(line)) continue;
+      const assign = line.match(/^([A-Za-z_]\w*)\s*=\s*(.+)$/);
+      if (assign) {
+        const rhs = assign[2].trim();
+        if (/[=+\-*/%]/.test(rhs.replace(/^[+\-]/, ''))) return null;
+        const lit = parsePyLiteral(rhs);
+        if (lit == null) return null;
+        env.set(assign[1], lit);
+        continue;
+      }
+      const call = line.match(/^print\s*\((.*)\)\s*$/);
+      if (!call) return null;
+      const arg = call[1].trim();
+      printed = true;
+      if (!arg) {
+        outs.push('');
+        continue;
+      }
+      const lit = parsePyLiteral(arg);
+      if (lit != null) {
+        outs.push(lit);
+        continue;
+      }
+      if (/^[A-Za-z_]\w*$/.test(arg) && env.has(arg)) {
+        outs.push(env.get(arg));
+        continue;
+      }
+      return null;
+    }
+    return printed ? outs.join('\n') : null;
+  }
+
   function looksLikeSolution(source, language, keywords, starter) {
     if (isStarter(source, starter)) return false;
     const tokens = keywords || [];
     if (!tokens.length) {
-      return /print\s*\(|console\.log|cout\s*<<|printf\s*\(|System\.out/.test(source);
+      const prints = /print\s*\(|console\.log|cout\s*<<|printf\s*\(|System\.out/.test(source);
+      return prints && readsStdin(source, language);
     }
     const hits = keywordHits(source, tokens);
     return hits.length >= Math.max(1, Math.ceil(tokens.length * 0.4));
@@ -280,6 +336,19 @@
     await delay(spin);
 
     const expected = String(mock.expectedStdout ?? '');
+    if (language === 'Python') {
+      const printed = pythonConstantStdout(source);
+      if (printed != null) {
+        return {
+          ok: true,
+          status: 'OK',
+          stdout: printed,
+          stderr: '',
+          timedOut: false,
+          durationMs: nowMs() - started,
+        };
+      }
+    }
     if (looksLikeSolution(source, language, mock.keywords, mock.starterCode)) {
       return {
         ok: true,
