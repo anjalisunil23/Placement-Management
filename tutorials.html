@@ -13,8 +13,8 @@
   <div id="studentListView">
     <div class="page-header">
       <div>
-        <h1 class="page-title">Tutorials</h1>
-        <p class="page-sub mb-0">Lessons available for your department and passout year.</p>
+        <h1 class="page-title">Courses</h1>
+        <p class="page-sub mb-0">Courses available for your department and passout year.</p>
       </div>
     </div>
     <div class="d-flex flex-wrap gap-2 mb-3">
@@ -23,10 +23,25 @@
     <div id="studentCategoryFilters" class="d-flex flex-wrap gap-2 mb-3"></div>
     <div id="studentTutorialCards" class="row g-3"></div>
   </div>
+  <div id="studentOverview" class="d-none">
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="studentBackFromOverview"><i class="bi bi-arrow-left me-1"></i>Courses</button>
+    <div class="card-surface p-3 p-md-4">
+      <div class="small text-muted-2" id="overviewCategory"></div>
+      <h1 class="h3 fw-bold" id="overviewTitle"></h1>
+      <p id="overviewDescription"></p>
+      <div class="d-flex flex-wrap gap-3 small mb-3">
+        <span id="overviewModules"></span>
+        <span id="overviewExercises"></span>
+        <span id="overviewProgress"></span>
+      </div>
+      <button type="button" class="btn btn-primary" id="overviewContinue">Continue Learning</button>
+    </div>
+  </div>
   <div id="studentLearnView" class="d-none">
-    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="studentBackToList"><i class="bi bi-arrow-left me-1"></i>Tutorials</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="studentBackToList"><i class="bi bi-arrow-left me-1"></i>Course overview</button>
+    <select class="form-select mb-3 d-lg-none" id="studentModuleSelect" aria-label="Modules"></select>
     <div class="row g-3">
-      <div class="col-lg-4">
+      <div class="col-lg-3 d-none d-lg-block">
         <div class="card-surface p-3">
           <div class="small text-muted-2" id="studentTutorialMeta"></div>
           <h2 class="h5 fw-bold mt-1" id="studentTutorialHeading"></h2>
@@ -38,7 +53,7 @@
           <div id="studentModuleNav" class="d-flex flex-column gap-1"></div>
         </div>
       </div>
-      <div class="col-lg-8">
+      <div class="col-lg-9">
         <div class="card-surface p-3 p-md-4">
           <div class="small text-muted-2" id="studentModulePosition"></div>
           <h2 class="h4 fw-bold" id="studentModuleHeading">Loading…</h2>
@@ -84,10 +99,10 @@
   <div id="tutorialListView">
     <div class="page-header">
       <div>
-        <h1 class="page-title">Tutorial Management</h1>
+        <h1 class="page-title">Course Management</h1>
         <p class="page-sub mb-0">Create lessons, modules, and exercises. Students only see published tutorials.</p>
       </div>
-      <button type="button" class="btn btn-primary" id="createTutorialBtn"><i class="bi bi-plus-lg me-1"></i>Create Tutorial</button>
+      <button type="button" class="btn btn-primary" id="createTutorialBtn"><i class="bi bi-plus-lg me-1"></i>Create Course</button>
     </div>
     <div class="card-surface p-0">
       <div class="table-wrap">
@@ -100,11 +115,12 @@
               <th>Status</th>
               <th>Visibility</th>
               <th>Modules</th>
+              <th>Exercises</th>
               <th>Updated</th>
               <th></th>
             </tr>
           </thead>
-          <tbody id="tutorialRows"><tr><td colspan="8" class="text-muted-2 p-4">Loading tutorials…</td></tr></tbody>
+          <tbody id="tutorialRows"><tr><td colspan="9" class="text-muted-2 p-4">Loading tutorials…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -120,6 +136,14 @@
       <button type="button" class="btn btn-primary" id="addModuleBtn"><i class="bi bi-plus-lg me-1"></i>Add Module</button>
     </div>
     <div id="moduleList" class="d-flex flex-column gap-3"></div>
+  </div>
+  <div id="previewView" class="d-none">
+    <div class="alert alert-warning py-2">Preview. Students see this layout only after the course is published and they match its visibility.</div>
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="backFromPreview"><i class="bi bi-arrow-left me-1"></i>Courses</button>
+    <div class="row g-3">
+      <div class="col-lg-3"><div class="card-surface p-3"><div class="fw-semibold mb-2" id="previewTitle"></div><div id="previewNav" class="d-flex flex-column gap-1"></div></div></div>
+      <div class="col-lg-9"><div class="card-surface p-3"><h2 class="h5 fw-bold" id="previewModuleTitle"></h2><div id="previewContent" class="tutorial-lesson"></div><div id="previewExercises" class="mt-3"></div></div></div>
+    </div>
   </div>
 </div>
 
@@ -139,17 +163,20 @@
         </div>
         <div class="col-12"><label class="form-label" for="tutorialDescription">Description</label><textarea class="form-control" id="tutorialDescription" rows="3" required></textarea></div>
         <div class="col-12">
-          <div class="form-label">Visibility</div>
+          <div class="form-label">Who can learn this course</div>
           <div class="form-check"><input class="form-check-input" type="radio" name="tutorialVisibility" id="visibilityAll" value="all" checked/><label class="form-check-label" for="visibilityAll">All Students</label></div>
-          <div class="form-check"><input class="form-check-input" type="radio" name="tutorialVisibility" id="visibilityScoped" value="scoped"/><label class="form-check-label" for="visibilityScoped">Selected Audience</label></div>
-          <div class="form-text">Selected Audience means department match and passout-year match. It is not department or year.</div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="tutorialVisibility" id="visibilityDepartments" value="departments"/><label class="form-check-label" for="visibilityDepartments">Selected Departments</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="tutorialVisibility" id="visibilityYears" value="years"/><label class="form-check-label" for="visibilityYears">Selected Passing Years</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="tutorialVisibility" id="visibilityBoth" value="both"/><label class="form-check-label" for="visibilityBoth">Department and Passing Year</label></div>
+          <div class="form-text">Department and year together means the student must match one selected department and one selected passout year.</div>
         </div>
-        <div class="col-12 d-none" id="audienceFields">
+        <div class="col-12 d-none" id="departmentAudience">
           <label class="form-label">Departments</label>
-          <div class="form-text mb-2">The student must be in one of these departments.</div>
-          <div id="departmentChecks" class="d-flex flex-column gap-1 mb-3"></div>
+          <div id="departmentChecks" class="d-flex flex-column gap-1"></div>
+        </div>
+        <div class="col-12 d-none" id="yearAudience">
           <label class="form-label" for="yearInput">Passing years</label>
-          <div class="form-text mb-2">And the passout year from the student batch must be one of these years.</div>
+          <div class="form-text mb-2">Taken from the end year of the student batch, such as MCA2025-27-S3 → 2027.</div>
           <div class="input-group mb-2"><input class="form-control" id="yearInput" inputmode="numeric" maxlength="4" placeholder="2027"/><button class="btn btn-outline-secondary" type="button" id="addYearBtn">Add year</button></div>
           <div id="yearChips" class="d-flex flex-wrap gap-2"></div>
         </div>
@@ -231,5 +258,5 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20260930tutorials"></script>
-<script src="js/tutorials-page.js?v=20260930learn"></script>
+<script src="js/tutorials-page.js?v=20260930course"></script>
 </body></html>

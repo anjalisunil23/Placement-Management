@@ -392,6 +392,7 @@ final class TutorialService
             $view = $this->managedTutorial($row, false);
             $view['updatedAt'] = (string) ($row['updatedAt'] ?? '');
             $view['moduleCount'] = count($this->modules->listByTutorial((string) ($row['_id'] ?? '')));
+            $view['exerciseCount'] = $this->exerciseCount((string) ($row['_id'] ?? ''));
             $out[] = $view;
         }
 
@@ -926,6 +927,9 @@ final class TutorialService
                 $passingYears[$year] = $year;
             }
             $passingYears = array_values($passingYears);
+            if ($departmentIds === [] && $passingYears === []) {
+                throw new \InvalidArgumentException('Choose at least one department or passing year.');
+            }
         }
         $thumbnail = trim((string) ($input['thumbnail'] ?? ''));
         if ($thumbnail !== '' && (preg_match('#^(javascript|data):#i', $thumbnail) === 1 || strlen($thumbnail) > 500)) {
@@ -1074,6 +1078,16 @@ final class TutorialService
         $this->exercises->delete($exerciseId);
     }
 
+    private function exerciseCount(string $tutorialId): int
+    {
+        $count = 0;
+        foreach ($this->modules->listByTutorial($tutorialId) as $module) {
+            $count += count($this->exercises->listByModule((string) ($module['_id'] ?? '')));
+        }
+
+        return $count;
+    }
+
     private function nextModuleOrder(string $tutorialId): int
     {
         $max = 0;
@@ -1147,8 +1161,10 @@ final class TutorialService
                 $this->modules->listByTutorial((string) ($row['_id'] ?? ''))
             );
             $view['moduleCount'] = count($view['modules']);
+            $view['exerciseCount'] = $this->exerciseCount((string) ($row['_id'] ?? ''));
         } else {
             $view['moduleCount'] = count($this->modules->listByTutorial((string) ($row['_id'] ?? '')));
+            $view['exerciseCount'] = $this->exerciseCount((string) ($row['_id'] ?? ''));
         }
 
         return $view;

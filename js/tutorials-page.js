@@ -70,9 +70,12 @@
 
   function visibilityText(row) {
     if (row.visibility !== 'scoped') return 'All Students';
-    const departments = (row.departmentIds || []).map(departmentName).join(', ') || 'any department';
-    const years = (row.passingYears || []).join(', ') || 'any passout year';
-    return `${departments} AND ${years}`;
+    const departments = (row.departmentIds || []).map(departmentName);
+    const years = row.passingYears || [];
+    if (departments.length && years.length) return `${departments.join(', ')} AND ${years.join(', ')}`;
+    if (departments.length) return departments.join(', ');
+    if (years.length) return years.join(', ');
+    return 'Selected audience';
   }
 
   async function loadCategories() {
@@ -118,15 +121,21 @@
     });
   }
 
+  function visibilityMode() {
+    const picked = document.querySelector('input[name="tutorialVisibility"]:checked');
+    return picked ? picked.value : 'all';
+  }
+
   function syncAudience() {
-    const scoped = document.getElementById('visibilityScoped').checked;
-    document.getElementById('audienceFields').classList.toggle('d-none', !scoped);
+    const mode = visibilityMode();
+    document.getElementById('departmentAudience').classList.toggle('d-none', mode !== 'departments' && mode !== 'both');
+    document.getElementById('yearAudience').classList.toggle('d-none', mode !== 'years' && mode !== 'both');
   }
 
   function renderTutorials() {
     const body = document.getElementById('tutorialRows');
     if (!state.tutorials.length) {
-      body.innerHTML = '<tr><td colspan="8" class="text-muted-2 p-4">No tutorials yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" class="text-muted-2 p-4">No courses yet.</td></tr>';
       return;
     }
     body.innerHTML = state.tutorials.map((row) => {
@@ -145,11 +154,13 @@
         <td>${statusBadge(status)}</td>
         <td>${esc(visibilityText(row))}</td>
         <td>${esc(row.moduleCount ?? 0)}</td>
+        <td>${esc(row.exerciseCount ?? 0)}</td>
         <td>${esc(updated)}</td>
         <td class="text-nowrap">
           <div class="d-flex flex-wrap gap-1 justify-content-end">
             <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-tutorial="${esc(row.id)}">Edit</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">Manage Modules</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-preview="${esc(row.id)}">Preview</button>
             ${publish}
             ${remove}
           </div>
@@ -160,6 +171,7 @@
     body.querySelectorAll('[data-modules]').forEach((btn) => btn.addEventListener('click', () => openModules(btn.getAttribute('data-modules'))));
     body.querySelectorAll('[data-publish]').forEach((btn) => btn.addEventListener('click', () => publishTutorial(btn.getAttribute('data-publish'), true)));
     body.querySelectorAll('[data-unpublish]').forEach((btn) => btn.addEventListener('click', () => publishTutorial(btn.getAttribute('data-unpublish'), false)));
+    body.querySelectorAll('[data-preview]').forEach((btn) => btn.addEventListener('click', () => openPreview(btn.getAttribute('data-preview'))));
     body.querySelectorAll('[data-delete-tutorial]').forEach((btn) => btn.addEventListener('click', () => deleteTutorial(btn.getAttribute('data-delete-tutorial'))));
   }
 
@@ -169,7 +181,7 @@
   }
 
   function blankTutorialForm() {
-    document.getElementById('tutorialModalTitle').textContent = 'Create Tutorial';
+    document.getElementById('tutorialModalTitle').textContent = 'Create Course';
     document.getElementById('tutorialForm').reset();
     document.getElementById('tutorialId').value = '';
     document.getElementById('visibilityAll').checked = true;
@@ -184,13 +196,16 @@
       const row = id ? await call(`/tutorials/manage/${encodeURIComponent(id)}`) : null;
       blankTutorialForm();
       if (row) {
-        document.getElementById('tutorialModalTitle').textContent = 'Edit Tutorial';
+        document.getElementById('tutorialModalTitle').textContent = 'Edit Course';
         document.getElementById('tutorialId').value = row.id;
         document.getElementById('tutorialTitle').value = row.title || '';
         document.getElementById('tutorialTopic').value = row.topic || '';
         document.getElementById('tutorialDescription').value = row.description || '';
         document.getElementById('tutorialCategory').value = row.categoryId || '';
-        if (row.visibility === 'scoped') document.getElementById('visibilityScoped').checked = true;
+        const hasDepartments = (row.departmentIds || []).length > 0;
+        const hasYears = (row.passingYears || []).length > 0;
+        const mode = row.visibility !== 'scoped' ? 'visibilityAll' : (hasDepartments && hasYears ? 'visibilityBoth' : (hasDepartments ? 'visibilityDepartments' : 'visibilityYears'));
+        document.getElementById(mode).checked = true;
         setDepartments(row.departmentIds || []);
         state.years = [...(row.passingYears || [])];
         renderYears();
@@ -205,21 +220,29 @@
   async function saveTutorial(event) {
     event.preventDefault();
     const id = document.getElementById('tutorialId').value;
-    const visibility = document.getElementById('visibilityScoped').checked ? 'scoped' : 'all';
+    const mode = visibilityMode();
+    if ((mode === 'departments' || mode === 'both') && !selectedDepartments().length) {
+      toast('Choose at least one department.', 'error');
+      return;
+    }
+    if ((mode === 'years' || mode === 'both') && !state.years.length) {
+      toast('Add at least one passing year.', 'error');
+      return;
+    }
     const body = {
       title: document.getElementById('tutorialTitle').value.trim(),
       categoryId: document.getElementById('tutorialCategory').value,
       topic: document.getElementById('tutorialTopic').value.trim(),
       description: document.getElementById('tutorialDescription').value.trim(),
-      visibility,
-      departmentIds: visibility === 'scoped' ? selectedDepartments() : [],
-      passingYears: visibility === 'scoped' ? state.years : [],
+      visibility: mode === 'all' ? 'all' : 'scoped',
+      departmentIds: mode === 'departments' || mode === 'both' ? selectedDepartments() : [],
+      passingYears: mode === 'years' || mode === 'both' ? state.years : [],
     };
     try {
       if (id) await call(`/tutorials/manage/${encodeURIComponent(id)}`, { method: 'PUT', body });
       else await call('/tutorials/manage', { method: 'POST', body });
       modal('tutorialModal').hide();
-      toast(id ? 'Tutorial updated.' : 'Tutorial created.', 'success');
+      toast(id ? 'Course updated.' : 'Course created.', 'success');
       await refreshList();
     } catch (err) {
       fail(err);
@@ -270,6 +293,47 @@
   function showModules(show) {
     document.getElementById('tutorialListView').classList.toggle('d-none', show);
     document.getElementById('moduleView').classList.toggle('d-none', !show);
+    document.getElementById('previewView').classList.add('d-none');
+  }
+
+  async function openPreview(id) {
+    try {
+      const course = await call(`/tutorials/manage/${encodeURIComponent(id)}`);
+      state.preview = course;
+      document.getElementById('tutorialListView').classList.add('d-none');
+      document.getElementById('moduleView').classList.add('d-none');
+      document.getElementById('previewView').classList.remove('d-none');
+      document.getElementById('previewTitle').textContent = course.title || 'Preview';
+      renderPreview(0);
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  function renderPreview(index) {
+    const course = state.preview;
+    const modules = (course && course.modules) || [];
+    document.getElementById('previewNav').innerHTML = modules.map((module, i) => (
+      `<button type="button" class="btn btn-sm text-start ${i === index ? 'btn-primary' : 'btn-outline-secondary'}" data-preview-module="${i}">${esc(module.title)}</button>`
+    )).join('') || '<p class="text-muted-2 mb-0">This course has no modules yet.</p>';
+    document.querySelectorAll('[data-preview-module]').forEach((btn) => {
+      btn.addEventListener('click', () => renderPreview(Number(btn.getAttribute('data-preview-module'))));
+    });
+    const module = modules[index];
+    if (!module) {
+      document.getElementById('previewModuleTitle').textContent = 'No modules yet';
+      document.getElementById('previewContent').textContent = 'Add a module before students can learn this course.';
+      document.getElementById('previewExercises').innerHTML = '';
+      return;
+    }
+    document.getElementById('previewModuleTitle').textContent = module.title || '';
+    if (module.content) setLessonHtml(document.getElementById('previewContent'), module.content);
+    else document.getElementById('previewContent').textContent = 'This module has no lesson content yet.';
+    const exercises = module.exercises || [];
+    document.getElementById('previewExercises').innerHTML = exercises.length ? exercises.map((exercise) => {
+      const samples = (exercise.testCases || []).filter((item) => item.sample);
+      return `<div class="border rounded p-3 mb-2"><div class="fw-semibold">Challenge: ${esc(exercise.title)}</div><pre class="mt-2 mb-2">${esc(exercise.boilerplate || '')}</pre>${samples.map((item) => `<div class="small"><div>Input</div><pre>${esc(item.stdin)}</pre><div>Expected output</div><pre>${esc(item.expectedOutput)}</pre></div>`).join('') || '<p class="small text-muted-2 mb-0">No public sample tests.</p>'}</div>`;
+    }).join('') : '<p class="text-muted-2 mb-0">This module has no exercises.</p>';
   }
 
   async function openModules(id) {
@@ -608,6 +672,10 @@
     document.getElementById('addCategoryBtn').addEventListener('click', () => modal('categoryModal').show());
     document.getElementById('addModuleBtn').addEventListener('click', () => openModule(''));
     document.getElementById('addTestCaseBtn').addEventListener('click', addTestCase);
+    document.getElementById('backFromPreview').addEventListener('click', () => {
+      document.getElementById('previewView').classList.add('d-none');
+      document.getElementById('tutorialListView').classList.remove('d-none');
+    });
     document.getElementById('backToTutorials').addEventListener('click', async () => {
       showModules(false);
       try { await refreshList(); } catch (err) { fail(err); }
@@ -634,6 +702,7 @@
     moduleIndex: 0,
     module: null,
     drafts: {},
+    progressById: {},
     continueIds: {},
     progress: null,
   };
@@ -697,12 +766,13 @@
         <h2 class="h5 fw-bold mb-1">${esc(row.title)}</h2>
         <div class="small fw-semibold mb-2">${esc(row.topic || '')}</div>
         <p class="small text-muted-2 flex-grow-1">${esc(row.description || '')}</p>
-        <div class="small mb-3">${esc(count)} module${count === 1 ? '' : 's'}</div>
+        <div class="small mb-2">${esc(count)} modules · ${esc(row.exerciseCount || 0)} exercises</div>
+        <div class="small mb-3">${esc(learn.progressById[row.id] ? `${learn.progressById[row.id].progressPercent || 0}% complete` : 'Not started')}</div>
         <button type="button" class="btn btn-primary" data-start-tutorial="${esc(row.id)}">${esc(learn.continueIds[row.id] ? 'Continue Learning' : 'Start Learning')}</button>
       </div></div>`;
     }).join('');
     root.querySelectorAll('[data-start-tutorial]').forEach((btn) => {
-      btn.addEventListener('click', () => openStudentTutorial(btn.getAttribute('data-start-tutorial')));
+      btn.addEventListener('click', () => openOverview(btn.getAttribute('data-start-tutorial')));
     });
   }
 
@@ -717,10 +787,12 @@
       learn.tutorials = tutorials || [];
       learn.categories = categories || [];
       learn.continueIds = {};
+      learn.progressById = {};
       await Promise.all(learn.tutorials.map(async (row) => {
         try {
           const progress = await call(`/tutorials/${encodeURIComponent(row.id)}/progress`);
-          if (progress && progress.status === 'IN_PROGRESS' && progress.lastVisitedModuleId) learn.continueIds[row.id] = true;
+          learn.progressById[row.id] = progress;
+          if (progress && progress.lastVisitedModuleId && progress.status !== 'NOT_STARTED') learn.continueIds[row.id] = true;
         } catch { /* listing still works if one progress read fails */ }
       }));
       renderStudentFilters();
@@ -730,9 +802,32 @@
     }
   }
 
-  function showStudentLearn(open) {
-    document.getElementById('studentListView').classList.toggle('d-none', open);
-    document.getElementById('studentLearnView').classList.toggle('d-none', !open);
+  function showStudentScreen(name) {
+    document.getElementById('studentListView').classList.toggle('d-none', name !== 'list');
+    document.getElementById('studentOverview').classList.toggle('d-none', name !== 'overview');
+    document.getElementById('studentLearnView').classList.toggle('d-none', name !== 'learn');
+  }
+
+  async function openOverview(id) {
+    try {
+      const detail = await call(`/tutorials/${encodeURIComponent(id)}`);
+      const progress = await call(`/tutorials/${encodeURIComponent(id)}/progress`);
+      learn.detail = detail;
+      learn.progress = progress;
+      document.getElementById('overviewCategory').textContent = detail.category ? detail.category.name : '';
+      document.getElementById('overviewTitle').textContent = detail.title || '';
+      document.getElementById('overviewDescription').textContent = detail.description || '';
+      document.getElementById('overviewModules').textContent = `${detail.moduleCount || (detail.modules || []).length} modules`;
+      document.getElementById('overviewExercises').textContent = `${detail.exerciseCount || 0} exercises`;
+      document.getElementById('overviewProgress').textContent = progress.completed
+        ? 'Course complete'
+        : `Progress: ${progress.progressPercent || 0}% · ${progress.completedModules || 0} / ${progress.totalModules || 0} modules`;
+      const button = document.getElementById('overviewContinue');
+      button.textContent = progress.completed ? 'Review course' : (progress.lastVisitedModuleId ? 'Continue Learning' : 'Start Learning');
+      showStudentScreen('overview');
+    } catch (err) {
+      fail(err);
+    }
   }
 
   async function openStudentTutorial(id) {
@@ -747,7 +842,7 @@
       document.getElementById('studentTutorialHeading').textContent = learn.detail.title || '';
       document.getElementById('studentTutorialMeta').textContent = learn.detail.category ? learn.detail.category.name : '';
       document.getElementById('studentTutorialSummary').textContent = learn.detail.description || '';
-      showStudentLearn(true);
+      showStudentScreen('learn');
       await showStudentModule();
     } catch (err) {
       fail(err);
@@ -757,6 +852,11 @@
   function renderStudentModuleNav() {
     const modules = (learn.detail && learn.detail.modules) || [];
     const doneIds = new Set((learn.progress && learn.progress.completedModuleIds) || []);
+    const select = document.getElementById('studentModuleSelect');
+    if (select) {
+      select.innerHTML = modules.map((module, index) => `<option value="${index}">${esc(module.title)}</option>`).join('');
+      select.value = String(learn.moduleIndex);
+    }
     document.getElementById('studentModuleNav').innerHTML = modules.map((module, index) => (
       `<button type="button" class="btn btn-sm text-start ${index === learn.moduleIndex ? 'btn-primary' : 'btn-outline-secondary'}" data-student-module="${index}">${doneIds.has(module.id) ? '<i class="bi bi-check-lg me-1"></i>' : ''}${esc(module.title)}</button>`
     )).join('') || '<p class="text-muted-2 mb-0">This tutorial has no modules yet.</p>';
@@ -866,7 +966,18 @@
       learn.query = event.target.value;
       renderStudentCards();
     });
-    document.getElementById('studentBackToList').addEventListener('click', () => showStudentLearn(false));
+    document.getElementById('studentBackFromOverview').addEventListener('click', () => showStudentScreen('list'));
+    document.getElementById('overviewContinue').addEventListener('click', () => {
+      if (learn.detail) openStudentTutorial(learn.detail.id);
+    });
+    document.getElementById('studentBackToList').addEventListener('click', () => showStudentScreen('overview'));
+    const moduleSelect = document.getElementById('studentModuleSelect');
+    if (moduleSelect) {
+      moduleSelect.addEventListener('change', () => {
+        learn.moduleIndex = Number(moduleSelect.value);
+        showStudentModule().catch(fail);
+      });
+    }
     document.getElementById('studentPrevModule').addEventListener('click', () => {
       if (learn.moduleIndex <= 0) return;
       learn.moduleIndex -= 1;
