@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Models;
 
 use PMS\Schemas\Collections;
+use PMS\Utils\CodingStarterTemplates;
 use PMS\Utils\Security;
 
 class CodingProblemBankModel extends BaseModel
@@ -44,7 +45,7 @@ class CodingProblemBankModel extends BaseModel
      */
     public static function normalize(array $q): array
     {
-        return [
+        return CodingStarterTemplates::enrichItem([
             'title' => trim((string) ($q['title'] ?? '')),
             'description' => (string) ($q['description'] ?? ''),
             'inputFormat' => (string) ($q['inputFormat'] ?? ''),
@@ -57,7 +58,7 @@ class CodingProblemBankModel extends BaseModel
             'marks' => (float) ($q['marks'] ?? 2),
             'difficulty' => (string) ($q['difficulty'] ?? 'Medium'),
             'category' => CodingTestModel::normalizeCategory((string) ($q['category'] ?? 'Algorithms')),
-        ];
+        ]);
     }
 
     /**

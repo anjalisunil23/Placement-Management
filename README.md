@@ -72,3 +72,33 @@ git pull origin main
 ```
 
 If the sidebar or other UI still looks old after `git pull`, hard-refresh the browser (`Ctrl+Shift+R`). Frontend scripts use `?v=` cache keys and `.htaccess` sends `no-cache` for `.js` / `.css` files.
+
+### Safe Exam Browser (SEB)
+
+SEB handles the actual lockdown on the student device. The app only needs a stable exam URL plus the server-side attempt state.
+
+1. Install Safe Exam Browser from the official SEB download page on the student machines.
+2. Create a new SEB config and set the start URL to the contest page, for example:
+
+```text
+https://your-domain.example/coding.html?view=take&test=<contest-id>
+```
+
+If you want students to land on the coding hub first, use:
+
+```text
+https://your-domain.example/coding.html?view=take
+```
+
+3. Allow only your exam host and exam URLs in the SEB config. The app now reads these server-side settings from `backend/config/app.php`:
+
+```env
+SEB_EXAM_URL=https://your-domain.example/coding.html?view=take
+SEB_ALLOWED_DOMAINS=your-domain.example
+SEB_ALLOWED_URLS=https://your-domain.example/coding.html,https://your-domain.example/coding.html?view=take
+```
+
+4. In SEB, keep the browser navigation restrictions enabled so students stay inside the exam environment.
+5. During the contest, the server keeps the attempt in `ACTIVE`, saves drafts continuously to MariaDB, and closes the session as `SUBMITTED` or `EXPIRED` when the student submits or time runs out.
+
+The frontend does not contain database credentials or SEB secrets. Only the contest URL and allowlist live in the server config.

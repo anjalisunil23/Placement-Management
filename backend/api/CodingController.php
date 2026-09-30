@@ -154,6 +154,12 @@ final class CodingController
         Response::success($this->service()->start($user, $id));
     }
 
+    public function saveDraft(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service()->saveDraft($user, $id, $this->body()), 'Draft saved.');
+    }
+
     public function submit(string $id): void
     {
         $user = AuthMiddleware::authenticate();

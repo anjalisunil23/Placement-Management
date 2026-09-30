@@ -95,6 +95,17 @@ return [
             explode(',', $_ENV['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:8080,http://127.0.0.1:8080')
         )),
     ],
+    'seb' => [
+        'exam_url' => rtrim((string) ($_ENV['SEB_EXAM_URL'] ?? ($_ENV['APP_URL'] ?? 'http://localhost') . '/coding.html?view=take'), '/'),
+        'allowed_domains' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', $_ENV['SEB_ALLOWED_DOMAINS'] ?? parse_url((string) ($_ENV['APP_URL'] ?? 'http://localhost'), PHP_URL_HOST) ?: 'localhost')
+        ))),
+        'allowed_urls' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', $_ENV['SEB_ALLOWED_URLS'] ?? ($_ENV['APP_URL'] ?? 'http://localhost') . '/coding.html')
+        ))),
+    ],
     'roles' => [
         'admin'             => 'Admin',
         'student'           => 'Student',

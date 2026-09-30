@@ -2938,14 +2938,21 @@
 
   function collectProblem(el) {
     const v = (name) => el.querySelector(`[data-f="${name}"]`)?.value || '';
-    const starters = typeof CodingData !== 'undefined' && CodingData.defaultStarters
-      ? CodingData.defaultStarters(v('python'))
-      : { Python: v('python') };
     const testCases = [
       { id: 's1', label: 'Sample Test Case', input: v('sIn'), expected: v('sOut'), sample: true },
     ];
     if (v('h1In') || v('h1Out')) testCases.push({ id: 'h1', input: v('h1In'), expected: v('h1Out'), sample: false });
     if (v('h2In') || v('h2Out')) testCases.push({ id: 'h2', input: v('h2In'), expected: v('h2Out'), sample: false });
+    let pythonBody = v('python').trim();
+    if ((!pythonBody || !/input\s*\(/.test(pythonBody)) && typeof CodingData !== 'undefined' && CodingData.pythonStarterFromProblem) {
+      pythonBody = CodingData.pythonStarterFromProblem({
+        examples: [{ input: v('exIn') || v('sIn'), output: v('exOut') || v('sOut') }],
+        testCases,
+      });
+    }
+    const starters = typeof CodingData !== 'undefined' && CodingData.defaultStarters
+      ? CodingData.defaultStarters(pythonBody + (pythonBody.endsWith('\n') ? '' : '\n'))
+      : { Python: pythonBody };
     return {
       id: el.getAttribute('data-problem'),
       title: v('title').trim(),

@@ -876,10 +876,23 @@
       };
     },
 
-    saveDraft(attemptId, questionId, fields) {
+    async saveDraft(attemptId, questionId, fields) {
       const attempt = attempts.get(attemptId);
       if (!attempt || attempt.submitted) return;
+      if (liveApi()) {
+        const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/draft`, {
+          method: 'POST',
+          body: JSON.stringify({ questionId, ...fields }),
+        }).catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not save draft.');
+        attempts.set(attemptId, {
+          ...attempt,
+          answers: res.data?.answers || attempt.answers,
+        });
+        return res.data;
+      }
       attempt.answers[questionId] = Object.assign(attempt.answers[questionId] || {}, fields);
+      return attempt;
     },
 
     async runCode({ attemptId, questionId, language, code, stdin }) {
@@ -954,7 +967,7 @@
       return lastRun;
     },
 
-    async submitAttempt(attemptId, { timeTakenSeconds } = {}) {
+    async submitAttempt(attemptId, { timeTakenSeconds, autoSubmitted = false } = {}) {
       const localResult = async () => {
       const attempt = attempts.get(attemptId);
       if (!attempt) throw new Error('Attempt not found.');
@@ -1103,7 +1116,7 @@
       if (liveApi()) {
         const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/submit`, {
           method: 'POST',
-          body: JSON.stringify(result),
+          body: JSON.stringify({ ...result, autoSubmitted: !!autoSubmitted }),
         }).catch(() => null);
         if (!res?.success) {
           result.saveWarning = res?.message || 'Result is shown here. Progress may not have saved to the server.';
