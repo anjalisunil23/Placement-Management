@@ -36,6 +36,86 @@ final class CourseSyllabusCatalog
     }
 
     /**
+     * Courses for one staff department, plus shared college courses.
+     * Other departments are omitted.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function forStaff(string $code, string $name, string $shortName = ''): array
+    {
+        $key = self::matchKey($code, $name, $shortName);
+
+        return array_values(array_filter(
+            self::all(),
+            static function (array $course) use ($key): bool {
+                $dept = strtoupper((string) ($course['department'] ?? ''));
+                if ($dept === 'COMMON') {
+                    return true;
+                }
+
+                return $key !== '' && $dept === $key;
+            }
+        ));
+    }
+
+    /**
+     * @param array<string, mixed> $course
+     */
+    public static function visibleToStaff(array $course, string $code, string $name, string $shortName = ''): bool
+    {
+        $dept = strtoupper((string) ($course['department'] ?? ''));
+        if ($dept === 'COMMON') {
+            return true;
+        }
+        $key = self::matchKey($code, $name, $shortName);
+
+        return $key !== '' && $dept === $key;
+    }
+
+    private static function matchKey(string $code, string $name, string $shortName): string
+    {
+        $tokens = [];
+        foreach ([$code, $shortName, $name] as $part) {
+            $norm = strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', ' ', $part));
+            foreach (preg_split('/\s+/', trim($norm)) ?: [] as $word) {
+                if ($word !== '') {
+                    $tokens[] = $word;
+                }
+            }
+        }
+        $exact = [
+            'CSE' => 'CSE', 'CS' => 'CSE', 'CST' => 'CSE',
+            'ECE' => 'ECE', 'EC' => 'ECE', 'ECT' => 'ECE',
+            'EEE' => 'EEE', 'EE' => 'EEE', 'EET' => 'EEE',
+            'ME' => 'ME', 'MECH' => 'ME', 'MET' => 'ME',
+            'CE' => 'CE', 'CIVIL' => 'CE', 'CET' => 'CE',
+        ];
+        foreach ($tokens as $token) {
+            if (isset($exact[$token])) {
+                return $exact[$token];
+            }
+        }
+        $joined = implode(' ', $tokens);
+        if (str_contains($joined, 'COMPUTER SCIENCE')) {
+            return 'CSE';
+        }
+        if (str_contains($joined, 'COMMUNICATION')) {
+            return 'ECE';
+        }
+        if (str_contains($joined, 'ELECTRICAL')) {
+            return 'EEE';
+        }
+        if (str_contains($joined, 'MECHANICAL')) {
+            return 'ME';
+        }
+        if (str_contains($joined, 'CIVIL')) {
+            return 'CE';
+        }
+
+        return '';
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     private static function courses(): array

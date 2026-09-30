@@ -592,7 +592,7 @@ final class CodingService
      * @param array<string, mixed> $result
      * @return array<string, mixed>
      */
-    public function submit(array $user, string $attemptId, array $result): array
+    public function submit(array $user, string $attemptId, array $body): array
     {
         if (!AptitudeAccessService::canTake($user)) {
             Response::forbidden('Only students can submit mock tests.');
@@ -605,7 +605,13 @@ final class CodingService
         if ((string) ($attempt['userId'] ?? '') !== $uid) {
             Response::forbidden('This attempt does not belong to you.');
         }
+        if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            Response::error('This attempt has already been submitted.', 422);
+        }
+
+        $result = $this->buildServerGradedSubmitResult($attempt, $body);
         $result['userId'] = $uid;
+        $result['attemptId'] = $attemptId;
         $contestType = CodingTestModel::normalizeContestType((string) ($attempt['contestType'] ?? 'none'));
         $result['contestType'] = $contestType;
         if (in_array($contestType, ['weekly', 'monthly'], true)) {
@@ -633,6 +639,89 @@ final class CodingService
         $this->attempts->update($attemptId, $rankInfo);
 
         return array_merge($result, $rankInfo);
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    private function buildServerGradedSubmitResult(array $attempt, array $body): array
+    {
+        $testId = (string) ($attempt['testId'] ?? '');
+        $test = $this->tests->findById($testId);
+        if (!$test) {
+            Response::notFound('Coding test not found.');
+        }
+        $problemItemId = trim((string) ($attempt['problemItemId'] ?? ''));
+        if ($problemItemId !== '') {
+            $view = $this->buildSingleProblemTestView($test, $problemItemId);
+        } else {
+            $view = CodingTestModel::publicView($test, true);
+        }
+        if ($view === null || empty($view['items'])) {
+            Response::error('No questions found for this attempt.', 422);
+        }
+
+        $answers = $this->mergeSubmitAnswers($attempt, $body);
+        $timeLimitMs = max(500, min(15000, (int) ($_ENV['CODING_SUBMIT_TIME_LIMIT_MS'] ?? 3000)));
+        $graded = (new CodingSubmissionGrader())->gradeTestItems(
+            array_values((array) $view['items']),
+            $answers,
+            $timeLimitMs
+        );
+
+        $taken = max(0, (int) ($body['timeTakenSeconds'] ?? 0));
+        $minutes = intdiv($taken, 60);
+        $listTestId = $problemItemId !== ''
+            ? CodingTestModel::composeProblemTestId($testId, $problemItemId)
+            : $testId;
+
+        return array_merge($graded, [
+            'testId' => $testId,
+            'listTestId' => $listTestId,
+            'problemItemId' => $problemItemId !== '' ? $problemItemId : null,
+            'testTitle' => (string) ($attempt['testTitle'] ?? $view['title'] ?? ''),
+            'timeTakenSeconds' => $taken,
+            'timeTakenLabel' => sprintf('%02d:%02d', $minutes, $taken % 60),
+            'autoSubmitted' => !empty($body['autoSubmitted']),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $body
+     * @return array<string, array<string, mixed>>
+     */
+    private function mergeSubmitAnswers(array $attempt, array $body): array
+    {
+        $merged = [];
+        $stored = is_array($attempt['answers'] ?? null) ? $attempt['answers'] : [];
+        foreach ($stored as $qid => $row) {
+            if (!is_string($qid) || !is_array($row)) {
+                continue;
+            }
+            $merged[$qid] = [
+                'language' => (string) ($row['language'] ?? 'Python'),
+                'code' => (string) ($row['code'] ?? ''),
+            ];
+        }
+        $fromBody = is_array($body['answers'] ?? null) ? $body['answers'] : [];
+        foreach ($fromBody as $qid => $row) {
+            if (!is_string($qid) || !is_array($row)) {
+                continue;
+            }
+            $prev = $merged[$qid] ?? ['language' => 'Python', 'code' => ''];
+            if (array_key_exists('language', $row)) {
+                $prev['language'] = (string) $row['language'];
+            }
+            if (array_key_exists('code', $row)) {
+                $prev['code'] = (string) $row['code'];
+            }
+            $merged[$qid] = $prev;
+        }
+
+        return $merged;
     }
 
     /**
@@ -2435,21 +2524,32 @@ final class CodingService
             Response::notFound('Problem not found.');
         }
         $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
-        $testsPassed = max(0, (int) ($body['testsPassed'] ?? 0));
-        $testsTotal = max(0, (int) ($body['testsTotal'] ?? 0));
-        $accepted = !empty($body['accepted']) || ($testsTotal > 0 && $testsPassed === $testsTotal);
+        $language = trim((string) ($body['language'] ?? 'Python'));
+        $sourceCode = (string) ($body['sourceCode'] ?? $body['source_code'] ?? $body['code'] ?? '');
+        if (trim($sourceCode) === '') {
+            Response::error('Source code is required for submit.', 422);
+        }
+
+        $problem = CodingProblemBankModel::normalize($row);
+        $grader = new CodingSubmissionGrader();
+        $graded = $grader->grade($problem, $language, $sourceCode);
+        $accepted = !empty($graded['accepted']);
         $payload = [
             'userId' => $uid,
             'bankProblemId' => $bankProblemId,
             'problemTitle' => (string) ($body['problemTitle'] ?? $row['title'] ?? ''),
-            'language' => (string) ($body['language'] ?? 'Python'),
+            'language' => $language,
+            'sourceCode' => $sourceCode,
             'status' => $accepted ? 'accepted' : 'wrong',
             'accepted' => $accepted,
-            'testsPassed' => $testsPassed,
-            'testsTotal' => $testsTotal,
-            'score' => (float) ($body['score'] ?? ($accepted ? ($row['marks'] ?? 2) : 0)),
-            'totalMarks' => (float) ($body['totalMarks'] ?? ($row['marks'] ?? 2)),
-            'percentage' => (float) ($body['percentage'] ?? ($accepted ? 100 : 0)),
+            'testsPassed' => (int) ($graded['testsPassed'] ?? 0),
+            'testsTotal' => (int) ($graded['testsTotal'] ?? 0),
+            'score' => (float) ($graded['score'] ?? 0),
+            'totalMarks' => (float) ($graded['totalMarks'] ?? ($row['marks'] ?? 2)),
+            'percentage' => (float) ($graded['percentage'] ?? 0),
+            'executionTimeMs' => (int) ($graded['executionTimeMs'] ?? 0),
+            'memoryUsedKb' => (int) ($graded['memoryUsedKb'] ?? 0),
+            'gradeStatus' => (string) ($graded['status'] ?? 'Wrong Answer'),
             'timeTakenSeconds' => max(0, (int) ($body['timeTakenSeconds'] ?? 0)),
         ];
         $submissionId = $this->practiceSubmissions->record($payload);
@@ -2459,12 +2559,14 @@ final class CodingService
             'submissionId' => $submissionId,
             'bankProblemId' => $bankProblemId,
             'accepted' => $accepted,
-            'status' => $accepted ? 'Accepted' : 'Wrong Answer',
-            'testsPassed' => $testsPassed,
-            'testsTotal' => $testsTotal,
+            'status' => (string) ($graded['status'] ?? ($accepted ? 'Accepted' : 'Wrong Answer')),
+            'testsPassed' => (int) ($graded['testsPassed'] ?? 0),
+            'testsTotal' => (int) ($graded['testsTotal'] ?? 0),
             'score' => $payload['score'],
             'totalMarks' => $payload['totalMarks'],
             'percentage' => $payload['percentage'],
+            'executionTimeMs' => (int) ($graded['executionTimeMs'] ?? 0),
+            'caseResults' => $graded['caseResults'] ?? [],
             'practiceStatus' => $stat ? (string) ($stat['status'] ?? 'attempted') : ($accepted ? 'solved' : 'attempted'),
             'attemptCount' => $stat ? (int) ($stat['attemptCount'] ?? 0) : 1,
         ];

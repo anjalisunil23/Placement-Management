@@ -35,6 +35,16 @@ final class StaffCourseQuestionService
         if ($course === null) {
             throw new \InvalidArgumentException('Select a course code from the list.');
         }
+        $ctx = StaffContext::resolve($user);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+        if (!CourseSyllabusCatalog::visibleToStaff(
+            $course,
+            (string) ($dept['code'] ?? ''),
+            (string) ($dept['name'] ?? ''),
+            (string) ($dept['shortName'] ?? '')
+        )) {
+            throw new \InvalidArgumentException('That course is outside your department.');
+        }
 
         $count = (int) ($body['count'] ?? 10);
         if ($count < self::MIN_COUNT || $count > self::MAX_COUNT) {
