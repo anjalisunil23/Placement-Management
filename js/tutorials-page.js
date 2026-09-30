@@ -805,6 +805,8 @@
   const learn = {
     tutorials: [],
     categories: [],
+    categoriesLoaded: false,
+    listRequest: 0,
     categoryId: '',
     query: '',
     detail: null,
@@ -851,7 +853,7 @@
     const rows = filteredTutorials();
     if (!learn.tutorials.length) {
       const message = learn.query || learn.categoryId
-        ? 'No tutorials match this search.'
+        ? 'No tutorials match this search or category.'
         : 'No tutorials are currently available for your department and passing year.';
       root.innerHTML = `<div class="col-12"><div class="card-surface p-4 text-muted-2">${esc(message)}</div></div>`;
       return;
@@ -879,21 +881,25 @@
   }
 
   async function loadStudentList() {
+    const request = ++learn.listRequest;
     const root = document.getElementById('studentTutorialCards');
     root.innerHTML = '<div class="col-12"><div class="card-surface p-4 text-muted-2">Loading tutorials…</div></div>';
     try {
       const params = new URLSearchParams();
       if (learn.query.trim()) params.set('search', learn.query.trim());
       if (learn.categoryId) params.set('category', learn.categoryId);
-      const [tutorials, categories] = await Promise.all([
-        call('/tutorials' + (params.toString() ? `?${params}` : '')),
-        call('/tutorial-categories'),
-      ]);
+      const tutorials = await call('/tutorials' + (params.toString() ? `?${params}` : ''));
+      if (request !== learn.listRequest) return;
+      if (!learn.categoriesLoaded) {
+        learn.categories = await call('/tutorial-categories') || [];
+        learn.categoriesLoaded = true;
+        if (request !== learn.listRequest) return;
+        renderStudentFilters();
+      }
       learn.tutorials = tutorials || [];
-      learn.categories = categories || [];
-      renderStudentFilters();
       renderStudentCards();
     } catch (err) {
+      if (request !== learn.listRequest) return;
       root.innerHTML = `<div class="col-12"><div class="card-surface p-4 text-danger">${esc(err.message || 'Could not load tutorials.')}</div></div>`;
     }
   }
@@ -984,6 +990,9 @@
       return;
     }
     const summary = modules[learn.moduleIndex];
+    document.getElementById('studentModuleHeading').textContent = 'Loading…';
+    document.getElementById('studentModuleContent').textContent = 'Loading lesson…';
+    document.getElementById('studentExerciseList').innerHTML = '<p class="text-muted-2 mb-0">Loading exercises…</p>';
     learn.module = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(summary.id)}`);
     try {
       learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/progress`);

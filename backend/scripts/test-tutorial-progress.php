@@ -172,6 +172,52 @@ try {
     $throws(fn () => $service->saveAttempt($owner, $exercise['id'], ['sourceCode' => '   ', 'language' => 'c']));
     $throws(fn () => $service->saveAttempt($owner, $exercise['id'], ['sourceCode' => str_repeat('a', 70000), 'language' => 'c']));
     $throws(fn () => $service->saveAttempt($owner, $exercise['id'], ['sourceCode' => 'print(1)', 'language' => 'python']));
+
+    $catalogue = $service->listForStudent($owner, ['search' => 'Progress tutorial ' . $suffix]);
+    $card = $catalogue[0] ?? null;
+    $check(
+        is_array($card)
+        && !array_key_exists('modules', $card)
+        && ($card['progress']['completedModules'] ?? null) === 2
+        && ($card['progress']['progressPercent'] ?? null) === 100,
+        'catalogue progress matches completed modules and does not include lesson content'
+    );
+
+    $service->unpublish($staff, $tutorial['id']);
+    $check($service->listForStudent($owner, ['search' => $suffix]) === [], 'unpublished course is absent from the student API');
+    $throws(fn () => $service->showForStudent($owner, $tutorial['id']));
+    $service->publish($staff, $tutorial['id']);
+    $kept = $service->progressForStudent($owner, $tutorial['id']);
+    $check($kept['status'] === 'COMPLETED' && $kept['progressPercent'] === 100, 'unpublish and republish keep course progress');
+    $check(count($service->listAttempts($owner, $exercise['id'])) === 2, 'unpublish and republish keep attempts');
+
+    $staleCourse = $service->createTutorial($staff, [
+        'title' => 'Stale progress ' . $suffix,
+        'categoryId' => $categoryId,
+        'topic' => 'C',
+        'description' => 'Deleted module must not count.',
+        'visibility' => 'scoped',
+        'departmentIds' => [$cseId],
+        'passingYears' => ['2027'],
+    ]);
+    $tutorialIds[] = $staleCourse['id'];
+    $keepModule = $service->createModule($staff, $staleCourse['id'], ['title' => 'Keep', 'content' => '<p>Keep</p>']);
+    $dropModule = $service->createModule($staff, $staleCourse['id'], ['title' => 'Drop', 'content' => '<p>Drop</p>']);
+    $service->publish($staff, $staleCourse['id']);
+    $service->markModuleComplete($owner, $staleCourse['id'], $dropModule['id']);
+    $service->deleteModule($staff, $staleCourse['id'], $dropModule['id']);
+    $staleList = $service->listForStudent($owner, ['search' => 'Stale progress ' . $suffix]);
+    $staleCard = $staleList[0] ?? null;
+    $staleDetail = $service->progressForStudent($owner, $staleCourse['id']);
+    $check(
+        is_array($staleCard)
+        && ($staleCard['progress']['completedModules'] ?? null) === 0
+        && ($staleCard['progress']['totalModules'] ?? null) === 1
+        && ($staleCard['progress']['status'] ?? '') !== 'COMPLETED'
+        && ($staleDetail['completedModules'] ?? null) === 0
+        && ($keepModule['id'] ?? '') !== '',
+        'deleting a completed module does not mark the remaining module complete'
+    );
 } catch (Throwable $e) {
     $check(false, 'unexpected: ' . $e->getMessage());
 } finally {

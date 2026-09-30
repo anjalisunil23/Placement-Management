@@ -92,6 +92,45 @@ class TutorialModuleModel extends BaseModel
     }
 
     /**
+     * Current module ids for catalogue progress. Old completion rows stay in history,
+     * but only modules that still exist count.
+     *
+     * @param list<string> $tutorialIds
+     * @return array<string, array<string, true>>
+     */
+    public function currentModuleIds(array $tutorialIds): array
+    {
+        $ids = [];
+        foreach ($tutorialIds as $tutorialId) {
+            $tutorialId = trim((string) $tutorialId);
+            if (Security::isValidId($tutorialId)) {
+                $ids[$tutorialId] = $tutorialId;
+            }
+        }
+        $grouped = [];
+        foreach ($ids as $tutorialId) {
+            $grouped[$tutorialId] = [];
+        }
+        if ($ids === []) {
+            return $grouped;
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare(
+            'SELECT `id`, `tutorial_id` FROM `tutorial_modules` WHERE `tutorial_id` IN (' . $placeholders . ')'
+        );
+        $stmt->execute(array_values($ids));
+        foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            $tutorialId = (string) ($row['tutorial_id'] ?? '');
+            $moduleId = (string) ($row['id'] ?? '');
+            if ($tutorialId !== '' && $moduleId !== '' && isset($grouped[$tutorialId])) {
+                $grouped[$tutorialId][$moduleId] = true;
+            }
+        }
+
+        return $grouped;
+    }
+
+    /**
      * @param array<string, mixed> $data
      * @return array<string, mixed>
      */

@@ -185,15 +185,11 @@ final class TutorialService
         $departmentId = (string) ($student['departmentId'] ?? '');
         $year = self::passoutYear((string) ($student['classBatch'] ?? ''));
         $search = strtolower(trim((string) ($query['search'] ?? '')));
+        if (strlen($search) > 200) {
+            $search = substr($search, 0, 200);
+        }
         $categoryId = trim((string) ($query['category'] ?? ''));
         $progressByTutorial = [];
-        $completedByTutorial = [];
-        foreach ($this->moduleProgress->findAll(['studentId' => $studentId], 2000) as $row) {
-            $key = (string) ($row['tutorialId'] ?? '');
-            if ($key !== '') {
-                $completedByTutorial[$key] = ($completedByTutorial[$key] ?? 0) + 1;
-            }
-        }
         foreach ($this->progress->findAll(['studentId' => $studentId], 500) as $row) {
             $progressByTutorial[(string) ($row['tutorialId'] ?? '')] = $row;
         }
@@ -212,10 +208,25 @@ final class TutorialService
                     continue;
                 }
             }
+            $out[] = $view;
+        }
+        $currentModules = $this->modules->currentModuleIds(array_map(
+            static fn (array $view): string => (string) ($view['id'] ?? ''),
+            $out
+        ));
+        $completedByTutorial = [];
+        foreach ($this->moduleProgress->findAll(['studentId' => $studentId], 2000) as $row) {
+            $key = (string) ($row['tutorialId'] ?? '');
+            $moduleId = (string) ($row['moduleId'] ?? '');
+            if ($key !== '' && $moduleId !== '' && isset($currentModules[$key][$moduleId]) && !isset($completedByTutorial[$key][$moduleId])) {
+                $completedByTutorial[$key][$moduleId] = true;
+            }
+        }
+        foreach ($out as $index => $view) {
             $tutorialId = (string) ($view['id'] ?? '');
             $stored = $progressByTutorial[$tutorialId] ?? null;
             $total = (int) ($view['moduleCount'] ?? 0);
-            $completed = min($total, (int) ($completedByTutorial[$tutorialId] ?? 0));
+            $completed = count($completedByTutorial[$tutorialId] ?? []);
             $percent = $total === 0 ? 0 : (int) round(($completed / $total) * 100);
             $status = 'NOT_STARTED';
             if (is_array($stored)) {
@@ -229,7 +240,7 @@ final class TutorialService
                 'lastVisitedModuleId' => is_array($stored) ? ($stored['lastVisitedModuleId'] ?? null) : null,
                 'completed' => $status === 'COMPLETED',
             ];
-            $out[] = $view;
+            $out[$index] = $view;
         }
 
         return $out;

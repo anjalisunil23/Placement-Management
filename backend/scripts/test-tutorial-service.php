@@ -71,7 +71,15 @@ $makeUser = static function (string $role, string $name) use ($users, $suffix, &
 
 try {
     $check(TutorialService::passoutYear('MCA2025-27-S3') === '2027', 'passout year uses the end of the batch range');
-    $check(!str_contains(TutorialService::sanitizeHtml('<p>ok</p><script>alert(1)</script>'), 'script'), 'module html drops script tags');
+    $safe = TutorialService::sanitizeHtml('<p>ok</p><script>alert(1)</script><img src="https://cdn.example/a.png" onerror="alert(1)"><a href="javascript:alert(1)">x</a><iframe src="https://evil.example"></iframe>');
+    $check(
+        !str_contains($safe, 'script')
+        && !str_contains($safe, 'onerror')
+        && !str_contains($safe, 'javascript:')
+        && !str_contains($safe, 'iframe')
+        && str_contains($safe, 'cdn.example'),
+        'module html drops script tags, event handlers, and unsafe links'
+    );
 
     $cseId = $departments->createDepartment(['name' => 'Tutorial CSE ' . $suffix, 'code' => 'TCSE' . strtoupper($suffix)]);
     $mcaId = $departments->createDepartment(['name' => 'Tutorial MCA ' . $suffix, 'code' => 'TMCA' . strtoupper($suffix)]);
@@ -159,6 +167,13 @@ try {
     $check($service->listForStudent($studentUsers['cse2027']) === [], 'draft tutorials are hidden from students');
     $throws(fn () => $service->showForStudent($studentUsers['cse2027'], $byStaff['id']), 404);
 
+    try {
+        $service->publish($staffA, $byStaff['id']);
+        $check(false, 'publish without a module should fail');
+    } catch (InvalidArgumentException $e) {
+        $check(str_contains($e->getMessage(), 'module'), 'publish without a module is rejected');
+    }
+    $publishStub = $service->createModule($staffA, $byStaff['id'], ['title' => 'Publish stub', 'content' => '<p>Stub</p>']);
     $service->publish($staffA, $byStaff['id']);
     $service->unpublish($staffA, $byStaff['id']);
     $check($service->showManaged($staffA, $byStaff['id'])['status'] === 'unpublished', 'unpublish sets unpublished');
@@ -178,6 +193,7 @@ try {
         'passingYears' => ['2027', '2028'],
     ]);
     $tutorialIds[] = $scoped['id'];
+    $service->createModule($staffA, $scoped['id'], ['title' => 'Scoped stub', 'content' => '<p>Stub</p>']);
     $service->publish($staffA, $scoped['id']);
     $sees = static function (array $user) use ($service, $scoped): bool {
         $ids = array_column($service->listForStudent($user), 'id');
@@ -203,6 +219,7 @@ try {
         'passingYears' => [],
     ]);
     $tutorialIds[] = $deptOnly['id'];
+    $service->createModule($staffA, $deptOnly['id'], ['title' => 'Department stub', 'content' => '<p>Stub</p>']);
     $service->publish($staffA, $deptOnly['id']);
     $deptIds = array_column($service->listForStudent($studentUsers['mca2027']), 'id');
     $cseIds = array_column($service->listForStudent($studentUsers['cse2027']), 'id');
@@ -218,6 +235,7 @@ try {
         'passingYears' => ['2027'],
     ]);
     $tutorialIds[] = $yearOnly['id'];
+    $service->createModule($staffA, $yearOnly['id'], ['title' => 'Year stub', 'content' => '<p>Stub</p>']);
     $service->publish($staffA, $yearOnly['id']);
     $yearIds2029 = array_column($service->listForStudent($studentUsers['mca2029']), 'id');
     $yearIds2027 = array_column($service->listForStudent($studentUsers['ece2027']), 'id');
@@ -232,7 +250,7 @@ try {
 
     $throws(fn () => $service->updateModule($staffB, $byStaff['id'], $moduleA['id'], ['title' => 'Nope']), 403);
     $service->updateModule($staffA, $byStaff['id'], $moduleA['id'], ['title' => 'One renamed']);
-    $ordered = $service->reorderModules($staffA, $byStaff['id'], [$moduleB['id'], $moduleA['id']]);
+    $ordered = $service->reorderModules($staffA, $byStaff['id'], [$moduleB['id'], $moduleA['id'], $publishStub['id']]);
     $check(($ordered[0]['id'] ?? '') === $moduleB['id'] && ($ordered[0]['sortOrder'] ?? 0) === 1, 'owner can reorder modules');
 
     $exercise = $service->createExercise($staffA, $byStaff['id'], $moduleA['id'], [
