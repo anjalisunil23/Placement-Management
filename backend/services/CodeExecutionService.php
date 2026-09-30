@@ -82,21 +82,83 @@ final class CodeExecutionService
         if (!$needsRemote) {
             return $local;
         }
-        $piston = new PistonExecutionClient();
-        $remote = $piston->run($language, $source, $stdin, $timeLimitMs, $started);
-        if ($remote === null) {
-            $detail = trim($piston->lastError());
-            $hint = $detail !== ''
-                ? ' Remote runner: ' . $detail
-                : ' Remote execution service did not respond. Set CODING_PISTON_FALLBACK=true in .env or install g++/JDK on the server.';
-            return $this->fail(
-                'Runtime Error',
-                trim(rtrim((string) ($local['stderr'] ?? 'Execution failed.')) . $hint),
-                $started
-            );
+        $remote = $this->runRemoteChain($language, $source, $stdin, $timeLimitMs, $started);
+        if ($remote !== null) {
+            return $remote;
         }
 
-        return $remote;
+        $detail = trim($this->lastRemoteErrors);
+        $hint = $detail !== ''
+            ? ' Remote runners: ' . $detail
+            : ' Remote execution did not respond. Set CODING_REMOTE_BACKENDS=wandbox in .env or install g++/JDK on the server.';
+        return $this->fail(
+            'Runtime Error',
+            trim(rtrim((string) ($local['stderr'] ?? 'Execution failed.')) . $hint),
+            $started
+        );
+    }
+
+    private string $lastRemoteErrors = '';
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function runRemoteChain(
+        string $language,
+        string $source,
+        string $stdin,
+        int $timeLimitMs,
+        float $started
+    ): ?array {
+        $this->lastRemoteErrors = '';
+        $errors = [];
+        foreach ($this->remoteBackendsList() as $backend) {
+            if ($backend === 'wandbox') {
+                $client = new WandboxExecutionClient();
+                $result = $client->run($language, $source, $stdin, $timeLimitMs, $started);
+                if ($result !== null) {
+                    return $result;
+                }
+                $err = trim($client->lastError());
+                if ($err !== '') {
+                    $errors[] = 'Wandbox: ' . $err;
+                }
+                continue;
+            }
+            if ($backend === 'piston') {
+                $pistonUrl = trim((string) ($_ENV['CODING_PISTON_URL'] ?? ''));
+                if ($pistonUrl === '' || str_contains(strtolower($pistonUrl), 'emkc.org')) {
+                    $errors[] = 'Piston: skipped (public API is whitelist-only; set CODING_PISTON_URL to self-hosted Piston).';
+                    continue;
+                }
+                $client = new PistonExecutionClient($pistonUrl);
+                $result = $client->run($language, $source, $stdin, $timeLimitMs, $started);
+                if ($result !== null) {
+                    return $result;
+                }
+                $err = trim($client->lastError());
+                if ($err !== '') {
+                    $errors[] = 'Piston: ' . $err;
+                }
+            }
+        }
+        $this->lastRemoteErrors = implode(' | ', $errors);
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function remoteBackendsList(): array
+    {
+        $raw = strtolower(trim((string) ($_ENV['CODING_REMOTE_BACKENDS'] ?? 'wandbox,piston')));
+        $parts = array_values(array_filter(array_map('trim', explode(',', $raw))));
+        if ($parts === []) {
+            return ['wandbox'];
+        }
+
+        return $parts;
     }
 
     private function remoteFallbackEnabled(): bool
