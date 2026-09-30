@@ -84,11 +84,14 @@ final class CourseSyllabusCatalog
             }
         }
         $exact = [
-            'CSE' => 'CSE', 'CS' => 'CSE', 'CST' => 'CSE',
+            'CSE' => 'CSE', 'CS' => 'CSE', 'CST' => 'CSE', 'CSAI' => 'CSE',
             'ECE' => 'ECE', 'EC' => 'ECE', 'ECT' => 'ECE',
             'EEE' => 'EEE', 'EE' => 'EEE', 'EET' => 'EEE',
             'ME' => 'ME', 'MECH' => 'ME', 'MET' => 'ME',
             'CE' => 'CE', 'CIVIL' => 'CE', 'CET' => 'CE',
+            'MCA' => 'MCA', 'BCA' => 'BCA', 'INMCA' => 'MCA',
+            'IT' => 'IT', 'AD' => 'AD', 'AIDS' => 'AD',
+            'CH' => 'CH', 'CHEM' => 'CH',
         ];
         foreach ($tokens as $token) {
             if (isset($exact[$token])) {
@@ -96,8 +99,14 @@ final class CourseSyllabusCatalog
             }
         }
         $joined = implode(' ', $tokens);
+        if (str_contains($joined, 'COMPUTER APPLICATION')) {
+            return 'MCA';
+        }
         if (str_contains($joined, 'COMPUTER SCIENCE')) {
             return 'CSE';
+        }
+        if (str_contains($joined, 'INFORMATION TECHNOLOGY')) {
+            return 'IT';
         }
         if (str_contains($joined, 'COMMUNICATION')) {
             return 'ECE';
@@ -113,6 +122,95 @@ final class CourseSyllabusCatalog
         }
 
         return '';
+    }
+
+    /**
+     * @param mixed $payload AES searchSyllabus4Placement body
+     * @return list<array{code:string,title:string,subjectType:string,department:string}>
+     */
+    public static function filterSearchRows(mixed $payload, string $code, string $name, string $shortName): array
+    {
+        $out = [];
+        $seen = [];
+        foreach (self::extractSearchList($payload) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $subjectCode = strtoupper(trim((string) ($row['subjectCode'] ?? $row['code'] ?? '')));
+            $subjectName = trim((string) ($row['subjectName'] ?? $row['title'] ?? ''));
+            if ($subjectCode === '' || isset($seen[$subjectCode])) {
+                continue;
+            }
+            if (!self::subjectVisibleToStaff($subjectCode, $code, $name, $shortName)) {
+                continue;
+            }
+            $seen[$subjectCode] = true;
+            $out[] = [
+                'code' => $subjectCode,
+                'title' => $subjectName,
+                'subjectType' => trim((string) ($row['subjectType'] ?? '')),
+                'department' => self::subjectDepartment($subjectCode),
+            ];
+        }
+
+        return $out;
+    }
+
+    public static function subjectVisibleToStaff(string $subjectCode, string $code, string $name, string $shortName): bool
+    {
+        $owner = self::subjectDepartment($subjectCode);
+        if ($owner === '') {
+            return true;
+        }
+        $key = self::matchKey($code, $name, $shortName);
+
+        return $key !== '' && $owner === $key;
+    }
+
+    public static function subjectDepartment(string $subjectCode): string
+    {
+        $compact = strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '', $subjectCode));
+        if ($compact === '') {
+            return '';
+        }
+        $tokens = [
+            'INMCA' => 'MCA', 'INTMCA' => 'MCA', 'CSAI' => 'CSE', 'AIDS' => 'AD',
+            'MCA' => 'MCA', 'BCA' => 'BCA', 'CSE' => 'CSE', 'CST' => 'CSE',
+            'ECE' => 'ECE', 'ECT' => 'ECE', 'EEE' => 'EEE', 'EET' => 'EEE',
+            'MECH' => 'ME', 'MET' => 'ME', 'CIVIL' => 'CE', 'CET' => 'CE', 'CHEM' => 'CH',
+            'CS' => 'CSE', 'CT' => 'CSE', 'CY' => 'CSE',
+            'AD' => 'AD', 'IT' => 'IT', 'EC' => 'ECE', 'EE' => 'EEE',
+            'ME' => 'ME', 'CE' => 'CE', 'CH' => 'CH',
+        ];
+        uksort($tokens, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+        foreach ($tokens as $token => $key) {
+            if (str_contains($compact, $token)) {
+                return $key;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param mixed $payload
+     * @return list<mixed>
+     */
+    private static function extractSearchList(mixed $payload): array
+    {
+        if (!is_array($payload)) {
+            return [];
+        }
+        if (array_is_list($payload)) {
+            return $payload;
+        }
+        foreach (['data', 'subjects', 'syllabus', 'rows', 'result'] as $key) {
+            if (isset($payload[$key]) && is_array($payload[$key])) {
+                return self::extractSearchList($payload[$key]);
+            }
+        }
+
+        return isset($payload['subjectCode']) || isset($payload['code']) ? [$payload] : [];
     }
 
     /**

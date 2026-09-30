@@ -82,14 +82,6 @@ const NAV = [
         children: [],
       },
       {
-        group: "syllabus",
-        label: "Syllabus",
-        href: "staff-courses.html",
-        roles: ['staff', 'placement_officer'],
-        staffSyllabus: true,
-        children: [],
-      },
-      {
         group: "certifications",
         label: "Certification",
         href: "certifications.html",
@@ -105,6 +97,7 @@ const NAV = [
       },
     ],
   },
+  { href: "staff-courses.html", icon: "bi-journal-richtext", label: "Syllabus", roles: ['staff', 'placement_officer'], staffSyllabus: true },
 
   { section: "Placement", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'] },
   { href: "drives.html", icon: "bi-briefcase-fill", label: "Placement Drives", roles: ['admin', 'placement_officer', 'staff'] },
@@ -173,7 +166,7 @@ const PAGE_LABELS = {
   'staff-jobs.html': 'Job Posts',
   'staff-recommend.html': 'Recommend Company',
   'staff-placements.html': 'Placements & Higher Education',
-  'staff-courses.html': 'Practice · Syllabus',
+  'staff-courses.html': 'Syllabus',
   'users.html': 'User Management',
   'rules.html': 'Placement Rules',
   'applications.html': 'Student · Management · Application',
