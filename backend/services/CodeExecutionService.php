@@ -82,14 +82,16 @@ final class CodeExecutionService
         if (!$needsRemote) {
             return $local;
         }
-        $remote = (new PistonExecutionClient())->run($language, $source, $stdin, $timeLimitMs, $started);
+        $piston = new PistonExecutionClient();
+        $remote = $piston->run($language, $source, $stdin, $timeLimitMs, $started);
         if ($remote === null) {
-            $hint = trim((string) ($_ENV['CODING_PISTON_URL'] ?? '')) === ''
-                ? ' Set CODING_PISTON_FALLBACK=true or install compilers on the server.'
-                : ' Remote execution service did not respond.';
+            $detail = trim($piston->lastError());
+            $hint = $detail !== ''
+                ? ' Remote runner: ' . $detail
+                : ' Remote execution service did not respond. Set CODING_PISTON_FALLBACK=true in .env or install g++/JDK on the server.';
             return $this->fail(
                 'Runtime Error',
-                rtrim((string) ($local['stderr'] ?? 'Execution failed.')) . $hint,
+                trim(rtrim((string) ($local['stderr'] ?? 'Execution failed.')) . $hint),
                 $started
             );
         }
@@ -106,7 +108,10 @@ final class CodeExecutionService
         if ($mode === 'piston' || $mode === 'remote') {
             return true;
         }
-        $flag = $_ENV['CODING_PISTON_FALLBACK'] ?? 'true';
+        $flag = trim((string) ($_ENV['CODING_PISTON_FALLBACK'] ?? 'true'));
+        if ($flag === '') {
+            return true;
+        }
         return filter_var($flag, FILTER_VALIDATE_BOOLEAN);
     }
 

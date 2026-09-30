@@ -13,6 +13,7 @@ final class PistonExecutionClient
 {
     private string $baseUrl;
     private int $timeoutSec;
+    private string $lastError = '';
 
     public function __construct(?string $baseUrl = null, int $timeoutSec = 25)
     {
@@ -26,16 +27,24 @@ final class PistonExecutionClient
         return $this->baseUrl !== '';
     }
 
+    public function lastError(): string
+    {
+        return $this->lastError;
+    }
+
     /**
      * @return array<string, mixed>|null null when request failed entirely
      */
     public function run(string $language, string $source, string $stdin, int $timeLimitMs, float $started): ?array
     {
+        $this->lastError = '';
         if (!$this->isConfigured()) {
+            $this->lastError = 'Piston URL is not configured.';
             return null;
         }
-        $pistonLang = $this->mapLanguage($language);
+        $pistonLang = $this->mapLanguage($language, $source);
         if ($pistonLang === null) {
+            $this->lastError = 'Unsupported language for remote runner.';
             return null;
         }
 
@@ -50,6 +59,7 @@ final class PistonExecutionClient
             'compile_timeout' => 10000,
         ], JSON_UNESCAPED_UNICODE);
         if ($payload === false) {
+            $this->lastError = 'Could not encode execution payload.';
             return null;
         }
 
@@ -73,6 +83,7 @@ final class PistonExecutionClient
             ];
         }
         if ($run === null) {
+            $this->lastError = 'Remote runner returned an empty run result.';
             return null;
         }
         $stdout = (string) ($run['stdout'] ?? '');
@@ -112,26 +123,44 @@ final class PistonExecutionClient
     }
 
     /**
+     * Piston language ids from GET /runtimes (emkc.org).
+     *
      * @return array{language:string,version:string,filename:string}|null
      */
-    private function mapLanguage(string $language): ?array
+    private function mapLanguage(string $language, string $source): ?array
     {
         $raw = strtolower(trim($language));
         return match ($raw) {
-            'python' => ['language' => 'python', 'version' => '*', 'filename' => 'main.py'],
-            'javascript', 'js' => ['language' => 'javascript', 'version' => '*', 'filename' => 'main.js'],
-            'c' => ['language' => 'c', 'version' => '*', 'filename' => 'main.c'],
-            'c++', 'cpp' => ['language' => 'cpp', 'version' => '*', 'filename' => 'main.cpp'],
-            'java' => ['language' => 'java', 'version' => '*', 'filename' => 'Main.java'],
+            'python' => ['language' => 'python', 'version' => '3.10.0', 'filename' => 'main.py'],
+            'javascript', 'js' => ['language' => 'javascript', 'version' => '18.15.0', 'filename' => 'main.js'],
+            'c' => ['language' => 'c', 'version' => '10.2.0', 'filename' => 'main.c'],
+            'c++', 'cpp' => ['language' => 'c++', 'version' => '10.2.0', 'filename' => 'main.cpp'],
+            'java' => $this->mapJava($source),
             default => null,
         };
     }
 
+    /**
+     * @return array{language:string,version:string,filename:string}
+     */
+    private function mapJava(string $source): array
+    {
+        $class = 'Main';
+        if (preg_match('/public\s+class\s+(\w+)/', $source, $m)) {
+            $class = $m[1];
+        }
+
+        return ['language' => 'java', 'version' => '15.0.2', 'filename' => $class . '.java'];
+    }
+
     private function post(string $url, string $body): ?array
     {
+        $text = null;
+        $httpCode = 0;
         if (function_exists('curl_init')) {
             $ch = curl_init($url);
             if ($ch === false) {
+                $this->lastError = 'Could not initialize HTTP client (curl).';
                 return null;
             }
             curl_setopt_array($ch, [
@@ -141,13 +170,17 @@ final class PistonExecutionClient
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => $this->timeoutSec,
                 CURLOPT_CONNECTTIMEOUT => min(10, $this->timeoutSec),
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_SSL_VERIFYPEER => true,
             ]);
             $text = curl_exec($ch);
-            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-            if (!is_string($text) || $code < 200 || $code >= 300) {
+            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if ($text === false) {
+                $this->lastError = 'Remote runner request failed: ' . (curl_error($ch) ?: 'curl error');
+                curl_close($ch);
                 return null;
             }
+            curl_close($ch);
         } else {
             $ctx = stream_context_create([
                 'http' => [
@@ -157,14 +190,41 @@ final class PistonExecutionClient
                     'timeout' => $this->timeoutSec,
                     'ignore_errors' => true,
                 ],
+                'ssl' => [
+                    'verify_peer' => true,
+                    'verify_peer_name' => true,
+                ],
             ]);
             $text = @file_get_contents($url, false, $ctx);
             if (!is_string($text) || $text === '') {
+                $this->lastError = 'Remote runner request failed (HTTP streams). Check allow_url_fopen and outbound HTTPS.';
                 return null;
             }
+            if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
+                $httpCode = (int) $m[1];
+            }
         }
-        $json = json_decode($text, true);
 
-        return is_array($json) ? $json : null;
+        if (!is_string($text) || $text === '') {
+            $this->lastError = 'Remote runner returned an empty response.';
+            return null;
+        }
+        if ($httpCode !== 0 && ($httpCode < 200 || $httpCode >= 300)) {
+            $snippet = trim(substr($text, 0, 240));
+            $this->lastError = 'Remote runner HTTP ' . $httpCode . ($snippet !== '' ? ': ' . $snippet : '.');
+            return null;
+        }
+
+        $json = json_decode($text, true);
+        if (!is_array($json)) {
+            $this->lastError = 'Remote runner returned invalid JSON.';
+            return null;
+        }
+        if (isset($json['message']) && !isset($json['run'])) {
+            $this->lastError = (string) $json['message'];
+            return null;
+        }
+
+        return $json;
     }
 }
