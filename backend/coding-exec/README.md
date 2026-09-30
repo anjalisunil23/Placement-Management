@@ -50,4 +50,6 @@ Student code is **never** compiled inside the PHP-FPM web request.
 
 Practice submit (`POST /coding/problems/{id}/submit`) requires `sourceCode` and grades **all** test cases (including hidden) on the server via `CodingSubmissionGrader`.
 
+Mock/contest submit (`POST /coding/attempts/{id}/submit`) sends `{ answers: { [questionId]: { language, code } }, timeTakenSeconds }` only. Scores and hidden-case results are computed on the server; the browser never receives hidden inputs or expected outputs.
+
 Hidden test I/O is stripped in `CodingProblemBankModel::publicView()` and must never appear in student API responses.

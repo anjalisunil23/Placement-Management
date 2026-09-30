@@ -592,7 +592,7 @@ final class CodingService
      * @param array<string, mixed> $result
      * @return array<string, mixed>
      */
-    public function submit(array $user, string $attemptId, array $result): array
+    public function submit(array $user, string $attemptId, array $body): array
     {
         if (!AptitudeAccessService::canTake($user)) {
             Response::forbidden('Only students can submit mock tests.');
@@ -605,7 +605,13 @@ final class CodingService
         if ((string) ($attempt['userId'] ?? '') !== $uid) {
             Response::forbidden('This attempt does not belong to you.');
         }
+        if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            Response::error('This attempt has already been submitted.', 422);
+        }
+
+        $result = $this->buildServerGradedSubmitResult($attempt, $body);
         $result['userId'] = $uid;
+        $result['attemptId'] = $attemptId;
         $contestType = CodingTestModel::normalizeContestType((string) ($attempt['contestType'] ?? 'none'));
         $result['contestType'] = $contestType;
         if (in_array($contestType, ['weekly', 'monthly'], true)) {
@@ -633,6 +639,89 @@ final class CodingService
         $this->attempts->update($attemptId, $rankInfo);
 
         return array_merge($result, $rankInfo);
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    private function buildServerGradedSubmitResult(array $attempt, array $body): array
+    {
+        $testId = (string) ($attempt['testId'] ?? '');
+        $test = $this->tests->findById($testId);
+        if (!$test) {
+            Response::notFound('Coding test not found.');
+        }
+        $problemItemId = trim((string) ($attempt['problemItemId'] ?? ''));
+        if ($problemItemId !== '') {
+            $view = $this->buildSingleProblemTestView($test, $problemItemId);
+        } else {
+            $view = CodingTestModel::publicView($test, true);
+        }
+        if ($view === null || empty($view['items'])) {
+            Response::error('No questions found for this attempt.', 422);
+        }
+
+        $answers = $this->mergeSubmitAnswers($attempt, $body);
+        $timeLimitMs = max(500, min(15000, (int) ($_ENV['CODING_SUBMIT_TIME_LIMIT_MS'] ?? 3000)));
+        $graded = (new CodingSubmissionGrader())->gradeTestItems(
+            array_values((array) $view['items']),
+            $answers,
+            $timeLimitMs
+        );
+
+        $taken = max(0, (int) ($body['timeTakenSeconds'] ?? 0));
+        $minutes = intdiv($taken, 60);
+        $listTestId = $problemItemId !== ''
+            ? CodingTestModel::composeProblemTestId($testId, $problemItemId)
+            : $testId;
+
+        return array_merge($graded, [
+            'testId' => $testId,
+            'listTestId' => $listTestId,
+            'problemItemId' => $problemItemId !== '' ? $problemItemId : null,
+            'testTitle' => (string) ($attempt['testTitle'] ?? $view['title'] ?? ''),
+            'timeTakenSeconds' => $taken,
+            'timeTakenLabel' => sprintf('%02d:%02d', $minutes, $taken % 60),
+            'autoSubmitted' => !empty($body['autoSubmitted']),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $body
+     * @return array<string, array<string, mixed>>
+     */
+    private function mergeSubmitAnswers(array $attempt, array $body): array
+    {
+        $merged = [];
+        $stored = is_array($attempt['answers'] ?? null) ? $attempt['answers'] : [];
+        foreach ($stored as $qid => $row) {
+            if (!is_string($qid) || !is_array($row)) {
+                continue;
+            }
+            $merged[$qid] = [
+                'language' => (string) ($row['language'] ?? 'Python'),
+                'code' => (string) ($row['code'] ?? ''),
+            ];
+        }
+        $fromBody = is_array($body['answers'] ?? null) ? $body['answers'] : [];
+        foreach ($fromBody as $qid => $row) {
+            if (!is_string($qid) || !is_array($row)) {
+                continue;
+            }
+            $prev = $merged[$qid] ?? ['language' => 'Python', 'code' => ''];
+            if (array_key_exists('language', $row)) {
+                $prev['language'] = (string) $row['language'];
+            }
+            if (array_key_exists('code', $row)) {
+                $prev['code'] = (string) $row['code'];
+            }
+            $merged[$qid] = $prev;
+        }
+
+        return $merged;
     }
 
     /**
