@@ -18,6 +18,8 @@ use PMS\Services\SelfPlacementService;
 use PMS\Services\PlacementFilterService;
 use PMS\Services\StaffPlacementRegistryService;
 use PMS\Services\StaffService;
+use PMS\Services\StaffCourseQuestionService;
+use PMS\Services\CourseSyllabusCatalog;
 use PMS\Services\RecruitingService;
 use PMS\Services\AesLoginService;
 use PMS\Services\NotificationService;
@@ -671,5 +673,51 @@ final class StaffController
             'path' => $path,
             'type' => $ext === 'pdf' ? 'pdf' : 'image',
         ];
+    }
+
+    /** GET /api/staff/courses */
+    public function listCourses(): void
+    {
+        RBACMiddleware::requireStaff();
+        Response::success(['courses' => CourseSyllabusCatalog::all()]);
+    }
+
+    /** POST /api/staff/courses/questions */
+    public function generateCourseQuestions(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            Response::success(
+                (new StaffCourseQuestionService())->generate($user, $body),
+                'Practice questions generated.'
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            $code = (int) $e->getCode();
+            Response::error($e->getMessage(), ($code >= 400 && $code <= 599) ? $code : 503);
+        }
+    }
+
+    /** POST /api/staff/courses/questions/submit */
+    public function submitCoursePractice(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = [];
+        }
+        try {
+            Response::success(
+                (new StaffCourseQuestionService())->submit($user, $body),
+                'Practice submitted.'
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
     }
 }
