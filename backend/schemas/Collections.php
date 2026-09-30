@@ -44,6 +44,7 @@ final class Collections
     public const APTITUDE_ATTEMPTS = 'aptitude_attempts';
     public const APTITUDE_QUESTION_BANK = 'aptitude_question_bank';
     public const APTITUDE_JD_QUESTION_SETS = 'aptitude_jd_question_sets';
+    public const SYLLABUS_QUESTION_BANK = 'syllabus_question_bank';
     public const STUDENT_AI_PRACTICE_SESSIONS = 'student_ai_practice_sessions';
     public const CODING_TESTS = 'coding_tests';
     public const CODING_ATTEMPTS = 'coding_attempts';
@@ -720,6 +721,20 @@ final class Collections
                 'explanation'  => 'string',
                 'marks'        => 'float',
                 'category'     => 'string',
+                'difficulty'   => 'string',
+                'createdBy'    => 'ObjectId|null',
+            ],
+            self::SYLLABUS_QUESTION_BANK => [
+                '_id'          => 'ObjectId',
+                'courseCode'   => 'string',
+                'courseTitle'  => 'string',
+                'semsubId'     => 'string',
+                'department'   => 'string',
+                'module'       => 'string',
+                'question'     => 'string',
+                'options'      => 'array',
+                'correctIndex' => 'int',
+                'explanation'  => 'string',
                 'difficulty'   => 'string',
                 'createdBy'    => 'ObjectId|null',
             ],

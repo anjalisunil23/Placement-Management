@@ -811,7 +811,7 @@ final class StaffController
         try {
             Response::success(
                 (new StaffCourseQuestionService())->generate($user, $body),
-                'Practice questions generated.'
+                'Questions saved to the syllabus question bank.'
             );
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
@@ -833,6 +833,32 @@ final class StaffController
             Response::success(
                 (new StaffCourseQuestionService())->submit($user, $body),
                 'Practice submitted.'
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
+    /** GET /api/staff/courses/question-bank?courseCode=26MCAT107 */
+    public function listSyllabusQuestionBank(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $courseCode = trim((string) ($_GET['courseCode'] ?? $_GET['code'] ?? ''));
+        try {
+            Response::success((new StaffCourseQuestionService())->listBank($user, $courseCode));
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
+    /** DELETE /api/staff/courses/question-bank/{id} */
+    public function deleteSyllabusBankQuestion(string $id): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        try {
+            Response::success(
+                (new StaffCourseQuestionService())->deleteBankQuestion($user, $id),
+                'Question removed from the syllabus bank.'
             );
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
