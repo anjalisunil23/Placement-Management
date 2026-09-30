@@ -88,9 +88,10 @@ function renderCourseResults(total) {
     : '';
   box.classList.remove('d-none');
   box.innerHTML = courses.map((course, index) => `
-    <button type="button" class="btn btn-light w-100 text-start border-0 border-bottom rounded-0" data-pick="${index}">
+    <button type="button" class="btn btn-light w-100 border-0 border-bottom rounded-0" data-pick="${index}" style="justify-content:flex-start;text-align:left">
       <span class="fw-semibold">${esc(course.code)}</span>
       <span class="text-muted-2"> — ${esc(course.title)}</span>
+      ${course.semsubId ? `<span class="text-muted-2"> · ${esc(course.semsubId)}</span>` : ''}
     </button>`).join('') + more;
 }
 
@@ -145,6 +146,7 @@ function renderSyllabus() {
       <div>
         <div class="small text-muted-2">${[course.scheme, course.department].filter(Boolean).map(esc).join(' · ')}</div>
         <h2 class="h5 mb-0">${esc(course.code)} — ${esc(course.title)}</h2>
+        ${course.semsubId ? `<div class="small text-muted-2">Semester subject id ${esc(course.semsubId)}</div>` : ''}
       </div>
     </div>
     <div class="row g-3">${modules}</div>`;
@@ -224,6 +226,7 @@ async function generate() {
       method: 'POST',
       body: JSON.stringify({
         courseCode: course.code,
+        semsubId: course.semsubId || '',
         count: Number(document.getElementById('qCount').value),
         difficulty: document.getElementById('qDifficulty').value,
       }),

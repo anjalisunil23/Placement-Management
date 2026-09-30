@@ -207,6 +207,7 @@ PROMPT;
             return [
                 'code' => $code,
                 'title' => $title !== '' ? $title : $code,
+                'semsubId' => (string) ($row['semsubId'] ?? ''),
                 'department' => (string) ($row['department'] ?? ''),
                 'scheme' => 'AES',
                 'modules' => [[
