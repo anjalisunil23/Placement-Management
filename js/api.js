@@ -502,6 +502,7 @@ const PAGE_PERMS = {
   'staff-jobs.html':        ['staff'],
   'staff-recommend.html':   ['staff'],
   'staff-placements.html':  ['staff'],
+  'staff-courses.html':     ['staff', 'placement_officer'],
   'admin-companies.html':   ['admin','placement_officer','staff'],
   'placement-console.html': [],
   'recruiting.html':        ['admin','placement_officer'],
@@ -522,7 +523,7 @@ const PAGE_PERMS = {
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
-const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'aptitude-training.html', 'coding.html'];
+const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'staff-courses.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'aptitude-training.html', 'coding.html'];
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'job-posts.html', 'internal-jobs.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'aptitude-training.html', 'coding.html', 'certifications.html'];
 
@@ -971,6 +972,7 @@ const Auth = {
     const base = (page || '').split('#')[0].split('?')[0];
     if (!(PAGE_PERMS[base] || ROLES).includes(role)) return false;
     if (role === 'placement_officer' && ADMIN_ONLY_PAGES.includes(base)) return false;
+    if (base === 'staff-courses.html' && role === 'placement_officer' && !this.isHod()) return false;
     if (role === 'staff' && ADMIN_ONLY_PAGES.includes(base)) return false;
     if (role === 'alumni') return alumniPageAllowed(base);
     if (role === 'company') return COMPANY_PAGES.includes(base);

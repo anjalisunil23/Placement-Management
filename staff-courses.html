@@ -1,0 +1,275 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Course Practice · AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+</head>
+<body data-page="staff-courses.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Course Practice</h1>
+    <p class="page-sub mb-0">Select a course code to view its syllabus, then start an AI practice session from that syllabus.</p>
+  </div>
+</div>
+
+<div class="card-surface p-3 p-md-4 mb-3">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold" for="deptFilter">Department</label>
+      <select class="form-select" id="deptFilter">
+        <option value="">All departments</option>
+      </select>
+    </div>
+    <div class="col-md-5">
+      <label class="form-label small fw-semibold" for="courseCode">Course code</label>
+      <select class="form-select" id="courseCode">
+        <option value="">Select a course code</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold" for="qCount">Questions</label>
+      <select class="form-select" id="qCount">
+        <option value="5">5</option>
+        <option value="10" selected>10</option>
+        <option value="15">15</option>
+        <option value="20">20</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small fw-semibold" for="qDifficulty">Difficulty</label>
+      <select class="form-select" id="qDifficulty">
+        <option>Easy</option>
+        <option selected>Medium</option>
+        <option>Hard</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div id="syllabusPanel" class="card-surface p-3 p-md-4 mb-3">
+  <p class="text-muted-2 mb-0">Select a course code to see the syllabus.</p>
+</div>
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <button type="button" class="btn btn-primary" id="btnGenerate" disabled>
+    <i class="bi bi-stars me-1"></i>Start practice
+  </button>
+  <span class="small text-muted-2" id="genStatus"></span>
+</div>
+
+<div id="practicePanel"></div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=20260930cpractice"></script>
+<script src="js/app.js?v=20260930cpractice"></script>
+<script>
+let courses = [];
+let practice = null;
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function selectedCourse() {
+  const code = document.getElementById('courseCode').value;
+  return courses.find((c) => c.code === code) || null;
+}
+
+function fillDepartments() {
+  const select = document.getElementById('deptFilter');
+  const names = [...new Set(courses.map((c) => c.department))].sort();
+  select.innerHTML = '<option value="">All departments</option>' + names.map((name) => (
+    `<option value="${esc(name)}">${esc(name)}</option>`
+  )).join('');
+}
+
+function fillCourses() {
+  const dept = document.getElementById('deptFilter').value;
+  const current = document.getElementById('courseCode').value;
+  const rows = courses.filter((c) => !dept || c.department === dept);
+  const options = ['<option value="">Select a course code</option>'].concat(rows.map((c) => (
+    `<option value="${esc(c.code)}">${esc(c.code)} — ${esc(c.title)}</option>`
+  )));
+  const select = document.getElementById('courseCode');
+  select.innerHTML = options.join('');
+  if (rows.some((c) => c.code === current)) select.value = current;
+  renderSyllabus();
+}
+
+function renderSyllabus() {
+  const course = selectedCourse();
+  const panel = document.getElementById('syllabusPanel');
+  document.getElementById('btnGenerate').disabled = !course;
+  if (!course) {
+    panel.innerHTML = '<p class="text-muted-2 mb-0">Select a course code to see the syllabus.</p>';
+    return;
+  }
+  const modules = (course.modules || []).map((mod) => `
+    <div class="col-md-6">
+      <div class="border rounded p-3 h-100">
+        <div class="fw-semibold mb-1">${esc(mod.name)}</div>
+        <div class="text-muted-2">${esc(mod.topics)}</div>
+      </div>
+    </div>`).join('');
+  panel.innerHTML = `
+    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+      <div>
+        <div class="small text-muted-2">${esc(course.scheme)} · ${esc(course.department)}</div>
+        <h2 class="h5 mb-0">${esc(course.code)} — ${esc(course.title)}</h2>
+      </div>
+    </div>
+    <div class="row g-3">${modules}</div>`;
+}
+
+function renderPractice(payload) {
+  practice = payload;
+  const rows = payload?.questions || [];
+  const root = document.getElementById('practicePanel');
+  if (!rows.length) {
+    root.innerHTML = '';
+    return;
+  }
+  root.innerHTML = `
+    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+      <h2 class="h5 mb-0">Practice session · ${esc(payload.courseCode)} ${esc(payload.courseTitle || '')}</h2>
+      <span class="badge-soft info">${esc(payload.difficulty || '')} · ${rows.length} questions</span>
+    </div>
+    ${rows.map((q, i) => {
+      const options = (q.options || []).map((opt, idx) => `
+        <label class="d-flex gap-2 align-items-start border rounded p-2 mb-2">
+          <input class="form-check-input mt-1" type="radio" name="q${i}" value="${idx}"/>
+          <span>${esc(opt)}</span>
+        </label>`).join('');
+      return `
+        <article class="card-surface p-3 p-md-4 mb-3">
+          <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+            <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
+            ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
+          </div>
+          ${options}
+        </article>`;
+    }).join('')}
+    <button type="button" class="btn btn-primary" id="btnSubmitPractice">Submit practice</button>`;
+  document.getElementById('btnSubmitPractice').addEventListener('click', submitPractice);
+}
+
+function renderResult(payload) {
+  practice = null;
+  const results = payload?.results || [];
+  const root = document.getElementById('practicePanel');
+  root.innerHTML = `
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <div class="small text-muted-2">Practice result · ${esc(payload.courseCode || '')}</div>
+      <div class="h4 mb-0">${esc(payload.score ?? 0)} / ${esc(payload.total ?? results.length)}</div>
+    </div>
+    ${results.map((q, i) => {
+      const options = (q.options || []).map((opt, idx) => {
+        let mark = '';
+        if (idx === q.correctIndex) mark = 'fw-semibold';
+        const yours = idx === q.selectedIndex ? ' <span class="badge-soft ' + (q.correct ? 'success' : 'danger') + '">Your answer</span>' : '';
+        const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
+        return `<li class="${mark} mb-1">${esc(opt)}${yours}${right}</li>`;
+      }).join('');
+      return `
+        <article class="card-surface p-3 p-md-4 mb-3">
+          <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+            <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
+            <span class="badge-soft ${q.correct ? 'success' : 'danger'}">${q.correct ? 'Correct' : 'Incorrect'}</span>
+          </div>
+          <ol class="mb-2 ps-3" type="A">${options}</ol>
+          ${q.explanation ? `<div class="small text-muted-2">${esc(q.explanation)}</div>` : ''}
+        </article>`;
+    }).join('')}`;
+}
+
+async function loadCourses() {
+  const res = await api('/staff/courses');
+  if (!res?.success) throw new Error(res?.message || 'Could not load course codes.');
+  courses = Array.isArray(res.data?.courses) ? res.data.courses : [];
+  fillDepartments();
+  fillCourses();
+}
+
+async function generate() {
+  const course = selectedCourse();
+  if (!course) return;
+  const button = document.getElementById('btnGenerate');
+  const status = document.getElementById('genStatus');
+  button.disabled = true;
+  status.textContent = 'Generating a practice session from the syllabus…';
+  document.getElementById('practicePanel').innerHTML = '';
+  try {
+    const res = await api('/staff/courses/questions', {
+      method: 'POST',
+      body: JSON.stringify({
+        courseCode: course.code,
+        count: Number(document.getElementById('qCount').value),
+        difficulty: document.getElementById('qDifficulty').value,
+      }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+    const count = (res.data?.questions || []).length;
+    status.textContent = `${count} question${count === 1 ? '' : 's'} from ${course.code}.`;
+    renderPractice(res.data);
+  } catch (err) {
+    status.textContent = '';
+    document.getElementById('practicePanel').innerHTML = `<div class="card-surface p-3 text-danger">${esc(err?.message || 'Could not generate questions.')}</div>`;
+  } finally {
+    button.disabled = !selectedCourse();
+  }
+}
+
+async function submitPractice() {
+  if (!practice?.sessionId) return;
+  const answers = (practice.questions || []).map((_, i) => {
+    const picked = document.querySelector(`input[name="q${i}"]:checked`);
+    return picked ? Number(picked.value) : -1;
+  });
+  const button = document.getElementById('btnSubmitPractice');
+  if (button) button.disabled = true;
+  const status = document.getElementById('genStatus');
+  status.textContent = 'Checking answers…';
+  try {
+    const res = await api('/staff/courses/questions/submit', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: practice.sessionId, answers }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not submit the practice session.');
+    status.textContent = `Score ${res.data?.score ?? 0} / ${res.data?.total ?? 0}.`;
+    renderResult(res.data);
+  } catch (err) {
+    status.textContent = '';
+    if (button) button.disabled = false;
+    if (typeof toast === 'function') toast(err?.message || 'Could not submit the practice session.', 'error');
+  }
+}
+
+document.getElementById('deptFilter').addEventListener('change', fillCourses);
+document.getElementById('courseCode').addEventListener('change', () => {
+  renderSyllabus();
+  practice = null;
+  document.getElementById('practicePanel').innerHTML = '';
+  document.getElementById('genStatus').textContent = '';
+});
+document.getElementById('btnGenerate').addEventListener('click', generate);
+
+onAppReady(async () => {
+  const role = typeof Auth !== 'undefined' && Auth.role ? Auth.role() : '';
+  const hod = typeof Auth !== 'undefined' && typeof Auth.isHod === 'function' && Auth.isHod();
+  if (role !== 'staff' && !hod) {
+    location.href = 'dashboard.html';
+    return;
+  }
+  try {
+    await loadCourses();
+  } catch (err) {
+    document.getElementById('syllabusPanel').innerHTML = `<p class="text-danger mb-0">${esc(err?.message || 'Could not load course codes.')}</p>`;
+  }
+});
+</script>
+</body></html>

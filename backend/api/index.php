@@ -361,6 +361,9 @@ $routes = [
     ['GET',  '/company/recruiting',                   [CompanyController::class, 'recruitingOverview']],
 
     // Staff
+    ['GET',  '/staff/courses',                     [StaffController::class, 'listCourses']],
+    ['POST', '/staff/courses/questions',          [StaffController::class, 'generateCourseQuestions']],
+    ['POST', '/staff/courses/questions/submit',   [StaffController::class, 'submitCoursePractice']],
     ['GET',  '/staff/profile',                    [StaffController::class, 'profile']],
     ['PUT',  '/staff/profile',                    [StaffController::class, 'updateProfile']],
     ['GET',  '/staff/dashboard',                  [StaffController::class, 'dashboard']],

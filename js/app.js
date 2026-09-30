@@ -110,12 +110,16 @@ const NAV = [
   { href: "alumni-success-stories.html", icon: "bi-star-fill", label: "Success Stories", roles: ['alumni'], alumniEmployed: true },
 
   { section: "Staff", roles: ['staff'] },
+  { href: "staff-courses.html", icon: "bi-journal-richtext", label: "Course Practice", roles: ['staff'] },
   { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
   { href: "staff-jobs.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['staff'] },
   { href: "job-posts.html#internal", icon: "bi-megaphone-fill", label: "Internal Job Post", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['staff'], staffViewerOnly: true },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['staff'], staffViewerOnly: true },
+
+  { section: "Staff", roles: ['placement_officer'], hodOnly: true },
+  { href: "staff-courses.html", icon: "bi-journal-richtext", label: "Course Practice", roles: ['placement_officer'], hodOnly: true },
 
   { section: "Company", roles: ['company'] },
   { href: "company.html", icon: "bi-building", label: "Job Portal", roles: ['company'] },
@@ -158,6 +162,7 @@ const PAGE_LABELS = {
   'staff-jobs.html': 'Job Posts',
   'staff-recommend.html': 'Recommend Company',
   'staff-placements.html': 'Placements & Higher Education',
+  'staff-courses.html': 'Course Practice',
   'users.html': 'User Management',
   'rules.html': 'Placement Rules',
   'applications.html': 'Student · Management · Application',
@@ -402,6 +407,7 @@ function navItemVisible(n, role) {
   if (navItemHidden(n)) return false;
   if (n.studentOnly && role !== 'student') return false;
   if (!n.roles.includes(role)) return false;
+  if (n.hodOnly && (typeof Auth === 'undefined' || typeof Auth.isHod !== 'function' || !Auth.isHod())) return false;
   if (n.staffViewerOnly) {
     if (role === 'staff') return typeof Auth !== 'undefined' && Auth.canViewPlacementAdminData();
     // Admin/PO entries that also list staff still show for admin/PO.
