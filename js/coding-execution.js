@@ -3,6 +3,18 @@
  */
 (function (global) {
   const API_ENABLED = false;
+
+  function canServerExecute(language) {
+    try {
+      if (typeof global.api !== 'function') return false;
+      if (typeof global.Auth === 'undefined' || typeof Auth.hasRealAuth !== 'function') return false;
+      if (!Auth.hasRealAuth() || Auth.isDemo()) return false;
+    } catch {
+      return false;
+    }
+    const lang = String(language || 'Python');
+    return lang === 'C' || lang === 'C++' || lang === 'Java' || API_ENABLED;
+  }
   const DEFAULT_TIME_LIMIT_MS = 3000;
   const MOCK_SPIN_MS = [650, 1100];
 
@@ -419,6 +431,10 @@
     ready: true,
     async run(opts) {
       try {
+        const language = opts.language || 'Python';
+        if (canServerExecute(language)) {
+          return await apiRun(opts);
+        }
         if (API_ENABLED && typeof api === 'function') {
           return await apiRun(opts);
         }

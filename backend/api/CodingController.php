@@ -6,6 +6,7 @@ namespace PMS\Api;
 
 use PMS\Middleware\AuthMiddleware;
 use PMS\Services\AptitudeAccessService;
+use PMS\Services\CodeExecutionService;
 use PMS\Services\CodingService;
 use PMS\Utils\Response;
 
@@ -337,5 +338,24 @@ final class CodingController
     {
         $user = AuthMiddleware::authenticate();
         Response::success($this->service()->submitPracticeProblem($user, $id, $this->body()), 'Submitted.');
+    }
+
+    /** POST /api/coding/execute — compile/run student code (C++, Java, etc.) */
+    public function execute(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        if (!AptitudeAccessService::canTake($user) && !AptitudeAccessService::canManageCoding($user)) {
+            Response::forbidden('You cannot run code on this account.');
+        }
+        $body = $this->body();
+        $language = trim((string) ($body['language'] ?? 'Python'));
+        $source = (string) ($body['source'] ?? '');
+        $stdin = (string) ($body['stdin'] ?? '');
+        $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 3000)));
+        if (trim($source) === '') {
+            Response::error('Source code is required.', 422);
+        }
+        $runner = new CodeExecutionService();
+        Response::success($runner->run($language, $source, $stdin, $timeLimitMs));
     }
 }
