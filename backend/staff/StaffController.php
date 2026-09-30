@@ -741,6 +741,37 @@ final class StaffController
         ]);
     }
 
+    /** GET /api/staff/courses/syllabus */
+    public function downloadSyllabus(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $semsubId = trim((string) ($_GET['semsubId'] ?? $_GET['id'] ?? ''));
+        $courseCode = strtoupper(trim((string) ($_GET['courseCode'] ?? $_GET['code'] ?? '')));
+        if ($semsubId === '') {
+            Response::error('Select a course, then click Get.', 422);
+        }
+        $dept = $this->staffDepartment($user);
+        if ($courseCode !== '' && !CourseSyllabusCatalog::subjectVisibleToStaff($courseCode, $dept['code'], $dept['name'], $dept['shortName'])) {
+            Response::forbidden('That course is outside your department.');
+        }
+        $encid = AesSyllabusCipher::encrypt($semsubId);
+        if ($encid === '') {
+            Response::error('Could not encode that course id.', 500);
+        }
+        try {
+            $pdf = AesSyllabusCipher::fetchPdf($encid);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 502);
+        }
+        $file = preg_replace('/[^A-Za-z0-9_-]+/', '-', $courseCode !== '' ? $courseCode : 'syllabus') ?: 'syllabus';
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="' . $file . '.pdf"');
+        header('Cache-Control: private, max-age=120');
+        header('X-Content-Type-Options: nosniff');
+        echo $pdf;
+        exit;
+    }
+
     /** GET /api/staff/courses */
     public function listCourses(): void
     {

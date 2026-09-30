@@ -60,4 +60,59 @@ final class AesSyllabusCipher
     {
         return substr(hash('sha256', 'mckaaes_syl@ajce'), 0, 16);
     }
+
+    public static function downloadUrl(string $encid): string
+    {
+        return 'https://www.aesajce.in/autonomy/syllabusDownload.php?id='
+            . rawurlencode($encid)
+            . '&key=' . self::downloadKey();
+    }
+
+    public static function fetchPdf(string $encid): string
+    {
+        $encid = trim($encid);
+        if ($encid === '') {
+            return '';
+        }
+        $url = self::downloadUrl($encid);
+        $body = self::httpGet($url, true);
+        if (!str_starts_with($body, '%PDF')) {
+            $body = self::httpGet($url, false);
+        }
+        if (!str_starts_with($body, '%PDF')) {
+            throw new \RuntimeException('Could not download that syllabus.');
+        }
+
+        return $body;
+    }
+
+    private static function downloadKey(): string
+    {
+        return '8d279a9aec738b906911e3350235a03024bde475';
+    }
+
+    private static function httpGet(string $url, bool $sslVerify): string
+    {
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return '';
+        }
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => $sslVerify,
+            CURLOPT_SSL_VERIFYHOST => $sslVerify ? 2 : 0,
+            CURLOPT_HTTPHEADER => [
+                'Accept: application/pdf, */*;q=0.1',
+                'Origin: https://www.aesajce.in',
+                'Referer: https://www.aesajce.in/',
+            ],
+        ]);
+        $body = curl_exec($ch);
+        curl_close($ch);
+
+        return is_string($body) ? $body : '';
+    }
 }
