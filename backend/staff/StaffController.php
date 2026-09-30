@@ -20,6 +20,7 @@ use PMS\Services\StaffPlacementRegistryService;
 use PMS\Services\StaffService;
 use PMS\Services\StaffCourseQuestionService;
 use PMS\Services\AesApiService;
+use PMS\Services\AesSyllabusCipher;
 use PMS\Services\CourseSyllabusCatalog;
 use PMS\Services\RecruitingService;
 use PMS\Services\AesLoginService;
@@ -707,6 +708,36 @@ final class StaffController
             'courses' => array_slice($courses, 0, 40),
             'total' => count($courses),
             'departmentName' => $departmentName,
+        ]);
+    }
+
+    /** POST /api/staff/courses/get */
+    public function getCourse(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $raw = file_get_contents('php://input') ?: '{}';
+        $body = json_decode($raw, true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        $semsubId = trim((string) ($body['semsubId'] ?? $body['id'] ?? ''));
+        $courseCode = strtoupper(trim((string) ($body['courseCode'] ?? $body['code'] ?? '')));
+        if ($semsubId === '') {
+            Response::error('Select a course, then click Get.', 422);
+        }
+        $dept = $this->staffDepartment($user);
+        if ($courseCode !== '' && !CourseSyllabusCatalog::subjectVisibleToStaff($courseCode, $dept['code'], $dept['name'], $dept['shortName'])) {
+            Response::error('That course is outside your department.', 422);
+        }
+        $encid = AesSyllabusCipher::encrypt($semsubId);
+        if ($encid === '') {
+            Response::error('Could not encode that course id.', 500);
+        }
+        Response::success([
+            'semsubId' => $semsubId,
+            'encid' => $encid,
+            'courseCode' => $courseCode,
+            'departmentName' => $dept['name'] !== '' ? $dept['name'] : $dept['code'],
         ]);
     }
 

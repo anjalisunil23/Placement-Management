@@ -363,6 +363,7 @@ $routes = [
 
     // Staff
     ['GET',  '/staff/courses/search',              [StaffController::class, 'searchCourses']],
+    ['POST', '/staff/courses/get',                 [StaffController::class, 'getCourse']],
     ['GET',  '/staff/courses',                     [StaffController::class, 'listCourses']],
     ['POST', '/staff/courses/questions',          [StaffController::class, 'generateCourseQuestions']],
     ['POST', '/staff/courses/questions/submit',   [StaffController::class, 'submitCoursePractice']],

@@ -17,31 +17,13 @@
 </div>
 
 <div class="card-surface p-3 p-md-4 mb-3">
-  <div class="row g-3 align-items-end">
-    <div class="col-md-8">
-      <label class="form-label small fw-semibold" for="courseSearch">Course code</label>
-      <input class="form-control" id="courseSearch" type="search" placeholder="Type at least 3 letters, for example 26M" autocomplete="off" />
-      <div class="border rounded mt-2 d-none" id="courseResults" style="max-height:16rem;overflow:auto"></div>
-      <div class="form-text" id="deptLabel">Type at least 3 letters of a course code.</div>
-    </div>
-    <div class="col-6 col-md-2">
-      <label class="form-label small fw-semibold" for="qCount">Questions</label>
-      <select class="form-select" id="qCount">
-        <option value="5">5</option>
-        <option value="10" selected>10</option>
-        <option value="15">15</option>
-        <option value="20">20</option>
-      </select>
-    </div>
-    <div class="col-6 col-md-2">
-      <label class="form-label small fw-semibold" for="qDifficulty">Difficulty</label>
-      <select class="form-select" id="qDifficulty">
-        <option>Easy</option>
-        <option selected>Medium</option>
-        <option>Hard</option>
-      </select>
-    </div>
+  <label class="form-label small fw-semibold" for="courseSearch">Course code</label>
+  <div class="d-flex gap-2">
+    <input class="form-control" id="courseSearch" type="search" placeholder="Type at least 3 letters, for example 26M" autocomplete="off" />
+    <button type="button" class="btn btn-primary flex-shrink-0" id="btnGet">Get</button>
   </div>
+  <div class="border rounded mt-2 d-none" id="courseResults" style="max-height:16rem;overflow:auto"></div>
+  <div class="form-text" id="deptLabel">Type at least 3 letters of a course code.</div>
 </div>
 
 <div id="syllabusPanel" class="card-surface p-3 p-md-4 mb-3">
@@ -56,6 +38,45 @@
 </div>
 
 <div id="practicePanel"></div>
+
+<div class="modal fade" id="generateModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Generate questions</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted-2 mb-3" id="generateCourseLabel"></p>
+        <div class="row g-3">
+          <div class="col-6">
+            <label class="form-label small fw-semibold" for="qCount">No. of questions</label>
+            <select class="form-select" id="qCount">
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold" for="qDifficulty">Difficulty</label>
+            <select class="form-select" id="qDifficulty">
+              <option>Easy</option>
+              <option selected>Medium</option>
+              <option>Hard</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnConfirmGenerate">
+          <i class="bi bi-stars me-1"></i>Generate questions
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -126,6 +147,46 @@ async function searchCourses() {
   }
 }
 
+async function getSelectedCourse() {
+  const query = document.getElementById('courseSearch').value.trim();
+  const label = document.getElementById('deptLabel');
+  const button = document.getElementById('btnGet');
+  if (!picked || (query && picked.code && query.toUpperCase() !== String(picked.code).toUpperCase())) {
+    await searchCourses();
+    const exact = courses.find((c) => String(c.code).toUpperCase() === query.toUpperCase());
+    if (exact) picked = exact;
+  }
+  if (!picked?.semsubId) {
+    label.textContent = 'Select a course from the list, then click Get.';
+    return;
+  }
+  button.disabled = true;
+  label.textContent = 'Loading course…';
+  try {
+    const res = await api('/staff/courses/get', {
+      method: 'POST',
+      body: JSON.stringify({
+        semsubId: picked.semsubId,
+        courseCode: picked.code,
+      }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not load that course.');
+    picked = Object.assign({}, picked, res.data || {});
+    document.getElementById('courseSearch').value = picked.code || query;
+    document.getElementById('courseResults').classList.add('d-none');
+    practice = null;
+    document.getElementById('practicePanel').innerHTML = '';
+    document.getElementById('genStatus').textContent = '';
+    const deptName = String(res.data?.departmentName || '').trim();
+    label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Course loaded.';
+    renderSyllabus();
+  } catch (err) {
+    label.textContent = err?.message || 'Could not load that course.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function renderSyllabus() {
   const course = selectedCourse();
   const panel = document.getElementById('syllabusPanel');
@@ -147,6 +208,7 @@ function renderSyllabus() {
         <div class="small text-muted-2">${[course.scheme, course.department].filter(Boolean).map(esc).join(' · ')}</div>
         <h2 class="h5 mb-0">${esc(course.code)} — ${esc(course.title)}</h2>
         ${course.semsubId ? `<div class="small text-muted-2">Semester subject id ${esc(course.semsubId)}</div>` : ''}
+        ${course.encid ? `<div class="small text-muted-2">Encoded id ${esc(course.encid)}</div>` : ''}
       </div>
     </div>
     <div class="row g-3">${modules}</div>`;
@@ -216,7 +278,7 @@ function renderResult(payload) {
 async function generate() {
   const course = selectedCourse();
   if (!course) return;
-  const button = document.getElementById('btnGenerate');
+  const button = document.getElementById('btnConfirmGenerate');
   const status = document.getElementById('genStatus');
   button.disabled = true;
   status.textContent = 'Generating a practice session from the syllabus…';
@@ -227,6 +289,7 @@ async function generate() {
       body: JSON.stringify({
         courseCode: course.code,
         semsubId: course.semsubId || '',
+        encid: course.encid || '',
         count: Number(document.getElementById('qCount').value),
         difficulty: document.getElementById('qDifficulty').value,
       }),
@@ -234,12 +297,14 @@ async function generate() {
     if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
     const count = (res.data?.questions || []).length;
     status.textContent = `${count} question${count === 1 ? '' : 's'} from ${course.code}.`;
+    const modalEl = document.getElementById('generateModal');
+    bootstrap.Modal.getOrCreateInstance(modalEl).hide();
     renderPractice(res.data);
   } catch (err) {
     status.textContent = '';
     document.getElementById('practicePanel').innerHTML = `<div class="card-surface p-3 text-danger">${esc(err?.message || 'Could not generate questions.')}</div>`;
   } finally {
-    button.disabled = !selectedCourse();
+    button.disabled = false;
   }
 }
 
@@ -272,6 +337,16 @@ document.getElementById('courseSearch').addEventListener('input', () => {
   window.clearTimeout(searchTimer);
   searchTimer = window.setTimeout(searchCourses, 300);
 });
+document.getElementById('courseSearch').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  window.clearTimeout(searchTimer);
+  searchCourses();
+});
+document.getElementById('btnGet').addEventListener('click', () => {
+  window.clearTimeout(searchTimer);
+  getSelectedCourse();
+});
 document.getElementById('courseResults').addEventListener('click', (event) => {
   const button = event.target.closest('[data-pick]');
   if (!button) return;
@@ -285,7 +360,13 @@ document.getElementById('courseResults').addEventListener('click', (event) => {
   document.getElementById('genStatus').textContent = '';
   renderSyllabus();
 });
-document.getElementById('btnGenerate').addEventListener('click', generate);
+document.getElementById('btnGenerate').addEventListener('click', () => {
+  const course = selectedCourse();
+  if (!course) return;
+  document.getElementById('generateCourseLabel').textContent = `${course.code} — ${course.title}`;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).show();
+});
+document.getElementById('btnConfirmGenerate').addEventListener('click', generate);
 
 onAppReady(() => {
   const role = typeof Auth !== 'undefined' && Auth.role ? Auth.role() : '';
