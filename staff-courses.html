@@ -12,9 +12,18 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Syllabus</h1>
-    <p class="page-sub mb-0">Search a course code, open its syllabus, then save questions into that course question bank.</p>
+    <p class="page-sub mb-0">Create questions from a course syllabus, then review them in that course question bank.</p>
   </div>
 </div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tabCreateBtn" data-bs-toggle="tab" data-bs-target="#tabCreate" type="button" role="tab" aria-controls="tabCreate" aria-selected="true">Create question</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tabBankBtn" data-bs-toggle="tab" data-bs-target="#tabBank" type="button" role="tab" aria-controls="tabBank" aria-selected="false">Syllabus question bank</button>
+  </li>
+</ul>
 
 <div class="card-surface p-3 p-md-4 mb-3">
   <label class="form-label small fw-semibold" for="courseSearch">Course code</label>
@@ -26,20 +35,24 @@
   <div class="form-text" id="deptLabel">Type at least 3 letters of a course code.</div>
 </div>
 
-<div id="syllabusPanel" class="card-surface p-3 p-md-4 mb-3">
-  <p class="text-muted-2 mb-0">Search a course code, then click Get to open the syllabus PDF.</p>
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="tabCreate" role="tabpanel" aria-labelledby="tabCreateBtn">
+    <div id="syllabusPanel" class="card-surface p-3 p-md-4 mb-3">
+      <p class="text-muted-2 mb-0">Search a course code, then click Get to open the syllabus PDF.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      <button type="button" class="btn btn-primary" id="btnGenerate" disabled>
+        <i class="bi bi-stars me-1"></i>Generate questions
+      </button>
+      <span class="small text-muted-2" id="genStatus"></span>
+    </div>
+    <div id="practicePanel"></div>
+  </div>
+  <div class="tab-pane fade" id="tabBank" role="tabpanel" aria-labelledby="tabBankBtn">
+    <p class="small text-muted-2 mb-3" id="bankHint">Select a course and click Get to open its question bank.</p>
+    <div id="bankPanel"></div>
+  </div>
 </div>
-
-<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-  <button type="button" class="btn btn-primary" id="btnGenerate" disabled>
-    <i class="bi bi-stars me-1"></i>Generate questions
-  </button>
-  <span class="small text-muted-2" id="genStatus"></span>
-</div>
-
-<div id="bankPanel"></div>
-
-<div id="practicePanel"></div>
 
 <div class="modal fade" id="generateModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
@@ -96,8 +109,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260930sylmix"></script>
-<script src="js/app.js?v=20260930sylmix"></script>
+<script src="js/api.js?v=20260930syltabs"></script>
+<script src="js/app.js?v=20260930syltabs"></script>
 <script>
 let courses = [];
 let picked = null;
@@ -199,6 +212,7 @@ async function getSelectedCourse() {
     const deptName = String(res.data?.departmentName || '').trim();
     label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Course loaded.';
     renderSyllabus();
+    loadBank();
   } catch (err) {
     label.textContent = err?.message || 'Could not load that course.';
   } finally {
@@ -212,6 +226,7 @@ function renderSyllabus() {
   document.getElementById('btnGenerate').disabled = !course?.semsubId;
   if (!course) {
     clearBank();
+    setBankHint('Select a course and click Get to open its question bank.');
     if (picked?.code) {
       panel.innerHTML = `<p class="text-muted-2 mb-0">Selected <span class="fw-semibold">${esc(picked.code)}</span>${picked.title ? ` — ${esc(picked.title)}` : ''}. Click Get to open the syllabus PDF.</p>`;
     } else {
@@ -231,7 +246,14 @@ function renderSyllabus() {
       ${syllabusSrc ? `<a class="small text-decoration-none" href="${esc(syllabusSrc)}" target="_blank" rel="noopener">Open PDF in new tab</a>` : ''}
     </div>
     ${syllabusSrc ? `<iframe class="w-100 rounded border" style="min-height:70vh;background:#fff" title="Course syllabus" src="${esc(syllabusSrc)}"></iframe>` : '<p class="text-muted-2 mb-0">Could not open that syllabus PDF.</p>'}`;
-  loadBank();
+}
+
+function setBankHint(text) {
+  const el = document.getElementById('bankHint');
+  if (!el) return;
+  const value = String(text || '').trim();
+  el.textContent = value;
+  el.classList.toggle('d-none', value === '');
 }
 
 function clearBank() {
@@ -275,8 +297,10 @@ function renderBank(payload) {
   const rows = Array.isArray(payload?.questions) ? payload.questions : [];
   if (!code) {
     panel.innerHTML = '';
+    setBankHint('Select a course and click Get to open its question bank.');
     return;
   }
+  setBankHint('');
   panel.innerHTML = `
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
@@ -310,6 +334,7 @@ async function loadBank() {
       questions: [],
     });
     document.getElementById('genStatus').textContent = err?.message || 'Could not load the question bank.';
+    setBankHint(err?.message || 'Could not load the question bank.');
   }
 }
 
@@ -322,7 +347,7 @@ async function deleteBankQuestion(id) {
       courseCode: res.data?.courseCode || loaded?.code || '',
       courseTitle: res.data?.courseTitle || loaded?.title || '',
     }));
-    document.getElementById('genStatus').textContent = 'Question removed from ' + (res.data?.courseCode || loaded?.code || 'the bank') + '.';
+    setBankHint('Question removed from ' + (res.data?.courseCode || loaded?.code || 'the bank') + '.');
   } catch (err) {
     if (typeof toast === 'function') toast(err?.message || 'Could not remove that question.', 'error');
   }
@@ -497,6 +522,14 @@ document.getElementById('btnGenerate').addEventListener('click', () => {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).show();
 });
 document.getElementById('btnConfirmGenerate').addEventListener('click', generate);
+document.getElementById('tabBankBtn').addEventListener('shown.bs.tab', () => {
+  if (loaded?.code) {
+    loadBank();
+    return;
+  }
+  clearBank();
+  setBankHint('Select a course and click Get to open its question bank.');
+});
 document.getElementById('bankPanel').addEventListener('click', (event) => {
   const button = event.target.closest('[data-bank-del]');
   if (!button) return;
