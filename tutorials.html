@@ -94,6 +94,9 @@
   .tutorial-lesson code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   #studentModuleNav .btn{white-space:normal}
   #studentCode{min-height:12rem}
+  #moduleNav .btn{white-space:normal;text-align:left}
+  #moduleEditor{min-height:11rem}
+  #moduleEditorFrame .ql-editor{min-height:11rem}
   @media (max-width: 767.98px){
     #studentLearnView .d-flex.justify-content-between{flex-wrap:wrap}
   }
@@ -139,13 +142,89 @@
   <div id="moduleView" class="d-none">
     <div class="page-header">
       <div>
-        <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="backToTutorials"><i class="bi bi-arrow-left me-1"></i>Tutorials</button>
-        <h1 class="page-title mb-1" id="moduleTutorialTitle">Modules</h1>
-        <p class="page-sub mb-0">A student sees modules in this order, then the lesson, then the exercises.</p>
+        <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="backToTutorials"><i class="bi bi-arrow-left me-1"></i>Courses</button>
+        <div class="small text-muted-2 mb-1">Draft → build content → preview → publish</div>
+        <h1 class="page-title mb-1" id="moduleTutorialTitle">Course</h1>
+        <p class="page-sub mb-0" id="moduleTutorialMeta"></p>
       </div>
-      <button type="button" class="btn btn-primary" id="addModuleBtn"><i class="bi bi-plus-lg me-1"></i>Add Module</button>
+      <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-secondary" id="builderEditCourse">Edit details</button>
+        <button type="button" class="btn btn-outline-secondary" id="builderPreview">Preview</button>
+        <button type="button" class="btn btn-primary" id="builderPublish">Publish</button>
+      </div>
     </div>
-    <div id="moduleList" class="d-flex flex-column gap-3"></div>
+    <div class="row g-3">
+      <div class="col-lg-4">
+        <div class="card-surface p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-semibold">Modules</div>
+            <button type="button" class="btn btn-sm btn-primary" id="addModuleBtn">+ Add Module</button>
+          </div>
+          <div id="moduleNav" class="d-flex flex-column gap-2"></div>
+        </div>
+      </div>
+      <div class="col-lg-8">
+        <div id="moduleEditorEmpty" class="card-surface p-4 text-muted-2">Select a module, or use Add Module to write the next lesson here.</div>
+        <form id="moduleForm" class="card-surface p-3 d-none">
+          <div class="d-flex justify-content-between gap-2 mb-2">
+            <div class="fw-semibold" id="moduleEditorLabel">Module</div>
+            <div class="small text-success d-none" id="moduleSavedNote">Module saved. Add the next lesson when you are ready.</div>
+          </div>
+          <input type="hidden" id="moduleId"/>
+          <label class="form-label" for="moduleTitle">Module title</label>
+          <input class="form-control mb-3" id="moduleTitle" required maxlength="160"/>
+          <label class="form-label">Content</label>
+          <div id="moduleEditorFrame" class="mb-3"><div id="moduleEditor"></div></div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="submit" class="btn btn-primary">Save module</button>
+            <button type="button" class="btn btn-outline-secondary" id="cancelModuleBtn">Cancel</button>
+            <button type="button" class="btn btn-outline-primary" id="addNextModuleBtn">+ Add next module</button>
+          </div>
+        </form>
+        <div id="moduleExercisePane" class="card-surface p-3 mt-3 d-none">
+          <div class="fw-semibold mb-2">Exercises</div>
+          <div id="moduleExerciseList" class="d-flex flex-column gap-2"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary mt-3" id="addExerciseInline">+ Add Exercise</button>
+          <form id="exerciseForm" class="border rounded p-3 mt-3 d-none">
+            <div class="fw-semibold mb-2" id="exerciseModalTitle">Add Exercise</div>
+            <input type="hidden" id="exerciseId"/>
+            <input type="hidden" id="exerciseModuleId"/>
+            <div class="row g-3">
+              <div class="col-md-8"><label class="form-label" for="exerciseTitle">Title</label><input class="form-control" id="exerciseTitle" required maxlength="160"/></div>
+              <div class="col-md-4"><label class="form-label" for="exerciseLanguage">Language</label>
+                <select class="form-select" id="exerciseLanguage" required>
+                  <option value="c">C</option>
+                  <option value="cpp">C++</option>
+                  <option value="java">Java</option>
+                  <option value="python">Python</option>
+                  <option value="javascript">JavaScript</option>
+                  <option value="php">PHP</option>
+                  <option value="sql">SQL</option>
+                </select>
+              </div>
+              <div class="col-12"><label class="form-label" for="exerciseInstructions">Instructions</label><textarea class="form-control" id="exerciseInstructions" rows="3"></textarea></div>
+              <div class="col-12"><label class="form-label" for="exerciseBoilerplate">Starter code</label><textarea class="form-control font-monospace" id="exerciseBoilerplate" rows="6" spellcheck="false"></textarea><div class="form-text">Students save this as an attempt. It is not executed.</div></div>
+              <div class="col-md-6"><label class="form-label" for="exerciseTime">Time limit (ms)</label><input class="form-control" id="exerciseTime" type="number" min="200" max="15000" value="5000" required/></div>
+              <div class="col-md-6"><label class="form-label" for="exerciseMemory">Memory limit (KB)</label><input class="form-control" id="exerciseMemory" type="number" min="2048" max="512000" value="128000" required/></div>
+            </div>
+            <div id="testCaseSection" class="mt-3 d-none">
+              <div class="fw-semibold mb-2">Sample and hidden tests</div>
+              <div id="testCaseList" class="d-flex flex-column gap-2 mb-3"></div>
+              <div class="row g-2">
+                <div class="col-md-6"><label class="form-label" for="caseStdin">Input</label><textarea class="form-control font-monospace" id="caseStdin" rows="2"></textarea></div>
+                <div class="col-md-6"><label class="form-label" for="caseExpected">Expected output</label><textarea class="form-control font-monospace" id="caseExpected" rows="2"></textarea></div>
+                <div class="col-md-6"><label class="form-label" for="caseSample">Visibility</label><select class="form-select" id="caseSample"><option value="true">Public</option><option value="false">Hidden</option></select></div>
+                <div class="col-md-6 d-flex align-items-end"><button type="button" class="btn btn-outline-primary" id="addTestCaseBtn">Add test case</button></div>
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button type="submit" class="btn btn-primary">Save exercise</button>
+              <button type="button" class="btn btn-outline-secondary" id="cancelExerciseBtn">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="previewView" class="d-none">
     <div class="alert alert-warning py-2">Preview. Students see this layout only after the course is published and they match its visibility.</div>
@@ -221,65 +300,10 @@
   </form>
 </div></div></div>
 
-<div class="modal fade" id="moduleModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
-  <form id="moduleForm">
-    <div class="modal-header"><h5 class="modal-title fw-bold" id="moduleModalTitle">Add Module</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-    <div class="modal-body">
-      <input type="hidden" id="moduleId"/>
-      <label class="form-label" for="moduleTitle">Module title</label>
-      <input class="form-control mb-3" id="moduleTitle" required maxlength="160"/>
-      <label class="form-label">Content</label>
-      <div id="moduleEditor"></div>
-    </div>
-    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Save module</button></div>
-  </form>
-</div></div></div>
-
-<div class="modal fade" id="exerciseModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
-  <form id="exerciseForm">
-    <div class="modal-header"><h5 class="modal-title fw-bold" id="exerciseModalTitle">Add Exercise</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-    <div class="modal-body">
-      <input type="hidden" id="exerciseId"/>
-      <input type="hidden" id="exerciseModuleId"/>
-      <div class="fw-semibold mb-2">Exercise information</div>
-      <div class="row g-3">
-        <div class="col-md-8"><label class="form-label" for="exerciseTitle">Title</label><input class="form-control" id="exerciseTitle" required maxlength="160"/></div>
-        <div class="col-md-4"><label class="form-label" for="exerciseLanguage">Language</label>
-          <select class="form-select" id="exerciseLanguage" required>
-            <option value="c">C</option>
-            <option value="cpp">C++</option>
-            <option value="java">Java</option>
-            <option value="python">Python</option>
-            <option value="javascript">JavaScript</option>
-            <option value="php">PHP</option>
-            <option value="sql">SQL</option>
-          </select>
-        </div>
-        <div class="col-12"><label class="form-label" for="exerciseInstructions">Instructions</label><textarea class="form-control" id="exerciseInstructions" rows="3"></textarea></div>
-        <div class="col-12"><label class="form-label" for="exerciseBoilerplate">Starter code</label><textarea class="form-control font-monospace" id="exerciseBoilerplate" rows="8" spellcheck="false"></textarea><div class="form-text">This is starter text for later practice. It is not run from this page.</div></div>
-        <div class="col-md-6"><label class="form-label" for="exerciseTime">Time limit (ms)</label><input class="form-control" id="exerciseTime" type="number" min="200" max="15000" value="5000" required/></div>
-        <div class="col-md-6"><label class="form-label" for="exerciseMemory">Memory limit (KB)</label><input class="form-control" id="exerciseMemory" type="number" min="2048" max="512000" value="128000" required/></div>
-      </div>
-      <div id="testCaseSection" class="mt-4 d-none">
-        <div class="fw-semibold mb-2">Test cases</div>
-        <div id="testCaseList" class="d-flex flex-column gap-2 mb-3"></div>
-        <div class="border rounded p-3">
-          <div class="row g-2">
-            <div class="col-md-6"><label class="form-label" for="caseStdin">Input</label><textarea class="form-control font-monospace" id="caseStdin" rows="2"></textarea></div>
-            <div class="col-md-6"><label class="form-label" for="caseExpected">Expected output</label><textarea class="form-control font-monospace" id="caseExpected" rows="2"></textarea></div>
-            <div class="col-md-6"><label class="form-label" for="caseSample">Visibility</label><select class="form-select" id="caseSample"><option value="true">Public</option><option value="false">Hidden</option></select></div>
-            <div class="col-md-6 d-flex align-items-end"><button type="button" class="btn btn-outline-primary" id="addTestCaseBtn">Add test case</button></div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button><button type="submit" class="btn btn-primary">Save exercise</button></div>
-  </form>
-</div></div></div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20260930syllabus"></script>
-<script src="js/tutorials-page.js?v=20260930audit"></script>
+<script src="js/tutorials-page.js?v=20260930builder"></script>
 </body></html>

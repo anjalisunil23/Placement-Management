@@ -17,6 +17,8 @@
     quill: null,
     statusFilter: '',
     publishId: '',
+    creatingModule: false,
+    selectedModuleId: '',
   };
 
   function role() {
@@ -250,6 +252,9 @@
       modal('tutorialModal').hide();
       toast(id ? 'Course updated.' : 'Course created.', 'success');
       await refreshList();
+      if (id && state.active && state.active.id === id && !document.getElementById('moduleView').classList.contains('d-none')) {
+        await openModules(id);
+      }
     } catch (err) {
       fail(err);
     }
@@ -261,6 +266,9 @@
         await call(`/tutorials/manage/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} });
         toast('Tutorial unpublished.', 'success');
         await refreshList();
+        if (state.active && state.active.id === id && !document.getElementById('moduleView').classList.contains('d-none')) {
+          await openModules(id);
+        }
       } catch (err) {
         fail(err);
       }
@@ -319,6 +327,7 @@
 
   async function openPreview(id) {
     try {
+      state.previewReturn = document.getElementById('moduleView').classList.contains('d-none') ? 'list' : 'builder';
       const course = await call(`/tutorials/manage/${encodeURIComponent(id)}`);
       state.preview = course;
       document.getElementById('tutorialListView').classList.add('d-none');
@@ -357,31 +366,96 @@
     }).join('') : '<p class="text-muted-2 mb-0">This module has no exercises.</p>';
   }
 
+  function paintCourseHeader() {
+    const course = state.active || {};
+    document.getElementById('moduleTutorialTitle').textContent = course.title || 'Course';
+    document.getElementById('moduleTutorialMeta').textContent = [
+      categoryName(course.categoryId),
+      course.topic || '',
+      visibilityText(course),
+      course.status || 'draft',
+    ].filter(Boolean).join(' · ');
+    const publish = document.getElementById('builderPublish');
+    if (publish) {
+      publish.textContent = course.status === 'published' ? 'Unpublish' : 'Publish';
+    }
+  }
+
   async function openModules(id) {
     try {
+      const selected = state.selectedModuleId;
       state.active = await call(`/tutorials/manage/${encodeURIComponent(id)}`);
-      document.getElementById('moduleTutorialTitle').textContent = state.active.title || 'Modules';
-      renderModules();
+      paintCourseHeader();
       showModules(true);
+      const stillThere = (state.active.modules || []).some((row) => row.id === selected);
+      if (stillThere) await selectModule(selected, true);
+      else {
+        state.creatingModule = false;
+        state.selectedModuleId = '';
+        document.getElementById('moduleForm').classList.add('d-none');
+        document.getElementById('moduleExercisePane').classList.add('d-none');
+        document.getElementById('moduleEditorEmpty').classList.remove('d-none');
+        renderModuleNav();
+      }
     } catch (err) {
       fail(err);
     }
   }
 
-  function renderModules() {
-    const root = document.getElementById('moduleList');
+  function plainExcerpt(html) {
+    const text = String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return text.length > 90 ? `${text.slice(0, 87)}…` : text;
+  }
+
+  function renderModuleNav() {
+    const root = document.getElementById('moduleNav');
     const modules = (state.active && state.active.modules) || [];
-    if (!modules.length) {
-      root.innerHTML = '<div class="card-surface p-4 text-muted-2">No modules yet.</div>';
+    if (!modules.length && !state.creatingModule) {
+      root.innerHTML = '<p class="small text-muted-2 mb-0">No modules yet.</p>';
       return;
     }
-    root.innerHTML = modules.map((module, index) => {
+    const cards = modules.map((module, index) => {
       const exercises = module.exercises || [];
-      const exerciseHtml = exercises.map((exercise, exerciseIndex) => {
-        const cases = exercise.testCases || [];
-        const sampleCount = cases.filter((item) => item.sample).length;
-        return `<div class="d-flex flex-wrap justify-content-between gap-2 border rounded p-2 mt-2">
-          <div><div class="fw-semibold">${exerciseIndex + 1}. ${esc(exercise.title)}</div><div class="small text-muted-2">${esc(languageLabel(exercise.language))} · ${sampleCount} sample test${sampleCount === 1 ? '' : 's'}</div></div>
+      const active = !state.creatingModule && state.selectedModuleId === module.id;
+      const excerpt = plainExcerpt(module.content) || 'No lesson text yet';
+      return `<div class="border rounded p-2 ${active ? 'border-primary' : ''}">
+        <button type="button" class="btn btn-sm p-0 fw-semibold" data-select-module="${esc(module.id)}">${active ? '●' : '○'} ${esc(index + 1)}. ${esc(module.title)}</button>
+        <div class="small text-muted-2">${esc(excerpt)}</div>
+        <div class="small mb-2">${esc(exercises.length)} exercise${exercises.length === 1 ? '' : 's'}</div>
+        <div class="d-flex flex-wrap gap-1">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-up="${esc(module.id)}" ${index === 0 ? 'disabled' : ''} aria-label="Move module up">Up</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-down="${esc(module.id)}" ${index === modules.length - 1 ? 'disabled' : ''} aria-label="Move module down">Down</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-select-module="${esc(module.id)}">Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-module="${esc(module.id)}">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+    const draft = state.creatingModule
+      ? '<div class="border border-primary rounded p-2"><div class="fw-semibold">● New module</div><div class="small text-muted-2">Write the title and lesson on the right, then save.</div></div>'
+      : '';
+    root.innerHTML = cards + draft;
+    root.querySelectorAll('[data-select-module]').forEach((btn) => btn.addEventListener('click', () => selectModule(btn.getAttribute('data-select-module'))));
+    root.querySelectorAll('[data-delete-module]').forEach((btn) => btn.addEventListener('click', () => deleteModule(btn.getAttribute('data-delete-module'))));
+    root.querySelectorAll('[data-up]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-up'), -1)));
+    root.querySelectorAll('[data-down]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-down'), 1)));
+  }
+
+  function renderModuleExercises() {
+    const pane = document.getElementById('moduleExercisePane');
+    const list = document.getElementById('moduleExerciseList');
+    const module = (state.active && state.active.modules || []).find((row) => row.id === state.selectedModuleId);
+    if (!module || state.creatingModule) {
+      pane.classList.add('d-none');
+      return;
+    }
+    pane.classList.remove('d-none');
+    const exercises = module.exercises || [];
+    list.innerHTML = exercises.length ? exercises.map((exercise, exerciseIndex) => {
+      const cases = exercise.testCases || [];
+      const sampleCount = cases.filter((item) => item.sample).length;
+      return `<div class="border rounded p-2">
+        <div class="d-flex flex-wrap justify-content-between gap-2">
+          <div><div class="fw-semibold">${exerciseIndex + 1}. ${esc(exercise.title)}</div><div class="small text-muted-2">${esc(languageLabel(exercise.language))} · ${sampleCount} public sample${sampleCount === 1 ? '' : 's'}</div></div>
           <div class="d-flex flex-wrap gap-1">
             <button type="button" class="btn btn-sm btn-outline-secondary" data-exercise-up="${esc(module.id)}" data-exercise="${esc(exercise.id)}" ${exerciseIndex === 0 ? 'disabled' : ''}>Up</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" data-exercise-down="${esc(module.id)}" data-exercise="${esc(exercise.id)}" ${exerciseIndex === exercises.length - 1 ? 'disabled' : ''}>Down</button>
@@ -389,33 +463,15 @@
             <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-exercise="${esc(module.id)}" data-exercise="${esc(exercise.id)}">Edit</button>
             <button type="button" class="btn btn-sm btn-outline-danger" data-delete-exercise="${esc(module.id)}" data-exercise="${esc(exercise.id)}">Delete</button>
           </div>
-        </div>`;
-      }).join('');
-      return `<div class="card-surface p-3">
-        <div class="d-flex flex-wrap justify-content-between gap-2">
-          <div><div class="fw-semibold">${esc(index + 1)}. ${esc(module.title)}</div></div>
-          <div class="d-flex flex-wrap gap-1">
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-up="${esc(module.id)}" ${index === 0 ? 'disabled' : ''}>Up</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-down="${esc(module.id)}" ${index === modules.length - 1 ? 'disabled' : ''}>Down</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-module="${esc(module.id)}">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-delete-module="${esc(module.id)}">Delete</button>
-            <button type="button" class="btn btn-sm btn-outline-primary" data-add-exercise="${esc(module.id)}">Add Exercise</button>
-          </div>
         </div>
-        ${exerciseHtml || '<p class="small text-muted-2 mb-0 mt-2">No exercises yet.</p>'}
-        <div class="border rounded p-3 mt-3 d-none" data-exercise-preview="${esc(module.id)}"></div>
+        <div class="border rounded p-2 mt-2 d-none" data-exercise-preview="${esc(exercise.id)}"></div>
       </div>`;
-    }).join('');
-    root.querySelectorAll('[data-edit-module]').forEach((btn) => btn.addEventListener('click', () => openModule(btn.getAttribute('data-edit-module'))));
-    root.querySelectorAll('[data-delete-module]').forEach((btn) => btn.addEventListener('click', () => deleteModule(btn.getAttribute('data-delete-module'))));
-    root.querySelectorAll('[data-up]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-up'), -1)));
-    root.querySelectorAll('[data-down]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-down'), 1)));
-    root.querySelectorAll('[data-add-exercise]').forEach((btn) => btn.addEventListener('click', () => openExercise(btn.getAttribute('data-add-exercise'), '')));
-    root.querySelectorAll('[data-edit-exercise]').forEach((btn) => btn.addEventListener('click', () => openExercise(btn.getAttribute('data-edit-exercise'), btn.getAttribute('data-exercise'))));
-    root.querySelectorAll('[data-delete-exercise]').forEach((btn) => btn.addEventListener('click', () => deleteExercise(btn.getAttribute('data-delete-exercise'), btn.getAttribute('data-exercise'))));
-    root.querySelectorAll('[data-exercise-up]').forEach((btn) => btn.addEventListener('click', () => moveExercise(btn.getAttribute('data-exercise-up'), btn.getAttribute('data-exercise'), -1)));
-    root.querySelectorAll('[data-exercise-down]').forEach((btn) => btn.addEventListener('click', () => moveExercise(btn.getAttribute('data-exercise-down'), btn.getAttribute('data-exercise'), 1)));
-    root.querySelectorAll('[data-preview-exercise]').forEach((btn) => btn.addEventListener('click', () => previewExercise(btn.getAttribute('data-preview-exercise'), btn.getAttribute('data-exercise'))));
+    }).join('') : '<p class="small text-muted-2 mb-0">No exercises yet.</p>';
+    list.querySelectorAll('[data-edit-exercise]').forEach((btn) => btn.addEventListener('click', () => openExercise(btn.getAttribute('data-edit-exercise'), btn.getAttribute('data-exercise'))));
+    list.querySelectorAll('[data-delete-exercise]').forEach((btn) => btn.addEventListener('click', () => deleteExercise(btn.getAttribute('data-delete-exercise'), btn.getAttribute('data-exercise'))));
+    list.querySelectorAll('[data-exercise-up]').forEach((btn) => btn.addEventListener('click', () => moveExercise(btn.getAttribute('data-exercise-up'), btn.getAttribute('data-exercise'), -1)));
+    list.querySelectorAll('[data-exercise-down]').forEach((btn) => btn.addEventListener('click', () => moveExercise(btn.getAttribute('data-exercise-down'), btn.getAttribute('data-exercise'), 1)));
+    list.querySelectorAll('[data-preview-exercise]').forEach((btn) => btn.addEventListener('click', () => previewExercise(btn.getAttribute('data-preview-exercise'), btn.getAttribute('data-exercise'))));
   }
 
   async function moveExercise(moduleId, exerciseId, direction) {
@@ -443,7 +499,7 @@
 
   function previewExercise(moduleId, exerciseId) {
     const exercise = findExercise(moduleId, exerciseId);
-    const host = document.querySelector(`[data-exercise-preview="${moduleId}"]`);
+    const host = document.querySelector(`[data-exercise-preview="${exerciseId}"]`);
     if (!exercise || !host) return;
     const samples = (exercise.testCases || []).filter((item) => item.sample);
     host.classList.remove('d-none');
@@ -478,43 +534,90 @@
     });
   }
 
-  async function openModule(id) {
-    try {
-      await ensureQuill();
-      const host = document.getElementById('moduleEditor');
-      host.innerHTML = '';
-      const existing = id && state.active ? (state.active.modules || []).find((row) => row.id === id) : null;
-      document.getElementById('moduleModalTitle').textContent = existing ? 'Edit Module' : 'Add Module';
-      document.getElementById('moduleId').value = existing ? existing.id : '';
-      document.getElementById('moduleTitle').value = existing ? existing.title : '';
-      state.quill = new Quill(host, {
-        theme: 'snow',
-        modules: {
-          toolbar: {
-            container: [
-              [{ header: [2, 3, false] }],
-              ['bold', 'italic'],
-              [{ list: 'ordered' }, { list: 'bullet' }],
-              ['link', 'image', 'code-block'],
-              ['clean'],
-            ],
-            handlers: {
-              image() {
-                const url = window.prompt('Image address (https://...)');
-                if (!url || !/^https?:\/\//i.test(url)) return;
-                const range = state.quill.getSelection(true);
-                state.quill.insertEmbed(range ? range.index : 0, 'image', url, 'user');
-              },
+  async function mountEditor(html) {
+    await ensureQuill();
+    const frame = document.getElementById('moduleEditorFrame');
+    frame.innerHTML = '<div id="moduleEditor"></div>';
+    state.quill = new Quill(document.getElementById('moduleEditor'), {
+      theme: 'snow',
+      modules: {
+        toolbar: {
+          container: [
+            [{ header: [2, 3, false] }],
+            ['bold', 'italic'],
+            [{ list: 'ordered' }, { list: 'bullet' }],
+            ['link', 'image', 'code-block'],
+            ['clean'],
+          ],
+          handlers: {
+            image() {
+              const url = window.prompt('Image address (https://...)');
+              if (!url || !/^https?:\/\//i.test(url)) return;
+              const range = state.quill.getSelection(true);
+              state.quill.insertEmbed(range ? range.index : 0, 'image', url, 'user');
             },
           },
         },
-      });
-      const html = existing ? (existing.content || '') : '';
-      if (html) state.quill.clipboard.dangerouslyPasteHTML(html);
-      modal('moduleModal').show();
-    } catch (err) {
-      fail(err);
+      },
+    });
+    if (html) state.quill.clipboard.dangerouslyPasteHTML(html);
+  }
+
+  async function beginNewModule() {
+    if (!state.active) return;
+    if (state.creatingModule) {
+      document.getElementById('moduleTitle').focus();
+      return;
     }
+    state.creatingModule = true;
+    state.selectedModuleId = '';
+    document.getElementById('moduleEditorEmpty').classList.add('d-none');
+    document.getElementById('moduleForm').classList.remove('d-none');
+    document.getElementById('moduleExercisePane').classList.add('d-none');
+    document.getElementById('exerciseForm').classList.add('d-none');
+    document.getElementById('moduleSavedNote').classList.add('d-none');
+    document.getElementById('moduleEditorLabel').textContent = 'New module';
+    document.getElementById('moduleId').value = '';
+    document.getElementById('moduleTitle').value = '';
+    renderModuleNav();
+    await mountEditor('');
+    document.getElementById('moduleTitle').focus();
+  }
+
+  async function selectModule(id, keepExerciseForm) {
+    if (!state.active || !id) return;
+    if (state.creatingModule && document.getElementById('moduleTitle').value.trim()) {
+      toast('Save or cancel the new module before opening another one.', 'error');
+      return;
+    }
+    const module = (state.active.modules || []).find((row) => row.id === id);
+    if (!module) return;
+    state.creatingModule = false;
+    state.selectedModuleId = id;
+    document.getElementById('moduleEditorEmpty').classList.add('d-none');
+    document.getElementById('moduleForm').classList.remove('d-none');
+    document.getElementById('moduleSavedNote').classList.add('d-none');
+    document.getElementById('moduleEditorLabel').textContent = `Module ${((state.active.modules || []).findIndex((row) => row.id === id) + 1) || ''}`;
+    document.getElementById('moduleId').value = module.id;
+    document.getElementById('moduleTitle').value = module.title || '';
+    if (!keepExerciseForm) document.getElementById('exerciseForm').classList.add('d-none');
+    renderModuleNav();
+    renderModuleExercises();
+    await mountEditor(module.content || '');
+  }
+
+  function cancelModuleEdit() {
+    state.creatingModule = false;
+    const selected = state.selectedModuleId;
+    if (selected && (state.active.modules || []).some((row) => row.id === selected)) {
+      selectModule(selected).catch(fail);
+      return;
+    }
+    state.selectedModuleId = '';
+    document.getElementById('moduleForm').classList.add('d-none');
+    document.getElementById('moduleExercisePane').classList.add('d-none');
+    document.getElementById('moduleEditorEmpty').classList.remove('d-none');
+    renderModuleNav();
   }
 
   async function saveModule(event) {
@@ -528,11 +631,14 @@
     };
     const tutorialId = state.active.id;
     try {
-      if (id) await call(`/tutorials/manage/${encodeURIComponent(tutorialId)}/modules/${encodeURIComponent(id)}`, { method: 'PUT', body });
-      else await call(`/tutorials/manage/${encodeURIComponent(tutorialId)}/modules`, { method: 'POST', body });
-      modal('moduleModal').hide();
+      const saved = id
+        ? await call(`/tutorials/manage/${encodeURIComponent(tutorialId)}/modules/${encodeURIComponent(id)}`, { method: 'PUT', body })
+        : await call(`/tutorials/manage/${encodeURIComponent(tutorialId)}/modules`, { method: 'POST', body });
+      state.creatingModule = false;
+      state.selectedModuleId = saved && saved.id ? saved.id : id;
       toast('Module saved.', 'success');
       await openModules(tutorialId);
+      document.getElementById('moduleSavedNote').classList.remove('d-none');
     } catch (err) {
       fail(err);
     }
@@ -645,7 +751,8 @@
     document.getElementById('addTestCaseBtn').textContent = 'Add test case';
     delete document.getElementById('addTestCaseBtn').dataset.caseId;
     renderTestCases(exercise);
-    modal('exerciseModal').show();
+    document.getElementById('exerciseForm').classList.remove('d-none');
+    document.getElementById('exerciseTitle').focus();
   }
 
   async function saveExercise(event) {
@@ -758,7 +865,26 @@
     document.getElementById('moduleForm').addEventListener('submit', saveModule);
     document.getElementById('exerciseForm').addEventListener('submit', saveExercise);
     document.getElementById('addCategoryBtn').addEventListener('click', () => modal('categoryModal').show());
-    document.getElementById('addModuleBtn').addEventListener('click', () => openModule(''));
+    document.getElementById('addModuleBtn').addEventListener('click', () => beginNewModule().catch(fail));
+    document.getElementById('addNextModuleBtn').addEventListener('click', () => beginNewModule().catch(fail));
+    document.getElementById('cancelModuleBtn').addEventListener('click', cancelModuleEdit);
+    document.getElementById('addExerciseInline').addEventListener('click', () => {
+      if (!state.selectedModuleId) return;
+      openExercise(state.selectedModuleId, '');
+    });
+    document.getElementById('cancelExerciseBtn').addEventListener('click', () => {
+      document.getElementById('exerciseForm').classList.add('d-none');
+    });
+    document.getElementById('builderEditCourse').addEventListener('click', () => {
+      if (state.active) openTutorial(state.active.id);
+    });
+    document.getElementById('builderPreview').addEventListener('click', () => {
+      if (state.active) openPreview(state.active.id);
+    });
+    document.getElementById('builderPublish').addEventListener('click', () => {
+      if (!state.active) return;
+      publishTutorial(state.active.id, state.active.status !== 'published');
+    });
     document.getElementById('addTestCaseBtn').addEventListener('click', addTestCase);
     document.getElementById('confirmPublishBtn').addEventListener('click', async () => {
       if (!state.publishId) return;
@@ -767,6 +893,9 @@
         modal('publishModal').hide();
         toast('Course published.', 'success');
         await refreshList();
+        if (state.active && state.active.id === state.publishId && !document.getElementById('moduleView').classList.contains('d-none')) {
+          await openModules(state.publishId);
+        }
       } catch (err) {
         fail(err);
       }
@@ -783,7 +912,9 @@
     });
     document.getElementById('backFromPreview').addEventListener('click', () => {
       document.getElementById('previewView').classList.add('d-none');
-      document.getElementById('tutorialListView').classList.remove('d-none');
+      const backToBuilder = state.previewReturn === 'builder';
+      document.getElementById('moduleView').classList.toggle('d-none', !backToBuilder);
+      document.getElementById('tutorialListView').classList.toggle('d-none', backToBuilder);
     });
     document.getElementById('backToTutorials').addEventListener('click', async () => {
       showModules(false);
@@ -871,7 +1002,8 @@
         <div class="small fw-semibold mb-2">${esc(row.topic || '')}</div>
         <p class="small text-muted-2 flex-grow-1">${esc(row.description || '')}</p>
         <div class="small mb-2">${esc(count)} modules · ${esc(row.exerciseCount || 0)} exercises</div>
-        <div class="small mb-3">${esc(row.progress && row.progress.status !== 'NOT_STARTED' ? `${row.progress.progressPercent || 0}% complete` : 'Not started')}</div>
+        <div class="small mb-1">${esc(row.progress ? `${row.progress.completedModules || 0} / ${row.progress.totalModules || count} modules · ${row.progress.progressPercent || 0}%` : 'Not started')}</div>
+        <div class="progress mb-3" style="height:.4rem" aria-hidden="true"><div class="progress-bar" style="width:${esc(row.progress ? row.progress.progressPercent || 0 : 0)}%"></div></div>
         <button type="button" class="btn btn-primary" data-start-tutorial="${esc(row.id)}">${esc(row.progress && row.progress.lastVisitedModuleId ? 'Continue Learning' : 'Start Course')}</button>
       </div></div>`;
     }).join('');
@@ -964,9 +1096,10 @@
       select.innerHTML = modules.map((module, index) => `<option value="${index}">${esc(module.title)}</option>`).join('');
       select.value = String(learn.moduleIndex);
     }
-    document.getElementById('studentModuleNav').innerHTML = modules.map((module, index) => (
-      `<button type="button" class="btn btn-sm text-start ${index === learn.moduleIndex ? 'btn-primary' : 'btn-outline-secondary'}" data-student-module="${index}">${doneIds.has(module.id) ? '<i class="bi bi-check-lg me-1"></i>' : ''}${esc(module.title)}</button>`
-    )).join('') || '<p class="text-muted-2 mb-0">This tutorial has no modules yet.</p>';
+    document.getElementById('studentModuleNav').innerHTML = modules.map((module, index) => {
+      const mark = doneIds.has(module.id) ? '✓' : (index === learn.moduleIndex ? '●' : '○');
+      return `<button type="button" class="btn btn-sm text-start ${index === learn.moduleIndex ? 'btn-primary' : 'btn-outline-secondary'}" data-student-module="${index}"><span class="me-1" aria-hidden="true">${mark}</span>${esc(module.title)}</button>`;
+    }).join('') || '<p class="text-muted-2 mb-0">This tutorial has no modules yet.</p>';
     document.querySelectorAll('[data-student-module]').forEach((btn) => {
       btn.addEventListener('click', () => {
         learn.moduleIndex = Number(btn.getAttribute('data-student-module'));

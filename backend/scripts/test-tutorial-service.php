@@ -164,7 +164,8 @@ try {
     ]);
     $check($adminEdit['title'] === 'Staff tutorial edited ' . $suffix && $adminEdit['createdBy'] === $staffA['_id'], 'admin can edit another user tutorial without taking ownership');
 
-    $check($service->listForStudent($studentUsers['cse2027']) === [], 'draft tutorials are hidden from students');
+    $visibleBeforePublish = array_column($service->listForStudent($studentUsers['cse2027']), 'id');
+    $check(!in_array($byStaff['id'], $visibleBeforePublish, true) && !in_array($byAdmin['id'], $visibleBeforePublish, true), 'draft tutorials are hidden from students');
     $throws(fn () => $service->showForStudent($studentUsers['cse2027'], $byStaff['id']), 404);
 
     try {
