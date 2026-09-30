@@ -10,6 +10,10 @@ Options -MultiViews
 
 DirectoryIndex index.php public-stats.html index.html
 
+# Practice pages — keep old mock URLs working
+RewriteRule ^mock-aptitude\.html$ aptitude-training.html [R=302,L,QSA]
+RewriteRule ^mock-coding\.html$ coding.html [R=302,L,QSA]
+
 # API → PHP router
 RewriteRule ^backend/api(?:/index\.php)?(/.*)?$ backend/api/index.php [L,QSA]
 RewriteRule ^api(?:/index\.php)?(/.*)?$ backend/api/index.php [L,QSA]

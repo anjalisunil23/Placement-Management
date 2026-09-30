@@ -2299,7 +2299,7 @@
       renderManage();
     }
     if (typeof renderShell === 'function') {
-      renderShell(`${document.body?.dataset?.page || 'mock-coding.html'}${hash}`);
+      renderShell(`${document.body?.dataset?.page || 'coding.html'}${hash}`);
     }
   }
 

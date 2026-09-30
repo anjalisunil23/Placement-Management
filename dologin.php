@@ -107,7 +107,7 @@ try {
     if ($hash !== '' && !preg_match('/^#[A-Za-z0-9._%-]+$/', $hash)) {
         $hash = '';
     }
-    if ($query !== '' && str_contains($query, 'test=') && str_ends_with($next, 'mock-aptitude.html') && $hash === '') {
+    if ($query !== '' && str_contains($query, 'test=') && (str_ends_with($next, 'mock-aptitude.html') || str_ends_with($next, 'aptitude-training.html')) && $hash === '') {
         $hash = '#take';
     }
     $next = $next . $query . $hash;

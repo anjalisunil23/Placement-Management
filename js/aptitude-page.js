@@ -5053,7 +5053,7 @@
   }
 
   function buildTestShareUrl(testId) {
-    const url = new URL('mock-aptitude.html', window.location.href);
+    const url = new URL('aptitude-training.html', window.location.href);
     url.searchParams.set('test', String(testId || ''));
     url.hash = 'take';
     return url.href;
@@ -5783,7 +5783,7 @@
     });
 
     if (typeof renderShell === 'function') {
-      renderShell(`${document.body?.dataset?.page || 'mock-aptitude.html'}${hash}`);
+      renderShell(`${document.body?.dataset?.page || 'aptitude-training.html'}${hash}`);
     }
   }
 

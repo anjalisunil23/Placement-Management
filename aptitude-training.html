@@ -71,7 +71,7 @@
   .apt-prob-diff.is-hard{color:#ef4444}
 </style>
 </head>
-<body data-page="mock-aptitude.html"><div class="app">
+<body data-page="aptitude-training.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div id="hubView">
@@ -485,7 +485,7 @@
         <div class="col-12 d-none" id="tfRandomJdPanel">
           <div class="border rounded-3 p-3" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-              <div class="small fw-semibold">Random rules from Company Block</div>
+              <div class="small fw-semibold">Random rules from Company-Wise</div>
               <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRandomJdRule"><i class="bi bi-plus-lg me-1"></i>Add JD title</button>
             </div>
             <p class="small text-muted-2 mb-2">Each row randomly picks questions from a JD title when the test is saved. The same JD title can be used in multiple rows.</p>
@@ -509,7 +509,7 @@
           </div>
           <div class="form-check mb-2 d-none" id="tfUseJdManualWrap">
             <input class="form-check-input" type="checkbox" id="tfUseJdManual"/>
-            <label class="form-check-label" for="tfUseJdManual">Add questions from Company Block</label>
+            <label class="form-check-label" for="tfUseJdManual">Add questions from Company-Wise</label>
           </div>
           <p class="small text-muted-2 mb-2 d-none" id="tfCompanyJdHint">Add one or more JD titles from the selected company. Pick the exact questions for each title, like question bank rules in a regular test.</p>
           <div class="border rounded-3 p-3 mb-3 d-none" id="tfJdPicker" style="border-color:var(--border)!important;background:color-mix(in srgb,var(--primary) 3%,transparent)">
@@ -605,7 +605,7 @@
               <label class="form-label small fw-semibold mb-1" for="aptAiJdTitleDate">Date</label>
               <input class="form-control form-control-sm" type="date" id="aptAiJdTitleDate"/>
             </div>
-            <div class="small text-muted-2 mt-1" id="aptAiJdTitleHint">Role or JD title saved under the selected company in Company Block.</div>
+            <div class="small text-muted-2 mt-1" id="aptAiJdTitleHint">Role or JD title saved under the selected company in Company-Wise.</div>
             <div class="small text-primary mt-1 d-none" id="aptAiJdTitlePreview"></div>
           </div>
           <label class="form-label small fw-semibold" for="aptAiJdText">Paste job description</label>
@@ -699,8 +699,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260926certstu"></script>
-<script src="js/app.js?v=20260930practice"></script>
+<script src="js/api.js?v=20260930names"></script>
+<script src="js/app.js?v=20260930names"></script>
 <script src="js/aptitude-exam.js?v=20260922autosubmit"></script>
-<script src="js/aptitude-page.js?v=20260926weekly"></script>
+<script src="js/aptitude-page.js?v=20260930names"></script>
 </body></html>

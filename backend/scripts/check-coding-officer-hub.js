@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..', '..');
-const html = fs.readFileSync(path.join(root, 'mock-coding.html'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'coding.html'), 'utf8');
 const page = fs.readFileSync(path.join(root, 'js', 'coding-page.js'), 'utf8');
 
 const must = [
