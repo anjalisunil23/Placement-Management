@@ -13,6 +13,7 @@ namespace PMS\Services;
 final class CodeExecutionService
 {
     private string $lastRemoteErrors = '';
+    private string $lastWorkerError = '';
 
     /**
      * @return array<string, mixed>
@@ -24,7 +25,7 @@ final class CodeExecutionService
         $source = substr($source, 0, $limits['max_source_bytes']);
         $stdin = substr($stdin, 0, $limits['max_io_bytes']);
 
-        $local = $this->invokeWorker([
+        $job = [
             'language' => $language,
             'source_code' => $source,
             'input' => $stdin,
@@ -37,7 +38,19 @@ final class CodeExecutionService
             'max_io_bytes' => $limits['max_io_bytes'],
             'run_user' => $limits['run_user'],
             'sandbox_root' => $limits['sandbox_root'],
-        ]);
+        ];
+
+        $local = null;
+        if ($this->useWorkerProcess()) {
+            $local = $this->invokeWorker($job);
+        }
+        if (($local === null || (($local['ok'] ?? false) !== true && $this->workerFailed($local)))
+            && $this->useInlineSandbox()) {
+            $inline = $this->invokeInlineSandbox($job);
+            if ($inline !== null) {
+                $local = $inline;
+            }
+        }
 
         if ($local !== null && ($local['ok'] ?? false) === true) {
             return $local;
@@ -47,7 +60,59 @@ final class CodeExecutionService
             return $local;
         }
 
-        return $this->maybeRemote($language, $source, $stdin, $timeLimitMs, $started, $local ?? $this->failMsg('Runtime Error', 'Sandbox worker failed.', $started));
+        $fail = $local ?? $this->failMsg(
+            'Runtime Error',
+            trim('Sandbox worker failed.' . ($this->lastWorkerError !== '' ? ' ' . $this->lastWorkerError : '')),
+            $started
+        );
+
+        return $this->maybeRemote($language, $source, $stdin, $timeLimitMs, $started, $fail);
+    }
+
+    /**
+     * @param array<string, mixed>|null $local
+     */
+    private function workerFailed(?array $local): bool
+    {
+        if ($local === null) {
+            return true;
+        }
+        $stderr = strtolower((string) ($local['stderr'] ?? ''));
+
+        return str_contains($stderr, 'sandbox worker')
+            || str_contains($stderr, 'failed to start sandbox process');
+    }
+
+    private function useWorkerProcess(): bool
+    {
+        $mode = strtolower(trim((string) ($_ENV['CODING_EXEC_MODE'] ?? 'worker_then_inline')));
+
+        return $mode === 'worker' || $mode === 'worker_then_inline' || $mode === 'auto';
+    }
+
+    private function useInlineSandbox(): bool
+    {
+        $mode = strtolower(trim((string) ($_ENV['CODING_EXEC_MODE'] ?? 'worker_then_inline')));
+
+        return $mode === 'inline' || $mode === 'worker_then_inline' || $mode === 'auto';
+    }
+
+    /**
+     * @param array<string, mixed> $job
+     * @return array<string, mixed>|null
+     */
+    private function invokeInlineSandbox(array $job): ?array
+    {
+        if (!function_exists('proc_open')) {
+            return null;
+        }
+        try {
+            $engine = new CodingSandboxEngine();
+
+            return $this->normalizeApiShape($engine->execute($job));
+        } catch (\Throwable $e) {
+            return $this->failMsg('Runtime Error', 'Sandbox execution failed: ' . $e->getMessage(), microtime(true));
+        }
     }
 
     /**
@@ -56,13 +121,24 @@ final class CodeExecutionService
      */
     private function invokeWorker(array $job): ?array
     {
+        $this->lastWorkerError = '';
+        if (!function_exists('proc_open')) {
+            $this->lastWorkerError = 'proc_open is disabled on this host.';
+
+            return null;
+        }
+
         $worker = dirname(__DIR__) . '/coding-exec/worker.php';
         if (!is_readable($worker)) {
+            $this->lastWorkerError = 'Worker script is missing.';
+
             return null;
         }
 
         $jobDir = rtrim((string) ($job['sandbox_root'] ?? sys_get_temp_dir()), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'jobs';
         if (!is_dir($jobDir) && !@mkdir($jobDir, 0700, true) && !is_dir($jobDir)) {
+            $this->lastWorkerError = 'Could not create job directory.';
+
             return null;
         }
 
@@ -73,11 +149,20 @@ final class CodeExecutionService
 
         $encoded = json_encode($job, JSON_UNESCAPED_UNICODE);
         if ($encoded === false || file_put_contents($jobFile, $encoded) === false) {
+            $this->lastWorkerError = 'Could not write job file.';
+
             return null;
         }
         @chmod($jobFile, 0600);
 
-        $php = defined('PHP_BINARY') && PHP_BINARY !== '' ? PHP_BINARY : 'php';
+        $php = $this->resolvePhpCliBinary();
+        if ($php === null) {
+            @unlink($jobFile);
+            $this->lastWorkerError = 'PHP CLI not found (set CODING_PHP_CLI_PATH).';
+
+            return null;
+        }
+
         $cmd = [$php, $worker, '--job=' . $jobFile];
         $wall = max(5, (int) (CodingExecutionConfig::limits($job['time_limit_ms'] ?? 3000)['wall_clock_sec']));
 
@@ -85,6 +170,8 @@ final class CodeExecutionService
         $proc = @proc_open($cmd, $descriptors, $pipes, dirname($worker), null);
         if (!is_resource($proc)) {
             @unlink($jobFile);
+            $this->lastWorkerError = 'Could not start worker process.';
+
             return null;
         }
         fclose($pipes[0]);
@@ -116,11 +203,55 @@ final class CodeExecutionService
         @unlink($resultFile);
 
         if (!is_string($raw) || trim($raw) === '') {
+            $err = trim($stderr);
+            $this->lastWorkerError = $err !== '' ? $err : 'Worker returned no output.';
+
             return null;
         }
         $json = json_decode($raw, true);
+        if (!is_array($json)) {
+            $this->lastWorkerError = 'Worker returned invalid JSON.';
 
-        return is_array($json) ? $this->normalizeApiShape($json) : null;
+            return null;
+        }
+
+        return $this->normalizeApiShape($json);
+    }
+
+    private function resolvePhpCliBinary(): ?string
+    {
+        $candidates = [];
+        $fromEnv = trim((string) ($_ENV['CODING_PHP_CLI_PATH'] ?? ''));
+        if ($fromEnv !== '') {
+            $candidates[] = $fromEnv;
+        }
+        if (defined('PHP_BINARY') && PHP_BINARY !== '') {
+            $bin = PHP_BINARY;
+            if (!str_contains(strtolower($bin), 'php-fpm') && !str_contains(strtolower($bin), 'fpm')) {
+                $candidates[] = $bin;
+            }
+        }
+        foreach ([
+            '/usr/local/bin/php',
+            '/usr/bin/php',
+            '/opt/cpanel/ea-php81/root/usr/bin/php',
+            '/opt/cpanel/ea-php82/root/usr/bin/php',
+            '/opt/cpanel/ea-php83/root/usr/bin/php',
+        ] as $path) {
+            $candidates[] = $path;
+        }
+        $candidates[] = 'php';
+
+        foreach ($candidates as $bin) {
+            if ($bin === 'php') {
+                return 'php';
+            }
+            if (is_file($bin) && is_executable($bin)) {
+                return $bin;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -155,7 +286,9 @@ final class CodeExecutionService
         return str_contains($stderr, 'not installed')
             || str_contains($stderr, 'not available')
             || str_contains($stderr, 'failed to start')
-            || str_contains($stderr, 'sandbox worker');
+            || str_contains($stderr, 'sandbox worker')
+            || str_contains($stderr, 'execution host')
+            || str_contains($stderr, 'proc_open');
     }
 
     /**

@@ -6,9 +6,11 @@ Student code is **never** compiled inside the PHP-FPM web request.
 
 1. Browser → `POST /api/coding/execute` or submit endpoints (PHP backend)
 2. `CodeExecutionService` writes a job JSON file
-3. CLI worker: `php backend/coding-exec/worker.php --job=/path/job.json`
-4. `CodingSandboxEngine` creates `sandbox/job_*/{source,input,output,temp}/`, applies `ulimit` via `linux-sandbox-wrap.sh`, compiles/runs, deletes the tree
-5. Results return to the API → browser
+3. Preferred: CLI worker `php backend/coding-exec/worker.php --job=/path/job.json`
+4. Fallback (`CODING_EXEC_MODE=worker_then_inline`, default): same `CodingSandboxEngine` in-process if the worker cannot spawn (common on cPanel)
+5. `CodingSandboxEngine` creates `sandbox/job_*/{source,input,output,temp}/`, applies `ulimit` via `linux-sandbox-wrap.sh`, compiles/runs, deletes the tree
+6. Optional: `CODING_REMOTE_BACKENDS=wandbox` when no local compilers
+7. Results return to the API → browser
 
 ## Production setup (Linux / cPanel)
 
