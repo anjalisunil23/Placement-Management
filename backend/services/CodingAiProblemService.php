@@ -317,6 +317,7 @@ PROMPT;
         $h2Out = (string) ($q['hiddenExpected2'] ?? ($cases[2]['expected'] ?? ''));
         $starter = is_array($q['starterCode'] ?? null) ? $q['starterCode'] : [];
         $draft = [
+            'inputFormat' => (string) ($q['inputFormat'] ?? ''),
             'examples' => [['input' => $sampleIn, 'output' => $sampleOut]],
             'testCases' => [
                 ['input' => $sampleIn, 'expected' => $sampleOut, 'sample' => true],

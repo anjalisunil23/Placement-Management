@@ -12,27 +12,96 @@
     };
   }
 
-  function pythonStarterFromSampleInput(sampleIn) {
+  function pythonFromInputFormat(format, sampleIn) {
+    const f = String(format || '').toLowerCase();
+    if (!f) return null;
+    if (/single line string|line string|string s|a string/i.test(format)) {
+      return 's = input().strip()\n\n# Write your logic below\n';
+    }
+    if (/brackets|line of brackets|parentheses/i.test(format)) {
+      return 's = input().strip()\n\n# Write your logic below\n';
+    }
+    if (/two space-separated words|two words/i.test(format)) {
+      return 'w1, w2 = input().split()\n\n# Write your logic below\n';
+    }
+    if (/single line of words|line of words|space-separated words/i.test(format)) {
+      return 'words = input().split()\n\n# Write your logic below\n';
+    }
+    if (/three integers|3 integers|a b c/i.test(format) && !/first line|second line|\bn\b/i.test(format)) {
+      return 'a, b, c = map(int, input().split())\n\n# Write your logic below\n';
+    }
+    if (/two integers|2 integers|\ba and b\b/i.test(format) && !/first line|three|n integers/i.test(format)) {
+      return 'a, b = map(int, input().split())\n\n# Write your logic below\n';
+    }
+    if (/one integer|single integer|one non-negative integer/i.test(format) && !/first line|second line|then/i.test(format)) {
+      return 'n = int(input())\n\n# Write your logic below\n';
+    }
+    if (/then n lines|n lines of n|matrix|n×n|n x n/i.test(format)) {
+      return 'n = int(input())\nmatrix = [list(map(int, input().split())) for _ in range(n)]\n\n# Write your logic below\n';
+    }
+    if (/line 1:\s*n\s*m|n m\b/i.test(format) && /line 2|line 3|second line|third line/i.test(format)) {
+      return 'n, m = map(int, input().split())\narr1 = list(map(int, input().split()))\narr2 = list(map(int, input().split()))\n\n# Write your logic below\n';
+    }
+    if (/first line n\. second line n-1|n-1 integers/i.test(format)) {
+      return 'n = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+    }
+    if (/first line n x|first line n t|n x\b|n t\b/i.test(format)) {
+      return 'n, x = map(int, input().split())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+    }
+    if (/first line n k|n k\b/i.test(format)) {
+      return 'n, k = map(int, input().split())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+    }
+    if (/first line n\. second line/i.test(format)) {
+      return 'n = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+    }
+    return null;
+  }
+
+  function pythonStarterFromSampleInput(sampleIn, inputFormat = '') {
     const raw = String(sampleIn || '').replace(/\r\n/g, '\n').trim();
+    const fmt = String(inputFormat || '').toLowerCase();
     if (!raw) return '# Write your logic below\n';
     const lines = raw.split('\n');
     const first = (lines[0] || '').trim();
+
+    if (lines.length >= 3 && /^\d+\s+\d+$/.test(first)) {
+      const second = (lines[1] || '').trim();
+      const third = (lines[2] || '').trim();
+      if (/^-?\d+(\s+-?\d+)*$/.test(second) && /^-?\d+(\s+-?\d+)*$/.test(third)) {
+        return 'n, m = map(int, input().split())\narr1 = list(map(int, input().split()))\narr2 = list(map(int, input().split()))\n\n# Write your logic below\n';
+      }
+    }
+    if (lines.length >= 2 && /^\d+\s+-?\d+$/.test(first)) {
+      const second = (lines[1] || '').trim();
+      if (/^-?\d+(\s+-?\d+)+$/.test(second)) {
+        const label = fmt.includes(' k') ? 'k' : (fmt.includes(' x') ? 'x' : 't');
+        return `n, ${label} = map(int, input().split())\narr = list(map(int, input().split()))\n\n# Write your logic below\n`;
+      }
+    }
     if (lines.length >= 2 && /^\d+$/.test(first)) {
       const n = parseInt(first, 10);
-      const nums = (lines[1] || '').trim().split(/\s+/).filter(Boolean);
-      if (n > 0 && nums.length === n) {
-        return 'n = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+      const second = (lines[1] || '').trim();
+      const nums = second.split(/\s+/).filter(Boolean);
+      if (fmt.includes('2n') && n > 0 && nums.length === 2 * n) {
+        return 'n = int(input())\nnums = list(map(int, input().split()))\n\n# Write your logic below\n';
       }
       if (n > 0 && nums.length === 2 * n) {
         return 'n = int(input())\nnums = list(map(int, input().split()))\n\n# Write your logic below\n';
       }
+      if (n > 0 && nums.length === n) {
+        return 'n = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+      }
+      if (n > 0 && nums.length === Math.max(1, n - 1)) {
+        return 'n = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+      }
       if (lines.length >= 3 && /^\d+$/.test((lines[1] || '').trim())) {
-        const m = parseInt((lines[1] || '').trim(), 10);
-        const row = (lines[2] || '').trim().split(/\s+/).filter(Boolean);
-        if (m > 0 && row.length === m) {
-          return 'n = int(input())\nm = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
-        }
-        return 'n = int(input())\nm = int(input())\n\n# Write your logic below\n';
+        return 'n, m = map(int, input().split())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
+      }
+      if (lines.length > 2 && /^-?\d+(\s+-?\d+)+$/.test(second)) {
+        return 'n = int(input())\nmatrix = [list(map(int, input().split())) for _ in range(n)]\n\n# Write your logic below\n';
+      }
+      if (lines.length === 2) {
+        return 'n = int(input())\narr = list(map(int, input().split()))\n\n# Write your logic below\n';
       }
     }
     if (lines.length === 1) {
@@ -40,26 +109,53 @@
       if (/^-?\d+$/.test(line)) return 'n = int(input())\n\n# Write your logic below\n';
       if (/^-?\d+\s+-?\d+$/.test(line)) return 'a, b = map(int, input().split())\n\n# Write your logic below\n';
       if (/^-?\d+\s+-?\d+\s+-?\d+$/.test(line)) return 'a, b, c = map(int, input().split())\n\n# Write your logic below\n';
-      if (line.includes(' ')) return 'parts = input().split()\n\n# Write your logic below\n';
+      if (/^[()[\]{}]+$/.test(line)) return 's = input().strip()\n\n# Write your logic below\n';
+      if (/^[A-Za-z]+(\s+[A-Za-z]+)+$/.test(line) && !/\d/.test(line)) {
+        const parts = line.split(/\s+/).filter(Boolean);
+        if (parts.length === 2) return 'w1, w2 = input().split()\n\n# Write your logic below\n';
+        return 'words = input().split()\n\n# Write your logic below\n';
+      }
+      if (line.includes(' ')) {
+        if (/^-?\d/.test(line)) return 'values = list(map(int, input().split()))\n\n# Write your logic below\n';
+        return 'parts = input().split()\n\n# Write your logic below\n';
+      }
       return 's = input().strip()\n\n# Write your logic below\n';
+    }
+    if (lines.length >= 3 && /^\d+$/.test(first)) {
+      return 'n = int(input())\nmatrix = [list(map(int, input().split())) for _ in range(n)]\n\n# Write your logic below\n';
     }
     return '# Write your logic below\n';
   }
 
+  function onlyInputBoilerplate(py) {
+    const lines = String(py || '').split('\n');
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t || t.startsWith('#')) continue;
+      if (/^(?:[a-z_]\w*\s*=\s*)?(?:int\(input\(\)\)|input\(\)(?:\.strip\(\))?|map\(int,\s*input\(\)\.split\(\)\)|list\(map\(int,\s*input\(\)\.split\(\)\)\)|\[list\(map\(int,\s*input\(\)\.split\(\)\)\)\s+for\s+_\s+in\s+range\([a-z_]\w*\)\])$/i.test(t)) continue;
+      if (/^[a-z_]\w*\s*=\s*input\(\)\.split\(\)$/i.test(t)) continue;
+      return false;
+    }
+    return true;
+  }
+
   function pythonStarterFromProblem(problem) {
+    const fromFormat = pythonFromInputFormat(problem?.inputFormat, '');
+    if (fromFormat) return fromFormat;
     const ex = (problem?.examples || [])[0];
-    if (ex?.input) return pythonStarterFromSampleInput(ex.input);
+    if (ex?.input) return pythonStarterFromSampleInput(ex.input, problem?.inputFormat);
     const sample = (problem?.testCases || []).find((tc) => tc.sample);
-    if (sample?.input) return pythonStarterFromSampleInput(sample.input);
+    if (sample?.input) return pythonStarterFromSampleInput(sample.input, problem?.inputFormat);
     const any = (problem?.testCases || []).find((tc) => tc.input);
-    return pythonStarterFromSampleInput(any?.input || '');
+    return pythonStarterFromSampleInput(any?.input || '', problem?.inputFormat);
   }
 
   function enrichProblemStarters(problem) {
+    if (problem?.starterCodeLocked) return { ...problem };
     const starter = { ...(problem.starterCode || {}) };
     const py = String(starter.Python || '').trim();
-    const needs = !py || /^#\s*Write your solution\s*$/m.test(py) || !/input\s*\(/.test(py);
-    if (needs) {
+    const replace = !py || /^#\s*Write your solution\s*$/m.test(py) || onlyInputBoilerplate(py);
+    if (replace) {
       const python = pythonStarterFromProblem(problem);
       Object.assign(starter, defaultStarters(python));
     }
@@ -176,6 +272,7 @@
     pythonStarterFromSampleInput,
     pythonStarterFromProblem,
     enrichProblemStarters,
+    onlyInputBoilerplate,
     publicQuestion,
   };
 })(window);
