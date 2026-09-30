@@ -4,13 +4,18 @@
 (function (global) {
   const API_ENABLED = false;
 
-  function isCompiledServerLanguage(language) {
-    const raw = String(language || '').toLowerCase().trim();
-    return raw === 'c' || raw === 'c++' || raw === 'cpp' || raw === 'java';
+  const SERVER_LANGUAGES = new Set(['python', 'java', 'c', 'c++', 'cpp', 'javascript', 'js']);
+
+  function normalizeLanguageKey(language) {
+    return String(language || 'python').toLowerCase().trim();
+  }
+
+  function isServerLanguage(language) {
+    return SERVER_LANGUAGES.has(normalizeLanguageKey(language));
   }
 
   function canServerExecute(language) {
-    if (!isCompiledServerLanguage(language) && !API_ENABLED) return false;
+    if (!isServerLanguage(language) && !API_ENABLED) return false;
     if (typeof global.api !== 'function') return false;
     try {
       if (typeof global.Auth !== 'undefined' && typeof Auth.isDemo === 'function' && Auth.isDemo()) {
@@ -436,10 +441,18 @@
     TIME_LIMIT_MS: DEFAULT_TIME_LIMIT_MS,
     ready: true,
     async run(opts) {
+      const language = opts.language || 'Python';
+      const langKey = normalizeLanguageKey(language);
       try {
-        const language = opts.language || 'Python';
         if (canServerExecute(language)) {
-          return await apiRun(opts);
+          try {
+            return await apiRun(opts);
+          } catch (err) {
+            if (langKey === 'python' || langKey === 'javascript' || langKey === 'js') {
+              return await mockRun(opts);
+            }
+            throw err;
+          }
         }
         if (API_ENABLED && typeof api === 'function') {
           return await apiRun(opts);

@@ -12,6 +12,19 @@ final class CodeExecutionService
     private const MAX_SOURCE_BYTES = 65536;
     private const MAX_IO_BYTES = 65536;
 
+    /** @var array<string, string> */
+    private const BIN_ENV_KEYS = [
+        'g++' => 'CODING_GXX_PATH',
+        'c++' => 'CODING_GXX_PATH',
+        'gcc' => 'CODING_GCC_PATH',
+        'cc' => 'CODING_GCC_PATH',
+        'python3' => 'CODING_PYTHON_PATH',
+        'python' => 'CODING_PYTHON_PATH',
+        'node' => 'CODING_NODE_PATH',
+        'javac' => 'CODING_JAVAC_PATH',
+        'java' => 'CODING_JAVA_PATH',
+    ];
+
     /**
      * @return array<string, mixed>
      */
@@ -24,11 +37,12 @@ final class CodeExecutionService
         $lang = $this->normalizeLanguage($language);
         $work = $this->makeWorkDir();
         if ($work === null) {
-            return $this->fail('Runtime Error', 'Could not create execution workspace.', $started);
+            $local = $this->fail('Runtime Error', 'Could not create execution workspace.', $started);
+            return $this->maybeRemote($language, $source, $stdin, $timeLimitMs, $started, $local);
         }
 
         try {
-            return match ($lang) {
+            $local = match ($lang) {
                 'python' => $this->runPython($work, $source, $stdin, $limitSec, $started),
                 'javascript' => $this->runNode($work, $source, $stdin, $limitSec, $started),
                 'c' => $this->runNative($work, $source, $stdin, $limitSec, $started, 'c'),
@@ -39,6 +53,61 @@ final class CodeExecutionService
         } finally {
             $this->removeDir($work);
         }
+
+        return $this->maybeRemote($language, $source, $stdin, $timeLimitMs, $started, $local);
+    }
+
+    /**
+     * @param array<string, mixed> $local
+     * @return array<string, mixed>
+     */
+    private function maybeRemote(
+        string $language,
+        string $source,
+        string $stdin,
+        int $timeLimitMs,
+        float $started,
+        array $local
+    ): array {
+        if (($local['ok'] ?? false) === true) {
+            return $local;
+        }
+        if (!$this->remoteFallbackEnabled()) {
+            return $local;
+        }
+        $stderr = strtolower((string) ($local['stderr'] ?? ''));
+        $needsRemote = str_contains($stderr, 'not installed')
+            || str_contains($stderr, 'not available')
+            || str_contains($stderr, 'failed to start process');
+        if (!$needsRemote) {
+            return $local;
+        }
+        $remote = (new PistonExecutionClient())->run($language, $source, $stdin, $timeLimitMs, $started);
+        if ($remote === null) {
+            $hint = trim((string) ($_ENV['CODING_PISTON_URL'] ?? '')) === ''
+                ? ' Set CODING_PISTON_FALLBACK=true or install compilers on the server.'
+                : ' Remote execution service did not respond.';
+            return $this->fail(
+                'Runtime Error',
+                rtrim((string) ($local['stderr'] ?? 'Execution failed.')) . $hint,
+                $started
+            );
+        }
+
+        return $remote;
+    }
+
+    private function remoteFallbackEnabled(): bool
+    {
+        $mode = strtolower(trim((string) ($_ENV['CODING_EXECUTOR'] ?? 'local_then_piston')));
+        if ($mode === 'local' || $mode === 'local_only') {
+            return false;
+        }
+        if ($mode === 'piston' || $mode === 'remote') {
+            return true;
+        }
+        $flag = $_ENV['CODING_PISTON_FALLBACK'] ?? 'true';
+        return filter_var($flag, FILTER_VALIDATE_BOOLEAN);
     }
 
     private function normalizeLanguage(string $language): string
@@ -92,9 +161,10 @@ final class CodeExecutionService
         file_put_contents($dir . '/' . $srcFile, $source);
         $compiler = $this->resolveBin($isCpp ? ['g++', 'c++'] : ['gcc', 'cc']);
         if ($compiler === null) {
+            $label = $isCpp ? 'C++ compiler (g++)' : 'C compiler (gcc)';
             return $this->fail(
                 'Runtime Error',
-                ($isCpp ? 'C++' : 'C') . ' compiler (g++) is not installed on the server. Contact your administrator.',
+                $label . ' is not installed on the server. Trying remote runner if enabled.',
                 $started
             );
         }
@@ -281,9 +351,8 @@ final class CodeExecutionService
     private function resolveBin(array $names): ?string
     {
         foreach ($names as $name) {
-            $envKey = 'CODING_' . strtoupper(preg_replace('/[^A-Z0-9]+/i', '_', $name)) . '_PATH';
-            $fromEnv = trim((string) ($_ENV[$envKey] ?? ''));
-            if ($fromEnv !== '' && is_executable($fromEnv)) {
+            $fromEnv = $this->binFromEnv($name);
+            if ($fromEnv !== null) {
                 return $fromEnv;
             }
             $found = $this->which($name);
@@ -295,18 +364,68 @@ final class CodeExecutionService
         return null;
     }
 
+    private function binFromEnv(string $name): ?string
+    {
+        $key = self::BIN_ENV_KEYS[strtolower($name)] ?? null;
+        if ($key === null) {
+            return null;
+        }
+        $fromEnv = trim((string) ($_ENV[$key] ?? ''));
+        if ($fromEnv !== '' && is_executable($fromEnv)) {
+            return $fromEnv;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function searchPathDirs(): array
+    {
+        $dirs = [];
+        $path = getenv('PATH') ?: '';
+        foreach (explode(PATH_SEPARATOR, $path) as $dir) {
+            $dir = trim($dir);
+            if ($dir !== '') {
+                $dirs[] = $dir;
+            }
+        }
+        $extra = trim((string) ($_ENV['CODING_EXEC_PATHS'] ?? ''));
+        if ($extra !== '') {
+            foreach (explode(',', $extra) as $dir) {
+                $dir = trim($dir);
+                if ($dir !== '') {
+                    $dirs[] = $dir;
+                }
+            }
+        }
+        foreach ([
+            '/usr/local/bin',
+            '/usr/bin',
+            '/bin',
+            '/opt/bin',
+            '/usr/local/gcc/bin',
+            '/usr/local/cpanel/3rdparty/bin',
+        ] as $dir) {
+            $dirs[] = $dir;
+        }
+        if (PHP_OS_FAMILY === 'Windows') {
+            foreach (['C:\\MinGW\\bin', 'C:\\msys64\\mingw64\\bin', 'C:\\Program Files\\nodejs'] as $dir) {
+                $dirs[] = $dir;
+            }
+        }
+
+        return array_values(array_unique($dirs));
+    }
+
     private function which(string $bin): ?string
     {
         if (str_contains($bin, DIRECTORY_SEPARATOR) && is_executable($bin)) {
             return $bin;
         }
-        $path = getenv('PATH') ?: '';
-        foreach (explode(PATH_SEPARATOR, $path) as $dir) {
-            $dir = trim($dir);
-            if ($dir === '') {
-                continue;
-            }
-            $full = $dir . DIRECTORY_SEPARATOR . $bin;
+        foreach ($this->searchPathDirs() as $dir) {
+            $full = rtrim($dir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $bin;
             if (is_file($full) && is_executable($full)) {
                 return $full;
             }
