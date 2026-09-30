@@ -678,8 +678,29 @@ final class StaffController
     /** GET /api/staff/courses */
     public function listCourses(): void
     {
-        RBACMiddleware::requireStaff();
-        Response::success(['courses' => CourseSyllabusCatalog::all()]);
+        $user = RBACMiddleware::requireStaff();
+        $dept = $this->staffDepartment($user);
+        Response::success([
+            'courses' => CourseSyllabusCatalog::forStaff($dept['code'], $dept['name'], $dept['shortName']),
+            'departmentCode' => $dept['code'],
+            'departmentName' => $dept['name'] !== '' ? $dept['name'] : $dept['code'],
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array{code:string,name:string,shortName:string}
+     */
+    private function staffDepartment(array $user): array
+    {
+        $ctx = StaffContext::resolve($user);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+
+        return [
+            'code' => (string) ($dept['code'] ?? ''),
+            'name' => (string) ($dept['name'] ?? ''),
+            'shortName' => (string) ($dept['shortName'] ?? ''),
+        ];
     }
 
     /** POST /api/staff/courses/questions */
