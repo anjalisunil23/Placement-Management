@@ -69,7 +69,7 @@ const NAV = [
     children: [
       {
         group: "mock-aptitude",
-        label: "Aptitude",
+        label: "Aptitude Training",
         href: "mock-aptitude.html",
         roles: ['admin', 'placement_officer', 'student', 'staff'],
         children: [],
@@ -164,14 +164,14 @@ const PAGE_LABELS = {
   'blacklist.html': 'Student · Management · Blacklist',
   'results.html': 'Recruitment Results',
   'admin-settings.html': 'System Settings',
-  'mock-aptitude.html': 'Mock · Aptitude',
-  'mock-aptitude.html#take': 'Mock · Aptitude · Take test',
-  'mock-aptitude.html#progress': 'Mock · Aptitude · Progress',
-  'mock-aptitude.html#manage': 'Mock · Aptitude · Manage',
-  'mock-coding.html': 'Mock · Coding Practice',
-  'mock-coding.html#take': 'Mock · Coding Practice · Take test',
-  'mock-coding.html#progress': 'Mock · Coding Practice · Progress',
-  'mock-coding.html#manage': 'Mock · Coding Practice · Manage',
+  'mock-aptitude.html': 'Practice · Aptitude Training',
+  'mock-aptitude.html#take': 'Practice · Aptitude Training · Take test',
+  'mock-aptitude.html#progress': 'Practice · Aptitude Training · Progress',
+  'mock-aptitude.html#manage': 'Practice · Aptitude Training · Manage',
+  'mock-coding.html': 'Practice · Coding Practice',
+  'mock-coding.html#take': 'Practice · Coding Practice · Take test',
+  'mock-coding.html#progress': 'Practice · Coding Practice · Progress',
+  'mock-coding.html#manage': 'Practice · Coding Practice · Manage',
   'certifications.html': 'Practice · Certification',
 };
 
