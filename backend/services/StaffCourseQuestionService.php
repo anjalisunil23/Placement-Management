@@ -31,20 +31,12 @@ final class StaffCourseQuestionService
             throw new \RuntimeException('AI question generation is not configured. Contact the administrator.');
         }
 
-        $course = CourseSyllabusCatalog::find((string) ($body['courseCode'] ?? $body['code'] ?? ''));
-        if ($course === null) {
-            throw new \InvalidArgumentException('Select a course code from the list.');
-        }
         $ctx = StaffContext::resolve($user);
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
-        if (!CourseSyllabusCatalog::visibleToStaff(
-            $course,
-            (string) ($dept['code'] ?? ''),
-            (string) ($dept['name'] ?? ''),
-            (string) ($dept['shortName'] ?? '')
-        )) {
-            throw new \InvalidArgumentException('That course is outside your department.');
-        }
+        $deptCode = (string) ($dept['code'] ?? '');
+        $deptName = (string) ($dept['name'] ?? '');
+        $deptShort = (string) ($dept['shortName'] ?? '');
+        $course = $this->resolveCourse((string) ($body['courseCode'] ?? $body['code'] ?? ''), $deptCode, $deptName, $deptShort);
 
         $count = (int) ($body['count'] ?? 10);
         if ($count < self::MIN_COUNT || $count > self::MAX_COUNT) {
@@ -180,6 +172,51 @@ PROMPT;
         }
 
         return $out;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveCourse(string $code, string $deptCode, string $deptName, string $deptShort): array
+    {
+        $code = strtoupper(trim($code));
+        if ($code === '') {
+            throw new \InvalidArgumentException('Select a course code from the list.');
+        }
+        $catalog = CourseSyllabusCatalog::find($code);
+        if ($catalog !== null) {
+            if (!CourseSyllabusCatalog::visibleToStaff($catalog, $deptCode, $deptName, $deptShort)) {
+                throw new \InvalidArgumentException('That course is outside your department.');
+            }
+
+            return $catalog;
+        }
+        if (!CourseSyllabusCatalog::subjectVisibleToStaff($code, $deptCode, $deptName, $deptShort)) {
+            throw new \InvalidArgumentException('That course is outside your department.');
+        }
+        $response = (new AesApiService())->searchSyllabus4Placement($code);
+        if (empty($response['success'])) {
+            throw new \RuntimeException('Could not load that course from the syllabus search.');
+        }
+        foreach (CourseSyllabusCatalog::filterSearchRows($response['data'] ?? [], $deptCode, $deptName, $deptShort) as $row) {
+            if (strtoupper((string) ($row['code'] ?? '')) !== $code) {
+                continue;
+            }
+            $title = trim((string) ($row['title'] ?? ''));
+
+            return [
+                'code' => $code,
+                'title' => $title !== '' ? $title : $code,
+                'department' => (string) ($row['department'] ?? ''),
+                'scheme' => 'AES',
+                'modules' => [[
+                    'name' => 'Course',
+                    'topics' => $title !== '' ? $title : $code,
+                ]],
+            ];
+        }
+
+        throw new \InvalidArgumentException('Select a course code from the list.');
     }
 
     /**

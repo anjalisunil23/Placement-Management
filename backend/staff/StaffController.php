@@ -19,6 +19,7 @@ use PMS\Services\PlacementFilterService;
 use PMS\Services\StaffPlacementRegistryService;
 use PMS\Services\StaffService;
 use PMS\Services\StaffCourseQuestionService;
+use PMS\Services\AesApiService;
 use PMS\Services\CourseSyllabusCatalog;
 use PMS\Services\RecruitingService;
 use PMS\Services\AesLoginService;
@@ -673,6 +674,40 @@ final class StaffController
             'path' => $path,
             'type' => $ext === 'pdf' ? 'pdf' : 'image',
         ];
+    }
+
+    /** GET /api/staff/courses/search?q=26MCA */
+    public function searchCourses(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        if (strlen($query) > 40) {
+            $query = substr($query, 0, 40);
+        }
+        $dept = $this->staffDepartment($user);
+        $departmentName = $dept['name'] !== '' ? $dept['name'] : $dept['code'];
+        if (strlen($query) < 3) {
+            Response::success([
+                'courses' => [],
+                'total' => 0,
+                'departmentName' => $departmentName,
+            ]);
+        }
+        $response = (new AesApiService())->searchSyllabus4Placement($query);
+        if (empty($response['success'])) {
+            Response::error((string) ($response['error'] ?? 'Could not search the syllabus.'), 502);
+        }
+        $courses = CourseSyllabusCatalog::filterSearchRows(
+            $response['data'] ?? [],
+            $dept['code'],
+            $dept['name'],
+            $dept['shortName']
+        );
+        Response::success([
+            'courses' => array_slice($courses, 0, 40),
+            'total' => count($courses),
+            'departmentName' => $departmentName,
+        ]);
     }
 
     /** GET /api/staff/courses */
