@@ -57,14 +57,21 @@ final class StaffCourseQuestionService
         if (mb_strlen($syllabus) < 80) {
             throw new \RuntimeException('Could not read that syllabus. Click Get, then generate questions.');
         }
+        $courseCode = (string) ($course['code'] ?? '');
+        /** @var array<string, true> $promptKeys */
+        $promptKeys = (new SyllabusQuestionBankModel())->existingPromptKeys($courseCode);
         $system = OpenAIService::cleanUtf8(
             'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
         );
-        $userPrompt = $this->buildGeneratePrompt($course, $syllabus, $mixes, $total, $mixText, '');
+        $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
+        $userPrompt = $this->buildGeneratePrompt($course, $syllabus, $mixes, $total, $mixText, $bankAvoid);
         $raw = $this->openai->generateJson($system, $userPrompt);
-        $valid = $this->collectValidQuestions($raw['questions'] ?? $raw);
-        $questions = $this->selectQuestionsForMixes($valid, $mixes, []);
-        $questions = $this->topUpQuestionsForMixes($course, $syllabus, $system, $mixes, $questions);
+        $valid = $this->dedupeBatchOnly($this->collectValidQuestions($raw['questions'] ?? $raw));
+        $valid = $this->rejectKnownPrompts($valid, $promptKeys);
+        $questions = $this->selectQuestionsForMixes($valid, $mixes, [], $promptKeys);
+        $this->registerQuestionKeys($questions, $promptKeys);
+        $questions = $this->topUpQuestionsForMixes($course, $syllabus, $system, $mixes, $questions, $promptKeys);
+        $questions = $this->dedupeBatchOnly($questions);
         if ($questions === []) {
             throw new \RuntimeException('AI did not return any usable questions. Please try again.');
         }
@@ -129,6 +136,11 @@ final class StaffCourseQuestionService
 
         $course = is_array($draft['course'] ?? null) ? $draft['course'] : [];
         $this->assertVisibleCourseCode($user, (string) ($course['code'] ?? ''));
+        $knownKeys = (new SyllabusQuestionBankModel())->existingPromptKeys((string) ($course['code'] ?? ''));
+        $picked = $this->dedupeWithinList($picked, $knownKeys);
+        if ($picked === []) {
+            throw new \InvalidArgumentException('The selected questions are already in the bank or duplicate each other.');
+        }
         $bank = (new SyllabusQuestionBankModel())->addQuestions(
             $course,
             $picked,
@@ -944,7 +956,7 @@ final class StaffCourseQuestionService
         $mixText = OpenAIService::cleanUtf8($mixText);
         $avoidBlock = OpenAIService::cleanUtf8($avoidBlock);
         $avoid = trim($avoidBlock) !== ''
-            ? "\nDo not repeat or closely paraphrase these questions already written:\n{$avoidBlock}\n"
+            ? "\n" . trim($avoidBlock) . "\n"
             : '';
 
         return "Course: {$code} {$title}\n"
@@ -961,7 +973,8 @@ final class StaffCourseQuestionService
             . "- Each question has exactly four distinct options and one correct answer.\n"
             . "- correctIndex is the 0-based index of the correct option.\n"
             . "- Each question's difficulty field must be Easy, Medium, or Hard and match the mix.\n"
-            . "- description is required: 1-2 sentences explaining why the correct option is right.\n\n"
+            . "- description is required: 1-2 sentences explaining why the correct option is right.\n"
+            . "- Every question must be unique; do not repeat or rephrase the same question.\n\n"
             . 'Return this JSON shape:' . "\n"
             . '{"questions":[{"module":"Module 1","difficulty":"Medium","question":"...","options":["...","...","...","..."],"correctIndex":0,"description":"..."}]}';
     }
@@ -996,10 +1009,17 @@ final class StaffCourseQuestionService
     /**
      * @param list<array{difficulty:string,count:int}> $mixes
      * @param list<array<string, mixed>> $selected
+     * @param array<string, true> $promptKeys
      * @return list<array<string, mixed>>
      */
-    private function topUpQuestionsForMixes(array $course, string $syllabus, string $system, array $mixes, array $selected): array
-    {
+    private function topUpQuestionsForMixes(
+        array $course,
+        string $syllabus,
+        string $system,
+        array $mixes,
+        array $selected,
+        array &$promptKeys
+    ): array {
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $shortfall = $this->mixShortfall($mixes, $selected);
             if ($shortfall === []) {
@@ -1023,14 +1043,17 @@ final class StaffCourseQuestionService
                 static fn(array $q): string => '- ' . trim((string) ($q['question'] ?? '')),
                 array_slice($selected, -25)
             ));
-            $prompt = $this->buildGeneratePrompt($course, $syllabus, $shortfall, $totalShort, $mixText, $avoid);
+            $bankAvoid = $this->existingBankQuestionsAvoidBlock((string) ($course['code'] ?? ''));
+            $avoidBlock = trim($avoid . "\n" . $bankAvoid);
+            $prompt = $this->buildGeneratePrompt($course, $syllabus, $shortfall, $totalShort, $mixText, $avoidBlock);
             $raw = $this->openai->generateJson($system, $prompt);
-            $valid = $this->collectValidQuestions($raw['questions'] ?? $raw);
-            $added = $this->selectQuestionsForMixes($valid, $shortfall, $selected);
+            $valid = $this->dedupeBatchOnly($this->collectValidQuestions($raw['questions'] ?? $raw));
+            $valid = $this->rejectKnownPrompts($valid, $promptKeys);
+            $added = $this->selectQuestionsForMixes($valid, $shortfall, $selected, $promptKeys);
             if ($added === []) {
                 continue;
             }
-            $selected = $this->mergeQuestionLists($selected, $added);
+            $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
         }
 
         return $selected;
@@ -1039,23 +1062,27 @@ final class StaffCourseQuestionService
     /**
      * @param list<array<string, mixed>> $existing
      * @param list<array<string, mixed>> $added
+     * @param array<string, true>|null $promptKeys
      * @return list<array<string, mixed>>
      */
-    private function mergeQuestionLists(array $existing, array $added): array
+    private function mergeQuestionLists(array $existing, array $added, ?array &$promptKeys = null): array
     {
         $seen = [];
         foreach ($existing as $question) {
-            $key = mb_strtolower(trim((string) ($question['question'] ?? '')));
+            $key = $this->questionPromptKey($question);
             if ($key !== '') {
                 $seen[$key] = true;
             }
         }
         foreach ($added as $question) {
-            $key = mb_strtolower(trim((string) ($question['question'] ?? '')));
+            $key = $this->questionPromptKey($question);
             if ($key === '' || isset($seen[$key])) {
                 continue;
             }
             $seen[$key] = true;
+            if ($promptKeys !== null) {
+                $promptKeys[$key] = true;
+            }
             $existing[] = $question;
         }
 
@@ -1067,11 +1094,17 @@ final class StaffCourseQuestionService
      * @param list<array<string, mixed>> $exclude
      * @return list<array<string, mixed>>
      */
-    private function selectQuestionsForMixes(array $valid, array $mixes, array $exclude): array
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @param list<array<string, mixed>> $exclude
+     * @param array<string, true> $forbiddenKeys
+     * @return list<array<string, mixed>>
+     */
+    private function selectQuestionsForMixes(array $valid, array $mixes, array $exclude, array $forbiddenKeys = []): array
     {
-        $excludeKeys = [];
+        $excludeKeys = $forbiddenKeys;
         foreach ($exclude as $question) {
-            $key = mb_strtolower(trim((string) ($question['question'] ?? '')));
+            $key = $this->questionPromptKey($question);
             if ($key !== '') {
                 $excludeKeys[$key] = true;
             }
@@ -1079,7 +1112,7 @@ final class StaffCourseQuestionService
 
         $buckets = ['Easy' => [], 'Medium' => [], 'Hard' => []];
         foreach ($valid as $question) {
-            $key = mb_strtolower(trim((string) ($question['question'] ?? '')));
+            $key = $this->questionPromptKey($question);
             if ($key === '' || isset($excludeKeys[$key])) {
                 continue;
             }
@@ -1102,12 +1135,130 @@ final class StaffCourseQuestionService
                 if ($taken >= $need) {
                     break;
                 }
+                $key = $this->questionPromptKey($question);
+                if ($key === '' || isset($excludeKeys[$key])) {
+                    continue;
+                }
+                $excludeKeys[$key] = true;
                 $out[] = $question;
                 $taken++;
             }
         }
 
         return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $question
+     */
+    private function questionPromptKey(array $question): string
+    {
+        return SyllabusQuestionBankModel::normalizePromptKey((string) ($question['question'] ?? $question['prompt'] ?? ''));
+    }
+
+    private function existingBankQuestionsAvoidBlock(string $courseCode): string
+    {
+        $courseCode = SyllabusQuestionBankModel::normalizeCourseCode($courseCode);
+        if ($courseCode === '') {
+            return '';
+        }
+        $lines = [];
+        foreach ((new SyllabusQuestionBankModel())->listByCourseCode($courseCode, 100) as $question) {
+            $text = trim((string) ($question['question'] ?? ''));
+            if ($text !== '') {
+                $lines[] = '- ' . $text;
+            }
+        }
+        if ($lines === []) {
+            return '';
+        }
+
+        return "Do not repeat or closely paraphrase questions already in the course question bank:\n" . implode("\n", $lines);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     * @return list<array<string, mixed>>
+     */
+    private function dedupeBatchOnly(array $questions): array
+    {
+        $seen = [];
+        $out = [];
+        foreach ($questions as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $key = $this->questionPromptKey($question);
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $question;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     * @param array<string, true> $knownKeys
+     * @return list<array<string, mixed>>
+     */
+    private function rejectKnownPrompts(array $questions, array $knownKeys): array
+    {
+        $out = [];
+        foreach ($questions as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $key = $this->questionPromptKey($question);
+            if ($key === '' || isset($knownKeys[$key])) {
+                continue;
+            }
+            $out[] = $question;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     * @param array<string, true> $knownKeys
+     * @return list<array<string, mixed>>
+     */
+    private function dedupeWithinList(array $questions, array &$knownKeys): array
+    {
+        $out = [];
+        foreach ($questions as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $key = $this->questionPromptKey($question);
+            if ($key === '' || isset($knownKeys[$key])) {
+                continue;
+            }
+            $knownKeys[$key] = true;
+            $out[] = $question;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     * @param array<string, true> $promptKeys
+     */
+    private function registerQuestionKeys(array $questions, array &$promptKeys): void
+    {
+        foreach ($questions as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $key = $this->questionPromptKey($question);
+            if ($key !== '') {
+                $promptKeys[$key] = true;
+            }
+        }
     }
 
     /**

@@ -225,6 +225,16 @@ class SyllabusQuestionBankModel extends BaseModel
     }
 
     /**
+     * Normalized prompt keys already stored for a course (duplicate detection).
+     *
+     * @return array<string, true>
+     */
+    public function existingPromptKeys(string $courseCode): array
+    {
+        return $this->promptIndexForCourse(self::normalizeCourseCode($courseCode));
+    }
+
+    /**
      * @return array<string, true>
      */
     private function promptIndexForCourse(string $courseCode): array
