@@ -18,7 +18,11 @@ final class StaffCourseQuestionService
     private const MAX_TOTAL = 40;
     private const COOLDOWN_SECONDS = 8;
     private const GENERATE_BATCH_SIZE = 10;
-    private const GENERATE_MAX_API_CALLS = 36;
+    /** Enough for one batched pass + shortfall top-ups without exceeding shared-host timeouts. */
+    private const GENERATE_MAX_API_CALLS = 18;
+    /** Stop OpenAI loops before LiteSpeed/cPanel proxy timeouts (~60–120s). */
+    private const GENERATE_MAX_WALL_SECONDS = 300;
+    private const SYLLABUS_CACHE_TTL = 3600;
 
     private OpenAIService $openai;
 
@@ -34,6 +38,9 @@ final class StaffCourseQuestionService
      */
     public function generate(array $user, array $body): array
     {
+        @set_time_limit(600);
+        @ignore_user_abort(true);
+
         if (!$this->openai->isConfigured()) {
             throw new \RuntimeException('AI question generation is not configured. Contact the administrator.');
         }
@@ -69,7 +76,39 @@ final class StaffCourseQuestionService
             'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
         );
         $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
-        $questions = $this->assembleQuestionsForMixes($course, $syllabus, $system, $mixes, $mixText, $bankAvoid, $promptKeys);
+        $progressKey = self::sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
+        $deadline = microtime(true) + self::GENERATE_MAX_WALL_SECONDS;
+        self::writeGenerationProgress($progressKey, [
+            'phase' => 'generating',
+            'message' => 'Preparing syllabus context…',
+            'generated' => 0,
+            'requested' => $total,
+            'percent' => 0,
+            'done' => false,
+        ]);
+        $questions = $this->assembleQuestionsForMixes(
+            $course,
+            $syllabus,
+            $system,
+            $mixes,
+            $mixText,
+            $bankAvoid,
+            $promptKeys,
+            $progressKey,
+            $total,
+            $deadline
+        );
+        $got = count($questions);
+        self::writeGenerationProgress($progressKey, [
+            'phase' => $got >= $total ? 'complete' : 'incomplete',
+            'message' => $got >= $total
+                ? "{$got} / {$total} completed"
+                : "Generated {$got} of {$total} requested",
+            'generated' => $got,
+            'requested' => $total,
+            'percent' => $total > 0 ? min(100, (int) round(($got / $total) * 100)) : 100,
+            'done' => true,
+        ]);
         if ($questions === []) {
             throw new \RuntimeException('AI did not return any usable questions. Please try again.');
         }
@@ -642,12 +681,18 @@ final class StaffCourseQuestionService
         if ($encid === '') {
             throw new \RuntimeException('Could not encode that course id.');
         }
-        try {
-            $pdf = AesSyllabusCipher::fetchPdf($encid);
-        } catch (\RuntimeException $e) {
-            throw new \RuntimeException($e->getMessage(), 502);
+        $cached = self::getSyllabusCache($semsubId, $encid);
+        if ($cached !== null) {
+            $text = $cached;
+        } else {
+            try {
+                $pdf = AesSyllabusCipher::fetchPdf($encid);
+            } catch (\RuntimeException $e) {
+                throw new \RuntimeException($e->getMessage(), 502);
+            }
+            $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
+            self::putSyllabusCache($semsubId, $encid, $text);
         }
-        $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
 
         return [
             'code' => $code,
@@ -657,6 +702,108 @@ final class StaffCourseQuestionService
             'scheme' => 'AES',
             'syllabusText' => $text,
         ];
+    }
+
+    public static function putSyllabusCache(string $semsubId, string $encid, string $text): void
+    {
+        $semsubId = trim($semsubId);
+        if ($semsubId === '') {
+            return;
+        }
+        if (!isset($_SESSION['staff_syllabus_cache']) || !is_array($_SESSION['staff_syllabus_cache'])) {
+            $_SESSION['staff_syllabus_cache'] = [];
+        }
+        $_SESSION['staff_syllabus_cache'][$semsubId] = [
+            'encid' => $encid,
+            'text' => $text,
+            'at' => time(),
+        ];
+    }
+
+    public static function getSyllabusCache(string $semsubId, string $encid): ?string
+    {
+        $semsubId = trim($semsubId);
+        $encid = trim($encid);
+        if ($semsubId === '' || $encid === '') {
+            return null;
+        }
+        $row = $_SESSION['staff_syllabus_cache'][$semsubId] ?? null;
+        if (!is_array($row) || (string) ($row['encid'] ?? '') !== $encid) {
+            return null;
+        }
+        $at = (int) ($row['at'] ?? 0);
+        if ($at <= 0 || (time() - $at) > self::SYLLABUS_CACHE_TTL) {
+            return null;
+        }
+        $text = trim((string) ($row['text'] ?? ''));
+
+        return $text !== '' ? $text : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public static function readGenerationProgress(string $key): ?array
+    {
+        $key = self::sanitizeProgressKey($key);
+        if ($key === '') {
+            return null;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_staff_course_prog_' . hash('sha256', $key) . '.json';
+        if (!is_readable($path)) {
+            return null;
+        }
+        $data = json_decode((string) file_get_contents($path), true);
+
+        return is_array($data) ? $data : null;
+    }
+
+    public static function sanitizeProgressKey(string $key): string
+    {
+        $key = trim($key);
+        if ($key === '' || !preg_match('/^[a-f0-9\-]{8,64}$/i', $key)) {
+            return '';
+        }
+
+        return $key;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function writeGenerationProgress(string $key, array $data): void
+    {
+        $key = self::sanitizeProgressKey($key);
+        if ($key === '') {
+            return;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_staff_course_prog_' . hash('sha256', $key) . '.json';
+        $payload = array_merge($data, ['updatedAt' => time()]);
+        @file_put_contents($path, json_encode($payload, JSON_UNESCAPED_UNICODE));
+    }
+
+    private function touchGenerationProgress(string $key, int $generated, int $requested, string $message): void
+    {
+        if ($key === '') {
+            return;
+        }
+        self::writeGenerationProgress($key, [
+            'phase' => 'generating',
+            'message' => $message,
+            'generated' => $generated,
+            'requested' => $requested,
+            'percent' => $requested > 0 ? min(99, (int) round(($generated / $requested) * 100)) : 0,
+            'done' => false,
+        ]);
+    }
+
+    private function generationDeadlineReached(float $deadline): bool
+    {
+        if ($deadline <= 0) {
+            return false;
+        }
+
+        return microtime(true) >= $deadline;
     }
 
     /**
@@ -998,13 +1145,17 @@ final class StaffCourseQuestionService
         array $mixes,
         string $initialMixText,
         string $bankAvoid,
-        array &$promptKeys
+        array &$promptKeys,
+        string $progressKey = '',
+        int $requestedTotal = 0,
+        float $deadline = 0.0
     ): array {
         $selected = [];
         $apiCalls = 0;
+        $requestedTotal = max($requestedTotal, $this->mixTotal($mixes));
 
         foreach ($this->chunkMixesByTotal($mixes, self::GENERATE_BATCH_SIZE) as $chunk) {
-            if ($apiCalls >= self::GENERATE_MAX_API_CALLS) {
+            if ($this->generationDeadlineReached($deadline) || $apiCalls >= self::GENERATE_MAX_API_CALLS) {
                 break;
             }
             $chunkTotal = $this->mixTotal($chunk);
@@ -1025,21 +1176,30 @@ final class StaffCourseQuestionService
             $apiCalls++;
             if ($added !== []) {
                 $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+                $this->touchGenerationProgress(
+                    $progressKey,
+                    count($selected),
+                    $requestedTotal,
+                    'Generating questions… (' . count($selected) . ' / ' . $requestedTotal . ')'
+                );
             }
         }
 
         $stalls = 0;
-        while ($stalls < 10 && $apiCalls < self::GENERATE_MAX_API_CALLS) {
+        while ($stalls < 10 && $apiCalls < self::GENERATE_MAX_API_CALLS && !$this->generationDeadlineReached($deadline)) {
             $shortfall = $this->mixShortfall($mixes, $selected);
             if ($shortfall === []) {
                 break;
             }
             $madeProgress = false;
             foreach ($shortfall as $mix) {
+                if ($this->generationDeadlineReached($deadline)) {
+                    break 2;
+                }
                 $label = (string) ($mix['difficulty'] ?? 'Medium');
                 $need = (int) ($mix['count'] ?? 0);
                 $emptyBatchStreak = 0;
-                while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyBatchStreak < 4) {
+                while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyBatchStreak < 4 && !$this->generationDeadlineReached($deadline)) {
                     $chunk = min(6, $need);
                     $slice = [['difficulty' => $label, 'count' => $chunk]];
                     $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
@@ -1063,6 +1223,12 @@ final class StaffCourseQuestionService
                     $emptyBatchStreak = 0;
                     $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
                     $madeProgress = true;
+                    $this->touchGenerationProgress(
+                        $progressKey,
+                        count($selected),
+                        $requestedTotal,
+                        'Generating questions… (' . count($selected) . ' / ' . $requestedTotal . ')'
+                    );
                     $need = $this->shortfallForDifficulty($mixes, $selected, $label);
                 }
             }
@@ -1074,10 +1240,13 @@ final class StaffCourseQuestionService
         }
 
         foreach ($this->mixShortfall($mixes, $selected) as $mix) {
+            if ($this->generationDeadlineReached($deadline)) {
+                break;
+            }
             $label = (string) ($mix['difficulty'] ?? 'Medium');
             $need = (int) ($mix['count'] ?? 0);
             $emptyStreak = 0;
-            while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyStreak < 6) {
+            while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyStreak < 6 && !$this->generationDeadlineReached($deadline)) {
                 $slice = [['difficulty' => $label, 'count' => 1]];
                 $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
                 $added = $this->fetchQuestionBatch(
@@ -1099,6 +1268,12 @@ final class StaffCourseQuestionService
                 }
                 $emptyStreak = 0;
                 $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+                $this->touchGenerationProgress(
+                    $progressKey,
+                    count($selected),
+                    $requestedTotal,
+                    'Generating questions… (' . count($selected) . ' / ' . $requestedTotal . ')'
+                );
                 $need = $this->shortfallForDifficulty($mixes, $selected, $label);
             }
         }

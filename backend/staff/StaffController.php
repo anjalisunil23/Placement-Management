@@ -735,18 +735,12 @@ final class StaffController
         if ($encid === '') {
             Response::error('Could not encode that course id.', 500);
         }
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            session_write_close();
-        }
         $syllabusTextChars = 0;
-        $syllabusReadable = false;
-        try {
-            $pdf = AesSyllabusCipher::fetchPdf($encid);
-            $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
-            $syllabusTextChars = mb_strlen($text);
-            $syllabusReadable = AesSyllabusCipher::isUsableSyllabusText($text);
-        } catch (\RuntimeException) {
-            // The viewer request retries the download if this warm-up fails.
+        $syllabusReadable = null;
+        $cached = StaffCourseQuestionService::getSyllabusCache($semsubId, $encid);
+        if ($cached !== null) {
+            $syllabusTextChars = mb_strlen($cached);
+            $syllabusReadable = AesSyllabusCipher::isUsableSyllabusText($cached);
         }
         Response::success([
             'semsubId' => $semsubId,
@@ -778,10 +772,17 @@ final class StaffController
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_write_close();
         }
+        @set_time_limit(300);
         try {
             $pdf = AesSyllabusCipher::fetchPdf($encid);
         } catch (\RuntimeException $e) {
             Response::error($e->getMessage(), 502);
+        }
+        try {
+            $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
+            StaffCourseQuestionService::putSyllabusCache($semsubId, $encid, $text);
+        } catch (\Throwable) {
+            // PDF still streams; generation may fetch again later.
         }
         $file = preg_replace('/[^A-Za-z0-9_-]+/', '-', $courseCode !== '' ? $courseCode : 'syllabus') ?: 'syllabus';
         header('Content-Type: application/pdf');
@@ -820,6 +821,18 @@ final class StaffController
             'name' => (string) ($dept['name'] ?? ''),
             'shortName' => (string) ($dept['shortName'] ?? ''),
         ];
+    }
+
+    /** GET /api/staff/courses/questions/generate-progress?key=... */
+    public function courseQuestionsGenerateProgress(): void
+    {
+        RBACMiddleware::requireSyllabusAccess();
+        $key = (string) ($_GET['key'] ?? '');
+        $progress = StaffCourseQuestionService::readGenerationProgress($key);
+        if ($progress === null) {
+            Response::success(['active' => false]);
+        }
+        Response::success(array_merge(['active' => true], $progress));
     }
 
     /** POST /api/staff/courses/questions */

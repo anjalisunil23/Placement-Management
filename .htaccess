@@ -48,6 +48,11 @@ RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME}.html -f
 RewriteRule ^(.+?)/?$ $1.html [L]
 
+# Long-running API work (syllabus PDF + OpenAI generation)
+<IfModule mod_lsapi.c>
+  lsapi_max_process_time 600
+</IfModule>
+
 # Always fetch latest JS/CSS (avoid stale sidebar, nav, and drive fixes on production)
 <IfModule mod_headers.c>
   <FilesMatch "\.(js|css)$">

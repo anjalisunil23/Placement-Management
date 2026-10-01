@@ -5728,11 +5728,19 @@ async function apiFetch(path, opts = {}) {
     if (json === null) {
       const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       const detail = plain ? plain.slice(0, 160) : 'Empty server response';
+      const timedOut = /request timeout|timed out|gateway timeout|504|522/i.test(plain);
+      let message;
+      if (timedOut) {
+        message = `Request timed out (${res.status}). The server stopped a long operation (syllabus download or AI generation). `
+          + 'Wait for the PDF to finish loading, then try again with fewer questions, or ask the host to raise PHP/LiteSpeed timeouts.';
+      } else if (res.status >= 500) {
+        message = `Server error (${res.status}). If this persists, redeploy on cPanel and confirm PHP 8.2+ and composer install. ${detail}`;
+      } else {
+        message = `Bad response (${res.status}): ${detail}`;
+      }
       return {
         success: false,
-        message: res.status >= 500
-          ? `Server error (${res.status}). API may be down — redeploy on cPanel and confirm PHP 8.2+ and composer install. ${detail}`
-          : `Bad response (${res.status}): ${detail}`,
+        message,
         data: null,
         status: res.status,
       };
