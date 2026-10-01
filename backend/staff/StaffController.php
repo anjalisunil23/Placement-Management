@@ -811,13 +811,56 @@ final class StaffController
         try {
             Response::success(
                 (new StaffCourseQuestionService())->generate($user, $body),
-                'Questions saved to the syllabus question bank.'
+                'Questions generated. Select the ones you want to add to the syllabus question bank.'
             );
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
             $code = (int) $e->getCode();
             Response::error($e->getMessage(), ($code >= 400 && $code <= 599) ? $code : 503);
+        }
+    }
+
+    /** POST /api/staff/courses/questions/save */
+    public function saveCourseQuestions(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            $result = (new StaffCourseQuestionService())->saveSelected($user, $body);
+            $added = (int) ($result['added'] ?? 0);
+            $skipped = (int) ($result['skipped'] ?? 0);
+            $code = (string) ($result['courseCode'] ?? '');
+            $message = $added > 0
+                ? ($added . ' question' . ($added === 1 ? '' : 's') . ' added to ' . $code . '.')
+                : 'No new questions were added.';
+            if ($skipped > 0) {
+                $message .= ' ' . $skipped . ' already in the bank.';
+            }
+            Response::success($result, $message);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
+    /** POST /api/staff/courses/questions/practice */
+    public function startCoursePractice(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            Response::success(
+                (new StaffCourseQuestionService())->startPractice($user, $body),
+                'MCQ started. Choose an option for each question, then submit.'
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
         }
     }
 

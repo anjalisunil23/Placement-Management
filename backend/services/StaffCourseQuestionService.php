@@ -83,21 +83,21 @@ PROMPT;
         if ($questions === []) {
             throw new \RuntimeException('AI did not return any usable questions. Please try again.');
         }
-
-        $bank = (new SyllabusQuestionBankModel())->addQuestions(
-            $course,
-            $questions,
-            (string) ($mixes[0]['difficulty'] ?? 'Medium'),
-            (string) ($user['_id'] ?? $user['id'] ?? '')
-        );
+        foreach ($questions as $index => $question) {
+            $questions[$index]['draftIndex'] = $index;
+        }
 
         $sessionId = bin2hex(random_bytes(16));
-        $_SESSION['staff_course_practice'] = [
+        $_SESSION['staff_course_draft'] = [
             'id' => $sessionId,
             'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
-            'courseCode' => (string) $course['code'],
-            'courseTitle' => (string) $course['title'],
-            'difficulty' => implode(', ', array_map(static fn (array $mix): string => $mix['difficulty'] . ' ' . $mix['count'], $mixes)),
+            'course' => [
+                'code' => (string) $course['code'],
+                'title' => (string) $course['title'],
+                'semsubId' => (string) ($course['semsubId'] ?? ''),
+                'department' => (string) ($course['department'] ?? ''),
+            ],
+            'mixes' => $mixes,
             'questions' => $questions,
             'createdAt' => time(),
         ];
@@ -108,15 +108,65 @@ PROMPT;
             'courseTitle' => (string) $course['title'],
             'mixes' => $mixes,
             'requested' => $total,
+            'questions' => $questions,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function saveSelected(array $user, array $body): array
+    {
+        $draft = $this->requireDraft($user, (string) ($body['sessionId'] ?? ''));
+        $indexes = [];
+        foreach ((array) ($body['indexes'] ?? $body['selected'] ?? []) as $index) {
+            $indexes[] = (int) $index;
+        }
+        $indexes = array_values(array_unique($indexes));
+        $source = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
+        $picked = [];
+        foreach ($indexes as $index) {
+            if (!isset($source[$index]) || !is_array($source[$index])) {
+                continue;
+            }
+            $picked[] = $source[$index];
+        }
+        if ($picked === []) {
+            throw new \InvalidArgumentException('Select the questions you want to add to the syllabus question bank.');
+        }
+
+        $course = is_array($draft['course'] ?? null) ? $draft['course'] : [];
+        $this->assertVisibleCourseCode($user, (string) ($course['code'] ?? ''));
+        $bank = (new SyllabusQuestionBankModel())->addQuestions(
+            $course,
+            $picked,
+            'Medium',
+            (string) ($user['_id'] ?? $user['id'] ?? '')
+        );
+
+        $remaining = [];
+        foreach ($source as $index => $question) {
+            if (!is_array($question) || in_array((int) $index, $indexes, true)) {
+                continue;
+            }
+            $question['draftIndex'] = count($remaining);
+            $remaining[] = $question;
+        }
+        $draft['questions'] = $remaining;
+        $draft['createdAt'] = time();
+        $_SESSION['staff_course_draft'] = $draft;
+
+        return [
+            'sessionId' => (string) ($draft['id'] ?? ''),
+            'courseCode' => (string) ($bank['courseCode'] ?? $course['code'] ?? ''),
+            'courseTitle' => (string) ($bank['courseTitle'] ?? $course['title'] ?? ''),
             'added' => (int) ($bank['added'] ?? 0),
             'skipped' => (int) ($bank['skipped'] ?? 0),
-            'questions' => $questions,
-            'bank' => [
-                'courseCode' => (string) ($bank['courseCode'] ?? $course['code']),
-                'courseTitle' => (string) ($bank['courseTitle'] ?? $course['title']),
-                'total' => count($bank['questions'] ?? []),
-                'questions' => $bank['questions'] ?? [],
-            ],
+            'questions' => $remaining,
+            'mixes' => $draft['mixes'] ?? [],
+            'bank' => $this->listBank($user, (string) ($bank['courseCode'] ?? $course['code'] ?? '')),
         ];
     }
 
@@ -124,20 +174,49 @@ PROMPT;
      * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
-    public function listBank(array $user, string $courseCode): array
+    public function listBank(array $user, string $courseCode = ''): array
     {
-        $code = $this->assertVisibleCourseCode($user, $courseCode);
-        $questions = (new SyllabusQuestionBankModel())->listByCourseCode($code);
-        $title = '';
-        if ($questions !== []) {
-            $title = trim((string) ($questions[0]['courseTitle'] ?? ''));
+        $focus = SyllabusQuestionBankModel::normalizeCourseCode($courseCode);
+        if ($focus !== '') {
+            $this->assertVisibleCourseCode($user, $focus);
+        }
+
+        $ctx = StaffContext::resolve($user);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+        $deptCode = (string) ($dept['code'] ?? '');
+        $deptName = (string) ($dept['name'] ?? '');
+        $deptShort = (string) ($dept['shortName'] ?? '');
+
+        $visible = [];
+        foreach ((new SyllabusQuestionBankModel())->listAll(2000) as $question) {
+            $code = SyllabusQuestionBankModel::normalizeCourseCode((string) ($question['courseCode'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            if (!CourseSyllabusCatalog::subjectVisibleToStaff($code, $deptCode, $deptName, $deptShort)) {
+                continue;
+            }
+            $visible[] = $question;
+        }
+
+        $courses = SyllabusQuestionBankModel::groupByCourseCode($visible);
+        $focused = null;
+        foreach ($courses as $course) {
+            if ((string) ($course['courseCode'] ?? '') === $focus) {
+                $focused = $course;
+                break;
+            }
         }
 
         return [
-            'courseCode' => $code,
-            'courseTitle' => $title,
-            'total' => count($questions),
-            'questions' => $questions,
+            'courses' => $courses,
+            'totalCourses' => count($courses),
+            'totalQuestions' => count($visible),
+            'focusCode' => $focus,
+            'courseCode' => $focus,
+            'courseTitle' => (string) ($focused['courseTitle'] ?? ''),
+            'total' => (int) ($focused['total'] ?? 0),
+            'questions' => $focused['questions'] ?? [],
         ];
     }
 
@@ -159,6 +238,41 @@ PROMPT;
     }
 
     /**
+     * Start an MCQ from the selected course question bank. Answers stay on the server.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function startPractice(array $user, array $body): array
+    {
+        $code = $this->assertVisibleCourseCode($user, (string) ($body['courseCode'] ?? $body['code'] ?? ''));
+        $rows = (new SyllabusQuestionBankModel())->listByCourseCode($code);
+        if ($rows === []) {
+            throw new \InvalidArgumentException('Add questions to the syllabus question bank first.');
+        }
+
+        $sessionId = bin2hex(random_bytes(16));
+        $title = trim((string) ($rows[0]['courseTitle'] ?? $body['courseTitle'] ?? $code));
+        $_SESSION['staff_course_practice'] = [
+            'id' => $sessionId,
+            'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
+            'courseCode' => $code,
+            'courseTitle' => $title !== '' ? $title : $code,
+            'questions' => $rows,
+            'createdAt' => time(),
+        ];
+
+        return [
+            'sessionId' => $sessionId,
+            'courseCode' => $code,
+            'courseTitle' => $title !== '' ? $title : $code,
+            'total' => count($rows),
+            'questions' => $this->questionsForPractice($rows),
+        ];
+    }
+
+    /**
      * Grade a practice session. Answers are 0-based option indexes; -1 means unanswered.
      *
      * @param array<string, mixed> $user
@@ -171,14 +285,14 @@ PROMPT;
         $sessionId = trim((string) ($body['sessionId'] ?? ''));
         $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
         if (!is_array($session) || $sessionId === '' || (string) ($session['id'] ?? '') !== $sessionId) {
-            throw new \InvalidArgumentException('This practice session has ended. Generate a new set of questions.');
+            throw new \InvalidArgumentException('This MCQ has ended. Start it again from the MCQ tab.');
         }
         if ((string) ($session['userId'] ?? '') !== $userId) {
-            throw new \InvalidArgumentException('This practice session has ended. Generate a new set of questions.');
+            throw new \InvalidArgumentException('This MCQ has ended. Start it again from the MCQ tab.');
         }
         if ((time() - (int) ($session['createdAt'] ?? 0)) > 7200) {
             unset($_SESSION['staff_course_practice']);
-            throw new \InvalidArgumentException('This practice session has expired. Generate a new set of questions.');
+            throw new \InvalidArgumentException('This MCQ has expired. Start it again from the MCQ tab.');
         }
 
         $answers = is_array($body['answers'] ?? null) ? array_values($body['answers']) : [];
@@ -202,7 +316,7 @@ PROMPT;
                 'selectedIndex' => $selected,
                 'correctIndex' => $correctIndex,
                 'correct' => $correct,
-                'explanation' => (string) ($question['explanation'] ?? ''),
+                'explanation' => (string) ($question['explanation'] ?? $question['description'] ?? ''),
             ];
         }
         unset($_SESSION['staff_course_practice']);
@@ -227,6 +341,7 @@ PROMPT;
         foreach ($questions as $question) {
             $out[] = [
                 'module' => (string) ($question['module'] ?? ''),
+                'difficulty' => (string) ($question['difficulty'] ?? ''),
                 'question' => (string) ($question['question'] ?? ''),
                 'options' => array_values((array) ($question['options'] ?? [])),
             ];
@@ -369,6 +484,29 @@ PROMPT;
         }
 
         return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireDraft(array $user, string $sessionId): array
+    {
+        $draft = $_SESSION['staff_course_draft'] ?? null;
+        $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
+        $sessionId = trim($sessionId);
+        if (!is_array($draft) || $sessionId === '' || (string) ($draft['id'] ?? '') !== $sessionId) {
+            throw new \InvalidArgumentException('Generate questions first, then select the ones to add.');
+        }
+        if ((string) ($draft['userId'] ?? '') !== $userId) {
+            throw new \InvalidArgumentException('Generate questions first, then select the ones to add.');
+        }
+        if ((time() - (int) ($draft['createdAt'] ?? 0)) > 7200) {
+            unset($_SESSION['staff_course_draft']);
+            throw new \InvalidArgumentException('This generated set has expired. Generate questions again.');
+        }
+
+        return $draft;
     }
 
     /**

@@ -142,6 +142,61 @@ class SyllabusQuestionBankModel extends BaseModel
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    public function listAll(int $limit = 2000): array
+    {
+        $rows = $this->findAll([], $limit, 0, ['createdAt' => 1]);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = $this->publicView($row);
+        }
+
+        return $out;
+    }
+
+    /**
+     * One card per course code. Later generates for the same code stay in that card.
+     *
+     * @param list<array<string, mixed>> $questions
+     * @return list<array{courseCode:string,courseTitle:string,total:int,questions:list<array<string, mixed>>}>
+     */
+    public static function groupByCourseCode(array $questions): array
+    {
+        $groups = [];
+        foreach ($questions as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $code = self::normalizeCourseCode((string) ($question['courseCode'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+            if (!isset($groups[$code])) {
+                $groups[$code] = [
+                    'courseCode' => $code,
+                    'courseTitle' => trim((string) ($question['courseTitle'] ?? '')),
+                    'questions' => [],
+                ];
+            }
+            $title = trim((string) ($question['courseTitle'] ?? ''));
+            if ($title !== '' && ($groups[$code]['courseTitle'] === '' || $groups[$code]['courseTitle'] === $code)) {
+                $groups[$code]['courseTitle'] = $title;
+            }
+            $groups[$code]['questions'][] = $question;
+        }
+        ksort($groups, SORT_NATURAL | SORT_FLAG_CASE);
+        $out = [];
+        foreach ($groups as $group) {
+            $group['courseTitle'] = $group['courseTitle'] !== '' ? $group['courseTitle'] : $group['courseCode'];
+            $group['total'] = count($group['questions']);
+            $out[] = $group;
+        }
+
+        return $out;
+    }
+
+    /**
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
