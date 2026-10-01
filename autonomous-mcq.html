@@ -79,21 +79,40 @@ function clearTimer() {
 
 function courseStudyRow(course, index) {
   const code = String(course.courseCode || '').trim();
+  const courseName = String(course.courseTitle || '').trim();
+  const label = courseName && courseName !== code ? `${code} · ${courseName}` : code;
   const count = (course.questions || []).length;
   return `
     <button type="button" class="apt-prob-row is-clickable" data-open-study="${esc(code)}">
       <span class="apt-prob-check"></span>
-      <span class="apt-prob-title">${index + 1}. ${esc(code)}</span>
+      <span class="apt-prob-title">${index + 1}. ${esc(label)}</span>
       <span class="apt-prob-pct">${count} Q</span>
       <span class="apt-prob-time"></span>
     </button>`;
 }
 
+function mcqCourseCodeName(test) {
+  const codes = String(test.courseCode || (test.courseCodes || []).join(', ') || '').trim();
+  const courseName = String(test.courseTitle || '').trim();
+  if (codes && courseName && courseName !== codes) return `${codes} · ${courseName}`;
+  return codes || courseName;
+}
+
+function mcqListLabel(test) {
+  const customTitle = String(test.title || '').trim();
+  const codes = String(test.courseCode || (test.courseCodes || []).join(', ') || '').trim();
+  const codeName = mcqCourseCodeName(test);
+  if (!customTitle || customTitle === codes) return codeName || 'MCQ';
+  if (codeName && customTitle !== codeName && !customTitle.includes(codes)) {
+    return `${customTitle} · ${codeName}`;
+  }
+  return customTitle || codeName || 'MCQ';
+}
+
 function mcqTestRow(test, index) {
   const count = Number(test.questionCount || 0);
   const minutes = Number(test.durationMinutes || 0);
-  const codes = String(test.courseCode || (test.courseCodes || []).join(', ') || '').trim();
-  const title = String(test.title || codes || 'MCQ').trim();
+  const title = mcqListLabel(test);
   const timeLabel = minutes ? `${minutes} min` : '—';
   return `
     <button type="button" class="apt-prob-row is-clickable" data-start-test="${esc(test.id)}">
@@ -163,8 +182,8 @@ function renderQuiz(payload) {
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBackTests" aria-label="Back"><i class="bi bi-arrow-left"></i></button>
       <div class="d-flex flex-wrap justify-content-between gap-2 flex-grow-1">
       <div>
-        <h2 class="h5 mb-1">${esc(payload.title || 'MCQ')}</h2>
-        <p class="small text-muted-2 mb-0">${esc(payload.courseCode || '')}</p>
+        <h2 class="h5 mb-1">${esc(mcqListLabel(payload))}</h2>
+        <p class="small text-muted-2 mb-0">${esc(mcqCourseCodeName(payload) || '')}</p>
       </div>
       <div class="d-flex gap-2 align-items-center">
         ${minutes ? `<span class="fw-semibold" id="mcqTimer" data-seconds="${minutes * 60}">${String(minutes).padStart(2, '0')}:00</span>` : ''}

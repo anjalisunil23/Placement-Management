@@ -446,6 +446,7 @@ PROMPT;
             throw new \InvalidArgumentException('This MCQ has no questions.');
         }
         $title = trim((string) ($row['title'] ?? $code));
+        $courseTitle = trim((string) ($view['courseTitle'] ?? ''));
 
         return $this->openPractice(
             $user,
@@ -453,7 +454,8 @@ PROMPT;
             $title !== '' ? $title : $code,
             $questions,
             (string) ($row['_id'] ?? $testId),
-            max(1, (int) ($row['durationMinutes'] ?? 30))
+            max(1, (int) ($row['durationMinutes'] ?? 30)),
+            $courseTitle
         );
     }
 
@@ -462,15 +464,17 @@ PROMPT;
      * @param list<array<string, mixed>> $questions
      * @return array<string, mixed>
      */
-    private function openPractice(array $user, string $courseCode, string $title, array $questions, string $testId, int $durationMinutes = 0): array
+    private function openPractice(array $user, string $courseCode, string $title, array $questions, string $testId, int $durationMinutes = 0, string $courseDisplayTitle = ''): array
     {
         $sessionId = bin2hex(random_bytes(16));
+        $courseTitle = trim($courseDisplayTitle) !== '' ? trim($courseDisplayTitle) : $title;
         $_SESSION['staff_course_practice'] = [
             'id' => $sessionId,
             'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
             'testId' => $testId,
             'courseCode' => $courseCode,
-            'courseTitle' => $title,
+            'courseTitle' => $courseTitle,
+            'title' => $title,
             'durationMinutes' => $durationMinutes,
             'questions' => $questions,
             'createdAt' => time(),
@@ -480,7 +484,7 @@ PROMPT;
             'sessionId' => $sessionId,
             'testId' => $testId,
             'courseCode' => $courseCode,
-            'courseTitle' => $title,
+            'courseTitle' => $courseTitle,
             'title' => $title,
             'durationMinutes' => $durationMinutes,
             'total' => count($questions),
