@@ -376,6 +376,7 @@ $routes = [
     ['POST', '/staff/courses/questions/save',     [StaffController::class, 'saveCourseQuestions']],
     ['POST', '/staff/courses/questions/practice', [StaffController::class, 'startCoursePractice']],
     ['GET',  '/staff/courses/mcq-tests',          [StaffController::class, 'listSyllabusMcqTests']],
+    ['GET',  '/staff/courses/mcq-tests/{id}',    [StaffController::class, 'getSyllabusMcqTest']],
     ['POST', '/staff/courses/mcq-tests',          [StaffController::class, 'createSyllabusMcqTest']],
     ['DELETE','/staff/courses/mcq-tests/{id}',    [StaffController::class, 'deleteSyllabusMcqTest']],
     ['POST', '/staff/courses/questions/submit',   [StaffController::class, 'submitCoursePractice']],

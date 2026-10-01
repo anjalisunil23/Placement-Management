@@ -916,6 +916,17 @@ final class StaffController
         Response::success((new StaffCourseQuestionService())->listTests($user));
     }
 
+    /** GET /api/staff/courses/mcq-tests/{id} */
+    public function getSyllabusMcqTest(string $id): void
+    {
+        $user = RBACMiddleware::requireSyllabusAccess();
+        try {
+            Response::success((new StaffCourseQuestionService())->getTest($user, $id));
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
     /** POST /api/staff/courses/mcq-tests */
     public function createSyllabusMcqTest(): void
     {

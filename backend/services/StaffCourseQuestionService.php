@@ -251,7 +251,7 @@ PROMPT;
     {
         $testId = trim((string) ($body['testId'] ?? ''));
         if ($testId !== '') {
-            return $this->startSavedTest($user, $testId);
+            throw new \InvalidArgumentException('Only students can take MCQ tests. Open the test to review questions.');
         }
 
         $code = $this->assertVisibleCourseCode($user, (string) ($body['courseCode'] ?? $body['code'] ?? ''));
@@ -427,6 +427,40 @@ PROMPT;
      * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
+    public function getTest(array $user, string $testId): array
+    {
+        $row = (new SyllabusMcqTestModel())->findById($testId);
+        if ($row === null) {
+            throw new \InvalidArgumentException('That MCQ was not found.');
+        }
+        $this->assertTestCoursesVisible($user, $row);
+        $view = (new SyllabusMcqTestModel())->publicView($row);
+        $title = trim((string) ($row['title'] ?? ''));
+        $questions = [];
+        foreach ((array) ($row['questions'] ?? []) as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $questions[] = [
+                'module' => (string) ($question['module'] ?? ''),
+                'difficulty' => (string) ($question['difficulty'] ?? ''),
+                'question' => (string) ($question['question'] ?? ''),
+                'options' => array_values((array) ($question['options'] ?? [])),
+                'correctIndex' => (int) ($question['correctIndex'] ?? -1),
+                'description' => (string) ($question['description'] ?? $question['explanation'] ?? ''),
+            ];
+        }
+
+        return array_merge($view, [
+            'title' => $title !== '' ? $title : (string) ($view['title'] ?? ''),
+            'questions' => $questions,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
     private function startSavedTest(array $user, string $testId): array
     {
         $row = (new SyllabusMcqTestModel())->findById($testId);
@@ -446,6 +480,7 @@ PROMPT;
             throw new \InvalidArgumentException('This MCQ has no questions.');
         }
         $title = trim((string) ($row['title'] ?? $code));
+        $courseTitle = trim((string) ($view['courseTitle'] ?? ''));
 
         return $this->openPractice(
             $user,
@@ -453,7 +488,8 @@ PROMPT;
             $title !== '' ? $title : $code,
             $questions,
             (string) ($row['_id'] ?? $testId),
-            max(1, (int) ($row['durationMinutes'] ?? 30))
+            max(1, (int) ($row['durationMinutes'] ?? 30)),
+            $courseTitle
         );
     }
 
@@ -462,15 +498,17 @@ PROMPT;
      * @param list<array<string, mixed>> $questions
      * @return array<string, mixed>
      */
-    private function openPractice(array $user, string $courseCode, string $title, array $questions, string $testId, int $durationMinutes = 0): array
+    private function openPractice(array $user, string $courseCode, string $title, array $questions, string $testId, int $durationMinutes = 0, string $courseDisplayTitle = ''): array
     {
         $sessionId = bin2hex(random_bytes(16));
+        $courseTitle = trim($courseDisplayTitle) !== '' ? trim($courseDisplayTitle) : $title;
         $_SESSION['staff_course_practice'] = [
             'id' => $sessionId,
             'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
             'testId' => $testId,
             'courseCode' => $courseCode,
-            'courseTitle' => $title,
+            'courseTitle' => $courseTitle,
+            'title' => $title,
             'durationMinutes' => $durationMinutes,
             'questions' => $questions,
             'createdAt' => time(),
@@ -480,7 +518,7 @@ PROMPT;
             'sessionId' => $sessionId,
             'testId' => $testId,
             'courseCode' => $courseCode,
-            'courseTitle' => $title,
+            'courseTitle' => $courseTitle,
             'title' => $title,
             'durationMinutes' => $durationMinutes,
             'total' => count($questions),
