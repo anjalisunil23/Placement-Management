@@ -145,9 +145,15 @@ class TutorialModuleModel extends BaseModel
             throw new \InvalidArgumentException('Module title is required.');
         }
 
+        $subtitle = trim(strip_tags((string) ($data['subtitle'] ?? '')));
+        if (strlen($subtitle) > 240) {
+            $subtitle = substr($subtitle, 0, 240);
+        }
+
         return [
             'tutorialId' => $tutorialId,
             'title' => $title,
+            'subtitle' => $subtitle,
             'sortOrder' => self::sortOrder($data['sortOrder'] ?? 1),
             'content' => (string) ($data['content'] ?? ''),
         ];

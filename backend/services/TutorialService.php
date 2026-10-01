@@ -29,7 +29,10 @@ final class TutorialService
     private const MAX_SOURCE_CHARS = 65536;
 
     /** @var list<string> */
-    private const HTML_TAGS = ['p', 'br', 'strong', 'em', 'u', 's', 'ol', 'ul', 'li', 'h1', 'h2', 'h3', 'blockquote', 'pre', 'code', 'a', 'img', 'span'];
+    private const HTML_TAGS = ['p', 'br', 'strong', 'em', 'u', 's', 'ol', 'ul', 'li', 'h1', 'h2', 'h3', 'blockquote', 'pre', 'code', 'a', 'img', 'span', 'hr'];
+
+    /** @var list<string> */
+    private const CODE_LANGUAGES = ['python', 'c', 'cpp', 'java', 'javascript', 'php', 'sql', 'html', 'css', 'json', 'bash', 'text'];
 
     /** @var list<string> */
     private const DROP_TAGS = ['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'svg', 'math'];
@@ -663,6 +666,7 @@ final class TutorialService
         $row = $this->modules->create([
             'tutorialId' => $tutorialId,
             'title' => (string) ($input['title'] ?? ''),
+            'subtitle' => (string) ($input['subtitle'] ?? ''),
             'sortOrder' => $input['sortOrder'] ?? $this->nextModuleOrder($tutorialId),
             'content' => self::sanitizeHtml((string) ($input['content'] ?? '')),
         ]);
@@ -682,6 +686,7 @@ final class TutorialService
         $row = $this->modules->updateModule($moduleId, [
             'tutorialId' => $tutorialId,
             'title' => (string) ($input['title'] ?? $existing['title'] ?? ''),
+            'subtitle' => array_key_exists('subtitle', $input) ? (string) $input['subtitle'] : (string) ($existing['subtitle'] ?? ''),
             'sortOrder' => $input['sortOrder'] ?? $existing['sortOrder'] ?? 1,
             'content' => array_key_exists('content', $input)
                 ? self::sanitizeHtml((string) $input['content'])
@@ -734,6 +739,7 @@ final class TutorialService
             $this->modules->updateModule($moduleId, [
                 'tutorialId' => $tutorialId,
                 'title' => (string) ($module['title'] ?? ''),
+                'subtitle' => (string) ($module['subtitle'] ?? ''),
                 'sortOrder' => $order,
                 'content' => (string) ($module['content'] ?? ''),
             ]);
@@ -1425,6 +1431,7 @@ final class TutorialService
         $view = [
             'id' => (string) ($module['_id'] ?? ''),
             'title' => (string) ($module['title'] ?? ''),
+            'subtitle' => (string) ($module['subtitle'] ?? ''),
             'sortOrder' => (int) ($module['sortOrder'] ?? 0),
         ];
         if ($includeContent) {
@@ -1514,6 +1521,7 @@ final class TutorialService
             'id' => (string) ($module['_id'] ?? ''),
             'tutorialId' => (string) ($module['tutorialId'] ?? ''),
             'title' => (string) ($module['title'] ?? ''),
+            'subtitle' => (string) ($module['subtitle'] ?? ''),
             'sortOrder' => (int) ($module['sortOrder'] ?? 0),
             'content' => (string) ($module['content'] ?? ''),
         ];
@@ -1640,6 +1648,13 @@ final class TutorialService
                 $keep['src'] = $src;
                 $keep['alt'] = trim($element->getAttribute('alt'));
             }
+        }
+        if ($tag === 'pre' && $element->getAttribute('class') === 'tutorial-code-block') {
+            $keep['class'] = 'tutorial-code-block';
+            $language = strtolower(trim($element->getAttribute('data-language')));
+            $role = strtolower(trim($element->getAttribute('data-role')));
+            $keep['data-language'] = in_array($language, self::CODE_LANGUAGES, true) ? $language : 'text';
+            $keep['data-role'] = $role === 'output' ? 'output' : 'code';
         }
         while ($element->attributes->length > 0) {
             $element->removeAttribute($element->attributes->item(0)->name);

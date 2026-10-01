@@ -59,6 +59,7 @@
         <div class="card-surface p-3 p-md-4">
           <div class="small text-muted-2" id="studentModulePosition"></div>
           <h2 class="h4 fw-bold" id="studentModuleHeading">Loading…</h2>
+          <p class="text-muted-2 mb-0" id="studentModuleSubtitle"></p>
           <div id="studentModuleContent" class="tutorial-lesson mt-3"></div>
           <div class="d-flex justify-content-between gap-2 mt-4">
             <button type="button" class="btn btn-outline-secondary" id="studentPrevModule">Previous</button>
@@ -100,6 +101,17 @@
   .article-title{display:block;width:100%;border:0;outline:0;background:transparent;font-size:clamp(2rem,4vw,2.75rem);font-weight:700;line-height:1.15;letter-spacing:-.02em;padding:0;margin:1.5rem 0 .75rem;color:#1a1a1a}
   .article-title::placeholder{color:#b7b7b7;font-weight:500}
   .article-title:focus{box-shadow:none}
+  .article-subtitle{display:block;width:100%;border:0;outline:0;background:transparent;font-size:1.2rem;color:#5c6570;padding:0;margin:0 0 1.25rem}
+  .article-subtitle::placeholder{color:#b7b7b7}
+  .article-subtitle:focus{box-shadow:none}
+  .tutorial-code-block,.tutorial-lesson .tutorial-code-card{background:#0f172a;color:#f8fafc;border-radius:.75rem;margin:1rem 0;overflow:hidden}
+  .tutorial-code-block textarea,.tutorial-code-card pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92rem;line-height:1.6;white-space:pre;tab-size:2}
+  .tutorial-code-block textarea{width:100%;min-height:8rem;border:0;background:transparent;color:#f8fafc;resize:vertical;padding:.75rem 1rem}
+  .tutorial-code-block textarea:focus{outline:none}
+  .tutorial-code-bar,.tutorial-code-card header{display:flex;justify-content:space-between;gap:.5rem;align-items:center;padding:.45rem .75rem;background:#1e293b;color:#e2e8f0}
+  .tutorial-code-bar select{background:#0f172a;color:#f8fafc;border:0;border-radius:.35rem;padding:.15rem .4rem}
+  .tutorial-code-note{font-size:.75rem;color:#94a3b8;padding:.4rem 1rem 0}
+  .tutorial-code-card pre{margin:0;padding:.75rem 1rem;background:transparent;color:inherit;overflow:auto}
   .article-plus{width:2rem;height:2rem;border-radius:50%;border:1px solid #cfd6cf;background:#fff;color:#1f7a3a;font-size:1.35rem;line-height:1;display:inline-flex;align-items:center;justify-content:center}
   .article-plus:focus{outline:2px solid #1f4b8f;outline-offset:2px}
   .article-insert{display:flex;flex-wrap:wrap;gap:.4rem;margin:.35rem 0 1rem}
@@ -175,21 +187,26 @@
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
       <button type="button" class="btn btn-link text-decoration-none px-0" id="articleBack">← Back to course</button>
       <div class="small text-muted-2" id="articleStatus">Draft</div>
-      <button type="submit" class="btn btn-sm btn-success" id="articleSave" form="moduleForm">Save</button>
+      <button type="submit" class="btn btn-sm btn-success" id="articleSave" form="moduleForm">Save draft</button>
     </div>
     <form id="moduleForm" class="article-column">
       <div class="small text-muted-2" id="articleCourseName"></div>
       <input type="hidden" id="moduleId"/>
       <input class="article-title" id="moduleTitle" placeholder="Module title" maxlength="160" required aria-label="Module title"/>
+      <input class="article-subtitle" id="moduleSubtitle" placeholder="Short description" maxlength="240" aria-label="Short description"/>
       <div class="d-flex align-items-start gap-2">
         <button type="button" class="article-plus" id="articlePlus" aria-expanded="false" aria-controls="articleInsertMenu">+</button>
         <div id="articleInsertMenu" class="article-insert d-none" role="menu">
           <button type="button" data-insert="text">Text</button>
           <button type="button" data-insert="heading">Heading</button>
-          <button type="button" data-insert="image">Image</button>
-          <button type="button" data-insert="code">Code</button>
+          <button type="button" data-insert="subheading">Subheading</button>
           <button type="button" data-insert="quote">Quote</button>
+          <button type="button" data-insert="code">Code</button>
+          <button type="button" data-insert="example">Code + Output</button>
+          <button type="button" data-insert="image">Image</button>
           <button type="button" data-insert="link">Link</button>
+          <button type="button" data-insert="divider">Divider</button>
+          <button type="button" data-insert="exercise">Exercise</button>
         </div>
       </div>
       <input type="file" id="articleImageInput" class="d-none" accept="image/jpeg,image/png,image/gif,image/webp"/>
@@ -317,5 +334,5 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20260930syllabussearch"></script>
-<script src="js/tutorials-page.js?v=20261001article"></script>
+<script src="js/tutorials-page.js?v=20261001lesson"></script>
 </body></html>
