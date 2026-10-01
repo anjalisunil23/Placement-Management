@@ -64,14 +64,7 @@ final class StaffCourseQuestionService
             'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
         );
         $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
-        $userPrompt = $this->buildGeneratePrompt($course, $syllabus, $mixes, $total, $mixText, $bankAvoid);
-        $raw = $this->openai->generateJson($system, $userPrompt);
-        $valid = $this->dedupeBatchOnly($this->collectValidQuestions($raw['questions'] ?? $raw));
-        $valid = $this->rejectKnownPrompts($valid, $promptKeys);
-        $questions = $this->selectQuestionsForMixes($valid, $mixes, [], $promptKeys);
-        $this->registerQuestionKeys($questions, $promptKeys);
-        $questions = $this->topUpQuestionsForMixes($course, $syllabus, $system, $mixes, $questions, $promptKeys);
-        $questions = $this->dedupeBatchOnly($questions);
+        $questions = $this->assembleQuestionsForMixes($course, $syllabus, $system, $mixes, $mixText, $bankAvoid, $promptKeys);
         if ($questions === []) {
             throw new \RuntimeException('AI did not return any usable questions. Please try again.');
         }
@@ -948,8 +941,15 @@ final class StaffCourseQuestionService
      * @param array<string, mixed> $course
      * @param list<array{difficulty:string,count:int}> $mixes
      */
-    private function buildGeneratePrompt(array $course, string $syllabus, array $mixes, int $total, string $mixText, string $avoidBlock): string
-    {
+    private function buildGeneratePrompt(
+        array $course,
+        string $syllabus,
+        array $mixes,
+        int $total,
+        string $mixText,
+        string $avoidBlock,
+        bool $allowExtra = false
+    ): string {
         $code = OpenAIService::cleanUtf8((string) ($course['code'] ?? ''));
         $title = OpenAIService::cleanUtf8((string) ($course['title'] ?? ''));
         $syllabus = OpenAIService::cleanUtf8($syllabus);
@@ -958,15 +958,21 @@ final class StaffCourseQuestionService
         $avoid = trim($avoidBlock) !== ''
             ? "\n" . trim($avoidBlock) . "\n"
             : '';
+        $countRule = $allowExtra
+            ? "- Return at least {$total} questions matching the difficulty counts above (a few extra matching the mix is fine).\n"
+            : "- Return exactly {$total} questions with the difficulty counts above.\n";
+        $headline = $allowExtra
+            ? "Write at least {$total} multiple-choice questions in this mix:\n"
+            : "Write exactly {$total} multiple-choice questions in this mix (no more, no fewer):\n";
 
         return "Course: {$code} {$title}\n"
-            . "Write exactly {$total} multiple-choice questions in this mix (no more, no fewer):\n"
+            . $headline
             . $mixText . "\n\n"
             . "Official syllabus:\n"
             . $syllabus . "\n"
             . $avoid
             . "Rules:\n"
-            . "- Return exactly {$total} questions with the difficulty counts above.\n"
+            . $countRule
             . "- Every question must be answerable from the syllabus above.\n"
             . "- Do not invent topics, tools, or outcomes that are not in the syllabus.\n"
             . "- Spread questions across the modules and course outcomes.\n"
@@ -977,6 +983,204 @@ final class StaffCourseQuestionService
             . "- Every question must be unique; do not repeat or rephrase the same question.\n\n"
             . 'Return this JSON shape:' . "\n"
             . '{"questions":[{"module":"Module 1","difficulty":"Medium","question":"...","options":["...","...","...","..."],"correctIndex":0,"description":"..."}]}';
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @param array<string, true> $promptKeys
+     * @return list<array<string, mixed>>
+     */
+    private function assembleQuestionsForMixes(
+        array $course,
+        string $syllabus,
+        string $system,
+        array $mixes,
+        string $initialMixText,
+        string $bankAvoid,
+        array &$promptKeys
+    ): array {
+        $selected = [];
+        $initial = $this->fetchQuestionBatch(
+            $course,
+            $syllabus,
+            $system,
+            $mixes,
+            $this->mixTotal($mixes),
+            $initialMixText,
+            $bankAvoid,
+            $selected,
+            $promptKeys,
+            true
+        );
+        if ($initial !== []) {
+            $selected = $this->mergeQuestionLists($selected, $initial, $promptKeys);
+        }
+
+        $stalls = 0;
+        while ($stalls < 8) {
+            $shortfall = $this->mixShortfall($mixes, $selected);
+            if ($shortfall === []) {
+                break;
+            }
+            $madeProgress = false;
+            foreach ($shortfall as $mix) {
+                $label = (string) ($mix['difficulty'] ?? 'Medium');
+                $need = (int) ($mix['count'] ?? 0);
+                while ($need > 0) {
+                    $chunk = min(6, $need);
+                    $slice = [['difficulty' => $label, 'count' => $chunk]];
+                    $mixText = '- ' . $label . ': ' . $chunk;
+                    $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                    $added = $this->fetchQuestionBatch(
+                        $course,
+                        $syllabus,
+                        $system,
+                        $slice,
+                        $chunk,
+                        $mixText,
+                        $avoid,
+                        $selected,
+                        $promptKeys,
+                        false
+                    );
+                    if ($added === []) {
+                        break;
+                    }
+                    $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+                    $madeProgress = true;
+                    $need = $this->shortfallForDifficulty($mixes, $selected, $label);
+                }
+            }
+            if (!$madeProgress) {
+                $stalls++;
+                continue;
+            }
+            $stalls = 0;
+        }
+
+        $shortfall = $this->mixShortfall($mixes, $selected);
+        if ($shortfall !== []) {
+            foreach ($shortfall as $mix) {
+                $label = (string) ($mix['difficulty'] ?? 'Medium');
+                for ($i = 0; $i < (int) ($mix['count'] ?? 0); $i++) {
+                    $slice = [['difficulty' => $label, 'count' => 1]];
+                    $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                    $added = $this->fetchQuestionBatch(
+                        $course,
+                        $syllabus,
+                        $system,
+                        $slice,
+                        1,
+                        '- ' . $label . ': 1',
+                        $avoid,
+                        $selected,
+                        $promptKeys,
+                        false
+                    );
+                    if ($added === []) {
+                        break;
+                    }
+                    $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+                }
+            }
+        }
+
+        $selected = $this->dedupeBatchOnly($selected);
+
+        return $this->capQuestionsToMixes($selected, $mixes);
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     */
+    private function mixTotal(array $mixes): int
+    {
+        $total = 0;
+        foreach ($mixes as $mix) {
+            $total += (int) ($mix['count'] ?? 0);
+        }
+
+        return $total;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $selected
+     */
+    private function generationAvoidBlock(array $selected, string $bankAvoid): string
+    {
+        $recent = implode("\n", array_map(
+            static fn(array $q): string => '- ' . trim((string) ($q['question'] ?? '')),
+            array_slice($selected, -30)
+        ));
+        $parts = array_filter([trim($recent), trim($bankAvoid)]);
+
+        return implode("\n", $parts);
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixesForRequest
+     * @param list<array<string, mixed>> $selectedSoFar
+     * @param array<string, true> $promptKeys
+     * @return list<array<string, mixed>>
+     */
+    private function fetchQuestionBatch(
+        array $course,
+        string $syllabus,
+        string $system,
+        array $mixesForRequest,
+        int $requestTotal,
+        string $mixText,
+        string $avoidBlock,
+        array $selectedSoFar,
+        array &$promptKeys,
+        bool $allowExtra
+    ): array {
+        if ($requestTotal < 1) {
+            return [];
+        }
+        $prompt = $this->buildGeneratePrompt(
+            $course,
+            $syllabus,
+            $mixesForRequest,
+            $requestTotal,
+            $mixText,
+            $avoidBlock,
+            $allowExtra
+        );
+        try {
+            $raw = $this->openai->generateJson($system, $prompt);
+        } catch (\Throwable) {
+            return [];
+        }
+        $valid = $this->dedupeBatchOnly($this->collectValidQuestions($raw['questions'] ?? $raw));
+        $valid = $this->rejectKnownPrompts($valid, $promptKeys);
+
+        return $this->selectQuestionsForMixes($valid, $mixesForRequest, $selectedSoFar, $promptKeys);
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @param list<array<string, mixed>> $selected
+     */
+    private function shortfallForDifficulty(array $mixes, array $selected, string $label): int
+    {
+        foreach ($this->mixShortfall($mixes, $selected) as $row) {
+            if ((string) ($row['difficulty'] ?? '') === $label) {
+                return (int) ($row['count'] ?? 0);
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @return list<array<string, mixed>>
+     */
+    private function capQuestionsToMixes(array $questions, array $mixes): array
+    {
+        return $this->selectQuestionsForMixes($questions, $mixes, [], []);
     }
 
     /**
@@ -1004,59 +1208,6 @@ final class StaffCourseQuestionService
         }
 
         return $shortfall;
-    }
-
-    /**
-     * @param list<array{difficulty:string,count:int}> $mixes
-     * @param list<array<string, mixed>> $selected
-     * @param array<string, true> $promptKeys
-     * @return list<array<string, mixed>>
-     */
-    private function topUpQuestionsForMixes(
-        array $course,
-        string $syllabus,
-        string $system,
-        array $mixes,
-        array $selected,
-        array &$promptKeys
-    ): array {
-        for ($attempt = 0; $attempt < 3; $attempt++) {
-            $shortfall = $this->mixShortfall($mixes, $selected);
-            if ($shortfall === []) {
-                break;
-            }
-            $totalShort = 0;
-            $mixLines = [];
-            foreach ($shortfall as $mix) {
-                $count = (int) ($mix['count'] ?? 0);
-                if ($count <= 0) {
-                    continue;
-                }
-                $totalShort += $count;
-                $mixLines[] = '- ' . ($mix['difficulty'] ?? 'Medium') . ': ' . $count;
-            }
-            if ($totalShort < 1) {
-                break;
-            }
-            $mixText = implode("\n", $mixLines);
-            $avoid = implode("\n", array_map(
-                static fn(array $q): string => '- ' . trim((string) ($q['question'] ?? '')),
-                array_slice($selected, -25)
-            ));
-            $bankAvoid = $this->existingBankQuestionsAvoidBlock((string) ($course['code'] ?? ''));
-            $avoidBlock = trim($avoid . "\n" . $bankAvoid);
-            $prompt = $this->buildGeneratePrompt($course, $syllabus, $shortfall, $totalShort, $mixText, $avoidBlock);
-            $raw = $this->openai->generateJson($system, $prompt);
-            $valid = $this->dedupeBatchOnly($this->collectValidQuestions($raw['questions'] ?? $raw));
-            $valid = $this->rejectKnownPrompts($valid, $promptKeys);
-            $added = $this->selectQuestionsForMixes($valid, $shortfall, $selected, $promptKeys);
-            if ($added === []) {
-                continue;
-            }
-            $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
-        }
-
-        return $selected;
     }
 
     /**
@@ -1089,11 +1240,6 @@ final class StaffCourseQuestionService
         return $existing;
     }
 
-    /**
-     * @param list<array{difficulty:string,count:int}> $mixes
-     * @param list<array<string, mixed>> $exclude
-     * @return list<array<string, mixed>>
-     */
     /**
      * @param list<array{difficulty:string,count:int}> $mixes
      * @param list<array<string, mixed>> $exclude
@@ -1163,7 +1309,7 @@ final class StaffCourseQuestionService
             return '';
         }
         $lines = [];
-        foreach ((new SyllabusQuestionBankModel())->listByCourseCode($courseCode, 100) as $question) {
+        foreach ((new SyllabusQuestionBankModel())->listByCourseCode($courseCode, 40) as $question) {
             $text = trim((string) ($question['question'] ?? ''));
             if ($text !== '') {
                 $lines[] = '- ' . $text;
