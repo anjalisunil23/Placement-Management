@@ -126,7 +126,7 @@ final class CourseSyllabusCatalog
 
     /**
      * @param mixed $payload AES searchSyllabus4Placement body
-     * @return list<array{code:string,title:string,subjectType:string,department:string}>
+     * @return list<array{code:string,title:string,semsubId:string,subjectType:string,department:string}>
      */
     public static function filterSearchRows(mixed $payload, string $code, string $name, string $shortName): array
     {
@@ -138,16 +138,22 @@ final class CourseSyllabusCatalog
             }
             $subjectCode = strtoupper(trim((string) ($row['subjectCode'] ?? $row['code'] ?? '')));
             $subjectName = trim((string) ($row['subjectName'] ?? $row['title'] ?? ''));
-            if ($subjectCode === '' || isset($seen[$subjectCode])) {
+            $semsubId = trim((string) ($row['semsubId'] ?? $row['semSubId'] ?? $row['sem_sub_id'] ?? ''));
+            if ($subjectCode === '') {
+                continue;
+            }
+            $key = $subjectCode . '|' . $semsubId;
+            if (isset($seen[$key])) {
                 continue;
             }
             if (!self::subjectVisibleToStaff($subjectCode, $code, $name, $shortName)) {
                 continue;
             }
-            $seen[$subjectCode] = true;
+            $seen[$key] = true;
             $out[] = [
                 'code' => $subjectCode,
                 'title' => $subjectName,
+                'semsubId' => $semsubId,
                 'subjectType' => trim((string) ($row['subjectType'] ?? '')),
                 'department' => self::subjectDepartment($subjectCode),
             ];

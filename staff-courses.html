@@ -12,59 +12,120 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Syllabus</h1>
-    <p class="page-sub mb-0">Search a course code, open its syllabus, then generate questions from it.</p>
+    <p class="page-sub mb-0">Create questions from a course syllabus, pick the ones to keep, review them in that course question bank, then take them as an MCQ.</p>
   </div>
 </div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tabCreateBtn" data-bs-toggle="tab" data-bs-target="#tabCreate" type="button" role="tab" aria-controls="tabCreate" aria-selected="true">Create question</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tabBankBtn" data-bs-toggle="tab" data-bs-target="#tabBank" type="button" role="tab" aria-controls="tabBank" aria-selected="false">Syllabus question bank</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tabMcqBtn" data-bs-toggle="tab" data-bs-target="#tabMcq" type="button" role="tab" aria-controls="tabMcq" aria-selected="false">MCQ</button>
+  </li>
+</ul>
 
 <div class="card-surface p-3 p-md-4 mb-3">
-  <div class="row g-3 align-items-end">
-    <div class="col-md-8">
-      <label class="form-label small fw-semibold" for="courseSearch">Course code</label>
-      <input class="form-control" id="courseSearch" type="search" placeholder="Type at least 3 letters, for example 26M" autocomplete="off" />
-      <div class="border rounded mt-2 d-none" id="courseResults" style="max-height:16rem;overflow:auto"></div>
-      <div class="form-text" id="deptLabel">Type at least 3 letters of a course code.</div>
+  <label class="form-label small fw-semibold" for="courseSearch">Course code</label>
+  <div class="d-flex gap-2">
+    <input class="form-control" id="courseSearch" type="search" placeholder="Type at least 3 letters, for example 26M" autocomplete="off" />
+    <button type="button" class="btn btn-primary flex-shrink-0" id="btnGet">Get</button>
+  </div>
+  <div class="border rounded mt-2 d-none" id="courseResults" style="max-height:16rem;overflow:auto"></div>
+  <div class="form-text" id="deptLabel">Type at least 3 letters of a course code.</div>
+</div>
+
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="tabCreate" role="tabpanel" aria-labelledby="tabCreateBtn">
+    <div id="syllabusPanel" class="card-surface p-3 p-md-4 mb-3">
+      <p class="text-muted-2 mb-0">Search a course code, then click Get to open the syllabus PDF.</p>
     </div>
-    <div class="col-6 col-md-2">
-      <label class="form-label small fw-semibold" for="qCount">Questions</label>
-      <select class="form-select" id="qCount">
-        <option value="5">5</option>
-        <option value="10" selected>10</option>
-        <option value="15">15</option>
-        <option value="20">20</option>
-      </select>
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+      <button type="button" class="btn btn-primary" id="btnGenerate" disabled>
+        <i class="bi bi-stars me-1"></i>Generate questions
+      </button>
+      <span class="small text-muted-2" id="genStatus"></span>
     </div>
-    <div class="col-6 col-md-2">
-      <label class="form-label small fw-semibold" for="qDifficulty">Difficulty</label>
-      <select class="form-select" id="qDifficulty">
-        <option>Easy</option>
-        <option selected>Medium</option>
-        <option>Hard</option>
-      </select>
-    </div>
+    <div id="practicePanel"></div>
+  </div>
+  <div class="tab-pane fade" id="tabBank" role="tabpanel" aria-labelledby="tabBankBtn">
+    <p class="small text-muted-2 mb-3" id="bankHint">Each course code has one card. Questions generated again for the same code stay in that card.</p>
+    <div id="bankPanel"></div>
+  </div>
+  <div class="tab-pane fade" id="tabMcq" role="tabpanel" aria-labelledby="tabMcqBtn">
+    <p class="small text-muted-2 mb-3" id="mcqHint">Start the MCQ from a course card. The same course code always uses the same card.</p>
+    <div id="mcqPanel"></div>
   </div>
 </div>
 
-<div id="syllabusPanel" class="card-surface p-3 p-md-4 mb-3">
-  <p class="text-muted-2 mb-0">Select a course code to see the syllabus.</p>
+<div class="modal fade" id="generateModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Generate questions</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted-2 mb-3" id="generateCourseLabel"></p>
+        <p class="small text-muted-2 mb-3">Set a count for each difficulty you want. Generated questions include the answer and a description.</p>
+        <div class="row g-3">
+          <div class="col-12 col-md-4">
+            <label class="form-label small fw-semibold" for="qEasy">Easy</label>
+            <select class="form-select" id="qEasy">
+              <option value="0">0</option>
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label small fw-semibold" for="qMedium">Medium</label>
+            <select class="form-select" id="qMedium">
+              <option value="0">0</option>
+              <option value="5">5</option>
+              <option value="10" selected>10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label small fw-semibold" for="qHard">Hard</label>
+            <select class="form-select" id="qHard">
+              <option value="0">0</option>
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnConfirmGenerate">
+          <i class="bi bi-stars me-1"></i>Generate questions
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
-
-<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-  <button type="button" class="btn btn-primary" id="btnGenerate" disabled>
-    <i class="bi bi-stars me-1"></i>Generate questions
-  </button>
-  <span class="small text-muted-2" id="genStatus"></span>
-</div>
-
-<div id="practicePanel"></div>
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20260930syllabussearch"></script>
-<script src="js/app.js?v=20260930syllabussearch"></script>
+<script src="js/api.js?v=20261001sylcards"></script>
+<script src="js/app.js?v=20261001sylcards"></script>
 <script>
 let courses = [];
 let picked = null;
+let loaded = null;
+let bank = null;
+let expandedBank = {};
 let practice = null;
+let mcq = null;
 let searchTimer = 0;
 let searchSeq = 0;
 
@@ -73,7 +134,7 @@ function esc(s) {
 }
 
 function selectedCourse() {
-  return picked;
+  return loaded;
 }
 
 function renderCourseResults(total) {
@@ -88,9 +149,10 @@ function renderCourseResults(total) {
     : '';
   box.classList.remove('d-none');
   box.innerHTML = courses.map((course, index) => `
-    <button type="button" class="btn btn-light w-100 text-start border-0 border-bottom rounded-0" data-pick="${index}">
+    <button type="button" class="btn btn-light w-100 border-0 border-bottom rounded-0" data-pick="${index}" style="justify-content:flex-start;text-align:left">
       <span class="fw-semibold">${esc(course.code)}</span>
       <span class="text-muted-2"> — ${esc(course.title)}</span>
+      ${course.semsubId ? `<span class="text-muted-2"> · ${esc(course.semsubId)}</span>` : ''}
     </button>`).join('') + more;
 }
 
@@ -125,29 +187,251 @@ async function searchCourses() {
   }
 }
 
-function renderSyllabus() {
-  const course = selectedCourse();
-  const panel = document.getElementById('syllabusPanel');
-  document.getElementById('btnGenerate').disabled = !course;
-  if (!course) {
-    panel.innerHTML = '<p class="text-muted-2 mb-0">Search for a course code to see the syllabus.</p>';
+async function getSelectedCourse() {
+  const query = document.getElementById('courseSearch').value.trim();
+  const label = document.getElementById('deptLabel');
+  const button = document.getElementById('btnGet');
+  if (!picked || (query && picked.code && query.toUpperCase() !== String(picked.code).toUpperCase())) {
+    await searchCourses();
+    const exact = courses.find((c) => String(c.code).toUpperCase() === query.toUpperCase());
+    if (exact) picked = exact;
+  }
+  if (!picked?.semsubId) {
+    label.textContent = 'Select a course from the list, then click Get.';
     return;
   }
-  const modules = (course.modules || []).map((mod) => `
-    <div class="col-md-6">
-      <div class="border rounded p-3 h-100">
-        <div class="fw-semibold mb-1">${esc(mod.name)}</div>
-        <div class="text-muted-2">${esc(mod.topics)}</div>
-      </div>
-    </div>`).join('');
+  button.disabled = true;
+  label.textContent = 'Loading course…';
+  try {
+    const res = await api('/staff/courses/get', {
+      method: 'POST',
+      body: JSON.stringify({
+        semsubId: picked.semsubId,
+        courseCode: picked.code,
+      }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not load that course.');
+    picked = Object.assign({}, picked, res.data || {});
+    loaded = picked;
+    document.getElementById('courseSearch').value = picked.code || query;
+    document.getElementById('courseResults').classList.add('d-none');
+    practice = null;
+    document.getElementById('practicePanel').innerHTML = '';
+    document.getElementById('genStatus').textContent = '';
+    clearMcq();
+    const deptName = String(res.data?.departmentName || '').trim();
+    label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Course loaded.';
+    renderSyllabus();
+    loadBank();
+  } catch (err) {
+    label.textContent = err?.message || 'Could not load that course.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function renderSyllabus() {
+  const course = loaded;
+  const panel = document.getElementById('syllabusPanel');
+  document.getElementById('btnGenerate').disabled = !course?.semsubId;
+  if (!course) {
+    if (picked?.code) {
+      panel.innerHTML = `<p class="text-muted-2 mb-0">Selected <span class="fw-semibold">${esc(picked.code)}</span>${picked.title ? ` — ${esc(picked.title)}` : ''}. Click Get to open the syllabus PDF.</p>`;
+    } else {
+      panel.innerHTML = '<p class="text-muted-2 mb-0">Search a course code, then click Get to open the syllabus PDF.</p>';
+    }
+    return;
+  }
+  const syllabusSrc = course.semsubId
+    ? `${API_BASE}/staff/courses/syllabus?semsubId=${encodeURIComponent(course.semsubId)}&courseCode=${encodeURIComponent(course.code || '')}`
+    : '';
   panel.innerHTML = `
     <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
       <div>
         <div class="small text-muted-2">${[course.scheme, course.department].filter(Boolean).map(esc).join(' · ')}</div>
         <h2 class="h5 mb-0">${esc(course.code)} — ${esc(course.title)}</h2>
       </div>
+      ${syllabusSrc ? `<a class="small text-decoration-none" href="${esc(syllabusSrc)}" target="_blank" rel="noopener">Open PDF in new tab</a>` : ''}
     </div>
-    <div class="row g-3">${modules}</div>`;
+    ${syllabusSrc ? `<iframe class="w-100 rounded border" style="min-height:70vh;background:#fff" title="Course syllabus" src="${esc(syllabusSrc)}"></iframe>` : '<p class="text-muted-2 mb-0">Could not open that syllabus PDF.</p>'}`;
+}
+
+function setBankHint(text) {
+  const el = document.getElementById('bankHint');
+  if (!el) return;
+  const value = String(text || '').trim();
+  el.textContent = value;
+  el.classList.toggle('d-none', value === '');
+}
+
+function clearBank() {
+  bank = null;
+  const panel = document.getElementById('bankPanel');
+  if (panel) panel.innerHTML = '';
+}
+
+function setMcqHint(text) {
+  const el = document.getElementById('mcqHint');
+  if (!el) return;
+  const value = String(text || '').trim();
+  el.textContent = value;
+  el.classList.toggle('d-none', value === '');
+}
+
+function clearMcq(resetSession) {
+  if (resetSession !== false) mcq = null;
+  const panel = document.getElementById('mcqPanel');
+  if (panel) panel.innerHTML = '';
+}
+
+function questionDescription(q) {
+  return String(q?.description || q?.explanation || '').trim();
+}
+
+function renderQuestionCard(q, i, selectable) {
+  const description = questionDescription(q);
+  const options = (q.options || []).map((opt, idx) => {
+    const mark = idx === q.correctIndex ? ' fw-semibold' : '';
+    const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
+    return `<li class="${mark} mb-1">${esc(opt)}${right}</li>`;
+  }).join('');
+  const draftIndex = Number.isInteger(q.draftIndex) ? q.draftIndex : i;
+  return `
+    <article class="card-surface p-3 p-md-4 mb-3" ${q.id ? `data-bank-id="${esc(q.id)}"` : ''}>
+      <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+        <div class="d-flex gap-2 align-items-start">
+          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-draft-index="${draftIndex}" id="draftQ${draftIndex}" checked>` : ''}
+          <label class="fw-semibold mb-0" ${selectable ? `for="draftQ${draftIndex}"` : ''}>Q${i + 1}. ${esc(q.question)}</label>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
+          ${q.difficulty ? `<span class="badge-soft info">${esc(q.difficulty)}</span>` : ''}
+          ${q.id ? `<button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(q.id)}">Remove</button>` : ''}
+        </div>
+      </div>
+      <ol class="mb-2 ps-3" type="A">${options}</ol>
+      ${description ? `<div class="small"><span class="fw-semibold">Description:</span> <span class="text-muted-2">${esc(description)}</span></div>` : ''}
+    </article>`;
+}
+function bankCourses(payload) {
+  if (Array.isArray(payload?.courses)) return payload.courses;
+  const code = String(payload?.courseCode || '').trim();
+  const rows = Array.isArray(payload?.questions) ? payload.questions : [];
+  if (!code && !rows.length) return [];
+  return [{
+    courseCode: code,
+    courseTitle: String(payload?.courseTitle || ''),
+    total: rows.length,
+    questions: rows,
+  }];
+}
+
+function isBankExpanded(code, payload) {
+  const key = String(code || '').toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(expandedBank, key)) return !!expandedBank[key];
+  const focus = String(payload?.focusCode || payload?.courseCode || loaded?.code || '').toUpperCase();
+  return key !== '' && key === focus;
+}
+
+function renderBankQuestion(q, i) {
+  const description = questionDescription(q);
+  const options = (q.options || []).map((opt, idx) => {
+    const mark = idx === q.correctIndex ? ' fw-semibold' : '';
+    const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
+    return `<li class="${mark} mb-1">${esc(opt)}${right}</li>`;
+  }).join('');
+  return `
+    <div class="border rounded p-3 mb-2" ${q.id ? `data-bank-id="${esc(q.id)}"` : ''}>
+      <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+        <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
+          ${q.difficulty ? `<span class="badge-soft info">${esc(q.difficulty)}</span>` : ''}
+          ${q.id ? `<button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(q.id)}">Remove</button>` : ''}
+        </div>
+      </div>
+      <ol class="mb-2 ps-3" type="A">${options}</ol>
+      ${description ? `<div class="small"><span class="fw-semibold">Description:</span> <span class="text-muted-2">${esc(description)}</span></div>` : ''}
+    </div>`;
+}
+
+function renderBank(payload) {
+  bank = payload;
+  const panel = document.getElementById('bankPanel');
+  if (!panel) return;
+  const groups = bankCourses(payload);
+  const focus = String(payload?.focusCode || payload?.courseCode || loaded?.code || '').toUpperCase();
+  if (focus && expandedBank[focus] === undefined) expandedBank[focus] = true;
+  if (!groups.length) {
+    panel.innerHTML = `
+      <div class="card-surface p-3 p-md-4">
+        <p class="text-muted-2 mb-0">No course cards yet. Generate questions and add them — each course code becomes one card.</p>
+      </div>`;
+    setBankHint('Each course code has one card. Questions generated again for the same code stay in that card.');
+    return;
+  }
+  setBankHint('Each course code has one card. Questions generated again for the same code stay in that card.');
+  panel.innerHTML = groups.map((course) => {
+    const code = String(course.courseCode || '').trim();
+    const title = String(course.courseTitle || '').trim();
+    const rows = Array.isArray(course.questions) ? course.questions : [];
+    const open = isBankExpanded(code, payload);
+    return `
+      <article class="card-surface p-3 p-md-4 mb-3" data-course-card="${esc(code)}">
+        <button type="button" class="btn btn-link text-decoration-none text-reset w-100 p-0" data-bank-toggle="${esc(code)}" style="text-align:left">
+          <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+            <div>
+              <div class="small text-muted-2">Course card</div>
+              <h2 class="h5 mb-0">${esc(code)}</h2>
+              ${title && title !== code ? `<div class="small text-muted-2">${esc(title)}</div>` : ''}
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+              <span class="badge-soft info">${rows.length} question${rows.length === 1 ? '' : 's'}</span>
+              <i class="bi ${open ? 'bi-chevron-up' : 'bi-chevron-down'}"></i>
+            </div>
+          </div>
+        </button>
+        <div class="mt-3 ${open ? '' : 'd-none'}" data-bank-body="${esc(code)}">
+          ${rows.length ? rows.map((q, i) => renderBankQuestion(q, i)).join('') : '<p class="text-muted-2 mb-0">No questions in this course card yet.</p>'}
+        </div>
+      </article>`;
+  }).join('');
+}
+
+async function loadBank(focusCode) {
+  const focus = String(focusCode || loaded?.code || '').trim();
+  try {
+    const res = await api('/staff/courses/question-bank' + (focus ? '?courseCode=' + encodeURIComponent(focus) : ''));
+    if (!res?.success) throw new Error(res?.message || 'Could not load the question bank.');
+    renderBank(res.data || { courses: [] });
+  } catch (err) {
+    renderBank({ courses: [] });
+    setBankHint(err?.message || 'Could not load the question bank.');
+  }
+}
+
+async function deleteBankQuestion(id) {
+  if (!id) return;
+  try {
+    const res = await api('/staff/courses/question-bank/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!res?.success) throw new Error(res?.message || 'Could not remove that question.');
+    renderBank(res.data || { courses: [] });
+    setBankHint('Question removed from ' + (res.data?.focusCode || res.data?.courseCode || 'the bank') + '.');
+  } catch (err) {
+    if (typeof toast === 'function') toast(err?.message || 'Could not remove that question.', 'error');
+  }
+}
+
+function selectedDraftIndexes() {
+  return Array.from(document.querySelectorAll('#practicePanel [data-draft-index]:checked'))
+    .map((el) => Number(el.getAttribute('data-draft-index')))
+    .filter((index) => Number.isInteger(index) && index >= 0);
+}
+
+function setDraftSelection(checked) {
+  document.querySelectorAll('#practicePanel [data-draft-index]').forEach((el) => {
+    el.checked = !!checked;
+  });
 }
 
 function renderPractice(payload) {
@@ -158,28 +442,192 @@ function renderPractice(payload) {
     root.innerHTML = '';
     return;
   }
+  const mix = Array.isArray(payload?.mixes)
+    ? payload.mixes.map((row) => `${row.count} ${row.difficulty}`).join(', ')
+    : (payload.difficulty || '');
   root.innerHTML = `
     <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
-      <h2 class="h5 mb-0">Practice session · ${esc(payload.courseCode)} ${esc(payload.courseTitle || '')}</h2>
-      <span class="badge-soft info">${esc(payload.difficulty || '')} · ${rows.length} questions</span>
+      <div>
+        <h2 class="h5 mb-1">Generated questions · ${esc(payload.courseCode || '')}</h2>
+        <p class="small text-muted-2 mb-0">Select the questions you want to add to the ${esc(payload.courseCode || 'course')} question bank.</p>
+      </div>
+      <span class="badge-soft info">${esc(mix || '')} · ${rows.length} questions</span>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSelectAllDraft">Select all</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDraft">Clear</button>
+      <button type="button" class="btn btn-primary" id="btnAddSelected">
+        <i class="bi bi-plus-lg me-1"></i>Add selected to question bank
+      </button>
+    </div>
+    ${rows.map((q, i) => renderQuestionCard(q, i, true)).join('')}`;
+}
+
+function renderMcqIdle() {
+  const panel = document.getElementById('mcqPanel');
+  if (!panel) return;
+  const groups = bankCourses(bank);
+  if (!groups.length) {
+    panel.innerHTML = `
+      <div class="card-surface p-3 p-md-4">
+        <p class="text-muted-2 mb-0">No course cards yet. Add questions to the syllabus question bank first — one card per course code.</p>
+      </div>`;
+    setMcqHint('Start the MCQ from a course card. The same course code always uses the same card.');
+    return;
+  }
+  setMcqHint('Start the MCQ from a course card. The same course code always uses the same card.');
+  panel.innerHTML = groups.map((course) => {
+    const code = String(course.courseCode || '').trim();
+    const title = String(course.courseTitle || '').trim();
+    const count = Array.isArray(course.questions) ? course.questions.length : Number(course.total || 0);
+    return `
+      <article class="card-surface p-3 p-md-4 mb-3">
+        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+          <div>
+            <div class="small text-muted-2">Course card</div>
+            <h2 class="h5 mb-0">${esc(code)}</h2>
+            ${title && title !== code ? `<div class="small text-muted-2">${esc(title)}</div>` : ''}
+            <p class="small text-muted-2 mb-0 mt-2">All saved questions for this course code are in this card.</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="badge-soft info">${count} question${count === 1 ? '' : 's'}</span>
+            <button type="button" class="btn btn-primary" data-mcq-start="${esc(code)}" ${count ? '' : 'disabled'}>
+              <i class="bi bi-play-fill me-1"></i>Start MCQ
+            </button>
+          </div>
+        </div>
+      </article>`;
+  }).join('');
+}
+
+function renderMcqQuiz(payload) {
+  mcq = payload;
+  const panel = document.getElementById('mcqPanel');
+  const rows = payload?.questions || [];
+  if (!panel) return;
+  setMcqHint('');
+  panel.innerHTML = `
+    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+      <div>
+        <h2 class="h5 mb-1">MCQ · ${esc(payload.courseCode || '')}</h2>
+        <p class="small text-muted-2 mb-0">Choose one option for each question, then submit.</p>
+      </div>
+      <span class="badge-soft info">${rows.length} question${rows.length === 1 ? '' : 's'}</span>
     </div>
     ${rows.map((q, i) => {
       const options = (q.options || []).map((opt, idx) => `
-        <label class="d-flex gap-2 align-items-start border rounded p-2 mb-2">
-          <input class="form-check-input mt-1" type="radio" name="q${i}" value="${idx}"/>
+        <label class="d-flex gap-2 align-items-start mb-2">
+          <input class="form-check-input mt-1 flex-shrink-0" type="radio" name="mcq${i}" value="${idx}">
           <span>${esc(opt)}</span>
         </label>`).join('');
       return `
         <article class="card-surface p-3 p-md-4 mb-3">
           <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
             <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
-            ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
+            <div class="d-flex flex-wrap gap-2">
+              ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
+              ${q.difficulty ? `<span class="badge-soft info">${esc(q.difficulty)}</span>` : ''}
+            </div>
           </div>
-          ${options}
+          <div>${options}</div>
         </article>`;
     }).join('')}
-    <button type="button" class="btn btn-primary" id="btnSubmitPractice">Submit practice</button>`;
-  document.getElementById('btnSubmitPractice').addEventListener('click', submitPractice);
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button type="button" class="btn btn-primary" id="btnSubmitMcq">Submit answers</button>
+      <button type="button" class="btn btn-outline-secondary" id="btnResetMcq">Cancel</button>
+    </div>`;
+}
+
+function renderMcqResult(payload) {
+  mcq = Object.assign({}, mcq || {}, { results: payload?.results || [], sessionId: '' });
+  const results = payload?.results || [];
+  const panel = document.getElementById('mcqPanel');
+  if (!panel) return;
+  setMcqHint('');
+  panel.innerHTML = `
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <div class="small text-muted-2">MCQ result · ${esc(payload.courseCode || loaded?.code || '')}</div>
+      <div class="h4 mb-2">${esc(payload.score ?? 0)} / ${esc(payload.total ?? results.length)}</div>
+      <button type="button" class="btn btn-primary" data-mcq-start="${esc(payload.courseCode || mcq?.courseCode || '')}">Start again</button>
+    </div>
+    ${results.map((q, i) => {
+      const options = (q.options || []).map((opt, idx) => {
+        let mark = '';
+        if (idx === q.correctIndex) mark = 'fw-semibold';
+        const yours = idx === q.selectedIndex ? ' <span class="badge-soft ' + (q.correct ? 'success' : 'danger') + '">Your answer</span>' : '';
+        const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
+        return `<li class="${mark} mb-1">${esc(opt)}${yours}${right}</li>`;
+      }).join('');
+      return `
+        <article class="card-surface p-3 p-md-4 mb-3">
+          <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+            <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
+            <span class="badge-soft ${q.correct ? 'success' : 'danger'}">${q.correct ? 'Correct' : 'Incorrect'}</span>
+          </div>
+          <ol class="mb-2 ps-3" type="A">${options}</ol>
+          ${q.explanation ? `<div class="small text-muted-2">${esc(q.explanation)}</div>` : ''}
+        </article>`;
+    }).join('')}`;
+}
+
+async function showMcqTab() {
+  if (mcq?.sessionId && !mcq.results) {
+    renderMcqQuiz(mcq);
+    return;
+  }
+  if (mcq?.results) {
+    return;
+  }
+  await loadBank(loaded?.code || '');
+  renderMcqIdle();
+}
+
+async function startMcq(courseCode) {
+  const code = String(courseCode || mcq?.courseCode || loaded?.code || '').trim();
+  if (!code) return;
+  const groups = bankCourses(bank);
+  const course = groups.find((row) => String(row.courseCode || '').toUpperCase() === code.toUpperCase());
+  setMcqHint('Starting the MCQ…');
+  document.querySelectorAll('[data-mcq-start]').forEach((el) => { el.disabled = true; });
+  try {
+    const res = await api('/staff/courses/questions/practice', {
+      method: 'POST',
+      body: JSON.stringify({
+        courseCode: code,
+        courseTitle: course?.courseTitle || '',
+      }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not start the MCQ.');
+    renderMcqQuiz(res.data || {});
+  } catch (err) {
+    setMcqHint(err?.message || 'Could not start the MCQ.');
+    renderMcqIdle();
+    if (typeof toast === 'function') toast(err?.message || 'Could not start the MCQ.', 'error');
+  }
+}
+
+async function submitMcq() {
+  if (!mcq?.sessionId) return;
+  const answers = (mcq.questions || []).map((_, i) => {
+    const pickedOpt = document.querySelector(`input[name="mcq${i}"]:checked`);
+    return pickedOpt ? Number(pickedOpt.value) : -1;
+  });
+  const button = document.getElementById('btnSubmitMcq');
+  if (button) button.disabled = true;
+  setMcqHint('Checking answers…');
+  try {
+    const res = await api('/staff/courses/questions/submit', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: mcq.sessionId, answers }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not submit the MCQ.');
+    setMcqHint('');
+    renderMcqResult(res.data || {});
+  } catch (err) {
+    setMcqHint(err?.message || 'Could not submit the MCQ.');
+    if (button) button.disabled = false;
+    if (typeof toast === 'function') toast(err?.message || 'Could not submit the MCQ.', 'error');
+  }
 }
 
 function renderResult(payload) {
@@ -214,29 +662,96 @@ function renderResult(payload) {
 async function generate() {
   const course = selectedCourse();
   if (!course) return;
-  const button = document.getElementById('btnGenerate');
+  const button = document.getElementById('btnConfirmGenerate');
   const status = document.getElementById('genStatus');
   button.disabled = true;
-  status.textContent = 'Generating a practice session from the syllabus…';
+  const mixes = [
+    { difficulty: 'Easy', count: Number(document.getElementById('qEasy').value) },
+    { difficulty: 'Medium', count: Number(document.getElementById('qMedium').value) },
+    { difficulty: 'Hard', count: Number(document.getElementById('qHard').value) },
+  ];
+  if (!mixes.some((row) => row.count > 0)) {
+    status.textContent = 'Choose a number of questions for at least one difficulty.';
+    button.disabled = false;
+    return;
+  }
+  status.textContent = 'Generating questions for ' + (course.code || 'this course') + '…';
   document.getElementById('practicePanel').innerHTML = '';
   try {
     const res = await api('/staff/courses/questions', {
       method: 'POST',
       body: JSON.stringify({
         courseCode: course.code,
-        count: Number(document.getElementById('qCount').value),
-        difficulty: document.getElementById('qDifficulty').value,
+        courseTitle: course.title || '',
+        semsubId: course.semsubId || '',
+        encid: course.encid || '',
+        mixes,
       }),
     });
     if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
     const count = (res.data?.questions || []).length;
-    status.textContent = `${count} question${count === 1 ? '' : 's'} from ${course.code}.`;
+    status.textContent = count
+      ? `Generated ${count} question${count === 1 ? '' : 's'} for ${course.code}. Select the ones to add to the question bank.`
+      : 'No questions were generated.';
+    const modalEl = document.getElementById('generateModal');
+    bootstrap.Modal.getOrCreateInstance(modalEl).hide();
     renderPractice(res.data);
   } catch (err) {
     status.textContent = '';
     document.getElementById('practicePanel').innerHTML = `<div class="card-surface p-3 text-danger">${esc(err?.message || 'Could not generate questions.')}</div>`;
   } finally {
-    button.disabled = !selectedCourse();
+    button.disabled = false;
+  }
+}
+
+async function saveSelected() {
+  if (!practice?.sessionId) return;
+  const indexes = selectedDraftIndexes();
+  const status = document.getElementById('genStatus');
+  const button = document.getElementById('btnAddSelected');
+  if (!indexes.length) {
+    status.textContent = 'Select the questions you want to add to the syllabus question bank.';
+    return;
+  }
+  if (button) button.disabled = true;
+  status.textContent = `Adding ${indexes.length} question${indexes.length === 1 ? '' : 's'} to ${practice.courseCode || 'the bank'}…`;
+  try {
+    const res = await api('/staff/courses/questions/save', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: practice.sessionId, indexes }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not add those questions.');
+    const added = Number(res.data?.added ?? 0);
+    const skipped = Number(res.data?.skipped ?? 0);
+    const code = res.data?.courseCode || practice.courseCode || '';
+    const remaining = Array.isArray(res.data?.questions) ? res.data.questions : [];
+    status.textContent = res.message
+      || (added
+        ? `Added ${added} question${added === 1 ? '' : 's'} to ${code}.`
+        : `No new questions were added to ${code}.`);
+    if (skipped && !String(status.textContent).includes('already')) {
+      status.textContent += ` ${skipped} already in the bank.`;
+    }
+    const savedCode = String(code || '').toUpperCase();
+    if (savedCode) expandedBank[savedCode] = true;
+    if (res.data?.bank) {
+      renderBank(res.data.bank);
+    } else {
+      await loadBank(code);
+    }
+    renderPractice(Object.assign({}, practice, {
+      sessionId: res.data?.sessionId || practice.sessionId,
+      courseCode: code,
+      courseTitle: res.data?.courseTitle || practice.courseTitle || '',
+      mixes: res.data?.mixes || practice.mixes,
+      questions: remaining,
+    }));
+    if (typeof toast === 'function') toast(status.textContent, added ? 'success' : 'info');
+  } catch (err) {
+    status.textContent = err?.message || 'Could not add those questions.';
+    if (typeof toast === 'function') toast(err?.message || 'Could not add those questions.', 'error');
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -266,8 +781,26 @@ async function submitPractice() {
 }
 
 document.getElementById('courseSearch').addEventListener('input', () => {
+  const query = document.getElementById('courseSearch').value.trim();
+  if (loaded && query.toUpperCase() !== String(loaded.code || '').toUpperCase()) {
+    loaded = null;
+    document.getElementById('practicePanel').innerHTML = '';
+    document.getElementById('genStatus').textContent = '';
+    if (mcq?.sessionId) clearMcq();
+    renderSyllabus();
+  }
   window.clearTimeout(searchTimer);
   searchTimer = window.setTimeout(searchCourses, 300);
+});
+document.getElementById('courseSearch').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  window.clearTimeout(searchTimer);
+  searchCourses();
+});
+document.getElementById('btnGet').addEventListener('click', () => {
+  window.clearTimeout(searchTimer);
+  getSelectedCourse();
 });
 document.getElementById('courseResults').addEventListener('click', (event) => {
   const button = event.target.closest('[data-pick]');
@@ -275,14 +808,69 @@ document.getElementById('courseResults').addEventListener('click', (event) => {
   const course = courses[Number(button.getAttribute('data-pick'))];
   if (!course) return;
   picked = course;
+  loaded = null;
   document.getElementById('courseSearch').value = course.code;
   document.getElementById('courseResults').classList.add('d-none');
   practice = null;
   document.getElementById('practicePanel').innerHTML = '';
   document.getElementById('genStatus').textContent = '';
+  document.getElementById('deptLabel').textContent = 'Click Get to open the syllabus PDF.';
+  if (mcq?.sessionId) clearMcq();
   renderSyllabus();
 });
-document.getElementById('btnGenerate').addEventListener('click', generate);
+document.getElementById('btnGenerate').addEventListener('click', () => {
+  const course = selectedCourse();
+  if (!course) return;
+  document.getElementById('generateCourseLabel').textContent = `Questions will be generated from the loaded syllabus for ${course.code} — ${course.title || ''}`;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).show();
+});
+document.getElementById('btnConfirmGenerate').addEventListener('click', generate);
+document.getElementById('practicePanel').addEventListener('click', (event) => {
+  if (event.target.closest('#btnSelectAllDraft')) {
+    setDraftSelection(true);
+    return;
+  }
+  if (event.target.closest('#btnClearDraft')) {
+    setDraftSelection(false);
+    return;
+  }
+  if (event.target.closest('#btnAddSelected')) {
+    saveSelected();
+  }
+});
+document.getElementById('tabBankBtn').addEventListener('shown.bs.tab', () => {
+  loadBank(loaded?.code || '');
+});
+document.getElementById('tabMcqBtn').addEventListener('shown.bs.tab', () => {
+  showMcqTab();
+});
+document.getElementById('mcqPanel').addEventListener('click', (event) => {
+  const start = event.target.closest('[data-mcq-start]');
+  if (start) {
+    startMcq(start.getAttribute('data-mcq-start') || '');
+    return;
+  }
+  if (event.target.closest('#btnSubmitMcq')) {
+    submitMcq();
+    return;
+  }
+  if (event.target.closest('#btnResetMcq')) {
+    clearMcq();
+    renderMcqIdle();
+  }
+});
+document.getElementById('bankPanel').addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-bank-toggle]');
+  if (toggle) {
+    const code = String(toggle.getAttribute('data-bank-toggle') || '').toUpperCase();
+    expandedBank[code] = !isBankExpanded(code, bank);
+    renderBank(bank || { courses: [] });
+    return;
+  }
+  const button = event.target.closest('[data-bank-del]');
+  if (!button) return;
+  deleteBankQuestion(button.getAttribute('data-bank-del') || '');
+});
 
 onAppReady(() => {
   const role = typeof Auth !== 'undefined' && Auth.role ? Auth.role() : '';
@@ -290,6 +878,7 @@ onAppReady(() => {
   if (role !== 'staff' && !hod) {
     location.href = 'dashboard.html';
   }
+  loadBank();
 });
 </script>
 </body></html>

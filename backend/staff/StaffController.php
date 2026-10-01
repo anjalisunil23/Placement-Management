@@ -20,6 +20,7 @@ use PMS\Services\StaffPlacementRegistryService;
 use PMS\Services\StaffService;
 use PMS\Services\StaffCourseQuestionService;
 use PMS\Services\AesApiService;
+use PMS\Services\AesSyllabusCipher;
 use PMS\Services\CourseSyllabusCatalog;
 use PMS\Services\RecruitingService;
 use PMS\Services\AesLoginService;
@@ -710,6 +711,67 @@ final class StaffController
         ]);
     }
 
+    /** POST /api/staff/courses/get */
+    public function getCourse(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $raw = file_get_contents('php://input') ?: '{}';
+        $body = json_decode($raw, true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        $semsubId = trim((string) ($body['semsubId'] ?? $body['id'] ?? ''));
+        $courseCode = strtoupper(trim((string) ($body['courseCode'] ?? $body['code'] ?? '')));
+        if ($semsubId === '') {
+            Response::error('Select a course, then click Get.', 422);
+        }
+        $dept = $this->staffDepartment($user);
+        if ($courseCode !== '' && !CourseSyllabusCatalog::subjectVisibleToStaff($courseCode, $dept['code'], $dept['name'], $dept['shortName'])) {
+            Response::error('That course is outside your department.', 422);
+        }
+        $encid = AesSyllabusCipher::encrypt($semsubId);
+        if ($encid === '') {
+            Response::error('Could not encode that course id.', 500);
+        }
+        Response::success([
+            'semsubId' => $semsubId,
+            'encid' => $encid,
+            'courseCode' => $courseCode,
+            'departmentName' => $dept['name'] !== '' ? $dept['name'] : $dept['code'],
+        ]);
+    }
+
+    /** GET /api/staff/courses/syllabus */
+    public function downloadSyllabus(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $semsubId = trim((string) ($_GET['semsubId'] ?? $_GET['id'] ?? ''));
+        $courseCode = strtoupper(trim((string) ($_GET['courseCode'] ?? $_GET['code'] ?? '')));
+        if ($semsubId === '') {
+            Response::error('Select a course, then click Get.', 422);
+        }
+        $dept = $this->staffDepartment($user);
+        if ($courseCode !== '' && !CourseSyllabusCatalog::subjectVisibleToStaff($courseCode, $dept['code'], $dept['name'], $dept['shortName'])) {
+            Response::forbidden('That course is outside your department.');
+        }
+        $encid = AesSyllabusCipher::encrypt($semsubId);
+        if ($encid === '') {
+            Response::error('Could not encode that course id.', 500);
+        }
+        try {
+            $pdf = AesSyllabusCipher::fetchPdf($encid);
+        } catch (\RuntimeException $e) {
+            Response::error($e->getMessage(), 502);
+        }
+        $file = preg_replace('/[^A-Za-z0-9_-]+/', '-', $courseCode !== '' ? $courseCode : 'syllabus') ?: 'syllabus';
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="' . $file . '.pdf"');
+        header('Cache-Control: private, max-age=120');
+        header('X-Content-Type-Options: nosniff');
+        echo $pdf;
+        exit;
+    }
+
     /** GET /api/staff/courses */
     public function listCourses(): void
     {
@@ -749,13 +811,56 @@ final class StaffController
         try {
             Response::success(
                 (new StaffCourseQuestionService())->generate($user, $body),
-                'Practice questions generated.'
+                'Questions generated. Select the ones you want to add to the syllabus question bank.'
             );
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         } catch (\RuntimeException $e) {
             $code = (int) $e->getCode();
             Response::error($e->getMessage(), ($code >= 400 && $code <= 599) ? $code : 503);
+        }
+    }
+
+    /** POST /api/staff/courses/questions/save */
+    public function saveCourseQuestions(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            $result = (new StaffCourseQuestionService())->saveSelected($user, $body);
+            $added = (int) ($result['added'] ?? 0);
+            $skipped = (int) ($result['skipped'] ?? 0);
+            $code = (string) ($result['courseCode'] ?? '');
+            $message = $added > 0
+                ? ($added . ' question' . ($added === 1 ? '' : 's') . ' added to ' . $code . '.')
+                : 'No new questions were added.';
+            if ($skipped > 0) {
+                $message .= ' ' . $skipped . ' already in the bank.';
+            }
+            Response::success($result, $message);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
+    /** POST /api/staff/courses/questions/practice */
+    public function startCoursePractice(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            Response::success(
+                (new StaffCourseQuestionService())->startPractice($user, $body),
+                'MCQ started. Choose an option for each question, then submit.'
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
         }
     }
 
@@ -771,6 +876,32 @@ final class StaffController
             Response::success(
                 (new StaffCourseQuestionService())->submit($user, $body),
                 'Practice submitted.'
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
+    /** GET /api/staff/courses/question-bank?courseCode=26MCAT107 */
+    public function listSyllabusQuestionBank(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $courseCode = trim((string) ($_GET['courseCode'] ?? $_GET['code'] ?? ''));
+        try {
+            Response::success((new StaffCourseQuestionService())->listBank($user, $courseCode));
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
+    /** DELETE /api/staff/courses/question-bank/{id} */
+    public function deleteSyllabusBankQuestion(string $id): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        try {
+            Response::success(
+                (new StaffCourseQuestionService())->deleteBankQuestion($user, $id),
+                'Question removed from the syllabus bank.'
             );
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
