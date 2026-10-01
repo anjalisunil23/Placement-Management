@@ -638,7 +638,11 @@ function renderPractice(payload) {
     ? payload.mixes.map((row) => `${row.count} ${row.difficulty}`).join(', ')
     : (payload.difficulty || '');
   document.getElementById('draftModalTitle').textContent = `Generated questions · ${payload.courseCode || ''}`;
-  document.getElementById('draftModalHint').textContent = `${mix ? mix + ' · ' : ''}${rows.length} question${rows.length === 1 ? '' : 's'}. Select the ones to add to the ${payload.courseCode || 'course'} question bank.`;
+  const requested = Number(payload?.requested || 0);
+  const countLabel = requested > 0 && rows.length !== requested
+    ? `${rows.length} of ${requested} requested question${requested === 1 ? '' : 's'}`
+    : `${rows.length} question${rows.length === 1 ? '' : 's'}`;
+  document.getElementById('draftModalHint').textContent = `${mix ? mix + ' · ' : ''}${countLabel}. Select the ones to add to the ${payload.courseCode || 'course'} question bank.`;
   body.innerHTML = rows.map((q, i) => renderQuestionCard(q, i, true)).join('');
   bootstrap.Modal.getOrCreateInstance(modal).show();
 }
@@ -919,8 +923,11 @@ async function generate() {
     });
     if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
     const count = (res.data?.questions || []).length;
+    const requested = Number(res.data?.requested || 0);
     status.textContent = count
-      ? `Generated ${count} question${count === 1 ? '' : 's'} for ${course.code}. Select the ones to add to the question bank.`
+      ? (requested > 0 && count !== requested
+        ? `Generated ${count} of ${requested} requested for ${course.code}. Select the ones to add to the question bank.`
+        : `Generated ${count} question${count === 1 ? '' : 's'} for ${course.code}. Select the ones to add to the question bank.`)
       : 'No questions were generated.';
     const modalEl = document.getElementById('generateModal');
     modalEl.addEventListener('hidden.bs.modal', () => renderPractice(res.data), { once: true });
