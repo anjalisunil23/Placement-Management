@@ -892,15 +892,15 @@
       const winnersReady = !!result.winnersPublished || !!result.contestClosed;
       const contestNote = isContest
         ? `<div class="border rounded-3 p-3 mt-3">
-            <div class="small fw-semibold mb-1">${winnersReady ? '🏆 Contest result saved' : '⚔️ Your contest score is in'}</div>
+            <div class="small fw-semibold mb-1">${winnersReady ? '🏆 Challenge result saved' : '⚔️ Your challenge score is in'}</div>
             <div class="small text-muted-2">${winnersReady
-              ? 'Winners are now visible in Contest arena on the coding page.'
-              : 'Your score is saved now. The winner is published after the contest closes.'}</div>
+              ? 'Winners are now visible in Challenge arena on the coding page.'
+              : 'Your score is saved now. The winner is published after the challenge closes.'}</div>
           </div>`
         : '';
       el('result-hero').innerHTML = `
         <div class="text-center py-2">
-          <div class="text-muted-2 mb-1">${isContest ? 'Contest Result' : 'Coding Test Result'}</div>
+          <div class="text-muted-2 mb-1">${isContest ? 'Challenge Result' : 'Coding Test Result'}</div>
           <div class="cod-score">${esc(result.score)} / ${esc(result.totalMarks)}</div>
           <div class="cod-pct">${esc(result.percentage)}%</div>
           <span class="badge-soft ${result.passed ? 'success' : 'danger'} mt-2">${esc(result.status)}</span>

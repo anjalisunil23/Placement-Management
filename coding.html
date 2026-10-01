@@ -150,7 +150,7 @@
           <div class="px-3 px-md-4 pt-3 pb-2">
             <ul class="nav nav-pills gap-1 flex-wrap" id="takeListNav">
               <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-list="tests">Problems</a></li>
-              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Contests</a></li>
+              <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Challenges</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="jdblock">Company-Wise</a></li>
             </ul>
             <ul class="nav nav-pills contest-type-tabs flex-wrap mt-2 d-none" id="takeContestTypeNav">
@@ -185,7 +185,7 @@
           <h6 class="fw-bold mb-2">My recent results</h6>
           <ul class="nav nav-pills gap-1 mb-2 flex-wrap" id="myResultsNav">
             <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test results</a></li>
-            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest results</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Challenge results</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="company">Company test results</a></li>
           </ul>
           <ul class="nav nav-pills contest-type-tabs flex-wrap mb-2 d-none" id="myResultsContestTypeNav">
@@ -203,7 +203,7 @@
       <p class="small text-muted-2 mb-2 d-none" id="dirScopeHint"></p>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="progressViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-progress-view="tests">Test results</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contests</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Challenges</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-progress-view="company">Company test results</a></li>
       </ul>
       <ul class="nav nav-pills contest-type-tabs flex-wrap mb-3 d-none" id="progressContestTypeNav">
@@ -245,7 +245,7 @@
         <th>Name</th><th>Student ID</th><th>Class</th><th>Attempts</th><th>Final score</th><th>Test title</th><th></th>
       </tr></thead><tbody id="dirRows"></tbody></table></div>
       <div class="d-none" id="dirContestResultsWrap">
-        <p class="small text-muted-2 mb-3" id="dirContestIntro">Review completed contests, publish results for students, and browse participant scores.</p>
+        <p class="small text-muted-2 mb-3" id="dirContestIntro">Review completed challenges, publish results for students, and browse participant scores.</p>
         <div id="dirContestSections" class="d-flex flex-column gap-3"></div>
       </div>
     </div>
@@ -261,7 +261,7 @@
       <p class="small text-muted-2 mb-2 d-none" id="manageScopeHint"></p>
       <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Problems</a></li>
-        <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
+        <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Challenges</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="jd">Company-Wise</a></li>
       </ul>
@@ -278,7 +278,7 @@
         </ul>
         <div id="manageWeeklyContestsSection">
           <div class="d-flex flex-wrap justify-content-end gap-2 mb-3">
-            <button type="button" class="btn btn-sm btn-primary" id="btnNewWeeklyContest"><i class="bi bi-plus-lg me-1"></i>Create weekly contest</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btnNewWeeklyContest"><i class="bi bi-plus-lg me-1"></i>Create weekly challenge</button>
           </div>
           <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Weekly contests</h6>
           <div id="manageWeeklyContestsBulkActions" class="d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 pb-2 border-bottom">
@@ -296,7 +296,7 @@
         <div id="manageMonthlyContestsSection" class="d-none">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <p class="small text-muted-2 mb-0">Monthly contests — students get one attempt on the scheduled day of the month.</p>
-            <button type="button" class="btn btn-sm btn-primary" id="btnNewMonthlyContest"><i class="bi bi-plus-lg me-1"></i>Create monthly contest</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btnNewMonthlyContest"><i class="bi bi-plus-lg me-1"></i>Create monthly challenge</button>
           </div>
           <h6 class="fw-semibold small text-uppercase text-muted-2 mb-2">Monthly contests</h6>
           <div id="manageMonthlyContestsBulkActions" class="d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 pb-2 border-bottom">
@@ -521,7 +521,7 @@
 
         <div class="col-12">
           <label class="form-label small fw-semibold d-block mb-2">Problem selection</label>
-          <p class="small text-muted-2 mb-2 d-none" id="tfContestBankHint">Contest problems are selected from the question bank — either pick specific problems or use random rules by topic. Each student gets one attempt on the scheduled day.</p>
+          <p class="small text-muted-2 mb-2 d-none" id="tfContestBankHint">Challenge problems are selected from the question bank — either pick specific problems or use random rules by topic. Each student gets one attempt on the scheduled day.</p>
           <div class="btn-group" role="group" aria-label="Problem selection" id="tfSourceGroup">
             <input type="radio" class="btn-check" name="tfQuestionSource" id="tfSourceManual" value="manual" checked>
             <label class="btn btn-outline-primary btn-sm" for="tfSourceManual">Manual</label>
@@ -711,7 +711,7 @@
 <div class="modal fade" id="contestResultsModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
   <div class="modal-header">
     <div>
-      <h5 class="modal-title fw-bold mb-0" id="contestResultsModalTitle">Contest results</h5>
+      <h5 class="modal-title fw-bold mb-0" id="contestResultsModalTitle">Challenge results</h5>
       <div class="small text-muted-2" id="contestResultsModalMeta"></div>
     </div>
     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -727,6 +727,6 @@
 <script src="js/coding-data.js?v=20260930starter"></script>
 <script src="js/coding-execution.js?v=20260930all"></script>
 <script src="js/coding-service.js?v=20260930submit"></script>
-<script src="js/coding-exam.js?v=20260930run"></script>
-<script src="js/coding-page.js?v=20260930starter"></script>
+<script src="js/coding-exam.js?v=20261001challenges"></script>
+<script src="js/coding-page.js?v=20261001challenges"></script>
 </body></html>

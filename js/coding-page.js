@@ -235,7 +235,7 @@
     const row = enrichHistoryEntry(h);
     const bits = [];
     if (historyEntryIsContest(row)) {
-      bits.push(row.contestScheduleLabel || (row.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest'));
+      bits.push(row.contestScheduleLabel || (row.contestType === 'monthly' ? 'Monthly challenge' : 'Weekly challenge'));
     }
     const mode = historyResultMode(row);
     if (mode === 'pending') {
@@ -2130,11 +2130,11 @@
     const startTime = String(test?.contestStartTime || '09:00');
     if (type === 'weekly') {
       const hit = CONTEST_WEEKDAYS.find((d) => d.value === Number(test?.contestWeekday));
-      return hit ? `Weekly · ${hit.label}, ${startTime} IST` : 'Weekly contest';
+      return hit ? `Weekly · ${hit.label}, ${startTime} IST` : 'Weekly challenge';
     }
     if (type === 'monthly') {
       const day = Number(test?.contestMonthDay);
-      return Number.isFinite(day) && day > 0 ? `Monthly · day ${day}, ${startTime} IST` : 'Monthly contest';
+      return Number.isFinite(day) && day > 0 ? `Monthly · day ${day}, ${startTime} IST` : 'Monthly challenge';
     }
     return '';
   }
@@ -2387,10 +2387,10 @@
     const canReview = access.canTake;
     const contestLabel = myResultsContestType === 'monthly' ? 'monthly' : 'weekly';
     const emptyLabel = myResultsView === 'contests'
-      ? `No ${contestLabel} contest attempts yet.`
+      ? `No ${contestLabel} challenge attempts yet.`
       : (myResultsView === 'company'
         ? 'No company test attempts yet.'
-        : 'No attempts yet. Open a topic test or contest to begin.');
+        : 'No attempts yet. Open a topic test or challenge to begin.');
     const root = document.getElementById('myHistory');
     if (!root) return;
     root.innerHTML = filtered.length
@@ -2508,7 +2508,7 @@
     });
     if (!visible.length) {
       const contestLabel = takeContestType === 'monthly' ? 'monthly' : 'weekly';
-      root.innerHTML = `<p class="text-muted-2 mb-0">No ${contestLabel} coding contests are open right now, or none are published yet.</p>`;
+      root.innerHTML = `<p class="text-muted-2 mb-0">No ${contestLabel} coding challenges are open right now, or none are published yet.</p>`;
       return;
     }
     root.innerHTML = `<div class="apt-prob-list">${visible.map((t, i) => codingProbRowHtml(t, i)).join('')}</div>`;
@@ -2669,11 +2669,11 @@
     const lifeCls = life === 'ACTIVE' ? 'success' : (life === 'COMPLETED' ? 'warning' : 'muted');
     const lifeLabel = life === 'ACTIVE' ? 'Active' : (life === 'COMPLETED' ? 'Completed' : 'Upcoming');
     const type = String(t.contestType || 'none');
-    const typeLabel = type === 'monthly' ? 'Monthly contest' : 'Weekly contest';
+    const typeLabel = type === 'monthly' ? 'Monthly challenge' : 'Weekly challenge';
     const id = String(t.id || '');
     const checked = selectedManageTestIds.has(id);
     return `<tr>
-      <td class="text-nowrap"><input class="form-check-input" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select contest"/></td>
+      <td class="text-nowrap"><input class="form-check-input" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select challenge"/></td>
       <td class="fw-semibold">${esc(t.title)}</td>
       <td class="small text-muted-2">${testMetaLine(t)}</td>
       <td>
@@ -2707,12 +2707,12 @@
     if (!listRoot) return;
     if (!all.length) {
       bulkBar?.classList.add('d-none');
-      listRoot.innerHTML = `<p class="text-muted-2 mb-0">No ${label} contests yet.</p>`;
+      listRoot.innerHTML = `<p class="text-muted-2 mb-0">No ${label} challenges yet.</p>`;
       updateContestSelectionToolbar(contestType);
       return;
     }
     bulkBar?.classList.remove('d-none');
-    listRoot.innerHTML = renderManageContestActiveTable(all, `No ${label} contests yet.`);
+    listRoot.innerHTML = renderManageContestActiveTable(all, `No ${label} challenges yet.`);
     bindManageListActions(listRoot);
     updateContestSelectionToolbar(contestType);
   }
@@ -2722,7 +2722,7 @@
     if (!id || !scheduleFields.includes(field)) return;
     const test = tests.find((t) => String(t.id) === String(id));
     if (!test) {
-      toastMsg('Contest not found.', 'error');
+      toastMsg('Challenge not found.', 'error');
       return;
     }
     const patch = { [field]: value };
@@ -2735,11 +2735,11 @@
     }
     try {
       await CodingService.saveTest({ ...test, ...patch, items: test.items || [] });
-      toastMsg('Contest schedule updated.', 'success');
+      toastMsg('Challenge schedule updated.', 'success');
       await loadManaged();
       renderManage();
     } catch (err) {
-      toastMsg(err?.message || 'Could not update contest schedule.', 'error');
+      toastMsg(err?.message || 'Could not update challenge schedule.', 'error');
     }
   }
 
@@ -3011,8 +3011,8 @@
       const isCompanyPreset = preset?.testKind === 'company' || isCompanyTest(test);
       const isContest = isContestTest(test) || isContestPreset;
       document.getElementById('testFormTitle').textContent = test
-        ? (isContest ? 'Edit contest' : (isCompanyPreset ? 'Edit company test' : 'Edit coding test'))
-        : (isContestPreset ? `New ${preset.contestType} contest` : (isCompanyPreset ? 'New company test' : 'New coding test'));
+        ? (isContest ? 'Edit challenge' : (isCompanyPreset ? 'Edit company test' : 'Edit coding test'))
+        : (isContestPreset ? `New ${preset.contestType} challenge` : (isCompanyPreset ? 'New company test' : 'New coding test'));
       document.getElementById('tfTestKind').value = isCompanyPreset ? 'company' : 'regular';
       document.getElementById('tfId').value = test?.id || '';
       document.getElementById('tfTitle').value = test?.title || preset?.title || '';
@@ -3421,7 +3421,7 @@
       : '';
 
     return `<tr>
-      <td class="fw-semibold">${esc(c.title || 'Contest')}</td>
+      <td class="fw-semibold">${esc(c.title || 'Challenge')}</td>
       <td class="small text-muted-2">${scheduleLines.join('<br>')}</td>
       <td>
         <div class="d-flex flex-wrap gap-1">
@@ -3462,8 +3462,8 @@
     const role = Auth.role();
     const label = progressContestType === 'monthly' ? 'monthly' : 'weekly';
     const emptyMsg = role === 'staff' && (!staffAssignedBatches().length && !(scope.assignedClassBatches || []).length)
-      ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
-      : `No completed ${label} contests yet. Finished contests will appear here after their scheduled day ends.`;
+      ? 'No class is assigned to your account. Contact the placement office to monitor challenge results.'
+      : `No completed ${label} challenges yet. Finished challenges will appear here after their scheduled day ends.`;
 
     const root = document.getElementById('dirContestSections');
     if (!root) return;
@@ -3489,8 +3489,8 @@
     const hasAssignedClass = staffBatches.length || (scope.assignedClassBatches || []).length;
     const emptyMsg = progressPanel === 'contests'
       ? (role === 'staff' && !hasAssignedClass
-        ? 'No class is assigned to your account. Contact the placement office to monitor contest results.'
-        : 'No contest results in your authorized scope yet.')
+        ? 'No class is assigned to your account. Contact the placement office to monitor challenge results.'
+        : 'No challenge results in your authorized scope yet.')
       : (role === 'staff' && !staffBatches.length
         ? 'No class is assigned to your account. Contact the placement office to monitor student coding progress.'
         : (role === 'staff' && !hasStaffDirectoryLookup()
@@ -3568,7 +3568,7 @@
   function showDirectoryLoading() {
     if (progressPanel === 'contests') {
       const root = document.getElementById('dirContestSections');
-      if (root) root.innerHTML = '<p class="text-muted-2 mb-0">Loading contest results…</p>';
+      if (root) root.innerHTML = '<p class="text-muted-2 mb-0">Loading challenge results…</p>';
       return;
     }
     const rows = document.getElementById('dirRows');
@@ -3593,7 +3593,7 @@
 
   function renderContestPreviewTable(participants) {
     if (!participants.length) {
-      return '<p class="text-muted-2 mb-0">No participants submitted this contest yet.</p>';
+      return '<p class="text-muted-2 mb-0">No participants submitted this challenge yet.</p>';
     }
     const rows = participants.map((p) => `<tr>
       <td>${esc(p.rank ?? '—')}</td>
@@ -3625,11 +3625,11 @@
       data = res?.success ? res.data : null;
     }
     if (!data?.contest) {
-      bodyEl.innerHTML = '<p class="text-danger mb-0">Could not load contest results.</p>';
+      bodyEl.innerHTML = '<p class="text-danger mb-0">Could not load challenge results.</p>';
       return;
     }
     const c = data.contest;
-    if (titleEl) titleEl.textContent = c.title || 'Contest results';
+    if (titleEl) titleEl.textContent = c.title || 'Challenge results';
     const window = {
       start: c.contestStartAt || c.contestWindow?.start,
       end: c.contestEndAt || c.contestWindow?.end,
@@ -3663,7 +3663,7 @@
     if (!id) return;
     const msg = published
       ? 'Are you sure you want to publish this result? Students will be able to view their results after publication.'
-      : 'Hide contest results from students again?';
+      : 'Hide challenge results from students again?';
     if (!confirm(msg)) return;
     if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
       toastMsg('Publishing results requires a live session with manage access.', 'info');
@@ -3674,10 +3674,10 @@
       body: JSON.stringify({ published: !!published }),
     }).catch(() => null);
     if (!res?.success) {
-      toastMsg(res?.message || 'Could not update contest results.', 'error');
+      toastMsg(res?.message || 'Could not update challenge results.', 'error');
       return;
     }
-    toastMsg(res.message || (published ? 'Contest results published.' : 'Contest results hidden.'), 'success');
+    toastMsg(res.message || (published ? 'Challenge results published.' : 'Challenge results hidden.'), 'success');
     if (contestPreviewId && String(contestPreviewId) === String(id)) {
       openContestResultsPreview(id).catch(() => {});
     }
@@ -3768,7 +3768,7 @@
     const participants = c.participants || [];
     const mine = c.myResult || participants.find((p) => String(p.userId || '') === String(myUserId)) || null;
     const deptId = myDepartmentId || mine?.departmentId || '';
-    const typeLabel = c.contestScheduleLabel || (c.contestType === 'monthly' ? 'Monthly contest' : 'Weekly contest');
+    const typeLabel = c.contestScheduleLabel || (c.contestType === 'monthly' ? 'Monthly challenge' : 'Weekly challenge');
     const status = open
       ? (c.contestType === 'monthly' ? 'Open this month' : 'Open this week')
       : (published ? 'Winners published' : 'Closed');
@@ -3825,15 +3825,15 @@
   function contestBoardsHtml(contests, opts = {}) {
     if (!contests.length) {
       return `<p class="text-muted-2 mb-0">${opts.student
-        ? 'No weekly or monthly contests yet. Your own score still appears here after you finish.'
+        ? 'No weekly or monthly challenges yet. Your own score still appears here after you finish.'
         : 'No weekly or monthly contests in your scope yet.'}</p>`;
     }
     const weekly = contests.filter((c) => c.contestType === 'weekly');
     const monthly = contests.filter((c) => c.contestType === 'monthly');
     const other = contests.filter((c) => c.contestType !== 'weekly' && c.contestType !== 'monthly');
     return [
-      ['Weekly contests', weekly],
-      ['Monthly contests', monthly],
+      ['Weekly challenges', weekly],
+      ['Monthly challenges', monthly],
       ['Other contests', other],
     ].filter(([, list]) => list.length).map(([title, list]) => `
       <div class="mb-3">

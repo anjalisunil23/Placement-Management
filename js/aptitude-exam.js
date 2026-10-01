@@ -333,7 +333,7 @@
         </div>
         <div class="alert alert-warning py-2 px-3 small mb-3">
           <strong>During the test:</strong> copy, cut, and paste are disabled. Switching tabs or windows will automatically submit your test and sign you out.
-          ${isContestAttempt(test) ? ' Contest rules apply for the full duration.' : ''}
+          ${isContestAttempt(test) ? ' Challenge rules apply for the full duration.' : ''}
         </div>
         <h6 class="fw-bold">Instructions</h6>
         <div class="text-muted-2" style="white-space:pre-wrap">${esc(test.instructions || 'Read each question carefully. Choose one option. Submit before time ends.')}</div>`;
@@ -622,19 +622,19 @@
         el('result-summary').innerHTML = `
           <div class="alert alert-info mb-0">
             <div class="fw-semibold mb-1">Result Not Published</div>
-            <div>${esc(result.message || 'The contest has ended. The result will be available after the administrator publishes it.')}</div>
+            <div>${esc(result.message || 'The challenge has ended. The result will be available after the administrator publishes it.')}</div>
           </div>`;
         el('result-analysis').innerHTML = '';
         return;
       }
       const score = result.score ?? result.marksObtained ?? 0;
       const maxScore = result.maximumScore ?? result.totalMarks ?? 0;
-      const contestTitle = result.testName || result.testTitle || 'Contest';
+      const contestTitle = result.testName || result.testTitle || 'Challenge';
       const publishedLine = mode === 'published' && result.resultPublishedAt
         ? `<div class="small text-muted-2 mt-2">Result published on: ${esc(formatPublishedAt(result.resultPublishedAt))}</div>`
         : '';
       el('result-summary').innerHTML = `
-        ${mode === 'published' ? `<h6 class="fw-bold mb-2">Contest Result</h6><p class="mb-3"><span class="text-muted-2">Contest Name:</span> <strong>${esc(contestTitle)}</strong></p>` : ''}
+        ${mode === 'published' ? `<h6 class="fw-bold mb-2">Challenge Result</h6><p class="mb-3"><span class="text-muted-2">Challenge Name:</span> <strong>${esc(contestTitle)}</strong></p>` : ''}
         <div class="row g-2 mb-3">
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Score</div><strong>${esc(score)} / ${esc(maxScore)}</strong></div></div>
           <div class="col-6 col-md-3"><div class="card-surface p-3"><div class="small text-muted-2">Percentage</div><strong>${esc(result.percentage ?? 0)}%</strong></div></div>
