@@ -247,6 +247,7 @@ final class PublicController
             ObjectStorageService::FOLDER_PHOTOS,
             ObjectStorageService::FOLDER_JOB_POSTERS,
             ObjectStorageService::FOLDER_APTITUDE_IMAGES,
+            ObjectStorageService::FOLDER_TUTORIAL_IMAGES,
             ObjectStorageService::FOLDER_JD,
         ];
         if (!in_array($folder, $allowed, true)) {

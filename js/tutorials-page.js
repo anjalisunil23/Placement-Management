@@ -319,10 +319,11 @@
     }
   }
 
-  function showModules(show) {
-    document.getElementById('tutorialListView').classList.toggle('d-none', show);
-    document.getElementById('moduleView').classList.toggle('d-none', !show);
-    document.getElementById('previewView').classList.add('d-none');
+  function showStaffScreen(name) {
+    document.getElementById('tutorialListView').classList.toggle('d-none', name !== 'list');
+    document.getElementById('moduleView').classList.toggle('d-none', name !== 'builder');
+    document.getElementById('articleView').classList.toggle('d-none', name !== 'article');
+    document.getElementById('previewView').classList.toggle('d-none', name !== 'preview');
   }
 
   async function openPreview(id) {
@@ -330,9 +331,7 @@
       state.previewReturn = document.getElementById('moduleView').classList.contains('d-none') ? 'list' : 'builder';
       const course = await call(`/tutorials/manage/${encodeURIComponent(id)}`);
       state.preview = course;
-      document.getElementById('tutorialListView').classList.add('d-none');
-      document.getElementById('moduleView').classList.add('d-none');
-      document.getElementById('previewView').classList.remove('d-none');
+      showStaffScreen('preview');
       document.getElementById('previewTitle').textContent = course.title || 'Preview';
       renderPreview(0);
     } catch (err) {
@@ -381,22 +380,18 @@
     }
   }
 
-  async function openModules(id) {
+  async function openModules(id, stayOnArticle) {
     try {
       const selected = state.selectedModuleId;
       state.active = await call(`/tutorials/manage/${encodeURIComponent(id)}`);
       paintCourseHeader();
-      showModules(true);
-      const stillThere = (state.active.modules || []).some((row) => row.id === selected);
-      if (stillThere) await selectModule(selected, true);
-      else {
-        state.creatingModule = false;
+      state.creatingModule = false;
+      if (!(state.active.modules || []).some((row) => row.id === selected)) {
         state.selectedModuleId = '';
-        document.getElementById('moduleForm').classList.add('d-none');
-        document.getElementById('moduleExercisePane').classList.add('d-none');
-        document.getElementById('moduleEditorEmpty').classList.remove('d-none');
-        renderModuleNav();
       }
+      showStaffScreen(stayOnArticle ? 'article' : 'builder');
+      if (stayOnArticle) renderModuleExercises();
+      renderModuleNav();
     } catch (err) {
       fail(err);
     }
@@ -491,7 +486,7 @@
         body: { exerciseIds: exercises.map((row) => row.id) },
       });
       toast('Exercise order saved.', 'success');
-      await openModules(state.active.id);
+      await openModules(state.active.id, true);
     } catch (err) {
       fail(err);
     }
@@ -522,7 +517,7 @@
       const link = document.createElement('link');
       link.id = 'tutorial-quill-css';
       link.rel = 'stylesheet';
-      link.href = 'https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css';
+      link.href = 'https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.bubble.css';
       document.head.appendChild(link);
     }
     await new Promise((resolve, reject) => {
@@ -539,85 +534,112 @@
     const frame = document.getElementById('moduleEditorFrame');
     frame.innerHTML = '<div id="moduleEditor"></div>';
     state.quill = new Quill(document.getElementById('moduleEditor'), {
-      theme: 'snow',
+      theme: 'bubble',
+      placeholder: 'Begin writing your lesson here…',
       modules: {
-        toolbar: {
-          container: [
-            [{ header: [2, 3, false] }],
-            ['bold', 'italic'],
-            [{ list: 'ordered' }, { list: 'bullet' }],
-            ['link', 'image', 'code-block'],
-            ['clean'],
-          ],
-          handlers: {
-            image() {
-              const url = window.prompt('Image address (https://...)');
-              if (!url || !/^https?:\/\//i.test(url)) return;
-              const range = state.quill.getSelection(true);
-              state.quill.insertEmbed(range ? range.index : 0, 'image', url, 'user');
-            },
-          },
-        },
+        toolbar: [
+          ['bold', 'italic', 'underline', 'strike'],
+          [{ header: [2, 3, false] }],
+          [{ list: 'ordered' }, { list: 'bullet' }],
+          ['blockquote', 'code-block', 'link'],
+        ],
       },
     });
     if (html) state.quill.clipboard.dangerouslyPasteHTML(html);
   }
 
+  function openArticleShell() {
+    document.getElementById('articleCourseName').textContent = state.active ? (state.active.title || '') : '';
+    document.getElementById('articleStatus').textContent = state.creatingModule ? 'Draft' : (state.active && state.active.status === 'published' ? 'Published' : 'Draft');
+    document.getElementById('articleInsertMenu').classList.add('d-none');
+    document.getElementById('articlePlus').setAttribute('aria-expanded', 'false');
+    showStaffScreen('article');
+  }
+
   async function beginNewModule() {
     if (!state.active) return;
-    if (state.creatingModule) {
-      document.getElementById('moduleTitle').focus();
-      return;
-    }
     state.creatingModule = true;
     state.selectedModuleId = '';
-    document.getElementById('moduleEditorEmpty').classList.add('d-none');
-    document.getElementById('moduleForm').classList.remove('d-none');
-    document.getElementById('moduleExercisePane').classList.add('d-none');
-    document.getElementById('exerciseForm').classList.add('d-none');
-    document.getElementById('moduleSavedNote').classList.add('d-none');
-    document.getElementById('moduleEditorLabel').textContent = 'New module';
     document.getElementById('moduleId').value = '';
     document.getElementById('moduleTitle').value = '';
-    renderModuleNav();
+    document.getElementById('moduleExercisePane').classList.add('d-none');
+    document.getElementById('exerciseForm').classList.add('d-none');
+    openArticleShell();
     await mountEditor('');
     document.getElementById('moduleTitle').focus();
   }
 
-  async function selectModule(id, keepExerciseForm) {
+  async function selectModule(id) {
     if (!state.active || !id) return;
-    if (state.creatingModule && document.getElementById('moduleTitle').value.trim()) {
-      toast('Save or cancel the new module before opening another one.', 'error');
-      return;
-    }
     const module = (state.active.modules || []).find((row) => row.id === id);
     if (!module) return;
     state.creatingModule = false;
     state.selectedModuleId = id;
-    document.getElementById('moduleEditorEmpty').classList.add('d-none');
-    document.getElementById('moduleForm').classList.remove('d-none');
-    document.getElementById('moduleSavedNote').classList.add('d-none');
-    document.getElementById('moduleEditorLabel').textContent = `Module ${((state.active.modules || []).findIndex((row) => row.id === id) + 1) || ''}`;
     document.getElementById('moduleId').value = module.id;
     document.getElementById('moduleTitle').value = module.title || '';
-    if (!keepExerciseForm) document.getElementById('exerciseForm').classList.add('d-none');
-    renderModuleNav();
+    document.getElementById('exerciseForm').classList.add('d-none');
+    openArticleShell();
     renderModuleExercises();
     await mountEditor(module.content || '');
+    document.getElementById('moduleTitle').focus();
   }
 
   function cancelModuleEdit() {
     state.creatingModule = false;
-    const selected = state.selectedModuleId;
-    if (selected && (state.active.modules || []).some((row) => row.id === selected)) {
-      selectModule(selected).catch(fail);
+    showStaffScreen('builder');
+    renderModuleNav();
+  }
+
+  function toggleInsertMenu(show) {
+    const menu = document.getElementById('articleInsertMenu');
+    const open = typeof show === 'boolean' ? show : menu.classList.contains('d-none');
+    menu.classList.toggle('d-none', !open);
+    document.getElementById('articlePlus').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function insertArticleBlock(kind) {
+    const editor = state.quill;
+    if (!editor) return;
+    const range = editor.getSelection(true);
+    toggleInsertMenu(false);
+    if (kind === 'text') {
+      editor.format('header', false);
+      editor.format('blockquote', false);
+      editor.format('code-block', false);
       return;
     }
-    state.selectedModuleId = '';
-    document.getElementById('moduleForm').classList.add('d-none');
-    document.getElementById('moduleExercisePane').classList.add('d-none');
-    document.getElementById('moduleEditorEmpty').classList.remove('d-none');
-    renderModuleNav();
+    if (kind === 'heading') {
+      editor.format('header', 2);
+      return;
+    }
+    if (kind === 'quote') {
+      editor.format('blockquote', true);
+      return;
+    }
+    if (kind === 'code') {
+      editor.format('code-block', true);
+      return;
+    }
+    if (kind === 'link') {
+      const url = window.prompt('Link address (https://...)');
+      if (!url || !/^https?:\/\//i.test(url)) return;
+      if (range && range.length) editor.format('link', url);
+      else editor.insertText(range ? range.index : 0, url, { link: url }, 'user');
+      return;
+    }
+    if (kind === 'image') document.getElementById('articleImageInput').click();
+  }
+
+  async function insertUploadedImage(file) {
+    if (!file || !state.quill) return;
+    const body = new FormData();
+    body.append('image', file);
+    const saved = await call('/tutorials/manage/media', { method: 'POST', body });
+    const url = saved && saved.url ? saved.url : '';
+    if (!/^(\/|https?:\/\/)/i.test(url)) throw new Error('The image could not be saved.');
+    const range = state.quill.getSelection(true);
+    state.quill.insertEmbed(range ? range.index : 0, 'image', url, 'user');
+    state.quill.setSelection((range ? range.index : 0) + 1, 0);
   }
 
   async function saveModule(event) {
@@ -638,7 +660,6 @@
       state.selectedModuleId = saved && saved.id ? saved.id : id;
       toast('Module saved.', 'success');
       await openModules(tutorialId);
-      document.getElementById('moduleSavedNote').classList.remove('d-none');
     } catch (err) {
       fail(err);
     }
@@ -651,6 +672,7 @@
     try {
       await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(id)}`, { method: 'DELETE' });
       toast('Module deleted.', 'success');
+      state.selectedModuleId = state.selectedModuleId === id ? '' : state.selectedModuleId;
       await openModules(state.active.id);
     } catch (err) {
       fail(err);
@@ -726,7 +748,7 @@
         method: 'POST',
         body: { testCaseIds: order },
       });
-      await openModules(state.active.id);
+      await openModules(state.active.id, true);
       renderTestCases(findExercise(document.getElementById('exerciseModuleId').value, exerciseId));
     } catch (err) {
       fail(err);
@@ -796,7 +818,7 @@
     try {
       await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(moduleId)}/exercises/${encodeURIComponent(exerciseId)}`, { method: 'DELETE' });
       toast('Exercise deleted.', 'success');
-      await openModules(state.active.id);
+      await openModules(state.active.id, true);
     } catch (err) {
       fail(err);
     }
@@ -836,7 +858,7 @@
       document.getElementById('addTestCaseBtn').textContent = 'Add test case';
       delete document.getElementById('addTestCaseBtn').dataset.caseId;
       toast(sample ? 'Public test case saved.' : 'Hidden test case saved.', 'success');
-      await openModules(state.active.id);
+      await openModules(state.active.id, true);
       renderTestCases(findExercise(document.getElementById('exerciseModuleId').value, exerciseId));
     } catch (err) {
       fail(err);
@@ -850,7 +872,7 @@
     try {
       await call(`/tutorials/manage/exercises/${encodeURIComponent(exerciseId)}/test-cases/${encodeURIComponent(id)}`, { method: 'DELETE' });
       toast('Test case deleted.', 'success');
-      await openModules(state.active.id);
+      await openModules(state.active.id, true);
       state.active = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}`);
       renderTestCases(findExercise(document.getElementById('exerciseModuleId').value, exerciseId));
     } catch (err) {
@@ -866,8 +888,19 @@
     document.getElementById('exerciseForm').addEventListener('submit', saveExercise);
     document.getElementById('addCategoryBtn').addEventListener('click', () => modal('categoryModal').show());
     document.getElementById('addModuleBtn').addEventListener('click', () => beginNewModule().catch(fail));
-    document.getElementById('addNextModuleBtn').addEventListener('click', () => beginNewModule().catch(fail));
-    document.getElementById('cancelModuleBtn').addEventListener('click', cancelModuleEdit);
+    document.getElementById('articleBack').addEventListener('click', cancelModuleEdit);
+    document.getElementById('articlePlus').addEventListener('click', () => toggleInsertMenu());
+    document.getElementById('articleInsertMenu').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-insert]');
+      if (!button) return;
+      insertArticleBlock(button.getAttribute('data-insert'));
+    });
+    document.getElementById('articleImageInput').addEventListener('change', (event) => {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+      insertUploadedImage(file).catch(fail);
+    });
     document.getElementById('addExerciseInline').addEventListener('click', () => {
       if (!state.selectedModuleId) return;
       openExercise(state.selectedModuleId, '');
@@ -912,12 +945,10 @@
     });
     document.getElementById('backFromPreview').addEventListener('click', () => {
       document.getElementById('previewView').classList.add('d-none');
-      const backToBuilder = state.previewReturn === 'builder';
-      document.getElementById('moduleView').classList.toggle('d-none', !backToBuilder);
-      document.getElementById('tutorialListView').classList.toggle('d-none', backToBuilder);
+      showStaffScreen(state.previewReturn === 'builder' ? 'builder' : 'list');
     });
     document.getElementById('backToTutorials').addEventListener('click', async () => {
-      showModules(false);
+      showStaffScreen('list');
       try { await refreshList(); } catch (err) { fail(err); }
     });
     document.querySelectorAll('input[name="tutorialVisibility"]').forEach((input) => input.addEventListener('change', syncAudience));

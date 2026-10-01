@@ -116,6 +116,12 @@ final class TutorialController
         Response::success($this->service->createTutorial($user, $this->body()), 'Tutorial created.', 201);
     }
 
+    public function uploadMedia(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->uploadLessonImage($user), 'Image saved.', 201);
+    }
+
     public function manageShow(string $id): void
     {
         $user = AuthMiddleware::authenticate();

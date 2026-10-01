@@ -35,6 +35,7 @@ final class ObjectStorageService
     public const FOLDER_PHOTOS = 'photos';
     public const FOLDER_JOB_POSTERS = 'job-posters';
     public const FOLDER_APTITUDE_IMAGES = 'aptitude-images';
+    public const FOLDER_TUTORIAL_IMAGES = 'tutorial-images';
 
     /** @var array<string, mixed> */
     private array $config;
@@ -646,6 +647,7 @@ final class ObjectStorageService
             '/job-posters/' => self::FOLDER_JOB_POSTERS,
             '/job_posters/' => self::FOLDER_JOB_POSTERS,
             '/aptitude-images/' => self::FOLDER_APTITUDE_IMAGES,
+            '/tutorial-images/' => self::FOLDER_TUTORIAL_IMAGES,
         ];
         $normalized = str_replace('\\', '/', $path);
         foreach ($map as $needle => $folder) {
@@ -676,6 +678,7 @@ final class ObjectStorageService
             self::FOLDER_PHOTOS => 'photo_dir',
             self::FOLDER_JOB_POSTERS => 'job_poster_dir',
             self::FOLDER_APTITUDE_IMAGES => 'aptitude_image_dir',
+            self::FOLDER_TUTORIAL_IMAGES => 'tutorial_image_dir',
             default => null,
         };
         if ($dirKey !== null && !empty($uploads[$dirKey])) {

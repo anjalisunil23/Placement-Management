@@ -623,6 +623,40 @@ final class TutorialService
      * @param array<string, mixed> $input
      * @return array<string, mixed>
      */
+    /**
+     * @param array<string, mixed> $user
+     * @return array{url: string}
+     */
+    public function uploadLessonImage(array $user): array
+    {
+        $this->assertAuthor($user);
+        if (!isset($_FILES['image']) || !is_array($_FILES['image'])) {
+            throw new \InvalidArgumentException('Choose an image to insert.');
+        }
+        $error = \PMS\Utils\Security::validateUploadedFile(
+            $_FILES['image'],
+            2 * 1024 * 1024,
+            \PMS\Utils\Security::allowedPhotoExtensions()
+        );
+        if ($error) {
+            throw new \InvalidArgumentException($error);
+        }
+        $ext = strtolower(pathinfo((string) ($_FILES['image']['name'] ?? ''), PATHINFO_EXTENSION));
+        $storage = new ObjectStorageService();
+        try {
+            $path = $storage->putUploadedFile(
+                ObjectStorageService::FOLDER_TUTORIAL_IMAGES,
+                'lesson_' . bin2hex(random_bytes(8)) . '.' . $ext,
+                $_FILES['image']
+            );
+        } catch (\Throwable) {
+            throw new \RuntimeException('The image could not be saved.', 500);
+        }
+        $stored = $storage->storedNameFromUri($path);
+
+        return ['url' => $storage->mediaUrl(ObjectStorageService::FOLDER_TUTORIAL_IMAGES, $stored)];
+    }
+
     public function createModule(array $user, string $tutorialId, array $input): array
     {
         $this->ownedTutorial($user, $tutorialId);
