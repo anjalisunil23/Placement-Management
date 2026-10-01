@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /**
- * Replaces sample tutorial courses with two published courses:
- * HTML/CSS Basics and Version Control.
+ * Placement officer (or admin) publishes HTML/CSS Basics and Version Control
+ * for every student. Replaces leftover sample courses.
  * Usage: php backend/scripts/seed-tutorial-demo-data.php
  */
 
@@ -19,13 +19,21 @@ $users = new UserModel();
 $service = new TutorialService();
 $admins = $users->findByRole('admin', 1);
 $admin = $admins[0] ?? null;
+$officers = $users->findByRole('placement_officer', 1);
+$author = $officers[0] ?? $admin;
 if (!is_array($admin) || (string) ($admin['_id'] ?? '') === '') {
-    fwrite(STDERR, "No admin user exists, so demo courses were not created.\n");
+    fwrite(STDERR, "No admin user exists, so sample courses could not be replaced.\n");
     exit(1);
 }
+if (!is_array($author) || (string) ($author['_id'] ?? '') === '') {
+    fwrite(STDERR, "No placement officer or admin user exists, so courses were not created.\n");
+    exit(1);
+}
+$authorRole = (string) ($author['role'] ?? '');
+$authorName = (string) ($author['name'] ?? $author['email'] ?? $authorRole);
 
 $bySlug = [];
-foreach ($service->listCategories($admin) as $category) {
+foreach ($service->listCategories($author) as $category) {
     $bySlug[(string) ($category['slug'] ?? '')] = (string) ($category['id'] ?? '');
 }
 
@@ -242,14 +250,23 @@ foreach ($catalog as $course) {
     $keepTopics[(string) $course['topic']] = true;
 }
 
+$sampleTitles = [
+    'programming fundamentals',
+    'git for placement projects',
+    'python fundamentals',
+    'c programming basics',
+    'html and css basics',
+    'version control with git',
+];
+
 $deleted = 0;
 foreach ($service->listManaged($admin) as $course) {
     $topic = strtolower(trim((string) ($course['topic'] ?? '')));
     $title = strtolower(trim((string) ($course['title'] ?? '')));
     $isOldDemo = str_starts_with($topic, 'demo-');
     $isReplacement = isset($keepTopics[$topic]);
-    $isScreenshotSample = $title === 'programming fundamentals' && in_array($topic, ['git', 'c'], true);
-    if (!$isOldDemo && !$isReplacement && !$isScreenshotSample) {
+    $isSampleTitle = in_array($title, $sampleTitles, true);
+    if (!$isOldDemo && !$isReplacement && !$isSampleTitle) {
         continue;
     }
     $service->deleteTutorial($admin, (string) $course['id']);
@@ -264,7 +281,7 @@ foreach ($catalog as $course) {
         echo 'SKIP ' . (string) $course['topic'] . ': category ' . (string) $course['category'] . " is missing.\n";
         continue;
     }
-    $row = $service->createTutorial($admin, [
+    $row = $service->createTutorial($author, [
         'title' => (string) $course['title'],
         'categoryId' => $categoryId,
         'topic' => (string) $course['topic'],
@@ -274,7 +291,7 @@ foreach ($catalog as $course) {
         'passingYears' => [],
     ]);
     foreach ($course['modules'] as $module) {
-        $savedModule = $service->createModule($admin, $row['id'], [
+        $savedModule = $service->createModule($author, $row['id'], [
             'title' => (string) $module['title'],
             'subtitle' => (string) ($module['subtitle'] ?? ''),
             'content' => (string) $module['content'],
@@ -283,16 +300,16 @@ foreach ($catalog as $course) {
         if (!is_array($exercise)) {
             continue;
         }
-        $service->createExercise($admin, $row['id'], $savedModule['id'], [
+        $service->createExercise($author, $row['id'], $savedModule['id'], [
             'title' => (string) $exercise['title'],
             'instructions' => '<p>' . htmlspecialchars((string) $exercise['instructions'], ENT_QUOTES, 'UTF-8') . '</p>',
             'language' => (string) $exercise['language'],
             'boilerplate' => (string) $exercise['boilerplate'],
         ]);
     }
-    $service->publish($admin, $row['id']);
+    $service->publish($author, $row['id']);
     $created++;
-    echo 'CREATED ' . (string) $course['topic'] . " (all students).\n";
+    echo 'CREATED ' . (string) $course['topic'] . ' by ' . $authorRole . ' ' . $authorName . " for all students.\n";
 }
 
-echo $deleted . ' sample courses removed, ' . $created . " courses published.\n";
+echo $deleted . ' sample courses removed, ' . $created . " courses published for all students.\n";

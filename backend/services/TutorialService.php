@@ -1170,7 +1170,10 @@ final class TutorialService
      */
     private function tutorialPayload(array $input, string $createdBy, string $status): array
     {
-        $visibility = strtolower(trim((string) ($input['visibility'] ?? '')));
+        $visibility = strtolower(trim((string) ($input['visibility'] ?? 'all')));
+        if ($visibility !== 'scoped') {
+            $visibility = 'all';
+        }
         $departmentIds = [];
         $passingYears = [];
         if ($visibility === 'scoped') {
@@ -1435,7 +1438,7 @@ final class TutorialService
             'sortOrder' => (int) ($module['sortOrder'] ?? 0),
         ];
         if ($includeContent) {
-            $view['content'] = $this->presentLessonContent((string) ($module['content'] ?? ''));
+            $view['content'] = $this->presentLessonContent($this->lessonContentString($module['content'] ?? ''));
             $view['exercises'] = [];
             foreach ($this->exercises->listByModule((string) ($module['_id'] ?? '')) as $exercise) {
                 $view['exercises'][] = [
@@ -1578,6 +1581,15 @@ final class TutorialService
         ];
     }
 
+    private function lessonContentString(mixed $raw): string
+    {
+        if (is_array($raw)) {
+            return json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+        }
+
+        return (string) $raw;
+    }
+
     private function storeLessonContent(string $raw): string
     {
         $trim = trim($raw);
@@ -1597,11 +1609,63 @@ final class TutorialService
         if ($trim !== '' && str_starts_with($trim, '{')) {
             $decoded = json_decode($trim, true);
             if (is_array($decoded) && (int) ($decoded['version'] ?? 0) === 1 && is_array($decoded['blocks'] ?? null)) {
-                return json_encode($this->cleanLessonDocument($decoded), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                return $this->lessonDocumentToHtml($this->cleanLessonDocument($decoded));
             }
         }
 
         return self::sanitizeHtml($raw);
+    }
+
+    /**
+     * @param array{version?: int, blocks?: list<array<string, mixed>>} $document
+     */
+    private function lessonDocumentToHtml(array $document): string
+    {
+        $esc = static fn (string $value): string => htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $html = '';
+        foreach ((array) ($document['blocks'] ?? []) as $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+            $type = (string) ($block['type'] ?? '');
+            if ($type === 'heading') {
+                $tag = (int) ($block['level'] ?? 2) === 3 ? 'h3' : 'h2';
+                $html .= '<' . $tag . '>' . $esc((string) ($block['text'] ?? '')) . '</' . $tag . '>';
+                continue;
+            }
+            if ($type === 'quote') {
+                $html .= '<blockquote>' . $esc((string) ($block['text'] ?? '')) . '</blockquote>';
+                continue;
+            }
+            if ($type === 'divider') {
+                $html .= '<hr/>';
+                continue;
+            }
+            if ($type === 'image') {
+                $alt = $esc((string) ($block['alt'] ?? ''));
+                $html .= '<figure class="lesson-figure"><img src="' . $esc((string) ($block['url'] ?? '')) . '" alt="' . $alt . '">';
+                if (trim((string) ($block['alt'] ?? '')) !== '') {
+                    $html .= '<figcaption>' . $alt . '</figcaption>';
+                }
+                $html .= '</figure>';
+                continue;
+            }
+            if ($type === 'code') {
+                $language = $esc((string) ($block['language'] ?? 'text'));
+                $html .= '<pre class="tutorial-code-block" data-language="' . $language . '" data-role="code"><code>' . $esc((string) ($block['source'] ?? '')) . '</code></pre>';
+                $output = trim((string) ($block['exampleOutput'] ?? ''));
+                if ($output !== '') {
+                    $html .= '<pre class="tutorial-code-block" data-language="text" data-role="output"><code>' . $esc($output) . '</code></pre>';
+                }
+                continue;
+            }
+            $text = trim((string) ($block['text'] ?? ''));
+            if ($text !== '') {
+                $html .= '<p>' . nl2br($esc($text), false) . '</p>';
+            }
+        }
+
+        return $html;
     }
 
     /**

@@ -271,6 +271,13 @@ try {
         && ($storedLesson['blocks'][2]['language'] ?? '') === 'auto',
         'lesson JSON keeps a per-block language and rejects unknown languages'
     );
+    $studentLesson = $service->moduleForStudent($studentUsers['cse2027'], $byStaff['id'], $moduleA['id']);
+    $check(
+        str_contains((string) ($studentLesson['content'] ?? ''), 'print(1)')
+        && str_contains((string) ($studentLesson['content'] ?? ''), '<pre')
+        && !str_contains((string) ($studentLesson['content'] ?? ''), '"version"'),
+        'students receive rendered lesson HTML, not editor JSON'
+    );
     $htmlLegacy = $service->updateModule($staffA, $byStaff['id'], $moduleA['id'], [
         'content' => '<h2>Old</h2><p>Still loads</p><script>alert(1)</script>',
     ]);
