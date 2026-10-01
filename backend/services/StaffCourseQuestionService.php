@@ -17,6 +17,8 @@ final class StaffCourseQuestionService
     private const MAX_COUNT = 20;
     private const MAX_TOTAL = 40;
     private const COOLDOWN_SECONDS = 8;
+    private const GENERATE_BATCH_SIZE = 10;
+    private const GENERATE_MAX_API_CALLS = 28;
 
     private OpenAIService $openai;
 
@@ -958,8 +960,9 @@ final class StaffCourseQuestionService
         $avoid = trim($avoidBlock) !== ''
             ? "\n" . trim($avoidBlock) . "\n"
             : '';
+        $extraHint = $allowExtra ? min(8, max(3, (int) ceil($total / 4))) : 0;
         $countRule = $allowExtra
-            ? "- Return at least {$total} questions matching the difficulty counts above (a few extra matching the mix is fine).\n"
+            ? "- Return at least {$total} questions matching the difficulty counts above (include up to {$extraHint} extra in the same mix if helpful).\n"
             : "- Return exactly {$total} questions with the difficulty counts above.\n";
         $headline = $allowExtra
             ? "Write at least {$total} multiple-choice questions in this mix:\n"
@@ -1000,24 +1003,35 @@ final class StaffCourseQuestionService
         array &$promptKeys
     ): array {
         $selected = [];
-        $initial = $this->fetchQuestionBatch(
-            $course,
-            $syllabus,
-            $system,
-            $mixes,
-            $this->mixTotal($mixes),
-            $initialMixText,
-            $bankAvoid,
-            $selected,
-            $promptKeys,
-            true
-        );
-        if ($initial !== []) {
-            $selected = $this->mergeQuestionLists($selected, $initial, $promptKeys);
+        $apiCalls = 0;
+
+        foreach ($this->chunkMixesByTotal($mixes, self::GENERATE_BATCH_SIZE) as $chunk) {
+            if ($apiCalls >= self::GENERATE_MAX_API_CALLS) {
+                break;
+            }
+            $chunkTotal = $this->mixTotal($chunk);
+            $mixText = $this->mixLinesText($chunk);
+            $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+            $added = $this->fetchQuestionBatch(
+                $course,
+                $syllabus,
+                $system,
+                $chunk,
+                $chunkTotal,
+                $mixText,
+                $avoid,
+                $selected,
+                $promptKeys,
+                true
+            );
+            $apiCalls++;
+            if ($added !== []) {
+                $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+            }
         }
 
         $stalls = 0;
-        while ($stalls < 8) {
+        while ($stalls < 10 && $apiCalls < self::GENERATE_MAX_API_CALLS) {
             $shortfall = $this->mixShortfall($mixes, $selected);
             if ($shortfall === []) {
                 break;
@@ -1026,10 +1040,9 @@ final class StaffCourseQuestionService
             foreach ($shortfall as $mix) {
                 $label = (string) ($mix['difficulty'] ?? 'Medium');
                 $need = (int) ($mix['count'] ?? 0);
-                while ($need > 0) {
+                while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS) {
                     $chunk = min(6, $need);
                     $slice = [['difficulty' => $label, 'count' => $chunk]];
-                    $mixText = '- ' . $label . ': ' . $chunk;
                     $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
                     $added = $this->fetchQuestionBatch(
                         $course,
@@ -1037,12 +1050,13 @@ final class StaffCourseQuestionService
                         $system,
                         $slice,
                         $chunk,
-                        $mixText,
+                        $this->mixLinesText($slice),
                         $avoid,
                         $selected,
                         $promptKeys,
-                        false
+                        true
                     );
+                    $apiCalls++;
                     if ($added === []) {
                         break;
                     }
@@ -1053,41 +1067,95 @@ final class StaffCourseQuestionService
             }
             if (!$madeProgress) {
                 $stalls++;
-                continue;
+            } else {
+                $stalls = 0;
             }
-            $stalls = 0;
         }
 
-        $shortfall = $this->mixShortfall($mixes, $selected);
-        if ($shortfall !== []) {
-            foreach ($shortfall as $mix) {
-                $label = (string) ($mix['difficulty'] ?? 'Medium');
-                for ($i = 0; $i < (int) ($mix['count'] ?? 0); $i++) {
-                    $slice = [['difficulty' => $label, 'count' => 1]];
-                    $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
-                    $added = $this->fetchQuestionBatch(
-                        $course,
-                        $syllabus,
-                        $system,
-                        $slice,
-                        1,
-                        '- ' . $label . ': 1',
-                        $avoid,
-                        $selected,
-                        $promptKeys,
-                        false
-                    );
-                    if ($added === []) {
-                        break;
-                    }
-                    $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+        foreach ($this->mixShortfall($mixes, $selected) as $mix) {
+            $label = (string) ($mix['difficulty'] ?? 'Medium');
+            for ($i = 0; $i < (int) ($mix['count'] ?? 0) && $apiCalls < self::GENERATE_MAX_API_CALLS; $i++) {
+                $slice = [['difficulty' => $label, 'count' => 1]];
+                $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                $added = $this->fetchQuestionBatch(
+                    $course,
+                    $syllabus,
+                    $system,
+                    $slice,
+                    1,
+                    $this->mixLinesText($slice),
+                    $avoid,
+                    $selected,
+                    $promptKeys,
+                    false
+                );
+                $apiCalls++;
+                if ($added === []) {
+                    break;
                 }
+                $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
             }
         }
 
         $selected = $this->dedupeBatchOnly($selected);
 
         return $this->capQuestionsToMixes($selected, $mixes);
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @return list<list<array{difficulty:string,count:int}>>
+     */
+    private function chunkMixesByTotal(array $mixes, int $maxPerChunk): array
+    {
+        if ($maxPerChunk < 1) {
+            return [$mixes];
+        }
+        $chunks = [];
+        $current = [];
+        $currentTotal = 0;
+        foreach ($mixes as $mix) {
+            $label = (string) ($mix['difficulty'] ?? 'Medium');
+            $remaining = (int) ($mix['count'] ?? 0);
+            while ($remaining > 0) {
+                $room = $maxPerChunk - $currentTotal;
+                if ($room <= 0 && $current !== []) {
+                    $chunks[] = $current;
+                    $current = [];
+                    $currentTotal = 0;
+                    $room = $maxPerChunk;
+                }
+                $take = min($remaining, $room);
+                if ($take <= 0) {
+                    break;
+                }
+                $current[] = ['difficulty' => $label, 'count' => $take];
+                $currentTotal += $take;
+                $remaining -= $take;
+            }
+        }
+        if ($current !== []) {
+            $chunks[] = $current;
+        }
+
+        return $chunks !== [] ? $chunks : [$mixes];
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     */
+    private function mixLinesText(array $mixes): string
+    {
+        $lines = [];
+        foreach ($mixes as $mix) {
+            $count = (int) ($mix['count'] ?? 0);
+            if ($count <= 0) {
+                continue;
+            }
+            $lines[] = '- ' . ($mix['difficulty'] ?? 'Medium') . ': ' . $count;
+        }
+
+        return implode("\n", $lines);
     }
 
     /**
@@ -1103,6 +1171,13 @@ final class StaffCourseQuestionService
         return $total;
     }
 
+    private function maxTokensForBatch(int $questionCount): int
+    {
+        $count = max(1, $questionCount);
+
+        return min(16384, max(3072, $count * 520));
+    }
+
     /**
      * @param list<array<string, mixed>> $selected
      */
@@ -1110,7 +1185,7 @@ final class StaffCourseQuestionService
     {
         $recent = implode("\n", array_map(
             static fn(array $q): string => '- ' . trim((string) ($q['question'] ?? '')),
-            array_slice($selected, -30)
+            array_slice($selected, -15)
         ));
         $parts = array_filter([trim($recent), trim($bankAvoid)]);
 
@@ -1148,7 +1223,7 @@ final class StaffCourseQuestionService
             $allowExtra
         );
         try {
-            $raw = $this->openai->generateJson($system, $prompt);
+            $raw = $this->openai->generateJson($system, $prompt, $this->maxTokensForBatch($requestTotal));
         } catch (\Throwable) {
             return [];
         }
