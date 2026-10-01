@@ -8,20 +8,33 @@
     { value: 'php', label: 'PHP' },
     { value: 'sql', label: 'SQL' },
   ];
-  const CODE_DEMO_LANGUAGES = LANGUAGES.concat([
+  const CODE_DEMO_LANGUAGES = [
+    { value: 'auto', label: 'Auto' },
+    { value: 'text', label: 'Plain Text' },
+    { value: 'python', label: 'Python' },
+    { value: 'javascript', label: 'JavaScript' },
+    { value: 'typescript', label: 'TypeScript' },
+    { value: 'java', label: 'Java' },
+    { value: 'c', label: 'C' },
+    { value: 'cpp', label: 'C++' },
+    { value: 'csharp', label: 'C#' },
+    { value: 'php', label: 'PHP' },
+    { value: 'sql', label: 'SQL' },
     { value: 'html', label: 'HTML' },
     { value: 'css', label: 'CSS' },
     { value: 'json', label: 'JSON' },
     { value: 'bash', label: 'Bash' },
-    { value: 'text', label: 'Text' },
-  ]);
+    { value: 'go', label: 'Go' },
+  ];
   const state = {
     categories: [],
     departments: [],
     tutorials: [],
     active: null,
     years: [],
-    quill: null,
+    lesson: null,
+    activeBlockId: '',
+    insertAfterId: '',
     statusFilter: '',
     publishId: '',
     creatingModule: false,
@@ -404,8 +417,20 @@
     }
   }
 
-  function plainExcerpt(html) {
-    const text = String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  function plainExcerpt(content) {
+    const doc = parseLessonDocument(content);
+    let text = '';
+    if (doc) {
+      text = doc.blocks.map((block) => {
+        if (block.type === 'code') return `${block.source || ''} ${block.exampleOutput || ''}`;
+        if (block.type === 'image') return block.alt || '';
+        if (block.type === 'divider') return '';
+        return block.text || '';
+      }).join(' ');
+    } else {
+      text = String(content || '').replace(/<[^>]+>/g, ' ');
+    }
+    text = text.replace(/\s+/g, ' ').trim();
     return text.length > 90 ? `${text.slice(0, 87)}…` : text;
   }
 
@@ -518,22 +543,12 @@
     return hit ? hit.label : (value || '');
   }
 
-  async function ensureQuill() {
-    if (window.Quill) return;
-    if (!document.getElementById('tutorial-quill-css')) {
-      const link = document.createElement('link');
-      link.id = 'tutorial-quill-css';
-      link.rel = 'stylesheet';
-      link.href = 'https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.bubble.css';
-      document.head.appendChild(link);
-    }
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js';
-      script.onload = resolve;
-      script.onerror = () => reject(new Error('The lesson editor could not be loaded.'));
-      document.head.appendChild(script);
-    });
+  function newBlockId() {
+    return Math.random().toString(36).slice(2, 10);
+  }
+
+  function emptyLessonDocument() {
+    return { version: 1, blocks: [{ id: newBlockId(), type: 'paragraph', text: '' }] };
   }
 
   function codeLanguageOptions(selected) {
@@ -542,117 +557,469 @@
     )).join('');
   }
 
-  function registerLessonBlots() {
-    if (!window.Quill || window.__tutorialLessonBlots) return;
-    const BlockEmbed = Quill.import('blots/block/embed');
-    class TutorialCodeBlot extends BlockEmbed {
-      static blotName = 'tutorial-code';
-      static tagName = 'PRE';
-      static className = 'tutorial-code-block';
-      static create(value) {
-        const node = super.create();
-        const language = CODE_DEMO_LANGUAGES.some((row) => row.value === value.language) ? value.language : 'python';
-        const role = value.role === 'output' ? 'output' : 'code';
-        node.setAttribute('data-language', language);
-        node.setAttribute('data-role', role);
-        node.setAttribute('contenteditable', 'false');
-        const label = role === 'output' ? 'Example output' : 'Example';
-        const note = role === 'output' ? '<div class="tutorial-code-note">Typed by the tutor. This output is not produced by running the code.</div>' : '';
-        node.innerHTML = `<div class="tutorial-code-bar"><span>${label}</span><span class="d-flex gap-1"><select aria-label="Language">${codeLanguageOptions(language)}</select><button type="button" data-code-copy>Copy</button><button type="button" data-code-delete>Delete</button></span></div>${note}<textarea spellcheck="false" aria-label="${label}"></textarea><code class="d-none"></code>`;
-        node.querySelector('textarea').value = value.code || '';
-        node.querySelector('code').textContent = value.code || '';
-        return node;
+  function detectCodeLanguage(source) {
+    const text = String(source || '');
+    if (/^\s*</.test(text) && /<\/?[a-z]/i.test(text)) return 'html';
+    if (/^\s*{[\s\S]*}\s*$/.test(text) || /^\s*\[[\s\S]*\]\s*$/.test(text)) return 'json';
+    if (/\bdef\s+\w+\s*\(|\bprint\s*\(/.test(text)) return 'python';
+    if (/\b(interface|type)\s+[A-Z]|\bimport\s+type\b|:\s*(string|number|boolean)\b/.test(text)) return 'typescript';
+    if (/\bfunction\b|\bconst\b|\blet\b|=>/.test(text)) return 'javascript';
+    if (/\bpublic\s+class\b|\bSystem\.out\.println/.test(text)) return 'java';
+    if (/#include\s*</.test(text) && /\bstd::/.test(text)) return 'cpp';
+    if (/#include\s*</.test(text)) return 'c';
+    if (/\bSELECT\b|\bFROM\b|\bWHERE\b/i.test(text)) return 'sql';
+    if (/^\s*\$|^\s*#!/.test(text)) return 'bash';
+    return 'auto';
+  }
+
+  function parseLessonDocument(raw) {
+    const trim = String(raw || '').trim();
+    if (!trim) return null;
+    if (trim.charAt(0) === '{') {
+      try {
+        const decoded = JSON.parse(trim);
+        if (decoded && Number(decoded.version) === 1 && Array.isArray(decoded.blocks)) {
+          return normalizeLessonDocument(decoded);
+        }
+      } catch { /* fall through to HTML migrate */ }
+    }
+    return null;
+  }
+
+  function normalizeLessonDocument(doc) {
+    const blocks = (doc.blocks || []).map((block) => {
+      const id = String(block.id || newBlockId()).replace(/[^a-zA-Z0-9_-]/g, '') || newBlockId();
+      const type = String(block.type || '');
+      if (type === 'paragraph' || type === 'quote') {
+        return { id, type, text: String(block.text || '') };
       }
-      static value(node) {
-        const area = node.querySelector('textarea');
+      if (type === 'heading') {
+        return { id, type: 'heading', level: Number(block.level) === 3 ? 3 : 2, text: String(block.text || '') };
+      }
+      if (type === 'code') {
+        const language = CODE_DEMO_LANGUAGES.some((row) => row.value === block.language) ? block.language : 'auto';
         return {
-          language: node.getAttribute('data-language') || 'python',
-          role: node.getAttribute('data-role') || 'code',
-          code: area ? area.value : (node.querySelector('code') ? node.querySelector('code').textContent : ''),
+          id,
+          type: 'code',
+          language,
+          source: String(block.source || ''),
+          exampleOutput: String(block.exampleOutput || ''),
         };
       }
-    }
-    class DividerBlot extends BlockEmbed {
-      static blotName = 'divider';
-      static tagName = 'HR';
-    }
-    Quill.register(TutorialCodeBlot, true);
-    Quill.register(DividerBlot, true);
-    window.__tutorialLessonBlots = true;
+      if (type === 'image') {
+        return { id, type: 'image', url: String(block.url || ''), alt: String(block.alt || '') };
+      }
+      if (type === 'divider') {
+        return { id, type: 'divider' };
+      }
+      return null;
+    }).filter(Boolean);
+    return { version: 1, blocks: blocks.length ? blocks : emptyLessonDocument().blocks };
   }
 
-  function removeSlashPrompt(editor, index) {
-    const leaf = editor.getLeaf(Math.max(0, index - 1));
-    const text = leaf && leaf[0] && leaf[0].text ? leaf[0].text : '';
-    if (text === '/') editor.deleteText(index - 1, 1, 'user');
-  }
-
-  async function mountEditor(html) {
-    await ensureQuill();
-    registerLessonBlots();
-    const frame = document.getElementById('moduleEditorFrame');
-    frame.innerHTML = '<div id="moduleEditor"></div>';
-    const editor = new Quill(document.getElementById('moduleEditor'), {
-      theme: 'bubble',
-      placeholder: 'Start writing or type / …',
-      modules: {
-        toolbar: [
-          ['bold', 'italic', 'underline', 'strike'],
-          [{ header: [2, 3, false] }],
-          [{ list: 'ordered' }, { list: 'bullet' }],
-          ['blockquote', 'link'],
-        ],
-      },
+  function htmlToLessonDocument(html) {
+    const empty = emptyLessonDocument();
+    const trim = String(html || '').trim();
+    if (!trim) return empty;
+    const doc = new DOMParser().parseFromString(trim, 'text/html');
+    const blocks = [];
+    const pushText = (type, text, level) => {
+      const value = String(text || '').replace(/\u00a0/g, ' ').trim();
+      if (!value && type !== 'paragraph') return;
+      if (type === 'heading') blocks.push({ id: newBlockId(), type: 'heading', level: level === 3 ? 3 : 2, text: value });
+      else blocks.push({ id: newBlockId(), type, text: value });
+    };
+    [...doc.body.childNodes].forEach((node) => {
+      if (node.nodeType === 3) {
+        const text = node.textContent.replace(/\s+/g, ' ').trim();
+        if (text) pushText('paragraph', text);
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      const tag = node.tagName.toLowerCase();
+      if (tag === 'h2') pushText('heading', node.textContent, 2);
+      else if (tag === 'h3') pushText('heading', node.textContent, 3);
+      else if (tag === 'blockquote') pushText('quote', node.textContent);
+      else if (tag === 'hr') blocks.push({ id: newBlockId(), type: 'divider' });
+      else if (tag === 'img') {
+        const url = node.getAttribute('src') || '';
+        if (/^(\/|https?:\/\/)/i.test(url)) blocks.push({ id: newBlockId(), type: 'image', url, alt: node.getAttribute('alt') || '' });
+      } else if (tag === 'pre') {
+        const code = node.querySelector('code');
+        const source = code ? code.textContent : node.textContent;
+        const language = node.getAttribute('data-language') || 'auto';
+        const role = node.getAttribute('data-role') === 'output' ? 'output' : 'code';
+        if (role === 'output' && blocks.length && blocks[blocks.length - 1].type === 'code') {
+          blocks[blocks.length - 1].exampleOutput = source;
+        } else {
+          blocks.push({
+            id: newBlockId(),
+            type: 'code',
+            language: CODE_DEMO_LANGUAGES.some((row) => row.value === language) ? language : 'auto',
+            source: role === 'output' ? '' : source,
+            exampleOutput: role === 'output' ? source : '',
+          });
+        }
+      }       else if (tag === 'figure') {
+        const img = node.querySelector('img');
+        if (img && /^(\/|https?:\/\/)/i.test(img.getAttribute('src') || '')) {
+          blocks.push({ id: newBlockId(), type: 'image', url: img.getAttribute('src'), alt: img.getAttribute('alt') || node.textContent });
+        }
+      } else if (tag === 'p' || tag === 'div') {
+        const img = node.querySelector('img');
+        if (img && /^(\/|https?:\/\/)/i.test(img.getAttribute('src') || '')) {
+          blocks.push({ id: newBlockId(), type: 'image', url: img.getAttribute('src'), alt: img.getAttribute('alt') || '' });
+        } else {
+          pushText('paragraph', node.textContent);
+        }
+      } else {
+        pushText('paragraph', node.textContent);
+      }
     });
-    state.quill = editor;
-    const Delta = Quill.import('delta');
-    editor.clipboard.addMatcher('PRE.tutorial-code-block', (node) => {
-      const code = node.querySelector('code');
-      return new Delta().insert({
-        'tutorial-code': {
-          language: node.getAttribute('data-language') || 'python',
-          role: node.getAttribute('data-role') || 'code',
-          code: code ? code.textContent : node.textContent,
-        },
+    return { version: 1, blocks: blocks.length ? blocks : empty.blocks };
+  }
+
+  function lessonFromContent(raw) {
+    return parseLessonDocument(raw) || htmlToLessonDocument(raw);
+  }
+
+  function serializeLessonDocument() {
+    syncLessonFromDom();
+    const doc = normalizeLessonDocument(state.lesson || emptyLessonDocument());
+    state.lesson = doc;
+    return JSON.stringify(doc);
+  }
+
+  function blockIndex(id) {
+    return (state.lesson.blocks || []).findIndex((block) => block.id === id);
+  }
+
+  function syncLessonFromDom() {
+    if (!state.lesson) return;
+    const root = document.getElementById('lessonBlocks');
+    if (!root) return;
+    state.lesson.blocks.forEach((block) => {
+      const row = root.querySelector(`[data-block-id="${CSS.escape(block.id)}"]`);
+      if (!row) return;
+      if (block.type === 'paragraph' || block.type === 'quote' || block.type === 'heading') {
+        const editable = row.querySelector('[data-editable]');
+        if (editable) block.text = editable.innerText.replace(/\u00a0/g, ' ').replace(/\n+$/, '');
+      } else if (block.type === 'code') {
+        const source = row.querySelector('[data-code-source]');
+        const output = row.querySelector('[data-code-output]');
+        const select = row.querySelector('[data-code-language]');
+        if (source) block.source = source.value;
+        if (output) block.exampleOutput = output.value;
+        if (select) block.language = select.value;
+      } else if (block.type === 'image') {
+        const alt = row.querySelector('[data-image-alt]');
+        if (alt) block.alt = alt.value;
+      }
+    });
+  }
+
+  function ensureTrailingParagraph(afterId) {
+    const index = blockIndex(afterId);
+    if (index < 0) return null;
+    const next = state.lesson.blocks[index + 1];
+    if (next && next.type === 'paragraph' && !(next.text || '').trim()) return next.id;
+    const paragraph = { id: newBlockId(), type: 'paragraph', text: '' };
+    state.lesson.blocks.splice(index + 1, 0, paragraph);
+    return paragraph.id;
+  }
+
+  function continueFocus(block, options) {
+    const opts = options || {};
+    let focusId = block.id;
+    let focusField = opts.focusField || (block.type === 'code' ? 'code' : 'text');
+    if (opts.withParagraph !== false && block.type !== 'paragraph') {
+      const paragraphId = ensureTrailingParagraph(block.id);
+      if (paragraphId && opts.focusInserted !== true) {
+        focusId = paragraphId;
+        focusField = 'text';
+      }
+    }
+    state.activeBlockId = focusId;
+    state.insertAfterId = '';
+    renderLessonEditor(focusId, focusField);
+  }
+
+  function insertBlockAfter(afterId, block, options) {
+    const index = afterId ? blockIndex(afterId) : state.lesson.blocks.length - 1;
+    const at = index < 0 ? state.lesson.blocks.length : index + 1;
+    state.lesson.blocks.splice(at, 0, block);
+    continueFocus(block, options);
+    return block.id;
+  }
+
+  function replaceBlock(id, nextBlock, options) {
+    const index = blockIndex(id);
+    if (index < 0) return;
+    state.lesson.blocks[index] = nextBlock;
+    continueFocus(nextBlock, options);
+  }
+
+  function removeBlock(id) {
+    if (!state.lesson || state.lesson.blocks.length <= 1) {
+      state.lesson = emptyLessonDocument();
+      renderLessonEditor(state.lesson.blocks[0].id);
+      return;
+    }
+    const index = blockIndex(id);
+    if (index < 0) return;
+    state.lesson.blocks.splice(index, 1);
+    const focus = state.lesson.blocks[Math.max(0, index - 1)] || state.lesson.blocks[0];
+    state.activeBlockId = focus.id;
+    renderLessonEditor(focus.id);
+  }
+
+  function focusBlock(id, field) {
+    const root = document.getElementById('lessonBlocks');
+    if (!root) return;
+    const row = root.querySelector(`[data-block-id="${CSS.escape(id)}"]`);
+    if (!row) return;
+    root.querySelectorAll('.lesson-row').forEach((node) => node.classList.toggle('is-active', node === row));
+    state.activeBlockId = id;
+    let target = null;
+    if (field === 'code') target = row.querySelector('[data-code-source]');
+    else if (field === 'output') target = row.querySelector('[data-code-output]');
+    else target = row.querySelector('[data-editable], [data-code-source], [data-image-alt]');
+    if (!target) return;
+    target.focus();
+    if (target.isContentEditable) {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else if (typeof target.setSelectionRange === 'function') {
+      const end = target.value.length;
+      target.setSelectionRange(end, end);
+    }
+  }
+
+  function mountEditor(content) {
+    state.lesson = lessonFromContent(content || '');
+    state.activeBlockId = state.lesson.blocks[0] ? state.lesson.blocks[0].id : '';
+    state.insertAfterId = '';
+    toggleInsertMenu(false);
+    renderLessonEditor(state.activeBlockId);
+  }
+
+  function openInsertMenuForRow(row, blockId) {
+    const menu = document.getElementById('articleInsertMenu');
+    const root = document.getElementById('lessonBlocks');
+    if (!menu || !root || !row) return;
+    state.insertAfterId = blockId;
+    state.activeBlockId = blockId;
+    root.querySelectorAll('.lesson-row').forEach((node) => node.classList.toggle('is-active', node === row));
+    row.after(menu);
+    toggleInsertMenu(true);
+  }
+
+  function renderLessonEditor(focusId, focusField) {
+    const root = document.getElementById('lessonBlocks');
+    const menu = document.getElementById('articleInsertMenu');
+    if (!root || !state.lesson) return;
+    if (menu) {
+      menu.classList.add('d-none');
+      root.parentElement.appendChild(menu);
+    }
+    root.innerHTML = '';
+    state.lesson.blocks.forEach((block) => {
+      const row = document.createElement('div');
+      row.className = `lesson-row${block.id === state.activeBlockId ? ' is-active' : ''}`;
+      row.dataset.blockId = block.id;
+      row.dataset.blockType = block.type;
+
+      const plus = document.createElement('button');
+      plus.type = 'button';
+      plus.className = 'row-plus';
+      plus.setAttribute('aria-label', 'Insert block');
+      plus.textContent = '+';
+      plus.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        syncLessonFromDom();
+        openInsertMenuForRow(row, block.id);
       });
+
+      const main = document.createElement('div');
+      main.className = 'lesson-main';
+      main.appendChild(buildEditableBlock(block));
+      row.append(plus, main);
+      row.addEventListener('focusin', () => {
+        state.activeBlockId = block.id;
+        root.querySelectorAll('.lesson-row').forEach((node) => node.classList.toggle('is-active', node === row));
+      });
+      root.appendChild(row);
     });
-    if (html) editor.clipboard.dangerouslyPasteHTML(html);
-    editor.on('text-change', () => {
-      const range = editor.getSelection();
-      if (!range) return;
-      const before = editor.getText(Math.max(0, range.index - 1), 1);
-      if (before === '/') toggleInsertMenu(true);
-    });
+    if (focusId) focusBlock(focusId, focusField);
   }
 
-  function articleHtml() {
-    if (!state.quill) return '';
-    state.quill.root.querySelectorAll('.tutorial-code-block').forEach((node) => {
-      const area = node.querySelector('textarea');
-      const select = node.querySelector('select');
-      const code = area ? area.value : (node.querySelector('code') ? node.querySelector('code').textContent : '');
-      const language = select ? select.value : (node.getAttribute('data-language') || 'python');
-      const role = node.getAttribute('data-role') === 'output' ? 'output' : 'code';
-      node.setAttribute('data-language', language);
-      node.setAttribute('data-role', role);
-      node.innerHTML = '';
-      const stored = document.createElement('code');
-      stored.textContent = code;
-      node.appendChild(stored);
+  function buildEditableBlock(block) {
+    if (block.type === 'heading') {
+      const el = document.createElement('div');
+      el.className = block.level === 3 ? 'lesson-heading lesson-subhead' : 'lesson-heading';
+      el.dataset.editable = '1';
+      el.contentEditable = 'true';
+      el.dataset.placeholder = block.level === 3 ? 'Subheading' : 'Heading';
+      el.textContent = block.text || '';
+      wireTextBlock(el, block);
+      return el;
+    }
+    if (block.type === 'quote') {
+      const el = document.createElement('div');
+      el.className = 'lesson-quote';
+      el.dataset.editable = '1';
+      el.contentEditable = 'true';
+      el.dataset.placeholder = 'Quote';
+      el.textContent = block.text || '';
+      wireTextBlock(el, block);
+      return el;
+    }
+    if (block.type === 'code') {
+      const wrap = document.createElement('div');
+      wrap.className = 'tutorial-code-block';
+      wrap.innerHTML = `<div class="tutorial-code-bar"><label class="tutorial-code-lang-label"><span>Language</span><select data-code-language aria-label="Code language for this block">${codeLanguageOptions(block.language || 'auto')}</select></label><span data-code-detected class="tutorial-code-detected"></span><span class="d-flex gap-1"><button type="button" data-code-copy>Copy</button><button type="button" data-code-delete>Delete</button></span></div><textarea data-code-source spellcheck="false" aria-label="Code" placeholder="Write or paste code"></textarea><div class="tutorial-code-note">Example output is optional and is typed by the tutor. Code is never executed here.</div><textarea data-code-output spellcheck="false" aria-label="Example output" placeholder="Example output (optional)"></textarea>`;
+      const source = wrap.querySelector('[data-code-source]');
+      const output = wrap.querySelector('[data-code-output]');
+      const select = wrap.querySelector('[data-code-language]');
+      const detected = wrap.querySelector('[data-code-detected]');
+      source.value = block.source || '';
+      output.value = block.exampleOutput || '';
+      const refreshDetected = () => {
+        if (!detected) return;
+        if (select.value !== 'auto') {
+          detected.textContent = '';
+          return;
+        }
+        const guessed = detectCodeLanguage(source.value);
+        const label = (CODE_DEMO_LANGUAGES.find((row) => row.value === guessed) || {}).label;
+        detected.textContent = guessed !== 'auto' && label ? `Detected: ${label}` : '';
+      };
+      refreshDetected();
+      source.addEventListener('keydown', (event) => {
+        if (event.key === 'Tab') {
+          event.preventDefault();
+          const start = source.selectionStart;
+          const end = source.selectionEnd;
+          source.value = `${source.value.slice(0, start)}  ${source.value.slice(end)}`;
+          source.selectionStart = source.selectionEnd = start + 2;
+        }
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          syncLessonFromDom();
+          const focusId = ensureTrailingParagraph(block.id);
+          state.activeBlockId = focusId;
+          renderLessonEditor(focusId, 'text');
+        }
+      });
+      source.addEventListener('input', () => {
+        block.source = source.value;
+        refreshDetected();
+      });
+      output.addEventListener('input', () => { block.exampleOutput = output.value; });
+      select.addEventListener('change', () => {
+        block.language = select.value;
+        refreshDetected();
+      });
+      wrap.querySelector('[data-code-copy]').addEventListener('click', () => {
+        if (navigator.clipboard) navigator.clipboard.writeText(source.value).then(() => toast('Copied.', 'success')).catch(() => {});
+      });
+      wrap.querySelector('[data-code-delete]').addEventListener('click', () => {
+        syncLessonFromDom();
+        removeBlock(block.id);
+      });
+      return wrap;
+    }
+    if (block.type === 'image') {
+      const wrap = document.createElement('div');
+      wrap.className = 'lesson-image';
+      wrap.innerHTML = `<img src="${esc(block.url)}" alt="${esc(block.alt || '')}"/><input type="text" class="form-control form-control-sm mt-2" data-image-alt maxlength="180" placeholder="Image description" value="${esc(block.alt || '')}"/><div class="d-flex gap-2 mt-2"><button type="button" class="btn btn-sm btn-outline-danger" data-image-delete>Delete image</button></div>`;
+      wrap.querySelector('[data-image-alt]').addEventListener('input', (event) => { block.alt = event.target.value; });
+      wrap.querySelector('[data-image-delete]').addEventListener('click', () => {
+        syncLessonFromDom();
+        removeBlock(block.id);
+      });
+      return wrap;
+    }
+    if (block.type === 'divider') {
+      const wrap = document.createElement('div');
+      wrap.className = 'lesson-divider d-flex align-items-center gap-2';
+      wrap.innerHTML = '<hr class="flex-grow-1"/><button type="button" class="btn btn-sm btn-outline-danger" data-divider-delete>Delete</button>';
+      wrap.querySelector('[data-divider-delete]').addEventListener('click', () => {
+        syncLessonFromDom();
+        removeBlock(block.id);
+      });
+      return wrap;
+    }
+    const el = document.createElement('div');
+    el.className = 'lesson-paragraph';
+    el.dataset.editable = '1';
+    el.contentEditable = 'true';
+    el.dataset.placeholder = 'Tell your story…';
+    el.textContent = block.text || '';
+    wireTextBlock(el, block);
+    return el;
+  }
+
+  function wireTextBlock(el, block) {
+    el.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        syncLessonFromDom();
+        const paragraph = { id: newBlockId(), type: 'paragraph', text: '' };
+        insertBlockAfter(block.id, paragraph, { withParagraph: false, focusField: 'text' });
+        return;
+      }
+      if (event.key === 'Backspace' && !(el.innerText || '').replace(/\n/g, '').trim()) {
+        const index = blockIndex(block.id);
+        if (index > 0) {
+          event.preventDefault();
+          syncLessonFromDom();
+          removeBlock(block.id);
+        }
+      }
     });
-    const html = state.quill.root.innerHTML;
-    return html === '<p><br></p>' ? '' : html;
+    el.addEventListener('input', () => {
+      const text = el.innerText.replace(/\u00a0/g, ' ');
+      block.text = text.replace(/\n+$/, '');
+      if (block.type !== 'paragraph') return;
+      if (text.trim() === '/') {
+        el.textContent = '';
+        block.text = '';
+        openInsertMenuForRow(el.closest('.lesson-row'), block.id);
+        return;
+      }
+      const fence = text.trim().match(/^```([A-Za-z0-9+#.]*)?$/);
+      if (fence) {
+        const aliases = { js: 'javascript', ts: 'typescript', py: 'python', 'c++': 'cpp', 'c#': 'csharp', cs: 'csharp' };
+        const token = String(fence[1] || '').toLowerCase();
+        const mapped = aliases[token] || token;
+        const language = CODE_DEMO_LANGUAGES.some((row) => row.value === mapped) ? mapped : 'auto';
+        el.textContent = '';
+        block.text = '';
+        replaceBlock(block.id, {
+          id: block.id,
+          type: 'code',
+          language,
+          source: '',
+          exampleOutput: '',
+        });
+      }
+    });
   }
 
   function openArticleShell() {
     document.getElementById('articleCourseName').textContent = state.active ? (state.active.title || '') : '';
     document.getElementById('articleStatus').textContent = state.creatingModule ? 'Draft' : (state.active && state.active.status === 'published' ? 'Published' : 'Draft');
-    document.getElementById('articleInsertMenu').classList.add('d-none');
-    document.getElementById('articlePlus').setAttribute('aria-expanded', 'false');
+    toggleInsertMenu(false);
     showStaffScreen('article');
   }
 
-  async function beginNewModule() {
+  function beginNewModule() {
     if (!state.active) return;
     state.creatingModule = true;
     state.selectedModuleId = '';
@@ -662,11 +1029,11 @@
     document.getElementById('moduleExercisePane').classList.add('d-none');
     document.getElementById('exerciseForm').classList.add('d-none');
     openArticleShell();
-    await mountEditor('');
+    mountEditor('');
     document.getElementById('moduleTitle').focus();
   }
 
-  async function selectModule(id) {
+  function selectModule(id) {
     if (!state.active || !id) return;
     const module = (state.active.modules || []).find((row) => row.id === id);
     if (!module) return;
@@ -678,58 +1045,57 @@
     document.getElementById('exerciseForm').classList.add('d-none');
     openArticleShell();
     renderModuleExercises();
-    await mountEditor(module.content || '');
-    document.getElementById('moduleTitle').focus();
+    mountEditor(module.content || '');
+    if (!(module.title || '').trim()) document.getElementById('moduleTitle').focus();
   }
 
   function cancelModuleEdit() {
     state.creatingModule = false;
+    state.lesson = null;
     showStaffScreen('builder');
     renderModuleNav();
   }
 
   function toggleInsertMenu(show) {
     const menu = document.getElementById('articleInsertMenu');
+    if (!menu) return;
     const open = typeof show === 'boolean' ? show : menu.classList.contains('d-none');
     menu.classList.toggle('d-none', !open);
-    document.getElementById('articlePlus').setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   function insertArticleBlock(kind) {
-    const editor = state.quill;
-    if (!editor) return;
-    const range = editor.getSelection(true);
+    if (!state.lesson) return;
+    syncLessonFromDom();
+    const afterId = state.insertAfterId || state.activeBlockId || (state.lesson.blocks[state.lesson.blocks.length - 1] || {}).id;
     toggleInsertMenu(false);
     if (kind === 'text') {
-      editor.format('header', false);
-      editor.format('blockquote', false);
-      editor.format('code-block', false);
+      insertBlockAfter(afterId, { id: newBlockId(), type: 'paragraph', text: '' }, { withParagraph: false });
       return;
     }
-    const index = range ? range.index : editor.getLength();
-    removeSlashPrompt(editor, index);
     if (kind === 'heading') {
-      editor.format('header', 2);
+      insertBlockAfter(afterId, { id: newBlockId(), type: 'heading', level: 2, text: '' }, { focusInserted: true });
       return;
     }
     if (kind === 'subheading') {
-      editor.format('header', 3);
+      insertBlockAfter(afterId, { id: newBlockId(), type: 'heading', level: 3, text: '' }, { focusInserted: true });
       return;
     }
     if (kind === 'quote') {
-      editor.format('blockquote', true);
+      insertBlockAfter(afterId, { id: newBlockId(), type: 'quote', text: '' }, { focusInserted: true });
       return;
     }
     if (kind === 'code' || kind === 'example') {
-      const at = editor.getSelection(true).index;
-      editor.insertEmbed(at, 'tutorial-code', { language: 'python', role: 'code', code: '' }, 'user');
-      if (kind === 'example') {
-        editor.insertEmbed(at + 1, 'tutorial-code', { language: 'text', role: 'output', code: '' }, 'user');
-      }
+      insertBlockAfter(afterId, {
+        id: newBlockId(),
+        type: 'code',
+        language: 'auto',
+        source: '',
+        exampleOutput: '',
+      });
       return;
     }
     if (kind === 'divider') {
-      editor.insertEmbed(editor.getSelection(true).index, 'divider', true, 'user');
+      insertBlockAfter(afterId, { id: newBlockId(), type: 'divider' });
       return;
     }
     if (kind === 'exercise') {
@@ -737,30 +1103,25 @@
         toast('Save the article before adding an exercise.', 'error');
         return;
       }
+      const focusId = ensureTrailingParagraph(afterId);
+      state.activeBlockId = focusId;
+      renderLessonEditor(focusId, 'text');
       document.getElementById('moduleExercisePane').scrollIntoView({ behavior: 'smooth', block: 'start' });
       openExercise(state.selectedModuleId, '');
-      return;
-    }
-    if (kind === 'link') {
-      const url = window.prompt('Link address (https://...)');
-      if (!url || !/^https?:\/\//i.test(url)) return;
-      if (range && range.length) editor.format('link', url);
-      else editor.insertText(range ? range.index : 0, url, { link: url }, 'user');
       return;
     }
     if (kind === 'image') document.getElementById('articleImageInput').click();
   }
 
   async function insertUploadedImage(file) {
-    if (!file || !state.quill) return;
+    if (!file || !state.lesson) return;
     const body = new FormData();
     body.append('image', file);
     const saved = await call('/tutorials/manage/media', { method: 'POST', body });
     const url = saved && saved.url ? saved.url : '';
     if (!/^(\/|https?:\/\/)/i.test(url)) throw new Error('The image could not be saved.');
-    const range = state.quill.getSelection(true);
-    state.quill.insertEmbed(range ? range.index : 0, 'image', url, 'user');
-    state.quill.setSelection((range ? range.index : 0) + 1, 0);
+    const afterId = state.insertAfterId || state.activeBlockId || (state.lesson.blocks[state.lesson.blocks.length - 1] || {}).id;
+    insertBlockAfter(afterId, { id: newBlockId(), type: 'image', url, alt: '' });
   }
 
   async function saveModule(event) {
@@ -771,7 +1132,7 @@
     const body = {
       title: document.getElementById('moduleTitle').value.trim(),
       subtitle: document.getElementById('moduleSubtitle').value.trim(),
-      content: articleHtml(),
+      content: serializeLessonDocument(),
     };
     const tutorialId = state.active.id;
     try {
@@ -1009,34 +1370,18 @@
     document.getElementById('moduleForm').addEventListener('submit', saveModule);
     document.getElementById('exerciseForm').addEventListener('submit', saveExercise);
     document.getElementById('addCategoryBtn').addEventListener('click', () => modal('categoryModal').show());
-    document.getElementById('addModuleBtn').addEventListener('click', () => beginNewModule().catch(fail));
+    document.getElementById('addModuleBtn').addEventListener('click', () => beginNewModule());
     document.getElementById('articleBack').addEventListener('click', cancelModuleEdit);
-    document.getElementById('articlePlus').addEventListener('click', () => toggleInsertMenu());
     document.getElementById('articleInsertMenu').addEventListener('click', (event) => {
       const button = event.target.closest('[data-insert]');
       if (!button) return;
       insertArticleBlock(button.getAttribute('data-insert'));
     });
-    document.getElementById('moduleEditorFrame').addEventListener('click', (event) => {
-      const block = event.target.closest('.tutorial-code-block');
-      if (!block || !state.quill) return;
-      if (event.target.matches('select, textarea, button')) event.stopPropagation();
-      if (event.target.matches('[data-code-copy]')) {
-        const area = block.querySelector('textarea');
-        const text = area ? area.value : '';
-        if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('Copied.', 'success')).catch(() => {});
-      }
-      if (event.target.matches('[data-code-delete]')) {
-        const blot = Quill.find(block);
-        if (blot) {
-          const at = state.quill.getIndex(blot);
-          state.quill.deleteText(at, 1, 'user');
-        }
-      }
-    });
-    document.getElementById('moduleEditorFrame').addEventListener('change', (event) => {
-      const block = event.target.closest('.tutorial-code-block');
-      if (block && event.target.matches('select')) block.setAttribute('data-language', event.target.value);
+    document.addEventListener('click', (event) => {
+      const menu = document.getElementById('articleInsertMenu');
+      if (!menu || menu.classList.contains('d-none')) return;
+      if (event.target.closest('#articleInsertMenu') || event.target.closest('.row-plus')) return;
+      toggleInsertMenu(false);
     });
     document.getElementById('articleImageInput').addEventListener('change', (event) => {
       const file = event.target.files && event.target.files[0];
@@ -1123,11 +1468,23 @@
     progress: null,
   };
 
-  function highlightLessonCode(source) {
-    const html = esc(source)
+  function highlightLessonCode(source, language) {
+    if (window.hljs) {
+      try {
+        const aliases = { csharp: 'csharp', html: 'xml', text: 'plaintext' };
+        const alias = aliases[language] || language;
+        if (language && language !== 'auto' && language !== 'text' && window.hljs.getLanguage(alias)) {
+          return window.hljs.highlight(source, { language: alias }).value;
+        }
+        if (language === 'text') return esc(source);
+        return window.hljs.highlightAuto(source).value;
+      } catch {
+        /* fall through */
+      }
+    }
+    return esc(source)
       .replace(/(&quot;(?:[^&]|&(?!quot;))*&quot;|&#39;(?:[^&]|&(?!#39;))*&#39;)/g, '<span style="color:#86efac">$1</span>')
       .replace(/(^|\n)(\/\/.*|#.*)/g, '$1<span style="color:#94a3b8">$2</span>');
-    return html;
   }
 
   function decorateCodeBlocks(root) {
@@ -1136,27 +1493,66 @@
       const source = pre.querySelector('code') ? pre.querySelector('code').textContent : pre.textContent;
       const language = pre.getAttribute('data-language') || 'text';
       const role = pre.getAttribute('data-role') === 'output' ? 'output' : 'code';
-      const label = CODE_DEMO_LANGUAGES.find((row) => row.value === language);
+      const label = pre.getAttribute('data-label') || (CODE_DEMO_LANGUAGES.find((row) => row.value === language) || {}).label || language;
       const card = document.createElement('div');
       card.className = 'tutorial-code-card';
-      const title = role === 'output' ? 'Example output' : (label ? label.label : language);
+      const title = role === 'output' ? 'Example output' : label;
       card.innerHTML = `<header><span>${esc(title)}</span>${role === 'code' ? '<button type="button" data-student-copy>Copy</button>' : ''}</header>${role === 'output' ? '<div class="tutorial-code-note">Example written by the tutor. The code was not run.</div>' : ''}<pre></pre>`;
-      card.querySelector('pre').innerHTML = role === 'code' ? highlightLessonCode(source) : esc(source);
+      card.querySelector('pre').innerHTML = role === 'code' ? highlightLessonCode(source, language) : esc(source);
       pre.replaceWith(card);
+      card.dataset.ready = '1';
+      const copy = card.querySelector('[data-student-copy]');
+      if (copy) {
+        copy.addEventListener('click', () => {
+          if (navigator.clipboard) navigator.clipboard.writeText(source).then(() => toast('Copied.', 'success')).catch(() => {});
+        });
+      }
     });
   }
 
-  function setLessonHtml(el, html) {
-    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-    doc.querySelectorAll('script,iframe,object,embed,link,meta').forEach((node) => node.remove());
-    doc.body.querySelectorAll('*').forEach((node) => {
+  function lessonDocumentToHtml(doc) {
+    return (doc.blocks || []).map((block) => {
+      if (block.type === 'heading') {
+        const tag = block.level === 3 ? 'h3' : 'h2';
+        return `<${tag}>${esc(block.text || '')}</${tag}>`;
+      }
+      if (block.type === 'quote') return `<blockquote>${esc(block.text || '')}</blockquote>`;
+      if (block.type === 'divider') return '<hr/>';
+      if (block.type === 'image') {
+        return `<figure class="lesson-figure"><img src="${esc(block.url || '')}" alt="${esc(block.alt || '')}">${block.alt ? `<figcaption>${esc(block.alt)}</figcaption>` : ''}</figure>`;
+      }
+      if (block.type === 'code') {
+        const language = block.language || 'auto';
+        const label = CODE_DEMO_LANGUAGES.find((row) => row.value === language);
+        const langAttr = language === 'auto' ? (detectCodeLanguage(block.source) || 'text') : language;
+        let html = `<pre class="tutorial-code-block" data-language="${esc(langAttr)}" data-role="code" data-label="${esc(label ? label.label : langAttr)}"><code>${esc(block.source || '')}</code></pre>`;
+        if (String(block.exampleOutput || '').trim() !== '') {
+          html += `<pre class="tutorial-code-block" data-language="text" data-role="output"><code>${esc(block.exampleOutput)}</code></pre>`;
+        }
+        return html;
+      }
+      const text = String(block.text || '').trim();
+      return text ? `<p>${esc(text).replace(/\n/g, '<br>')}</p>` : '';
+    }).join('');
+  }
+
+  function setLessonHtml(el, raw) {
+    const doc = parseLessonDocument(raw);
+    if (doc) {
+      el.innerHTML = lessonDocumentToHtml(doc);
+      decorateCodeBlocks(el);
+      return;
+    }
+    const parsed = new DOMParser().parseFromString(String(raw || ''), 'text/html');
+    parsed.querySelectorAll('script,iframe,object,embed,link,meta').forEach((node) => node.remove());
+    parsed.body.querySelectorAll('*').forEach((node) => {
       [...node.attributes].forEach((attr) => {
         const name = attr.name.toLowerCase();
-        const allowed = name === 'href' || name === 'src' || name === 'alt' || name === 'class' || name === 'data-language' || name === 'data-role';
+        const allowed = name === 'href' || name === 'src' || name === 'alt' || name === 'class' || name === 'data-language' || name === 'data-role' || name === 'data-label';
         if (!allowed || name.startsWith('on') || /javascript:/i.test(attr.value)) node.removeAttribute(attr.name);
       });
     });
-    el.replaceChildren(...doc.body.childNodes);
+    el.replaceChildren(...parsed.body.childNodes);
     decorateCodeBlocks(el);
   }
 

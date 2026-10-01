@@ -32,7 +32,7 @@ final class TutorialService
     private const HTML_TAGS = ['p', 'br', 'strong', 'em', 'u', 's', 'ol', 'ul', 'li', 'h1', 'h2', 'h3', 'blockquote', 'pre', 'code', 'a', 'img', 'span', 'hr'];
 
     /** @var list<string> */
-    private const CODE_LANGUAGES = ['python', 'c', 'cpp', 'java', 'javascript', 'php', 'sql', 'html', 'css', 'json', 'bash', 'text'];
+    private const CODE_LANGUAGES = ['auto', 'text', 'python', 'javascript', 'typescript', 'java', 'c', 'cpp', 'csharp', 'php', 'sql', 'html', 'css', 'json', 'bash', 'go'];
 
     /** @var list<string> */
     private const DROP_TAGS = ['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'svg', 'math'];
@@ -668,7 +668,7 @@ final class TutorialService
             'title' => (string) ($input['title'] ?? ''),
             'subtitle' => (string) ($input['subtitle'] ?? ''),
             'sortOrder' => $input['sortOrder'] ?? $this->nextModuleOrder($tutorialId),
-            'content' => self::sanitizeHtml((string) ($input['content'] ?? '')),
+            'content' => $this->storeLessonContent((string) ($input['content'] ?? '')),
         ]);
 
         return $this->managedModule($row, false);
@@ -689,7 +689,7 @@ final class TutorialService
             'subtitle' => array_key_exists('subtitle', $input) ? (string) $input['subtitle'] : (string) ($existing['subtitle'] ?? ''),
             'sortOrder' => $input['sortOrder'] ?? $existing['sortOrder'] ?? 1,
             'content' => array_key_exists('content', $input)
-                ? self::sanitizeHtml((string) $input['content'])
+                ? $this->storeLessonContent((string) $input['content'])
                 : (string) ($existing['content'] ?? ''),
         ]);
         if ($row === null) {
@@ -1435,7 +1435,7 @@ final class TutorialService
             'sortOrder' => (int) ($module['sortOrder'] ?? 0),
         ];
         if ($includeContent) {
-            $view['content'] = self::sanitizeHtml((string) ($module['content'] ?? ''));
+            $view['content'] = $this->presentLessonContent((string) ($module['content'] ?? ''));
             $view['exercises'] = [];
             foreach ($this->exercises->listByModule((string) ($module['_id'] ?? '')) as $exercise) {
                 $view['exercises'][] = [
@@ -1576,6 +1576,82 @@ final class TutorialService
             'sample' => ($case['sample'] ?? false) === true,
             'sortOrder' => (int) ($case['sortOrder'] ?? 0),
         ];
+    }
+
+    private function storeLessonContent(string $raw): string
+    {
+        $trim = trim($raw);
+        if ($trim !== '' && str_starts_with($trim, '{')) {
+            $decoded = json_decode($trim, true);
+            if (is_array($decoded) && (int) ($decoded['version'] ?? 0) === 1 && is_array($decoded['blocks'] ?? null)) {
+                return json_encode($this->cleanLessonDocument($decoded), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+        }
+
+        return self::sanitizeHtml($raw);
+    }
+
+    private function presentLessonContent(string $raw): string
+    {
+        $trim = trim($raw);
+        if ($trim !== '' && str_starts_with($trim, '{')) {
+            $decoded = json_decode($trim, true);
+            if (is_array($decoded) && (int) ($decoded['version'] ?? 0) === 1 && is_array($decoded['blocks'] ?? null)) {
+                return json_encode($this->cleanLessonDocument($decoded), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+        }
+
+        return self::sanitizeHtml($raw);
+    }
+
+    /**
+     * @param array<string, mixed> $document
+     * @return array{version: int, blocks: list<array<string, mixed>>}
+     */
+    private function cleanLessonDocument(array $document): array
+    {
+        $blocks = [];
+        foreach (array_slice((array) $document['blocks'], 0, 200) as $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+            $type = (string) ($block['type'] ?? '');
+            $id = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) ($block['id'] ?? ''));
+            if ($id === '') {
+                $id = bin2hex(random_bytes(4));
+            }
+            if ($type === 'paragraph' || $type === 'quote') {
+                $blocks[] = ['id' => $id, 'type' => $type, 'text' => mb_substr(trim(strip_tags((string) ($block['text'] ?? ''))), 0, 20000)];
+            } elseif ($type === 'heading') {
+                $level = (int) ($block['level'] ?? 2) === 3 ? 3 : 2;
+                $blocks[] = ['id' => $id, 'type' => 'heading', 'level' => $level, 'text' => mb_substr(trim(strip_tags((string) ($block['text'] ?? ''))), 0, 300)];
+            } elseif ($type === 'code') {
+                $language = strtolower(trim((string) ($block['language'] ?? 'auto')));
+                if (!in_array($language, self::CODE_LANGUAGES, true)) {
+                    $language = 'auto';
+                }
+                $blocks[] = [
+                    'id' => $id,
+                    'type' => 'code',
+                    'language' => $language,
+                    'source' => mb_substr((string) ($block['source'] ?? ''), 0, 20000),
+                    'exampleOutput' => mb_substr((string) ($block['exampleOutput'] ?? ''), 0, 20000),
+                ];
+            } elseif ($type === 'image') {
+                $url = trim((string) ($block['url'] ?? ''));
+                if (preg_match('#^(https?://|/)#i', $url) !== 1 || preg_match('#^(javascript|data):#i', $url) === 1) {
+                    continue;
+                }
+                $blocks[] = ['id' => $id, 'type' => 'image', 'url' => mb_substr($url, 0, 500), 'alt' => mb_substr(trim(strip_tags((string) ($block['alt'] ?? ''))), 0, 180)];
+            } elseif ($type === 'divider') {
+                $blocks[] = ['id' => $id, 'type' => 'divider'];
+            }
+        }
+        if ($blocks === []) {
+            $blocks[] = ['id' => bin2hex(random_bytes(4)), 'type' => 'paragraph', 'text' => ''];
+        }
+
+        return ['version' => 1, 'blocks' => $blocks];
     }
 
     public static function sanitizeHtml(string $html): string

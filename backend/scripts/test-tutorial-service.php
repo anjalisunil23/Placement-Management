@@ -250,7 +250,35 @@ try {
     $check(($mine['title'] ?? '') === 'One' && !str_contains((string) ($mine['content'] ?? ''), 'script'), 'student can open a module of that published tutorial');
 
     $throws(fn () => $service->updateModule($staffB, $byStaff['id'], $moduleA['id'], ['title' => 'Nope']), 403);
-    $service->updateModule($staffA, $byStaff['id'], $moduleA['id'], ['title' => 'One renamed']);
+    $lessonDoc = [
+        'version' => 1,
+        'blocks' => [
+            ['id' => 'p1', 'type' => 'paragraph', 'text' => 'Intro'],
+            ['id' => 'c1', 'type' => 'code', 'language' => 'python', 'source' => 'print(1)', 'exampleOutput' => '1'],
+            ['id' => 'c2', 'type' => 'code', 'language' => 'javascript:alert(1)', 'source' => 'console.log(1)', 'exampleOutput' => ''],
+        ],
+    ];
+    $updatedLesson = $service->updateModule($staffA, $byStaff['id'], $moduleA['id'], [
+        'title' => 'One renamed',
+        'content' => json_encode($lessonDoc),
+    ]);
+    $storedLesson = json_decode((string) ($updatedLesson['content'] ?? ''), true);
+    $check(
+        is_array($storedLesson)
+        && (int) ($storedLesson['version'] ?? 0) === 1
+        && ($storedLesson['blocks'][1]['language'] ?? '') === 'python'
+        && ($storedLesson['blocks'][1]['exampleOutput'] ?? '') === '1'
+        && ($storedLesson['blocks'][2]['language'] ?? '') === 'auto',
+        'lesson JSON keeps a per-block language and rejects unknown languages'
+    );
+    $htmlLegacy = $service->updateModule($staffA, $byStaff['id'], $moduleA['id'], [
+        'content' => '<h2>Old</h2><p>Still loads</p><script>alert(1)</script>',
+    ]);
+    $check(
+        str_contains((string) ($htmlLegacy['content'] ?? ''), 'Still loads')
+        && !str_contains((string) ($htmlLegacy['content'] ?? ''), 'script'),
+        'legacy HTML modules still save through the sanitizer'
+    );
     $ordered = $service->reorderModules($staffA, $byStaff['id'], [$moduleB['id'], $moduleA['id'], $publishStub['id']]);
     $check(($ordered[0]['id'] ?? '') === $moduleB['id'] && ($ordered[0]['sortOrder'] ?? 0) === 1, 'owner can reorder modules');
 
