@@ -1,0 +1,1028 @@
+<?php
+
+declare(strict_types=1);
+
+namespace PMS\Services;
+
+use PMS\Config\Database;
+use PMS\Middleware\AuthMiddleware;
+
+/**
+ * AI tutorial course/module generation via existing OpenAIService.
+ * Generates lesson JSON only (no MCQ/assessment persistence in this phase).
+ * Does not publish courses and does not execute code.
+ */
+class TutorialAIService
+{
+    public const MAX_MODULES = 12;
+    public const MIN_MODULES = 1;
+    public const MAX_TOPIC_CHARS = 200;
+    public const MAX_INSTRUCTIONS_CHARS = 2000;
+    public const MAX_SYLLABUS_CHARS = 12000;
+    public const MAX_BLOCKS_PER_MODULE = 80;
+    public const COOLDOWN_SECONDS = 8;
+
+    /** @var list<string> */
+    public const ACADEMIC_FIELDS = [
+        'engineering',
+        'computer_applications',
+        'business_administration',
+        'other',
+    ];
+
+    /** @var list<string> */
+    public const DIFFICULTIES = ['beginner', 'intermediate', 'advanced'];
+
+    /** @var list<string> */
+    private const BLOCK_TYPES = ['paragraph', 'heading', 'quote', 'code', 'divider'];
+
+    /** @var list<string> */
+    private const CODE_LANGUAGES = [
+        'auto', 'text', 'python', 'javascript', 'typescript', 'java', 'c', 'cpp', 'csharp',
+        'php', 'sql', 'html', 'css', 'json', 'bash', 'go',
+    ];
+
+    /** @var array<string, string> */
+    private const FIELD_CATEGORY_HINT = [
+        'engineering' => 'technologies',
+        'computer_applications' => 'programming-languages',
+        'business_administration' => 'other',
+        'other' => 'other',
+    ];
+
+    private OpenAIService $openai;
+    private TutorialService $tutorials;
+
+    public function __construct(?OpenAIService $openai = null, ?TutorialService $tutorials = null)
+    {
+        $this->openai = $openai ?? new OpenAIService();
+        $this->tutorials = $tutorials ?? new TutorialService();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function checkStatus(array $user): array
+    {
+        $this->assertAuthor($user);
+
+        return $this->openai->checkStatus();
+    }
+
+    /**
+     * Generate a complete course preview. Does not persist.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function generateCoursePreview(array $user, array $input): array
+    {
+        $this->assertAuthor($user);
+        $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? ''));
+        @set_time_limit(600);
+
+        $req = $this->normalizeCourseRequest($input);
+        $this->assertAiConfigured();
+        @set_time_limit(600);
+
+        $system = $this->courseSystemPrompt($req['academicField']);
+        $userPrompt = $this->courseUserPrompt($req);
+
+        try {
+            $raw = $this->callGenerateJson($system, $userPrompt);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            error_log('[PMS TutorialAI] generate course failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI course generation is temporarily unavailable. Please try again.');
+        }
+
+        $normalized = $this->normalizeCourseDocument($raw, $req);
+        $previewId = 'course-' . bin2hex(random_bytes(6));
+
+        return [
+            'previewId' => $previewId,
+            'scope' => 'course',
+            'model' => $this->openai->checkStatus()['model'] ?? '',
+            'generatedAt' => gmdate('c'),
+            'preferences' => [
+                'mcqsPerModule' => $req['mcqsPerModule'],
+                'practicalPreference' => $req['practicalPreference'],
+            ],
+            'suggestedCategorySlug' => self::FIELD_CATEGORY_HINT[$req['academicField']] ?? 'other',
+            'course' => $normalized['course'],
+            'modules' => $normalized['modules'],
+            'moduleCount' => count($normalized['modules']),
+        ];
+    }
+
+    /**
+     * Persist a previously generated (and re-validated) course as draft.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function saveCourseDraft(array $user, array $input): array
+    {
+        $this->assertAuthor($user);
+        $categoryId = trim((string) ($input['categoryId'] ?? ''));
+        if ($categoryId === '') {
+            throw new \InvalidArgumentException('Choose a category before saving the generated course.');
+        }
+
+        $visibility = strtolower(trim((string) ($input['visibility'] ?? 'all')));
+        if ($visibility !== 'scoped') {
+            $visibility = 'all';
+        }
+
+        $reqHints = [
+            'topic' => (string) (($input['course']['topic'] ?? $input['topic'] ?? '')),
+            'academicField' => (string) ($input['academicField'] ?? $input['course']['academicField'] ?? 'other'),
+            'difficulty' => (string) ($input['difficulty'] ?? $input['course']['difficulty'] ?? 'beginner'),
+            'moduleCount' => is_array($input['modules'] ?? null) ? count($input['modules']) : 1,
+            'mcqsPerModule' => (int) ($input['preferences']['mcqsPerModule'] ?? $input['mcqsPerModule'] ?? 0),
+            'practicalPreference' => (string) ($input['preferences']['practicalPreference'] ?? $input['practicalPreference'] ?? 'none'),
+            'additionalInstructions' => '',
+            'syllabusText' => '',
+            'estimatedDurationMinutes' => (int) ($input['course']['estimatedDurationMinutes'] ?? 0),
+        ];
+        $normalized = $this->normalizeCourseDocument([
+            'version' => 1,
+            'course' => is_array($input['course'] ?? null) ? $input['course'] : [],
+            'modules' => is_array($input['modules'] ?? null) ? $input['modules'] : [],
+        ], $this->normalizeCourseRequest(array_merge($reqHints, [
+            'topic' => $reqHints['topic'] !== '' ? $reqHints['topic'] : 'Course',
+            'moduleCount' => max(1, min(self::MAX_MODULES, $reqHints['moduleCount'])),
+        ])));
+
+        $pdo = Database::pdo();
+        $started = false;
+        if (!$pdo->inTransaction()) {
+            $pdo->beginTransaction();
+            $started = true;
+        }
+
+        try {
+            $course = $this->tutorials->createTutorial($user, [
+                'title' => (string) $normalized['course']['title'],
+                'topic' => (string) $normalized['course']['topic'],
+                'description' => (string) $normalized['course']['description'],
+                'categoryId' => $categoryId,
+                'visibility' => $visibility,
+                'departmentIds' => (array) ($input['departmentIds'] ?? []),
+                'passingYears' => (array) ($input['passingYears'] ?? []),
+            ]);
+            $tutorialId = (string) ($course['id'] ?? '');
+            if ($tutorialId === '') {
+                throw new \RuntimeException('The generated course could not be saved.');
+            }
+
+            $savedModules = [];
+            foreach ($normalized['modules'] as $index => $module) {
+                $content = json_encode([
+                    'version' => 1,
+                    'blocks' => $module['lessonDocument']['blocks'],
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                if ($content === false) {
+                    throw new \RuntimeException('A generated module could not be encoded.');
+                }
+                $saved = $this->tutorials->createModule($user, $tutorialId, [
+                    'title' => (string) $module['title'],
+                    'subtitle' => (string) ($module['subtitle'] ?? ''),
+                    'sortOrder' => $index + 1,
+                    'content' => $content,
+                ]);
+                $savedModules[] = [
+                    'id' => (string) ($saved['id'] ?? ''),
+                    'title' => (string) ($saved['title'] ?? ''),
+                    'sortOrder' => (int) ($saved['sortOrder'] ?? ($index + 1)),
+                ];
+            }
+
+            if ($started) {
+                $pdo->commit();
+            }
+
+            return [
+                'tutorial' => $course,
+                'modules' => $savedModules,
+                'status' => 'draft',
+            ];
+        } catch (\Throwable $e) {
+            if ($started && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Generate one module for an existing course. Does not persist.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function generateModulePreview(array $user, string $tutorialId, array $input): array
+    {
+        $this->assertAuthor($user);
+        $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? ''));
+        @set_time_limit(600);
+
+        $course = $this->tutorials->showManaged($user, $tutorialId);
+        $req = $this->normalizeModuleRequest($input, $course);
+        $this->assertAiConfigured();
+        @set_time_limit(600);
+
+        $system = $this->moduleSystemPrompt($req['academicField']);
+        $userPrompt = $this->moduleUserPrompt($req, $course);
+
+        try {
+            $raw = $this->callGenerateJson($system, $userPrompt);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            error_log('[PMS TutorialAI] generate module failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI module generation is temporarily unavailable. Please try again.');
+        }
+
+        $modulePayload = is_array($raw['module'] ?? null) ? $raw['module'] : $raw;
+        $module = $this->normalizeModule($modulePayload, $req['difficulty'], $req['academicField']);
+        $previewId = 'module-' . bin2hex(random_bytes(6));
+
+        return [
+            'previewId' => $previewId,
+            'scope' => 'module',
+            'tutorialId' => (string) ($course['id'] ?? $tutorialId),
+            'courseTitle' => (string) ($course['title'] ?? ''),
+            'courseStatus' => (string) ($course['status'] ?? ''),
+            'model' => $this->openai->checkStatus()['model'] ?? '',
+            'generatedAt' => gmdate('c'),
+            'preferences' => [
+                'mcqsPerModule' => $req['mcqsPerModule'],
+                'practicalPreference' => $req['practicalPreference'],
+            ],
+            'module' => $module,
+        ];
+    }
+
+    /**
+     * Persist a generated module into an existing course. Course status unchanged.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function saveModuleDraft(array $user, string $tutorialId, array $input): array
+    {
+        $this->assertAuthor($user);
+        $course = $this->tutorials->showManaged($user, $tutorialId);
+        $statusBefore = (string) ($course['status'] ?? 'draft');
+
+        $moduleIn = is_array($input['module'] ?? null) ? $input['module'] : $input;
+        $difficulty = $this->normalizeDifficulty((string) ($input['difficulty'] ?? 'beginner'));
+        $field = $this->normalizeAcademicField((string) ($input['academicField'] ?? 'other'));
+        $module = $this->normalizeModule($moduleIn, $difficulty, $field);
+
+        $content = json_encode([
+            'version' => 1,
+            'blocks' => $module['lessonDocument']['blocks'],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($content === false) {
+            throw new \RuntimeException('The generated module could not be encoded.');
+        }
+
+        $saved = $this->tutorials->createModule($user, $tutorialId, [
+            'title' => (string) $module['title'],
+            'subtitle' => (string) ($module['subtitle'] ?? ''),
+            'content' => $content,
+        ]);
+
+        $fresh = $this->tutorials->showManaged($user, $tutorialId);
+
+        return [
+            'module' => $saved,
+            'tutorialId' => $tutorialId,
+            'courseStatus' => (string) ($fresh['status'] ?? $statusBefore),
+            'statusUnchanged' => (string) ($fresh['status'] ?? '') === $statusBefore,
+        ];
+    }
+
+    /**
+     * Public for unit tests — normalize a full course AI document.
+     *
+     * @param array<string, mixed> $raw
+     * @param array<string, mixed> $req
+     * @return array{version: int, course: array<string, mixed>, modules: list<array<string, mixed>>}
+     */
+    public function normalizeCourseDocument(array $raw, array $req): array
+    {
+        $courseIn = is_array($raw['course'] ?? null) ? $raw['course'] : [];
+        $title = trim(strip_tags((string) ($courseIn['title'] ?? '')));
+        if ($title === '') {
+            throw new \InvalidArgumentException('Generated course is missing a title.');
+        }
+        $description = trim(strip_tags((string) ($courseIn['description'] ?? '')));
+        if ($description === '') {
+            $description = 'AI-generated draft course on ' . (string) $req['topic'] . '. Review before publishing.';
+        }
+        $topic = trim(strip_tags((string) ($courseIn['topic'] ?? $req['topic'])));
+        if ($topic === '') {
+            $topic = (string) $req['topic'];
+        }
+        $objectives = [];
+        foreach ((array) ($courseIn['learningObjectives'] ?? []) as $item) {
+            $text = trim(strip_tags((string) $item));
+            if ($text !== '') {
+                $objectives[] = mb_substr($text, 0, 300);
+            }
+            if (count($objectives) >= 12) {
+                break;
+            }
+        }
+        $duration = (int) ($courseIn['estimatedDurationMinutes'] ?? $req['estimatedDurationMinutes'] ?? 0);
+        if ($duration < 0) {
+            $duration = 0;
+        }
+        if ($duration > 10080) {
+            $duration = 10080;
+        }
+
+        $modulesIn = is_array($raw['modules'] ?? null) ? $raw['modules'] : [];
+        if ($modulesIn === []) {
+            throw new \InvalidArgumentException('Generated course has no modules.');
+        }
+        if (count($modulesIn) > self::MAX_MODULES) {
+            $modulesIn = array_slice($modulesIn, 0, self::MAX_MODULES);
+        }
+
+        $modules = [];
+        foreach ($modulesIn as $module) {
+            if (!is_array($module)) {
+                continue;
+            }
+            $modules[] = $this->normalizeModule($module, (string) $req['difficulty'], (string) $req['academicField']);
+        }
+        if ($modules === []) {
+            throw new \InvalidArgumentException('Generated course has no valid modules.');
+        }
+
+        return [
+            'version' => 1,
+            'course' => [
+                'title' => mb_substr($title, 0, 160),
+                'description' => mb_substr($description, 0, 4000),
+                'academicField' => (string) $req['academicField'],
+                'difficulty' => (string) $req['difficulty'],
+                'learningObjectives' => $objectives,
+                'estimatedDurationMinutes' => $duration,
+                'topic' => mb_substr($topic, 0, self::MAX_TOPIC_CHARS),
+            ],
+            'modules' => $modules,
+        ];
+    }
+
+    /**
+     * Public for unit tests.
+     *
+     * @param array<string, mixed> $module
+     * @return array<string, mixed>
+     */
+    public function normalizeModule(array $module, string $difficulty, string $academicField): array
+    {
+        $title = trim(strip_tags((string) ($module['title'] ?? '')));
+        if ($title === '') {
+            throw new \InvalidArgumentException('A generated module is missing a title.');
+        }
+        $subtitle = trim(strip_tags((string) ($module['subtitle'] ?? $module['description'] ?? '')));
+        if (mb_strlen($subtitle) > 240) {
+            $subtitle = mb_substr($subtitle, 0, 240);
+        }
+        $description = trim(strip_tags((string) ($module['description'] ?? '')));
+        $objectives = [];
+        foreach ((array) ($module['learningObjectives'] ?? []) as $item) {
+            $text = trim(strip_tags((string) $item));
+            if ($text !== '') {
+                $objectives[] = mb_substr($text, 0, 300);
+            }
+            if (count($objectives) >= 10) {
+                break;
+            }
+        }
+
+        $lesson = is_array($module['lessonDocument'] ?? null)
+            ? $module['lessonDocument']
+            : (is_array($module['lesson'] ?? null) ? $module['lesson'] : null);
+        if (!is_array($lesson)) {
+            throw new \InvalidArgumentException('Module "' . $title . '" is missing lesson content.');
+        }
+        $blocksIn = is_array($lesson['blocks'] ?? null) ? $lesson['blocks'] : [];
+        if ($blocksIn === []) {
+            throw new \InvalidArgumentException('Module "' . $title . '" has no lesson blocks.');
+        }
+
+        $blocks = $this->normalizeBlocks($blocksIn, $academicField);
+        if ($blocks === []) {
+            throw new \InvalidArgumentException('Module "' . $title . '" has no supported lesson blocks.');
+        }
+
+        return [
+            'title' => mb_substr($title, 0, 160),
+            'subtitle' => $subtitle,
+            'description' => mb_substr($description, 0, 2000),
+            'learningObjectives' => $objectives,
+            'difficulty' => $this->normalizeDifficulty($difficulty),
+            'lessonDocument' => [
+                'version' => 1,
+                'blocks' => $blocks,
+            ],
+        ];
+    }
+
+    /**
+     * @param list<mixed> $blocks
+     * @return list<array<string, mixed>>
+     */
+    public function normalizeBlocks(array $blocks, string $academicField = 'other'): array
+    {
+        $out = [];
+        foreach (array_slice($blocks, 0, self::MAX_BLOCKS_PER_MODULE) as $block) {
+            if (!is_array($block)) {
+                continue;
+            }
+            $type = strtolower(trim((string) ($block['type'] ?? '')));
+            if ($type === 'image') {
+                // Phase 2: never invent image URLs.
+                continue;
+            }
+            if (!in_array($type, self::BLOCK_TYPES, true)) {
+                continue;
+            }
+            $id = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) ($block['id'] ?? ''));
+            if ($id === '') {
+                $id = bin2hex(random_bytes(4));
+            }
+            if ($type === 'paragraph' || $type === 'quote') {
+                $text = mb_substr(trim(strip_tags((string) ($block['text'] ?? ''))), 0, 20000);
+                if ($text === '' && $type === 'paragraph') {
+                    continue;
+                }
+                $out[] = ['id' => $id, 'type' => $type, 'text' => $text];
+                continue;
+            }
+            if ($type === 'heading') {
+                $text = mb_substr(trim(strip_tags((string) ($block['text'] ?? ''))), 0, 300);
+                if ($text === '') {
+                    continue;
+                }
+                $out[] = [
+                    'id' => $id,
+                    'type' => 'heading',
+                    'level' => (int) ($block['level'] ?? 2) === 3 ? 3 : 2,
+                    'text' => $text,
+                ];
+                continue;
+            }
+            if ($type === 'divider') {
+                $out[] = ['id' => $id, 'type' => 'divider'];
+                continue;
+            }
+            if ($type === 'code') {
+                if (!$this->fieldAllowsCode($academicField)) {
+                    $source = trim((string) ($block['source'] ?? ''));
+                    if ($source !== '') {
+                        $out[] = [
+                            'id' => $id,
+                            'type' => 'paragraph',
+                            'text' => mb_substr('Example / illustration: ' . strip_tags($source), 0, 20000),
+                        ];
+                    }
+                    continue;
+                }
+                $language = strtolower(trim((string) ($block['language'] ?? 'auto')));
+                if (!in_array($language, self::CODE_LANGUAGES, true)) {
+                    $language = 'auto';
+                }
+                $out[] = [
+                    'id' => $id,
+                    'type' => 'code',
+                    'language' => $language,
+                    'source' => mb_substr((string) ($block['source'] ?? ''), 0, 20000),
+                    'exampleOutput' => mb_substr((string) ($block['exampleOutput'] ?? ''), 0, 20000),
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function normalizeCourseRequest(array $input): array
+    {
+        $topic = trim(strip_tags((string) ($input['topic'] ?? '')));
+        if ($topic === '') {
+            throw new \InvalidArgumentException('Topic is required.');
+        }
+        if (mb_strlen($topic) > self::MAX_TOPIC_CHARS) {
+            throw new \InvalidArgumentException('Topic must be ' . self::MAX_TOPIC_CHARS . ' characters or fewer.');
+        }
+        $moduleCount = (int) ($input['moduleCount'] ?? 0);
+        if ($moduleCount < self::MIN_MODULES || $moduleCount > self::MAX_MODULES) {
+            throw new \InvalidArgumentException('Module count must be between ' . self::MIN_MODULES . ' and ' . self::MAX_MODULES . '.');
+        }
+        $instructions = trim(strip_tags((string) ($input['additionalInstructions'] ?? $input['instructions'] ?? '')));
+        if (mb_strlen($instructions) > self::MAX_INSTRUCTIONS_CHARS) {
+            throw new \InvalidArgumentException('Additional instructions are too long.');
+        }
+        $syllabus = trim((string) ($input['syllabusText'] ?? $input['syllabus'] ?? $input['referenceText'] ?? ''));
+        $syllabus = strip_tags($syllabus);
+        if (mb_strlen($syllabus) > self::MAX_SYLLABUS_CHARS) {
+            throw new \InvalidArgumentException('Syllabus or reference text must be ' . self::MAX_SYLLABUS_CHARS . ' characters or fewer.');
+        }
+        $mcqs = (int) ($input['mcqsPerModule'] ?? 0);
+        if ($mcqs < 0 || $mcqs > 20) {
+            throw new \InvalidArgumentException('MCQs per module must be between 0 and 20.');
+        }
+        $practical = strtolower(trim((string) ($input['practicalPreference'] ?? 'none')));
+        if (!in_array($practical, ['none', 'light', 'moderate', 'heavy'], true)) {
+            $practical = 'none';
+        }
+        $duration = (int) ($input['estimatedDurationMinutes'] ?? 0);
+        if ($duration < 0 || $duration > 10080) {
+            $duration = 0;
+        }
+
+        return [
+            'topic' => $topic,
+            'academicField' => $this->normalizeAcademicField((string) ($input['academicField'] ?? 'other')),
+            'difficulty' => $this->normalizeDifficulty((string) ($input['difficulty'] ?? 'beginner')),
+            'moduleCount' => $moduleCount,
+            'mcqsPerModule' => $mcqs,
+            'practicalPreference' => $practical,
+            'additionalInstructions' => $instructions,
+            'syllabusText' => $syllabus,
+            'estimatedDurationMinutes' => $duration,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function callGenerateJson(string $system, string $user): array
+    {
+        return $this->openai->generateJson($system, $user);
+    }
+
+    protected function assertAiConfigured(): void
+    {
+        if (!$this->openai->isConfigured()) {
+            throw new \RuntimeException('AI tutorial generation is not configured. Contact the administrator.');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function assertAuthor(array $user): void
+    {
+        $role = AuthMiddleware::resolvedRole($user);
+        if (!in_array($role, ['admin', 'placement_officer', 'staff'], true)) {
+            throw new \RuntimeException('You do not have permission to generate tutorials.', 403);
+        }
+    }
+
+    private function assertCooldown(string $userId): void
+    {
+        if ($userId === '') {
+            return;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_tutorial_ai_' . hash('sha256', $userId) . '.cooldown';
+        if (is_file($path)) {
+            $mtime = @filemtime($path);
+            if ($mtime !== false && (time() - $mtime) < self::COOLDOWN_SECONDS) {
+                throw new \RuntimeException('Please wait a few seconds before generating again.');
+            }
+        }
+        @file_put_contents($path, (string) time());
+    }
+
+    public function normalizeAcademicField(string $field): string
+    {
+        $field = strtolower(trim($field));
+        $aliases = [
+            'engineering' => 'engineering',
+            'eng' => 'engineering',
+            'computer_applications' => 'computer_applications',
+            'computer applications' => 'computer_applications',
+            'mca' => 'computer_applications',
+            'cs' => 'computer_applications',
+            'business_administration' => 'business_administration',
+            'business administration' => 'business_administration',
+            'mba' => 'business_administration',
+            'business' => 'business_administration',
+            'other' => 'other',
+        ];
+        if (!isset($aliases[$field])) {
+            throw new \InvalidArgumentException('Academic field must be engineering, computer_applications, business_administration, or other.');
+        }
+
+        return $aliases[$field];
+    }
+
+    public function normalizeDifficulty(string $difficulty): string
+    {
+        $difficulty = strtolower(trim($difficulty));
+        if (!in_array($difficulty, self::DIFFICULTIES, true)) {
+            throw new \InvalidArgumentException('Difficulty must be beginner, intermediate, or advanced.');
+        }
+
+        return $difficulty;
+    }
+
+    private function fieldAllowsCode(string $academicField): bool
+    {
+        return in_array($academicField, ['computer_applications', 'engineering'], true);
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     * @param array<string, mixed> $course
+     * @return array<string, mixed>
+     */
+    private function normalizeModuleRequest(array $input, array $course): array
+    {
+        $topic = trim(strip_tags((string) ($input['topic'] ?? $input['moduleTopic'] ?? '')));
+        if ($topic === '') {
+            throw new \InvalidArgumentException('Module topic is required.');
+        }
+        if (mb_strlen($topic) > self::MAX_TOPIC_CHARS) {
+            throw new \InvalidArgumentException('Module topic must be ' . self::MAX_TOPIC_CHARS . ' characters or fewer.');
+        }
+        $instructions = trim(strip_tags((string) ($input['additionalInstructions'] ?? $input['instructions'] ?? '')));
+        if (mb_strlen($instructions) > self::MAX_INSTRUCTIONS_CHARS) {
+            throw new \InvalidArgumentException('Additional instructions are too long.');
+        }
+        $field = (string) ($input['academicField'] ?? '');
+        if ($field === '') {
+            $field = $this->inferFieldFromCourse($course);
+        }
+        $mcqs = (int) ($input['mcqsPerModule'] ?? 0);
+        if ($mcqs < 0 || $mcqs > 20) {
+            $mcqs = 0;
+        }
+        $practical = strtolower(trim((string) ($input['practicalPreference'] ?? 'none')));
+        if (!in_array($practical, ['none', 'light', 'moderate', 'heavy'], true)) {
+            $practical = 'none';
+        }
+
+        return [
+            'topic' => $topic,
+            'difficulty' => $this->normalizeDifficulty((string) ($input['difficulty'] ?? 'beginner')),
+            'academicField' => $this->normalizeAcademicField($field),
+            'additionalInstructions' => $instructions,
+            'mcqsPerModule' => $mcqs,
+            'practicalPreference' => $practical,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $course
+     */
+    private function inferFieldFromCourse(array $course): string
+    {
+        $hay = strtolower((string) ($course['topic'] ?? '') . ' ' . (string) ($course['title'] ?? '') . ' ' . (string) ($course['description'] ?? ''));
+        if (preg_match('/\b(market|finance|hr|account|business|mba)\b/', $hay) === 1) {
+            return 'business_administration';
+        }
+        if (preg_match('/\b(iot|robot|electron|mechanical|electrical|network|cloud)\b/', $hay) === 1) {
+            return 'engineering';
+        }
+        if (preg_match('/\b(python|java|dbms|sql|web|data structure|programming|software)\b/', $hay) === 1) {
+            return 'computer_applications';
+        }
+
+        return 'other';
+    }
+
+    private function courseSystemPrompt(string $academicField): string
+    {
+        $fieldGuide = $this->fieldGuide($academicField);
+
+        return <<<SYSTEM
+You are an expert university curriculum author for a placement-oriented learning portal.
+Return ONLY valid JSON (no markdown). Generate educational lesson content as structured blocks.
+Do not invent image URLs. Do not include HTML. Do not execute or claim to run code.
+Code blocks are demonstrations only.
+{$fieldGuide}
+Assessments (MCQs/practicals) may be planned later — for this response focus on course metadata and lesson blocks only.
+Do not include mcqs or practicalActivities arrays in the JSON output.
+SYSTEM;
+    }
+
+    private function moduleSystemPrompt(string $academicField): string
+    {
+        $fieldGuide = $this->fieldGuide($academicField);
+
+        return <<<SYSTEM
+You author a single tutorial module for an existing university course.
+Return ONLY valid JSON (no markdown) with one module object.
+Use structured lesson blocks compatible with: paragraph, heading, quote, code, divider.
+Do not invent image URLs. Do not include HTML. Do not duplicate existing modules.
+{$fieldGuide}
+Do not include mcqs or practicalActivities in this response.
+SYSTEM;
+    }
+
+    private function fieldGuide(string $academicField): string
+    {
+        return match ($academicField) {
+            'engineering' => 'Academic field: Engineering. Prefer concept explanations, formulas, numerical examples, applications, and design thinking. Include code only when it clearly helps (e.g. IoT/cloud snippets).',
+            'computer_applications' => 'Academic field: Computer Applications. Prefer programming explanations, algorithms, SQL/web examples, and code demonstrations with optional exampleOutput.',
+            'business_administration' => 'Academic field: Business Administration. Prefer business concepts, cases, financial reasoning, and analytical explanations. Do NOT generate programming code blocks.',
+            default => 'Academic field: Other / general. Prefer clear explanations and examples appropriate to the topic. Use code blocks only if the topic is clearly technical.',
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $req
+     */
+    private function courseUserPrompt(array $req): string
+    {
+        $allowCode = $this->fieldAllowsCode((string) $req['academicField']) ? 'yes' : 'no';
+        $syllabus = (string) $req['syllabusText'];
+        $syllabusBlock = $syllabus !== '' ? "Reference syllabus/notes (use as guidance, do not copy verbatim):\n{$syllabus}\n" : '';
+        $prefs = 'Later-phase preferences (do not emit assessment arrays now): mcqsPerModule='
+            . (int) $req['mcqsPerModule'] . ', practicalPreference=' . (string) $req['practicalPreference'] . '.';
+
+        return <<<PROMPT
+Generate a complete draft course.
+
+Topic: {$req['topic']}
+Academic field: {$req['academicField']}
+Difficulty: {$req['difficulty']}
+Module count: {$req['moduleCount']}
+Estimated duration minutes (hint): {$req['estimatedDurationMinutes']}
+Code blocks allowed: {$allowCode}
+Additional instructions: {$req['additionalInstructions']}
+{$prefs}
+{$syllabusBlock}
+Required JSON shape:
+{
+  "version": 1,
+  "course": {
+    "title": "string",
+    "description": "string",
+    "academicField": "{$req['academicField']}",
+    "difficulty": "{$req['difficulty']}",
+    "learningObjectives": ["string"],
+    "estimatedDurationMinutes": 120,
+    "topic": "string"
+  },
+  "modules": [
+    {
+      "title": "string",
+      "subtitle": "string",
+      "description": "string",
+      "learningObjectives": ["string"],
+      "lessonDocument": {
+        "version": 1,
+        "blocks": [
+          {"type":"heading","level":2,"text":"..."},
+          {"type":"paragraph","text":"..."},
+          {"type":"code","language":"python","source":"...","exampleOutput":"..."}
+        ]
+      }
+    }
+  ]
+}
+
+Rules:
+- Produce exactly {$req['moduleCount']} modules with substantial lesson blocks each (at least 4 blocks).
+- Heading level is 2 or 3 only.
+- Code language must be one of: auto, text, python, javascript, typescript, java, c, cpp, csharp, php, sql, html, css, json, bash, go.
+- If code blocks are not allowed, use paragraphs/quotes only.
+PROMPT;
+    }
+
+    /**
+     * @param array<string, mixed> $req
+     * @param array<string, mixed> $course
+     */
+    private function moduleUserPrompt(array $req, array $course): string
+    {
+        $existing = [];
+        foreach ((array) ($course['modules'] ?? []) as $module) {
+            if (!is_array($module)) {
+                continue;
+            }
+            $existing[] = trim((string) ($module['title'] ?? ''));
+        }
+        $existingList = $existing === [] ? '(none yet)' : implode('; ', array_slice(array_filter($existing), 0, 40));
+        $allowCode = $this->fieldAllowsCode((string) $req['academicField']) ? 'yes' : 'no';
+
+        return <<<PROMPT
+Create one new module for this course.
+
+Course title: {$course['title']}
+Course description: {$course['description']}
+Existing module titles: {$existingList}
+Requested module topic: {$req['topic']}
+Difficulty: {$req['difficulty']}
+Academic field: {$req['academicField']}
+Code blocks allowed: {$allowCode}
+Additional instructions: {$req['additionalInstructions']}
+Later-phase preferences (do not emit assessments): mcqsPerModule={$req['mcqsPerModule']}, practicalPreference={$req['practicalPreference']}
+
+Return JSON:
+{
+  "module": {
+    "title": "string",
+    "subtitle": "string",
+    "description": "string",
+    "learningObjectives": ["string"],
+    "lessonDocument": {
+      "version": 1,
+      "blocks": [
+        {"type":"heading","level":2,"text":"..."},
+        {"type":"paragraph","text":"..."}
+      ]
+    }
+  }
+}
+
+Avoid duplicating existing module titles or covering the same ground unnecessarily.
+Include at least 5 lesson blocks.
+PROMPT;
+    }
+
+    /**
+     * Generate MCQs for a module from lesson context. Preview only.
+     *
+     * @param array<string, mixed> $context
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function generateMcqPreview(array $user, array $context, array $input): array
+    {
+        $this->assertAuthor($user);
+        $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? ''));
+        $this->assertAiConfigured();
+        @set_time_limit(600);
+
+        $count = (int) ($input['questionCount'] ?? $input['count'] ?? 5);
+        if ($count < 1 || $count > 20) {
+            throw new \InvalidArgumentException('Question count must be between 1 and 20.');
+        }
+        $difficulty = $this->normalizeDifficulty((string) ($input['difficulty'] ?? 'beginner'));
+        $field = $this->normalizeAcademicField((string) ($context['academicField'] ?? $input['academicField'] ?? 'other'));
+        $instructions = trim(strip_tags((string) ($input['additionalInstructions'] ?? $input['instructions'] ?? '')));
+        if (mb_strlen($instructions) > self::MAX_INSTRUCTIONS_CHARS) {
+            throw new \InvalidArgumentException('Additional instructions are too long.');
+        }
+        $distribution = trim(strip_tags((string) ($input['difficultyDistribution'] ?? '')));
+        if ($distribution === '') {
+            $distribution = 'mostly ' . $difficulty;
+        }
+
+        $system = <<<SYSTEM
+You write multiple-choice questions for a university tutorial module.
+Return ONLY valid JSON. Each question must have exactly 4 options and one correctAnswer index 0-3.
+Base every question on the provided lesson content. Do not invent unrelated topics.
+Explanations must teach why the correct option is right.
+SYSTEM;
+        $lessonExcerpt = mb_substr(trim(strip_tags((string) ($context['lessonText'] ?? ''))), 0, 8000);
+        $objectives = '';
+        foreach ((array) ($context['learningObjectives'] ?? []) as $item) {
+            $text = trim(strip_tags((string) $item));
+            if ($text !== '') {
+                $objectives .= '- ' . $text . "\n";
+            }
+        }
+        $userPrompt = <<<PROMPT
+Course title: {$context['courseTitle']}
+Course description: {$context['courseDescription']}
+Academic field: {$field}
+Module title: {$context['moduleTitle']}
+Module description: {$context['moduleDescription']}
+Learning objectives:
+{$objectives}
+Lesson content:
+{$lessonExcerpt}
+
+Generate {$count} MCQs. Difficulty focus: {$distribution}.
+Additional instructions: {$instructions}
+
+JSON shape:
+{
+  "questions": [
+    {
+      "question": "string",
+      "options": ["A","B","C","D"],
+      "correctAnswer": 0,
+      "explanation": "string",
+      "difficulty": "beginner",
+      "marks": 1
+    }
+  ]
+}
+PROMPT;
+
+        try {
+            $raw = $this->callGenerateJson($system, $userPrompt);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            error_log('[PMS TutorialAI] generate MCQ failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI MCQ generation is temporarily unavailable. Please try again.');
+        }
+
+        $questions = $this->normalizeMcqQuestions(is_array($raw['questions'] ?? null) ? $raw['questions'] : []);
+        if ($questions === []) {
+            throw new \RuntimeException('No valid MCQs were returned. Please try again.');
+        }
+
+        return [
+            'previewId' => 'mcq-' . bin2hex(random_bytes(6)),
+            'scope' => 'module_mcq',
+            'tutorialId' => (string) ($context['tutorialId'] ?? ''),
+            'moduleId' => (string) ($context['moduleId'] ?? ''),
+            'model' => $this->openai->checkStatus()['model'] ?? '',
+            'generatedAt' => gmdate('c'),
+            'questions' => $questions,
+            'questionCount' => count($questions),
+        ];
+    }
+
+    /**
+     * @param list<mixed> $rows
+     * @return list<array<string, mixed>>
+     */
+    public function normalizeMcqQuestions(array $rows): array
+    {
+        $out = [];
+        foreach (array_slice($rows, 0, 20) as $index => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $question = trim($this->sanitizeMcqText((string) ($row['question'] ?? '')));
+            if ($question === '') {
+                throw new \InvalidArgumentException('A generated question is empty.');
+            }
+            $options = [];
+            foreach (array_values((array) ($row['options'] ?? [])) as $option) {
+                $text = trim($this->sanitizeMcqText((string) $option));
+                if ($text !== '') {
+                    $options[] = mb_substr($text, 0, 500);
+                }
+            }
+            if (count($options) !== 4) {
+                throw new \InvalidArgumentException('Each MCQ needs exactly four non-empty options.');
+            }
+            $correct = (int) ($row['correctAnswer'] ?? $row['correctIndex'] ?? -1);
+            if ($correct < 0 || $correct > 3) {
+                throw new \InvalidArgumentException('Correct answer must be an index from 0 to 3.');
+            }
+            $explanation = trim($this->sanitizeMcqText((string) ($row['explanation'] ?? '')));
+            if ($explanation === '') {
+                throw new \InvalidArgumentException('Each MCQ needs an explanation.');
+            }
+            $difficulty = strtolower(trim((string) ($row['difficulty'] ?? 'beginner')));
+            if (!in_array($difficulty, self::DIFFICULTIES, true)) {
+                $difficulty = 'beginner';
+            }
+            $marks = (int) ($row['marks'] ?? 1);
+            if ($marks < 1 || $marks > 20) {
+                $marks = 1;
+            }
+            $out[] = [
+                'tempId' => 'q-' . ($index + 1) . '-' . bin2hex(random_bytes(3)),
+                'selected' => true,
+                'question' => mb_substr($question, 0, 2000),
+                'options' => $options,
+                'correctIndex' => $correct,
+                'correctAnswer' => $correct,
+                'explanation' => mb_substr($explanation, 0, 4000),
+                'difficulty' => $difficulty,
+                'marks' => $marks,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Preserve angle-bracket text such as HTML tags in MCQ options.
+     */
+    private function sanitizeMcqText(string $value): string
+    {
+        $value = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $value) ?? $value;
+        $value = preg_replace('/<\/?(script|iframe|object|embed)[^>]*>/iu', '', $value) ?? $value;
+
+        return $value;
+    }
+}

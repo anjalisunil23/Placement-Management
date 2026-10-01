@@ -39,6 +39,9 @@
     publishId: '',
     creatingModule: false,
     selectedModuleId: '',
+    assessment: null,
+    assessmentQuestions: [],
+    assessmentPreview: null,
   };
 
   function role() {
@@ -1027,6 +1030,7 @@
     document.getElementById('moduleTitle').value = '';
     document.getElementById('moduleSubtitle').value = '';
     document.getElementById('moduleExercisePane').classList.add('d-none');
+    document.getElementById('moduleAssessmentPane').classList.add('d-none');
     document.getElementById('exerciseForm').classList.add('d-none');
     openArticleShell();
     mountEditor('');
@@ -1046,12 +1050,335 @@
     openArticleShell();
     renderModuleExercises();
     mountEditor(module.content || '');
+    loadModuleAssessment().catch(fail);
     if (!(module.title || '').trim()) document.getElementById('moduleTitle').focus();
+  }
+
+  function blankQuestion() {
+    return {
+      id: '',
+      question: '',
+      options: ['', '', '', ''],
+      correctIndex: 0,
+      explanation: '',
+      difficulty: 'beginner',
+      marks: 1,
+    };
+  }
+
+  function assessmentSettingsFromForm() {
+    return {
+      title: document.getElementById('assessmentTitle').value.trim() || 'Module quiz',
+      passPercent: Number(document.getElementById('assessmentPass').value) || 60,
+      maxAttempts: Number(document.getElementById('assessmentMaxAttempts').value) || 3,
+      status: document.getElementById('assessmentStatus').value === 'published' ? 'published' : 'draft',
+      showExplanations: document.getElementById('assessmentShowExplanations').checked,
+      allowReview: document.getElementById('assessmentAllowReview').checked,
+    };
+  }
+
+  function fillAssessmentSettings(assessment) {
+    document.getElementById('assessmentTitle').value = (assessment && assessment.title) || 'Module quiz';
+    document.getElementById('assessmentPass').value = assessment ? (assessment.passPercent ?? 60) : 60;
+    document.getElementById('assessmentMaxAttempts').value = assessment ? (assessment.maxAttempts ?? 3) : 3;
+    document.getElementById('assessmentStatus').value = assessment && assessment.status === 'published' ? 'published' : 'draft';
+    document.getElementById('assessmentShowExplanations').checked = !assessment || assessment.showExplanations !== false;
+    document.getElementById('assessmentAllowReview').checked = !assessment || assessment.allowReview !== false;
+  }
+
+  function renderAssessmentQuestions() {
+    const root = document.getElementById('assessmentQuestionList');
+    const questions = state.assessmentQuestions || [];
+    const total = questions.reduce((sum, row) => sum + (Number(row.marks) || 1), 0);
+    document.getElementById('assessmentMeta').textContent = questions.length
+      ? `${questions.length} question${questions.length === 1 ? '' : 's'} · ${total} marks · ${(state.assessment && state.assessment.status) || 'draft'}`
+      : 'No questions yet';
+    if (!questions.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">Add questions manually or generate with AI.</p>';
+      return;
+    }
+    root.innerHTML = questions.map((row, index) => {
+      const options = (row.options || ['', '', '', '']).slice(0, 4);
+      while (options.length < 4) options.push('');
+      return `<div class="border rounded p-3" data-q-index="${index}">
+        <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+          <div class="fw-semibold">Question ${index + 1}</div>
+          <div class="d-flex flex-wrap gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-q-up ${index === 0 ? 'disabled' : ''}>↑</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-q-down ${index === questions.length - 1 ? 'disabled' : ''}>↓</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-q-delete>Delete</button>
+          </div>
+        </div>
+        <label class="form-label">Question</label>
+        <textarea class="form-control form-control-sm mb-2" data-q-field="question" rows="2">${esc(row.question || '')}</textarea>
+        ${options.map((opt, oi) => (
+          `<div class="input-group input-group-sm mb-1">
+            <div class="input-group-text"><input class="form-check-input mt-0" type="radio" name="qCorrect${index}" data-q-correct value="${oi}" ${Number(row.correctIndex) === oi ? 'checked' : ''}/></div>
+            <input class="form-control" data-q-option="${oi}" value="${esc(opt)}" placeholder="Option ${String.fromCharCode(65 + oi)}"/>
+          </div>`
+        )).join('')}
+        <div class="row g-2 mt-1">
+          <div class="col-md-4"><label class="form-label">Difficulty</label>
+            <select class="form-select form-select-sm" data-q-field="difficulty">
+              <option value="beginner" ${row.difficulty === 'beginner' ? 'selected' : ''}>Beginner</option>
+              <option value="intermediate" ${row.difficulty === 'intermediate' ? 'selected' : ''}>Intermediate</option>
+              <option value="advanced" ${row.difficulty === 'advanced' ? 'selected' : ''}>Advanced</option>
+            </select>
+          </div>
+          <div class="col-md-2"><label class="form-label">Marks</label><input class="form-control form-control-sm" type="number" min="1" max="20" data-q-field="marks" value="${esc(row.marks || 1)}"/></div>
+          <div class="col-md-6"><label class="form-label">Explanation</label><textarea class="form-control form-control-sm" data-q-field="explanation" rows="2">${esc(row.explanation || '')}</textarea></div>
+        </div>
+      </div>`;
+    }).join('');
+    root.querySelectorAll('[data-q-index]').forEach((card) => {
+      const index = Number(card.getAttribute('data-q-index'));
+      card.querySelectorAll('[data-q-field]').forEach((input) => {
+        input.addEventListener('change', () => {
+          const field = input.getAttribute('data-q-field');
+          state.assessmentQuestions[index][field] = field === 'marks' ? Number(input.value) || 1 : input.value;
+          if (field === 'marks') document.getElementById('assessmentMeta').textContent = `${state.assessmentQuestions.length} questions`;
+        });
+        input.addEventListener('input', () => {
+          const field = input.getAttribute('data-q-field');
+          state.assessmentQuestions[index][field] = field === 'marks' ? Number(input.value) || 1 : input.value;
+        });
+      });
+      card.querySelectorAll('[data-q-option]').forEach((input) => {
+        input.addEventListener('input', () => {
+          const oi = Number(input.getAttribute('data-q-option'));
+          if (!Array.isArray(state.assessmentQuestions[index].options)) state.assessmentQuestions[index].options = ['', '', '', ''];
+          state.assessmentQuestions[index].options[oi] = input.value;
+        });
+      });
+      card.querySelectorAll('[data-q-correct]').forEach((input) => {
+        input.addEventListener('change', () => {
+          if (input.checked) state.assessmentQuestions[index].correctIndex = Number(input.value);
+        });
+      });
+      const up = card.querySelector('[data-q-up]');
+      const down = card.querySelector('[data-q-down]');
+      const del = card.querySelector('[data-q-delete]');
+      if (up) up.addEventListener('click', () => {
+        if (index <= 0) return;
+        const list = state.assessmentQuestions;
+        [list[index - 1], list[index]] = [list[index], list[index - 1]];
+        renderAssessmentQuestions();
+      });
+      if (down) down.addEventListener('click', () => {
+        const list = state.assessmentQuestions;
+        if (index >= list.length - 1) return;
+        [list[index + 1], list[index]] = [list[index], list[index + 1]];
+        renderAssessmentQuestions();
+      });
+      if (del) del.addEventListener('click', () => {
+        state.assessmentQuestions.splice(index, 1);
+        renderAssessmentQuestions();
+      });
+    });
+  }
+
+  function renderAssessmentPreviewList() {
+    const box = document.getElementById('assessmentPreviewBox');
+    const list = document.getElementById('assessmentPreviewList');
+    const preview = state.assessmentPreview;
+    if (!preview || !(preview.questions || []).length) {
+      box.classList.add('d-none');
+      list.innerHTML = '';
+      return;
+    }
+    box.classList.remove('d-none');
+    list.innerHTML = preview.questions.map((row, index) => (
+      `<label class="border rounded p-2 d-flex gap-2 align-items-start">
+        <input type="checkbox" class="form-check-input mt-1" data-preview-select="${index}" ${row.selected === false ? '' : 'checked'}/>
+        <div class="flex-grow-1">
+          <div class="fw-semibold">${esc(row.question || '')}</div>
+          <ol class="mb-1 small">${(row.options || []).map((opt) => `<li>${esc(opt)}</li>`).join('')}</ol>
+          <div class="small text-muted-2">Answer: ${String.fromCharCode(65 + (Number(row.correctIndex) || 0))} · ${esc(row.difficulty || 'beginner')} · ${esc(row.marks || 1)} mark(s)</div>
+          <div class="small">${esc(row.explanation || '')}</div>
+        </div>
+      </label>`
+    )).join('');
+    list.querySelectorAll('[data-preview-select]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const index = Number(input.getAttribute('data-preview-select'));
+        if (state.assessmentPreview.questions[index]) {
+          state.assessmentPreview.questions[index].selected = input.checked;
+        }
+      });
+    });
+  }
+
+  async function loadModuleAssessment() {
+    const pane = document.getElementById('moduleAssessmentPane');
+    if (!state.active || !state.selectedModuleId) {
+      pane.classList.add('d-none');
+      return;
+    }
+    pane.classList.remove('d-none');
+    document.getElementById('assessmentPreviewBox').classList.add('d-none');
+    document.getElementById('assessmentStudentPreview').classList.add('d-none');
+    state.assessmentPreview = null;
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/assessment`);
+      state.assessment = data.assessment || null;
+      state.assessmentQuestions = (data.questions || []).map((row) => ({
+        id: row.id || '',
+        question: row.question || '',
+        options: (row.options || ['', '', '', '']).slice(0, 4),
+        correctIndex: Number(row.correctIndex ?? row.correctAnswer ?? 0),
+        explanation: row.explanation || '',
+        difficulty: row.difficulty || 'beginner',
+        marks: Number(row.marks) || 1,
+      }));
+      fillAssessmentSettings(state.assessment);
+      renderAssessmentQuestions();
+    } catch (err) {
+      state.assessment = null;
+      state.assessmentQuestions = [];
+      fillAssessmentSettings(null);
+      renderAssessmentQuestions();
+      if (err && err.status && err.status !== 404) fail(err);
+    }
+  }
+
+  async function generateAssessmentQuestions() {
+    if (!state.active || !state.selectedModuleId) {
+      toast('Save the module before generating MCQs.', 'error');
+      return;
+    }
+    const btn = document.getElementById('assessmentGenerateBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/assessment/generate`, {
+        method: 'POST',
+        body: {
+          questionCount: Number(document.getElementById('assessmentGenCount').value) || 5,
+          difficulty: document.getElementById('assessmentGenDifficulty').value,
+          additionalInstructions: document.getElementById('assessmentGenInstructions').value.trim(),
+        },
+      });
+      state.assessmentPreview = data;
+      (state.assessmentPreview.questions || []).forEach((row) => { row.selected = true; });
+      renderAssessmentPreviewList();
+      toast('Review the generated questions, then approve to add them.', 'success');
+    } catch (err) {
+      fail(err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Generate';
+    }
+  }
+
+  async function approveGeneratedQuestions() {
+    if (!state.assessmentPreview || !state.active || !state.selectedModuleId) return;
+    const selected = (state.assessmentPreview.questions || []).filter((row) => row.selected !== false);
+    if (!selected.length) {
+      toast('Select at least one question to approve.', 'error');
+      return;
+    }
+    const replace = !(state.assessmentQuestions || []).length;
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/assessment/save-generated`, {
+        method: 'POST',
+        body: {
+          ...assessmentSettingsFromForm(),
+          status: 'draft',
+          replaceExisting: replace,
+          questions: selected,
+        },
+      });
+      state.assessment = data.assessment || null;
+      state.assessmentQuestions = (data.questions || []).map((row) => ({
+        id: row.id || '',
+        question: row.question || '',
+        options: (row.options || ['', '', '', '']).slice(0, 4),
+        correctIndex: Number(row.correctIndex ?? 0),
+        explanation: row.explanation || '',
+        difficulty: row.difficulty || 'beginner',
+        marks: Number(row.marks) || 1,
+      }));
+      state.assessmentPreview = null;
+      renderAssessmentPreviewList();
+      fillAssessmentSettings(state.assessment);
+      renderAssessmentQuestions();
+      toast(replace ? 'Generated questions saved as draft.' : 'Approved questions appended as draft.', 'success');
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  async function saveAssessmentEditor() {
+    if (!state.active || !state.selectedModuleId) {
+      toast('Save the module before saving an assessment.', 'error');
+      return;
+    }
+    if (!(state.assessmentQuestions || []).length) {
+      toast('Add at least one question before saving.', 'error');
+      return;
+    }
+    const settings = assessmentSettingsFromForm();
+    if (settings.status === 'published' && state.active.status !== 'published') {
+      toast('Publish the course before publishing the assessment, or save as draft.', 'error');
+      return;
+    }
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/assessment/save`, {
+        method: 'POST',
+        body: {
+          ...settings,
+          questions: state.assessmentQuestions.map((row) => ({
+            question: row.question,
+            options: row.options,
+            correctIndex: Number(row.correctIndex) || 0,
+            explanation: row.explanation,
+            difficulty: row.difficulty || 'beginner',
+            marks: Number(row.marks) || 1,
+          })),
+        },
+      });
+      state.assessment = data.assessment || null;
+      state.assessmentQuestions = (data.questions || []).map((row) => ({
+        id: row.id || '',
+        question: row.question || '',
+        options: (row.options || ['', '', '', '']).slice(0, 4),
+        correctIndex: Number(row.correctIndex ?? 0),
+        explanation: row.explanation || '',
+        difficulty: row.difficulty || 'beginner',
+        marks: Number(row.marks) || 1,
+      }));
+      fillAssessmentSettings(state.assessment);
+      renderAssessmentQuestions();
+      toast('Assessment saved.', 'success');
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  function previewAssessmentStudent() {
+    const box = document.getElementById('assessmentStudentPreview');
+    const body = document.getElementById('assessmentStudentPreviewBody');
+    const questions = state.assessmentQuestions || [];
+    if (!questions.length) {
+      toast('Add questions before previewing.', 'error');
+      return;
+    }
+    const settings = assessmentSettingsFromForm();
+    const total = questions.reduce((sum, row) => sum + (Number(row.marks) || 1), 0);
+    body.innerHTML = `<div class="mb-2"><strong>${esc(settings.title)}</strong> · ${questions.length} questions · ${total} marks · pass ${settings.passPercent}%</div>`
+      + questions.map((row, index) => (
+        `<div class="mb-3"><div class="fw-semibold">Q${index + 1}. ${esc(row.question || '')}</div>
+        ${(row.options || []).map((opt, oi) => `<div class="form-check"><input class="form-check-input" type="radio" disabled/><label class="form-check-label">${String.fromCharCode(65 + oi)}. ${esc(opt)}</label></div>`).join('')}</div>`
+      )).join('');
+    box.classList.remove('d-none');
   }
 
   function cancelModuleEdit() {
     state.creatingModule = false;
     state.lesson = null;
+    state.assessment = null;
+    state.assessmentQuestions = [];
+    state.assessmentPreview = null;
     showStaffScreen('builder');
     renderModuleNav();
   }
@@ -1396,6 +1723,27 @@
     document.getElementById('cancelExerciseBtn').addEventListener('click', () => {
       document.getElementById('exerciseForm').classList.add('d-none');
     });
+    document.getElementById('assessmentGenerateBtn').addEventListener('click', () => {
+      generateAssessmentQuestions().catch(fail);
+    });
+    document.getElementById('assessmentPreviewDiscard').addEventListener('click', () => {
+      state.assessmentPreview = null;
+      renderAssessmentPreviewList();
+    });
+    document.getElementById('assessmentPreviewApprove').addEventListener('click', () => {
+      approveGeneratedQuestions().catch(fail);
+    });
+    document.getElementById('assessmentAddQuestionBtn').addEventListener('click', () => {
+      state.assessmentQuestions.push(blankQuestion());
+      renderAssessmentQuestions();
+    });
+    document.getElementById('assessmentPreviewBtn').addEventListener('click', previewAssessmentStudent);
+    document.getElementById('assessmentPreviewClose').addEventListener('click', () => {
+      document.getElementById('assessmentStudentPreview').classList.add('d-none');
+    });
+    document.getElementById('assessmentSaveBtn').addEventListener('click', () => {
+      saveAssessmentEditor().catch(fail);
+    });
     document.getElementById('builderEditCourse').addEventListener('click', () => {
       if (state.active) openTutorial(state.active.id);
     });
@@ -1466,6 +1814,11 @@
     progressById: {},
     continueIds: {},
     progress: null,
+    assessment: null,
+    assessmentAttemptId: null,
+    assessmentAnswers: {},
+    assessmentQuestionIndex: 0,
+    assessmentResult: null,
   };
 
   function highlightLessonCode(source, language) {
@@ -1708,6 +2061,9 @@
     const modules = (learn.detail && learn.detail.modules) || [];
     renderStudentModuleNav();
     document.getElementById('studentExercisePanel').classList.add('d-none');
+    document.getElementById('studentAssessmentSection').classList.add('d-none');
+    document.getElementById('studentAssessmentAttempt').classList.add('d-none');
+    document.getElementById('studentAssessmentResults').classList.add('d-none');
     document.getElementById('studentPrevModule').disabled = learn.moduleIndex <= 0;
     document.getElementById('studentNextModule').disabled = learn.moduleIndex >= modules.length - 1;
     if (!modules.length) {
@@ -1740,6 +2096,169 @@
     document.querySelectorAll('[data-student-exercise]').forEach((btn) => {
       btn.addEventListener('click', () => openStudentExercise(btn.getAttribute('data-student-exercise')));
     });
+    await loadStudentAssessment();
+  }
+
+  function resetStudentAssessmentUi() {
+    learn.assessment = null;
+    learn.assessmentAttemptId = null;
+    learn.assessmentAnswers = {};
+    learn.assessmentQuestionIndex = 0;
+    learn.assessmentResult = null;
+    document.getElementById('studentAssessmentSection').classList.add('d-none');
+    document.getElementById('studentAssessmentAttempt').classList.add('d-none');
+    document.getElementById('studentAssessmentResults').classList.add('d-none');
+  }
+
+  async function loadStudentAssessment() {
+    resetStudentAssessmentUi();
+    if (!learn.detail || !learn.module) return;
+    try {
+      const data = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/assessment`);
+      learn.assessment = data;
+      renderStudentAssessmentIntro();
+    } catch (err) {
+      if (err && err.status === 404) return;
+      /* Missing assessment must not block lesson study. */
+    }
+  }
+
+  function renderStudentAssessmentIntro() {
+    const data = learn.assessment;
+    if (!data || !data.assessment) return;
+    const section = document.getElementById('studentAssessmentSection');
+    const intro = document.getElementById('studentAssessmentIntro');
+    const a = data.assessment;
+    const summaries = (data.attemptSummaries || []).filter((row) => row.status === 'SUBMITTED');
+    section.classList.remove('d-none');
+    intro.innerHTML = `
+      <div class="fw-semibold">${esc(a.title || 'Module quiz')}</div>
+      <div class="small text-muted-2 mb-2">${a.questionCount || 0} questions · ${a.totalMarks || 0} marks · pass ${a.passPercent || 60}% · ${data.attemptsRemaining || 0} attempt(s) left</div>
+      ${summaries.length ? `<div class="small mb-2">Best recent: ${summaries.map((row) => `#${row.attemptNumber} ${row.percent}% ${row.passed ? 'Pass' : 'Fail'}`).join(' · ')}</div>` : ''}
+      <button type="button" class="btn btn-sm btn-primary" id="studentAssessmentStartBtn" ${(data.attemptsRemaining || 0) <= 0 && !data.inProgressAttemptId ? 'disabled' : ''}>${data.inProgressAttemptId ? 'Continue assessment' : 'Start assessment'}</button>
+    `;
+    const startBtn = document.getElementById('studentAssessmentStartBtn');
+    if (startBtn) startBtn.addEventListener('click', () => startStudentAssessment().catch(fail));
+  }
+
+  async function startStudentAssessment() {
+    if (!learn.detail || !learn.module || !learn.assessment) return;
+    const started = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/assessment/start`, {
+      method: 'POST',
+      body: {},
+    });
+    learn.assessmentAttemptId = started.attempt && started.attempt.id;
+    learn.assessmentAnswers = {};
+    learn.assessmentQuestionIndex = 0;
+    learn.assessmentResult = null;
+    document.getElementById('studentAssessmentResults').classList.add('d-none');
+    renderStudentAssessmentAttempt();
+  }
+
+  function renderStudentAssessmentAttempt() {
+    const data = learn.assessment;
+    const questions = (data && data.questions) || [];
+    const root = document.getElementById('studentAssessmentAttempt');
+    if (!questions.length) {
+      root.classList.add('d-none');
+      return;
+    }
+    const index = Math.max(0, Math.min(learn.assessmentQuestionIndex || 0, questions.length - 1));
+    learn.assessmentQuestionIndex = index;
+    const q = questions[index];
+    const answered = Object.keys(learn.assessmentAnswers || {}).length;
+    root.classList.remove('d-none');
+    root.innerHTML = `
+      <div class="d-flex justify-content-between gap-2 mb-2">
+        <div class="fw-semibold">Question ${index + 1} of ${questions.length}</div>
+        <div class="small text-muted-2">${answered}/${questions.length} answered · ${esc(q.marks || 1)} mark(s)</div>
+      </div>
+      <div class="progress mb-3" style="height:.4rem"><div class="progress-bar" style="width:${Math.round((answered / questions.length) * 100)}%"></div></div>
+      <div class="mb-3">${esc(q.question || '')}</div>
+      ${(q.options || []).map((opt, oi) => (
+        `<div class="form-check mb-2">
+          <input class="form-check-input" type="radio" name="studentMcq" id="studentMcq${oi}" value="${oi}" ${Number(learn.assessmentAnswers[q.id]) === oi ? 'checked' : ''}/>
+          <label class="form-check-label" for="studentMcq${oi}">${String.fromCharCode(65 + oi)}. ${esc(opt)}</label>
+        </div>`
+      )).join('')}
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="studentMcqPrev" ${index === 0 ? 'disabled' : ''}>Previous</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="studentMcqNext" ${index >= questions.length - 1 ? 'disabled' : ''}>Next</button>
+        <button type="button" class="btn btn-sm btn-primary ms-auto" id="studentMcqSubmit">Submit assessment</button>
+      </div>
+    `;
+    root.querySelectorAll('input[name="studentMcq"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        learn.assessmentAnswers[q.id] = Number(input.value);
+        renderStudentAssessmentAttempt();
+      });
+    });
+    const prev = document.getElementById('studentMcqPrev');
+    const next = document.getElementById('studentMcqNext');
+    const submit = document.getElementById('studentMcqSubmit');
+    if (prev) prev.addEventListener('click', () => {
+      learn.assessmentQuestionIndex = Math.max(0, index - 1);
+      renderStudentAssessmentAttempt();
+    });
+    if (next) next.addEventListener('click', () => {
+      learn.assessmentQuestionIndex = Math.min(questions.length - 1, index + 1);
+      renderStudentAssessmentAttempt();
+    });
+    if (submit) submit.addEventListener('click', () => submitStudentAssessment().catch(fail));
+  }
+
+  async function submitStudentAssessment() {
+    if (!learn.detail || !learn.module || !learn.assessment) return;
+    const questions = learn.assessment.questions || [];
+    if (Object.keys(learn.assessmentAnswers || {}).length !== questions.length) {
+      toast('Answer every question before submitting.', 'error');
+      return;
+    }
+    const ok = await confirmAction({
+      title: 'Submit assessment',
+      message: 'Submit your answers? You cannot change this attempt afterward.',
+      confirmText: 'Submit',
+    });
+    if (!ok) return;
+    const result = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/assessment/submit`, {
+      method: 'POST',
+      body: {
+        attemptId: learn.assessmentAttemptId,
+        answers: questions.map((q) => ({
+          questionId: q.id,
+          selectedIndex: Number(learn.assessmentAnswers[q.id]),
+        })),
+      },
+    });
+    learn.assessmentResult = result;
+    document.getElementById('studentAssessmentAttempt').classList.add('d-none');
+    renderStudentAssessmentResults(result);
+    try {
+      learn.assessment = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/assessment`);
+      renderStudentAssessmentIntro();
+    } catch { /* keep results visible */ }
+  }
+
+  function renderStudentAssessmentResults(result) {
+    const root = document.getElementById('studentAssessmentResults');
+    root.classList.remove('d-none');
+    const review = result.review || [];
+    root.innerHTML = `
+      <div class="fw-semibold mb-1">${result.passed ? 'Passed' : 'Not passed'}</div>
+      <div class="mb-3">${result.score}/${result.totalMarks} · ${result.percent}% (pass ${result.passPercent}%)</div>
+      ${review.length ? review.map((row, index) => (
+        `<div class="border rounded p-2 mb-2">
+          <div class="fw-semibold">Q${index + 1}. ${esc(row.question || '')}</div>
+          <div class="small ${row.isCorrect ? 'text-success' : 'text-danger'}">${row.isCorrect ? 'Correct' : 'Incorrect'} · ${row.marksAwarded}/${row.marks}</div>
+          ${(row.options || []).map((opt, oi) => {
+            const mark = oi === row.selectedIndex ? ' (your answer)' : '';
+            const key = result.allowReview && oi === row.correctIndex ? ' ✓' : '';
+            return `<div class="small">${String.fromCharCode(65 + oi)}. ${esc(opt)}${mark}${key}</div>`;
+          }).join('')}
+          ${result.showExplanations && row.explanation ? `<div class="small text-muted-2 mt-1">${esc(row.explanation)}</div>` : ''}
+        </div>`
+      )).join('') : '<p class="small text-muted-2 mb-0">Review is disabled for this assessment.</p>'}
+    `;
   }
 
   async function openStudentExercise(id) {

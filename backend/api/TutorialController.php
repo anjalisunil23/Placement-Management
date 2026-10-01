@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace PMS\Api;
 
 use PMS\Middleware\AuthMiddleware;
+use PMS\Services\TutorialAIService;
+use PMS\Services\TutorialAssessmentService;
 use PMS\Services\TutorialService;
 use PMS\Utils\Response;
 
@@ -13,9 +15,14 @@ use PMS\Utils\Response;
  */
 final class TutorialController
 {
-    public function __construct(private ?TutorialService $service = null)
-    {
+    public function __construct(
+        private ?TutorialService $service = null,
+        private ?TutorialAIService $ai = null,
+        private ?TutorialAssessmentService $assessments = null,
+    ) {
         $this->service = $service ?? new TutorialService();
+        $this->ai = $ai ?? new TutorialAIService(null, $this->service);
+        $this->assessments = $assessments ?? new TutorialAssessmentService($this->service, $this->ai);
     }
 
     public function listCategories(): void
@@ -157,6 +164,107 @@ final class TutorialController
     {
         $user = AuthMiddleware::authenticate();
         Response::success($this->service->unpublish($user, $id), 'Tutorial unpublished.');
+    }
+
+    public function aiStatus(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->ai->checkStatus($user));
+    }
+
+    public function aiGenerateCourse(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->ai->generateCoursePreview($user, $this->body()), 'AI course draft generated.');
+    }
+
+    public function aiSaveCourse(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->ai->saveCourseDraft($user, $this->body()), 'AI course saved as draft.', 201);
+    }
+
+    public function aiGenerateModule(string $tutorialId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->ai->generateModulePreview($user, $tutorialId, $this->body()),
+            'AI module draft generated.'
+        );
+    }
+
+    public function aiSaveModule(string $tutorialId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->ai->saveModuleDraft($user, $tutorialId, $this->body()),
+            'AI module saved as draft.',
+            201
+        );
+    }
+
+    public function assessmentGenerate(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->assessments->generateForModule($user, $tutorialId, $moduleId, $this->body()),
+            'AI MCQs generated.'
+        );
+    }
+
+    public function assessmentSaveGenerated(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->assessments->saveGenerated($user, $tutorialId, $moduleId, $this->body()),
+            'Generated MCQs saved.',
+            201
+        );
+    }
+
+    public function assessmentManageGet(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->assessments->getManaged($user, $tutorialId, $moduleId));
+    }
+
+    public function assessmentManageSave(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->assessments->saveAssessment($user, $tutorialId, $moduleId, $this->body()),
+            'Assessment saved.'
+        );
+    }
+
+    public function assessmentStudentGet(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->assessments->getForStudent($user, $tutorialId, $moduleId));
+    }
+
+    public function assessmentStudentStart(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->assessments->startAttempt($user, $tutorialId, $moduleId),
+            'Assessment started.'
+        );
+    }
+
+    public function assessmentStudentSubmit(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->assessments->submitAttempt($user, $tutorialId, $moduleId, $this->body()),
+            'Assessment submitted.'
+        );
+    }
+
+    public function assessmentStudentAttempts(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->assessments->listAttemptsForStudent($user, $tutorialId, $moduleId));
     }
 
     public function createModule(string $tutorialId): void

@@ -60,6 +60,10 @@ final class Collections
     public const STUDENT_TUTORIAL_PROGRESS = 'student_tutorial_progress';
     public const STUDENT_TUTORIAL_MODULE_PROGRESS = 'student_tutorial_module_progress';
     public const STUDENT_EXERCISE_ATTEMPTS = 'student_exercise_attempts';
+    public const TUTORIAL_MODULE_ASSESSMENTS = 'tutorial_module_assessments';
+    public const TUTORIAL_MODULE_QUESTIONS = 'tutorial_module_questions';
+    public const TUTORIAL_MODULE_ASSESSMENT_ATTEMPTS = 'tutorial_module_assessment_attempts';
+    public const TUTORIAL_MODULE_ASSESSMENT_ANSWERS = 'tutorial_module_assessment_answers';
     public const RESUME_CAREER_OBJECTIVES = 'resume_career_objectives';
     public const RESUME_SKILLS = 'resume_skills';
     public const RESUME_PROJECTS = 'resume_projects';
@@ -463,6 +467,61 @@ final class Collections
                 'testsPassed' => 'null until an execution engine exists',
                 'testsTotal' => 'null until an execution engine exists',
                 'submittedAt' => 'UTCDateTime',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_MODULE_ASSESSMENTS => [
+                '_id' => 'ObjectId',
+                'tutorialId' => 'ObjectId',
+                'moduleId' => 'ObjectId (unique active assessment per module)',
+                'title' => 'string',
+                'status' => 'string (draft|published)',
+                'passPercent' => 'int',
+                'maxAttempts' => 'int',
+                'showExplanations' => 'bool',
+                'allowReview' => 'bool',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_MODULE_QUESTIONS => [
+                '_id' => 'ObjectId',
+                'assessmentId' => 'ObjectId',
+                'question' => 'string',
+                'options' => 'array[4] of string',
+                'correctIndex' => 'int 0-3 (staff only)',
+                'explanation' => 'string',
+                'difficulty' => 'string (beginner|intermediate|advanced)',
+                'marks' => 'int',
+                'sortOrder' => 'int',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_MODULE_ASSESSMENT_ATTEMPTS => [
+                '_id' => 'ObjectId',
+                'studentId' => 'ObjectId',
+                'assessmentId' => 'ObjectId',
+                'tutorialId' => 'ObjectId',
+                'moduleId' => 'ObjectId',
+                'attemptNumber' => 'int',
+                'pairKey' => 'string (studentId:assessmentId:attemptNumber unique)',
+                'score' => 'int',
+                'totalMarks' => 'int',
+                'percent' => 'int',
+                'passed' => 'bool',
+                'status' => 'string (IN_PROGRESS|SUBMITTED)',
+                'startedAt' => 'UTCDateTime',
+                'submittedAt' => 'UTCDateTime|null',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_MODULE_ASSESSMENT_ANSWERS => [
+                '_id' => 'ObjectId',
+                'attemptId' => 'ObjectId',
+                'questionId' => 'ObjectId',
+                'pairKey' => 'string (attemptId:questionId unique)',
+                'selectedIndex' => 'int 0-3',
+                'isCorrect' => 'bool',
+                'marksAwarded' => 'int',
                 'createdAt' => 'UTCDateTime',
                 'updatedAt' => 'UTCDateTime',
             ],
