@@ -738,8 +738,13 @@ final class StaffController
         if (session_status() === PHP_SESSION_ACTIVE) {
             session_write_close();
         }
+        $syllabusTextChars = 0;
+        $syllabusReadable = false;
         try {
-            AesSyllabusCipher::fetchPdf($encid);
+            $pdf = AesSyllabusCipher::fetchPdf($encid);
+            $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
+            $syllabusTextChars = mb_strlen($text);
+            $syllabusReadable = AesSyllabusCipher::isUsableSyllabusText($text);
         } catch (\RuntimeException) {
             // The viewer request retries the download if this warm-up fails.
         }
@@ -748,6 +753,8 @@ final class StaffController
             'encid' => $encid,
             'courseCode' => $courseCode,
             'departmentName' => $dept['name'] !== '' ? $dept['name'] : $dept['code'],
+            'syllabusTextChars' => $syllabusTextChars,
+            'syllabusReadable' => $syllabusReadable,
         ]);
     }
 

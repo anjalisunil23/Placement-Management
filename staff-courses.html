@@ -323,6 +323,9 @@ async function getSelectedCourse() {
     if (!res?.success) throw new Error(res?.message || 'Could not load that course.');
     picked = Object.assign({}, picked, res.data || {});
     loaded = picked;
+    if (res.data?.syllabusReadable === false) {
+      label.textContent = 'PDF loaded, but the server could not read enough text for AI questions (often a scanned syllabus).';
+    }
     document.getElementById('courseSearch').value = picked.code || query;
     document.getElementById('courseResults').classList.add('d-none');
     practice = null;
@@ -330,7 +333,9 @@ async function getSelectedCourse() {
     document.getElementById('genStatus').textContent = '';
     clearMcqView();
     const deptName = String(res.data?.departmentName || '').trim();
-    label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Course loaded.';
+    if (res.data?.syllabusReadable !== false) {
+      label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Course loaded.';
+    }
     renderSyllabus();
     loadBank();
   } catch (err) {
@@ -343,7 +348,7 @@ async function getSelectedCourse() {
 function renderSyllabus() {
   const course = loaded;
   const panel = document.getElementById('syllabusPanel');
-  document.getElementById('btnGenerate').disabled = !course?.semsubId;
+  document.getElementById('btnGenerate').disabled = !course?.semsubId || course?.syllabusReadable === false;
   if (!course) {
     if (picked?.code) {
       panel.innerHTML = `<p class="text-muted-2 mb-0">Selected <span class="fw-semibold">${esc(picked.code)}</span>${picked.title ? ` — ${esc(picked.title)}` : ''}. Click Get to open the syllabus PDF.</p>`;

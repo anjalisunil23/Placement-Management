@@ -100,12 +100,42 @@ final class AesSyllabusCipher
      */
     public static function extractText(string $pdf): string
     {
-        $viaShell = self::pdftotext($pdf);
-        if (mb_strlen($viaShell) >= 80) {
-            return self::normalizeExtractedText($viaShell);
+        $viaShell = self::normalizeExtractedText(self::pdftotext($pdf));
+        if (self::isReadableSyllabusText($viaShell)) {
+            return $viaShell;
         }
 
-        return self::normalizeExtractedText(self::extractTextHeuristic($pdf));
+        $viaStream = self::normalizeExtractedText(self::extractTextHeuristic($pdf));
+        if (self::isReadableSyllabusText($viaStream)) {
+            return $viaStream;
+        }
+
+        $viaLiteral = self::normalizeExtractedText(self::extractLiteralHeuristic($pdf));
+        if (self::isReadableSyllabusText($viaLiteral)) {
+            return $viaLiteral;
+        }
+
+        return self::bestReadableExtract([$viaShell, $viaStream, $viaLiteral]);
+    }
+
+    /**
+     * Cached extraction keyed by encrypted syllabus id (same cache dir as PDF).
+     */
+    public static function extractTextForEncid(string $encid, string $pdf): string
+    {
+        $encid = trim($encid);
+        if ($encid !== '') {
+            $cached = self::cachedText($encid);
+            if (self::isReadableSyllabusText($cached)) {
+                return $cached;
+            }
+        }
+        $text = self::extractText($pdf);
+        if ($encid !== '' && self::isReadableSyllabusText($text)) {
+            self::rememberText($encid, $text);
+        }
+
+        return $text;
     }
 
     private static function rememberPdf(string $encid, string $pdf): void
@@ -148,6 +178,46 @@ final class AesSyllabusCipher
         return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms-syllabus' . DIRECTORY_SEPARATOR . hash('sha256', $encid) . '.pdf';
     }
 
+    private static function cacheTextPath(string $encid): string
+    {
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms-syllabus' . DIRECTORY_SEPARATOR . hash('sha256', $encid) . '.txt';
+    }
+
+    private static function rememberText(string $encid, string $text): void
+    {
+        if ($text === '' || strlen($text) > 200000) {
+            return;
+        }
+        $path = self::cacheTextPath($encid);
+        $dir = dirname($path);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return;
+        }
+        $tmp = $path . '.tmp';
+        if (file_put_contents($tmp, $text, LOCK_EX) === false) {
+            @unlink($tmp);
+
+            return;
+        }
+        @rename($tmp, $path);
+    }
+
+    private static function cachedText(string $encid): string
+    {
+        $path = self::cacheTextPath($encid);
+        if (!is_readable($path)) {
+            return '';
+        }
+        if ((time() - (int) filemtime($path)) > 43200) {
+            @unlink($path);
+
+            return '';
+        }
+        $text = file_get_contents($path);
+
+        return is_string($text) ? trim($text) : '';
+    }
+
     private static function pdftotext(string $pdf): string
     {
         if (!function_exists('exec') || $pdf === '') {
@@ -163,16 +233,40 @@ final class AesSyllabusCipher
         if (file_put_contents($pdfPath, $pdf) === false) {
             return '';
         }
-        exec(
-            'pdftotext -layout -enc UTF-8 ' . escapeshellarg($pdfPath) . ' ' . escapeshellarg($txtPath) . ' 2>&1',
-            $output,
-            $code
-        );
-        $text = ($code === 0 && is_readable($txtPath)) ? trim((string) file_get_contents($txtPath)) : '';
+        $text = '';
+        foreach (self::pdftotextBinaries() as $binary) {
+            exec(
+                $binary . ' -layout -enc UTF-8 ' . escapeshellarg($pdfPath) . ' ' . escapeshellarg($txtPath) . ' 2>&1',
+                $output,
+                $code
+            );
+            if ($code === 0 && is_readable($txtPath)) {
+                $text = trim((string) file_get_contents($txtPath));
+                if ($text !== '') {
+                    break;
+                }
+            }
+            @unlink($txtPath);
+        }
         @unlink($pdfPath);
         @unlink($txtPath);
 
         return $text;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function pdftotextBinaries(): array
+    {
+        $bins = ['pdftotext'];
+        if (PHP_OS_FAMILY === 'Windows') {
+            $bins[] = 'C:\\Program Files\\poppler\\Library\\bin\\pdftotext.exe';
+            $bins[] = 'C:\\Program Files\\poppler-24.08.0\\Library\\bin\\pdftotext.exe';
+            $bins[] = 'C:\\poppler\\Library\\bin\\pdftotext.exe';
+        }
+
+        return $bins;
     }
 
     private static function extractTextHeuristic(string $pdf): string
@@ -185,12 +279,48 @@ final class AesSyllabusCipher
         return $text;
     }
 
+    private static function extractLiteralHeuristic(string $pdf): string
+    {
+        $parts = [];
+        $collect = static function (string $blob) use (&$parts): void {
+            if (preg_match_all('/\((?:\\\\.|[^\\\\)])*\)/s', $blob, $matches) === false) {
+                return;
+            }
+            foreach ($matches[0] as $raw) {
+                $inner = self::unescapePdfLiteral($raw);
+                if ($inner !== '' && preg_match('/[\p{L}\p{N}]/u', $inner) === 1) {
+                    $parts[] = $inner;
+                }
+            }
+        };
+        $collect($pdf);
+        foreach (self::flateDecodedStreams($pdf) as $content) {
+            $collect($content);
+        }
+
+        return trim(implode(' ', $parts));
+    }
+
     /**
      * @return list<string>
      */
     private static function flateDecodedStreams(string $pdf): array
     {
+        /** @var array<string, true> $seen */
+        $seen = [];
         $out = [];
+        $push = static function (string $decoded) use (&$seen, &$out): void {
+            if ($decoded === '') {
+                return;
+            }
+            $key = hash('xxh128', $decoded);
+            if (isset($seen[$key])) {
+                return;
+            }
+            $seen[$key] = true;
+            $out[] = $decoded;
+        };
+
         $offset = 0;
         $length = strlen($pdf);
         while ($offset < $length) {
@@ -211,18 +341,39 @@ final class AesSyllabusCipher
                 $start++;
             }
             $chunk = substr($pdf, $start, (int) $match[1]);
-            $decoded = @gzuncompress($chunk);
-            if (!is_string($decoded) || $decoded === '') {
-                $inflated = @gzinflate($chunk);
-                $decoded = is_string($inflated) ? $inflated : '';
-            }
-            if ($decoded !== '') {
-                $out[] = $decoded;
-            }
+            $push(self::decodePdfStream($chunk));
             $offset = $start + (int) $match[1];
         }
 
+        if (preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $streams) === false) {
+            return $out;
+        }
+        foreach ($streams[1] as $stream) {
+            $push(self::decodePdfStream($stream));
+        }
+
         return $out;
+    }
+
+    private static function decodePdfStream(string $chunk): string
+    {
+        if ($chunk === '') {
+            return '';
+        }
+        $decoded = @gzuncompress($chunk);
+        if (is_string($decoded) && $decoded !== '') {
+            return $decoded;
+        }
+        $inflated = @gzinflate($chunk);
+        if (is_string($inflated) && $inflated !== '') {
+            return $inflated;
+        }
+        $inflatedRaw = @gzinflate(substr($chunk, 2));
+        if (is_string($inflatedRaw) && $inflatedRaw !== '') {
+            return $inflatedRaw;
+        }
+
+        return '';
     }
 
     private static function textFromContentStream(string $content): string
@@ -261,6 +412,48 @@ final class AesSyllabusCipher
         }
 
         return stripcslashes(str_replace("\x00", '', substr($raw, 1, -1)));
+    }
+
+    public static function isUsableSyllabusText(string $text): bool
+    {
+        return self::isReadableSyllabusText($text);
+    }
+
+    private static function isReadableSyllabusText(string $text): bool
+    {
+        return mb_strlen($text) >= 80 && self::readableTextScore($text) >= 120;
+    }
+
+    private static function readableTextScore(string $text): int
+    {
+        if ($text === '') {
+            return 0;
+        }
+        $letters = preg_match_all('/[\p{L}\p{N}]/u', $text) ?: 0;
+        $len = mb_strlen($text);
+        if ($len === 0) {
+            return 0;
+        }
+
+        return (int) round(($letters / $len) * 1000) + min($len, 400);
+    }
+
+    /**
+     * @param list<string> $candidates
+     */
+    private static function bestReadableExtract(array $candidates): string
+    {
+        $best = '';
+        $bestScore = -1;
+        foreach ($candidates as $candidate) {
+            $score = self::readableTextScore($candidate);
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $candidate;
+            }
+        }
+
+        return $best;
     }
 
     private static function normalizeExtractedText(string $text): string

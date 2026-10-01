@@ -56,8 +56,11 @@ final class StaffCourseQuestionService
         $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? 'staff'));
 
         $syllabus = $this->syllabusText($course);
-        if (mb_strlen($syllabus) < 80) {
-            throw new \RuntimeException('Could not read that syllabus. Click Get, then generate questions.');
+        if (!AesSyllabusCipher::isUsableSyllabusText($syllabus)) {
+            throw new \RuntimeException(
+                'Could not read enough text from that syllabus PDF for AI generation. '
+                . 'Click Get again; if the PDF opens but generation still fails, the file may be image-only (scanned).'
+            );
         }
         $courseCode = (string) ($course['code'] ?? '');
         /** @var array<string, true> $promptKeys */
@@ -649,7 +652,7 @@ final class StaffCourseQuestionService
         } catch (\RuntimeException $e) {
             throw new \RuntimeException($e->getMessage(), 502);
         }
-        $text = AesSyllabusCipher::extractText($pdf);
+        $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
 
         return [
             'code' => $code,
