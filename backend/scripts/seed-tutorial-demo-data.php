@@ -13,12 +13,14 @@ require $root . '/vendor/autoload.php';
 require dirname(__DIR__) . '/config/app.php';
 
 use PMS\Models\TutorialCategoryModel;
+use PMS\Models\TutorialModel;
 use PMS\Models\UserModel;
 use PMS\Services\TutorialService;
 
 $users = new UserModel();
 (new TutorialCategoryModel())->seedDefaults();
 $service = new TutorialService();
+$tutorialModel = new TutorialModel();
 $admins = $users->findByRole('admin', 1);
 $admin = $admins[0] ?? null;
 $officers = $users->findByRole('placement_officer', 1);
@@ -252,14 +254,32 @@ foreach ($catalog as $course) {
     $keepTopics[(string) $course['topic']] = true;
 }
 
-$sampleTitles = [
-    'programming fundamentals',
-    'git for placement projects',
-    'python fundamentals',
-    'c programming basics',
-    'html and css basics',
-    'version control with git',
-];
+$shouldRemove = static function (array $course) use ($keepTopics): bool {
+    $topic = strtolower(trim((string) ($course['topic'] ?? '')));
+    $title = strtolower(trim((string) ($course['title'] ?? '')));
+    $description = strtolower(trim((string) ($course['description'] ?? '')));
+    if (str_starts_with($topic, 'demo-') || isset($keepTopics[$topic])) {
+        return true;
+    }
+    if (str_contains($title, 'programming fundamentals')) {
+        return true;
+    }
+    if (in_array($topic, ['git', 'c'], true)) {
+        return true;
+    }
+    if (str_contains($description, 'introduction to version control') || $description === 'c programming basics') {
+        return true;
+    }
+    $sampleTitles = [
+        'git for placement projects',
+        'python fundamentals',
+        'c programming basics',
+        'html and css basics',
+        'version control with git',
+    ];
+
+    return in_array($title, $sampleTitles, true);
+};
 
 foreach (['programming-languages', 'tools'] as $requiredSlug) {
     if (($bySlug[$requiredSlug] ?? '') === '') {
@@ -310,22 +330,46 @@ foreach ($catalog as $course) {
 }
 
 $deleted = 0;
-foreach ($service->listManaged($admin) as $course) {
-    $id = (string) ($course['id'] ?? '');
-    if (isset($createdIds[$id])) {
+foreach ($tutorialModel->findAll([], 500, 0, ['createdAt' => -1]) as $row) {
+    $id = (string) ($row['_id'] ?? '');
+    if ($id === '' || isset($createdIds[$id])) {
         continue;
     }
-    $topic = strtolower(trim((string) ($course['topic'] ?? '')));
-    $title = strtolower(trim((string) ($course['title'] ?? '')));
-    $isOldDemo = str_starts_with($topic, 'demo-');
-    $isReplacement = isset($keepTopics[$topic]);
-    $isSampleTitle = in_array($title, $sampleTitles, true);
-    if (!$isOldDemo && !$isReplacement && !$isSampleTitle) {
+    if (!$shouldRemove($row)) {
         continue;
     }
-    $service->deleteTutorial($admin, $id);
-    $deleted++;
-    echo 'DELETED ' . (string) ($course['topic'] ?? '') . ' (' . (string) ($course['title'] ?? '') . ").\n";
+    try {
+        $service->deleteTutorial($admin, $id);
+        $deleted++;
+        echo 'DELETED ' . (string) ($row['topic'] ?? '') . ' (' . (string) ($row['title'] ?? '') . ").\n";
+    } catch (Throwable $e) {
+        fwrite(STDERR, 'FAILED delete ' . $id . ': ' . $e->getMessage() . PHP_EOL);
+        exit(1);
+    }
+}
+
+$publishedTopics = [];
+foreach ($tutorialModel->listByStatus('published') as $row) {
+    $topic = (string) ($row['topic'] ?? '');
+    $publishedTopics[$topic] = (string) ($row['title'] ?? $topic);
+    $visibility = strtolower(trim((string) ($row['visibility'] ?? '')));
+    if ($visibility !== 'all' && isset($keepTopics[$topic])) {
+        fwrite(STDERR, "Course {$topic} is published but not visible to all students.\n");
+        exit(1);
+    }
+}
+foreach (array_keys($keepTopics) as $topic) {
+    if (!isset($publishedTopics[$topic])) {
+        fwrite(STDERR, "Required course {$topic} is not published after seeding.\n");
+        exit(1);
+    }
+}
+foreach ($publishedTopics as $topic => $title) {
+    if (str_contains(strtolower($title), 'programming fundamentals') || in_array(strtolower($topic), ['git', 'c'], true)) {
+        fwrite(STDERR, "Sample course still published after seeding: {$title} ({$topic}).\n");
+        exit(1);
+    }
 }
 
 echo $created . ' courses published for all students, ' . $deleted . " sample courses removed.\n";
+echo 'Published catalogue: ' . implode(', ', array_values($publishedTopics)) . PHP_EOL;
