@@ -831,10 +831,14 @@ final class StaffController
             $body = $_POST;
         }
         try {
-            Response::success(
-                (new StaffCourseQuestionService())->generate($user, $body),
-                'Questions generated. Select the ones you want to add to the syllabus question bank.'
-            );
+            $result = (new StaffCourseQuestionService())->generate($user, $body);
+            $requested = (int) ($result['requested'] ?? 0);
+            $got = count($result['questions'] ?? []);
+            $message = 'Questions generated. Select the ones you want to add to the syllabus question bank.';
+            if ($requested > 0 && $got < $requested) {
+                $message = "Generated {$got} of {$requested} requested. Select the ones to add, or generate again for more.";
+            }
+            Response::success($result, $message);
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         } catch (\RuntimeException $e) {

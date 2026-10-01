@@ -18,7 +18,7 @@ final class StaffCourseQuestionService
     private const MAX_TOTAL = 40;
     private const COOLDOWN_SECONDS = 8;
     private const GENERATE_BATCH_SIZE = 10;
-    private const GENERATE_MAX_API_CALLS = 28;
+    private const GENERATE_MAX_API_CALLS = 36;
 
     private OpenAIService $openai;
 
@@ -72,11 +72,6 @@ final class StaffCourseQuestionService
         $questions = $this->assembleQuestionsForMixes($course, $syllabus, $system, $mixes, $mixText, $bankAvoid, $promptKeys);
         if ($questions === []) {
             throw new \RuntimeException('AI did not return any usable questions. Please try again.');
-        }
-        if (count($questions) < $total) {
-            throw new \RuntimeException(
-                'Could only generate ' . count($questions) . ' of ' . $total . ' requested questions. Try again or lower the counts.'
-            );
         }
         foreach ($questions as $index => $question) {
             $questions[$index]['draftIndex'] = $index;
@@ -963,7 +958,7 @@ final class StaffCourseQuestionService
         $avoid = trim($avoidBlock) !== ''
             ? "\n" . trim($avoidBlock) . "\n"
             : '';
-        $extraHint = $allowExtra ? min(8, max(3, (int) ceil($total / 4))) : 0;
+        $extraHint = $allowExtra ? min(10, max(4, (int) ceil($total / 2))) : 0;
         $countRule = $allowExtra
             ? "- Return at least {$total} questions matching the difficulty counts above (include up to {$extraHint} extra in the same mix if helpful).\n"
             : "- Return exactly {$total} questions with the difficulty counts above.\n";
@@ -1043,7 +1038,8 @@ final class StaffCourseQuestionService
             foreach ($shortfall as $mix) {
                 $label = (string) ($mix['difficulty'] ?? 'Medium');
                 $need = (int) ($mix['count'] ?? 0);
-                while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS) {
+                $emptyBatchStreak = 0;
+                while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyBatchStreak < 4) {
                     $chunk = min(6, $need);
                     $slice = [['difficulty' => $label, 'count' => $chunk]];
                     $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
@@ -1061,8 +1057,10 @@ final class StaffCourseQuestionService
                     );
                     $apiCalls++;
                     if ($added === []) {
-                        break;
+                        $emptyBatchStreak++;
+                        continue;
                     }
+                    $emptyBatchStreak = 0;
                     $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
                     $madeProgress = true;
                     $need = $this->shortfallForDifficulty($mixes, $selected, $label);
@@ -1077,7 +1075,9 @@ final class StaffCourseQuestionService
 
         foreach ($this->mixShortfall($mixes, $selected) as $mix) {
             $label = (string) ($mix['difficulty'] ?? 'Medium');
-            for ($i = 0; $i < (int) ($mix['count'] ?? 0) && $apiCalls < self::GENERATE_MAX_API_CALLS; $i++) {
+            $need = (int) ($mix['count'] ?? 0);
+            $emptyStreak = 0;
+            while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyStreak < 6) {
                 $slice = [['difficulty' => $label, 'count' => 1]];
                 $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
                 $added = $this->fetchQuestionBatch(
@@ -1090,13 +1090,16 @@ final class StaffCourseQuestionService
                     $avoid,
                     $selected,
                     $promptKeys,
-                    false
+                    true
                 );
                 $apiCalls++;
                 if ($added === []) {
-                    break;
+                    $emptyStreak++;
+                    continue;
                 }
+                $emptyStreak = 0;
                 $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+                $need = $this->shortfallForDifficulty($mixes, $selected, $label);
             }
         }
 
@@ -1216,24 +1219,30 @@ final class StaffCourseQuestionService
         if ($requestTotal < 1) {
             return [];
         }
-        $prompt = $this->buildGeneratePrompt(
-            $course,
-            $syllabus,
-            $mixesForRequest,
-            $requestTotal,
-            $mixText,
-            $avoidBlock,
-            $allowExtra
-        );
-        try {
-            $raw = $this->openai->generateJson($system, $prompt, $this->maxTokensForBatch($requestTotal));
-        } catch (\Throwable) {
-            return [];
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $prompt = $this->buildGeneratePrompt(
+                $course,
+                $syllabus,
+                $mixesForRequest,
+                $requestTotal,
+                $mixText,
+                $avoidBlock,
+                $allowExtra
+            );
+            try {
+                $raw = $this->openai->generateJson($system, $prompt, $this->maxTokensForBatch($requestTotal));
+            } catch (\Throwable) {
+                continue;
+            }
+            $valid = $this->dedupeBatchOnly($this->collectValidQuestions($raw['questions'] ?? $raw));
+            $valid = $this->rejectKnownPrompts($valid, $promptKeys);
+            $picked = $this->selectQuestionsForMixes($valid, $mixesForRequest, $selectedSoFar, $promptKeys);
+            if ($picked !== []) {
+                return $picked;
+            }
         }
-        $valid = $this->dedupeBatchOnly($this->collectValidQuestions($raw['questions'] ?? $raw));
-        $valid = $this->rejectKnownPrompts($valid, $promptKeys);
 
-        return $this->selectQuestionsForMixes($valid, $mixesForRequest, $selectedSoFar, $promptKeys);
+        return [];
     }
 
     /**
