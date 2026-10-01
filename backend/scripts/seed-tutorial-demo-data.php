@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 /**
- * Idempotent demonstration courses for every active tutorial category.
- * Uses the existing Tutorial service. Does not create users, students, or departments.
+ * Replaces sample tutorial courses with two published courses:
+ * HTML/CSS Basics and Version Control.
  * Usage: php backend/scripts/seed-tutorial-demo-data.php
  */
 
@@ -12,12 +12,10 @@ $root = dirname(__DIR__, 2);
 require $root . '/vendor/autoload.php';
 require dirname(__DIR__) . '/config/app.php';
 
-use PMS\Models\DepartmentModel;
 use PMS\Models\UserModel;
 use PMS\Services\TutorialService;
 
 $users = new UserModel();
-$departments = new DepartmentModel();
 $service = new TutorialService();
 $admins = $users->findByRole('admin', 1);
 $admin = $admins[0] ?? null;
@@ -26,299 +24,275 @@ if (!is_array($admin) || (string) ($admin['_id'] ?? '') === '') {
     exit(1);
 }
 
-$departmentIds = [];
-foreach ($departments->findAll([], 300) as $department) {
-    $id = (string) ($department['_id'] ?? '');
-    if ($id !== '' && DepartmentModel::isStudentAcademicDepartment((string) ($department['code'] ?? ''), (string) ($department['name'] ?? ''))) {
-        $departmentIds[] = $id;
-    }
-}
-if ($departmentIds === []) {
-    echo "No academic departments found. Department-scoped demos will be visible to all students.\n";
-}
-
 $bySlug = [];
 foreach ($service->listCategories($admin) as $category) {
     $bySlug[(string) ($category['slug'] ?? '')] = (string) ($category['id'] ?? '');
 }
 
-$existing = [];
-foreach ($service->listManaged($admin) as $course) {
-    $existing[(string) ($course['topic'] ?? '')] = true;
-}
-
-/**
- * @return array{visibility: string, departmentIds: list<string>, passingYears: list<string>}
- */
-$scope = static function (string $mode) use ($departmentIds): array {
-    $departmentId = $departmentIds[0] ?? '';
-    if (($mode === 'department' || $mode === 'both') && $departmentId === '') {
-        return ['visibility' => 'all', 'departmentIds' => [], 'passingYears' => []];
-    }
-    if ($mode === 'department') {
-        return ['visibility' => 'scoped', 'departmentIds' => [$departmentId], 'passingYears' => []];
-    }
-    if ($mode === 'year') {
-        return ['visibility' => 'scoped', 'departmentIds' => [], 'passingYears' => ['2027']];
-    }
-    if ($mode === 'both') {
-        return ['visibility' => 'scoped', 'departmentIds' => [$departmentId], 'passingYears' => ['2027']];
-    }
-    if ($mode === 'year-2028') {
-        return ['visibility' => 'scoped', 'departmentIds' => [], 'passingYears' => ['2028']];
-    }
-
-    return ['visibility' => 'all', 'departmentIds' => [], 'passingYears' => []];
+$blockId = static function (): string {
+    return bin2hex(random_bytes(4));
 };
 
-$lesson = static function (string $lead, array $points): string {
-    $items = '';
-    foreach ($points as $point) {
-        $items .= '<li>' . htmlspecialchars($point, ENT_QUOTES, 'UTF-8') . '</li>';
+$lesson = static function (array $blocks) use ($blockId): string {
+    $normalized = [];
+    foreach ($blocks as $block) {
+        $block['id'] = (string) ($block['id'] ?? $blockId());
+        $normalized[] = $block;
     }
 
-    return '<p>' . htmlspecialchars($lead, ENT_QUOTES, 'UTF-8') . '</p><ul>' . $items . '</ul>';
+    return json_encode(['version' => 1, 'blocks' => $normalized], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 };
 
-$catalog = [
-    'programming-languages' => [
-        [
-            'topic' => 'demo-python-fundamentals',
-            'title' => 'Python Fundamentals',
-            'description' => 'A first course in Python for placement practice: variables, decisions, loops, and small functions. Students compare their saved attempts with the sample tests. Nothing on this page runs their code.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Variables and data types', 'content' => $lesson('A Python name points at a value. The useful types for this course are integers, floats, strings, and booleans.', ['Use snake_case for variable names.', 'input() returns a string, so convert with int() before arithmetic.', 'Print with one clear line so a sample test can be compared by eye.']), 'exercise' => ['title' => 'Largest of three numbers', 'language' => 'python', 'instructions' => 'Read three integers and print the largest one.', 'boilerplate' => "a = int(input())\nb = int(input())\nc = int(input())\nprint(max(a, b, c))\n", 'stdin' => "7\n3\n9\n", 'expected' => "9\n"]],
-                ['title' => 'Conditions and loops', 'content' => $lesson('if, elif, and else choose a path. for and while repeat work until the stopping condition is true.', ['Prefer a for loop when the count is known.', 'Keep the loop body short enough to explain in one sentence.', 'Test the boundary values: empty input is not the same as zero.']), 'exercise' => null],
-            ],
-        ],
-        [
-            'topic' => 'demo-c-fundamentals',
-            'title' => 'C Programming Basics',
-            'description' => 'Covers the shape of a C program, printf, and a small function. Use it to show a second programming course in the same category.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Program structure', 'content' => $lesson('Every example in this course starts in main and writes to standard output.', ['Include stdio.h before calling printf.', 'Return 0 from main when the program finishes normally.', 'Match the sample output exactly, including the newline.']), 'exercise' => ['title' => 'Print a greeting', 'language' => 'c', 'instructions' => 'Print Hello, placement on its own line.', 'boilerplate' => "#include <stdio.h>\nint main(void) {\n    printf(\"Hello, placement\\n\");\n    return 0;\n}\n", 'stdin' => '', 'expected' => "Hello, placement\n"]],
-                ['title' => 'Functions', 'content' => $lesson('A function name, parameters, and return type make a calculation reusable.', ['Pass values in; do not rely on global variables for this course.', 'Name the function after the result it returns.']), 'exercise' => null],
-            ],
-        ],
-    ],
-    'tools' => [
-        [
-            'topic' => 'demo-git-basics',
-            'title' => 'Git for Placement Projects',
-            'description' => 'How a student keeps a project in Git: status, commit, and a short history they can explain in an interview. Visible to one academic department when the campus has departments configured.',
-            'mode' => 'department',
-            'modules' => [
-                ['title' => 'Status and commit', 'content' => $lesson('Git status shows what changed. A commit records one intentional step with a message that says why.', ['Stage only the files that belong in that step.', 'Write the message in the present tense.', 'Do not commit passwords, token files, or local configuration.']), 'exercise' => ['title' => 'Write a commit message', 'language' => 'javascript', 'instructions' => 'In a comment, write a one-line commit message for adding a student search field. Save the attempt. It is not executed.', 'boilerplate' => "// git commit -m \"Add a search field to the student course list\"\n", 'stdin' => '', 'expected' => "Add a search field to the student course list\n"]],
-                ['title' => 'Reading history', 'content' => $lesson('git log shows who changed the project and in what order.', ['Use a short log when explaining a project in a placement interview.', 'A revert commit is still part of the history.']), 'exercise' => null],
-            ],
-        ],
-        [
-            'topic' => 'demo-editor-setup',
-            'title' => 'Editor Setup for Practice',
-            'description' => 'A short course on keeping an editor readable: font, indentation, and saving work before an attempt.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Readable editor settings', 'content' => $lesson('A monospace font and consistent indentation make starter code easier to edit.', ['Use spaces or tabs consistently inside one file.', 'Save before you close the page. A draft in the browser is not the stored attempt.']), 'exercise' => null],
-                ['title' => 'What Save Attempt stores', 'content' => $lesson('Save Attempt keeps your source text. It does not compile, run, or grade it.', ['The status is Attempted.', 'Opening an older attempt loads it into the editor without creating a new row.']), 'exercise' => null],
-            ],
+$p = static function (string $text): array {
+    return ['type' => 'paragraph', 'text' => $text];
+};
+$h = static function (string $text, int $level = 2): array {
+    return ['type' => 'heading', 'level' => $level === 3 ? 3 : 2, 'text' => $text];
+};
+$code = static function (string $language, string $source, string $exampleOutput = ''): array {
+    return [
+        'type' => 'code',
+        'language' => $language,
+        'source' => $source,
+        'exampleOutput' => $exampleOutput,
+    ];
+};
+
+$htmlCssModules = [
+    [
+        'title' => 'Your first HTML page',
+        'subtitle' => 'What HTML is and the smallest complete document',
+        'content' => $lesson([
+            $p('HTML is the structure of a web page. Browsers read tags and turn them into headings, paragraphs, links, and images. CSS comes later and only changes how that structure looks.'),
+            $h('A complete page'),
+            $p('Every HTML file starts with a document type, then html, head, and body. The title in the head is the name of the tab. Visible content lives in the body.'),
+            $code('html', "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <title>My first page</title>\n</head>\n<body>\n  <h1>Hello</h1>\n  <p>This is a page.</p>\n</body>\n</html>\n"),
+            $h('Tags you will use constantly', 3),
+            $p('h1 through h6 are headings. p is a paragraph. Nested tags must close in reverse order. Indent child tags so you can see the tree.'),
+        ]),
+        'exercise' => [
+            'title' => 'Minimal page skeleton',
+            'language' => 'html',
+            'instructions' => 'Complete the starter so it is a valid HTML page with a title and one paragraph. Save Attempt stores the text. It is not opened in a browser from this page.',
+            'boilerplate' => "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <title></title>\n</head>\n<body>\n  <p></p>\n</body>\n</html>\n",
         ],
     ],
-    'technologies' => [
-        [
-            'topic' => 'demo-cloud-intro',
-            'title' => 'Introduction to Cloud Computing',
-            'description' => 'Cloud concepts for a placement interview: what a cloud service is, and how IaaS, PaaS, and SaaS differ. This course is limited to the 2027 passout year.',
-            'mode' => 'year',
-            'modules' => [
-                ['title' => 'Cloud concepts', 'content' => $lesson('Cloud computing rents compute, storage, and networking instead of buying a machine for every project.', ['You pay for what the workload uses.', 'The provider runs the physical hardware.', 'A student project still needs a clear owner for accounts and data.']), 'exercise' => null],
-                ['title' => 'IaaS, PaaS, and SaaS', 'content' => $lesson('The service model says how much of the stack you manage.', ['IaaS: you manage the operating system and the application.', 'PaaS: you bring the application; the platform runs it.', 'SaaS: you use the finished application.']), 'exercise' => ['title' => 'Name the service model', 'language' => 'javascript', 'instructions' => 'In a comment, name the model used when a team deploys its own app on a managed platform. Save the attempt.', 'boilerplate' => "// PaaS\n", 'stdin' => '', 'expected' => "PaaS\n"]],
-            ],
-        ],
-        [
-            'topic' => 'demo-web-http',
-            'title' => 'How the Web Reaches a Page',
-            'description' => 'Request, response, and status codes in plain language, so a student can explain a page load without a compiler.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Request and response', 'content' => $lesson('The browser sends an HTTP request. The server sends a response with a status and a body.', ['GET reads. POST sends a new record.', '200 means the response is usable. 404 means that address has no resource.']), 'exercise' => null],
-                ['title' => 'What the student page calls', 'content' => $lesson('The course catalogue asks only for published summaries. Opening a lesson loads that lesson.', ['Search and category stay on the server.', 'A draft is not returned to a student.']), 'exercise' => null],
-            ],
+    [
+        'title' => 'Text, headings, and lists',
+        'subtitle' => 'How to mark up readable content',
+        'content' => $lesson([
+            $p('Headings describe the outline. There should be one h1 for the page title. Use h2 for sections and h3 for subsections. Do not skip levels to make text look bigger. Size is CSS.'),
+            $h('Paragraphs and emphasis'),
+            $p('Wrap each idea in a p. Use strong for important words and em for stress. Do not use heading tags only because you want bold text.'),
+            $h('Lists'),
+            $p('ul is an unordered list. ol is numbered. Each item is an li. Nested lists go inside an li, not next to it.'),
+            $code('html', "<h2>Materials</h2>\n<ul>\n  <li>Laptop</li>\n  <li>Editor</li>\n  <li>Browser</li>\n</ul>\n<ol>\n  <li>Write HTML</li>\n  <li>Add CSS</li>\n  <li>Open the file in the browser</li>\n</ol>\n"),
+        ]),
+        'exercise' => null,
+    ],
+    [
+        'title' => 'Links, images, and page sections',
+        'subtitle' => 'Connecting pages and grouping content',
+        'content' => $lesson([
+            $p('a creates a link. The href is the address. Use a real path or a full URL. Give the link text that describes the destination, not “click here”.'),
+            $code('html', "<p><a href=\"https://developer.mozilla.org/\">HTML documentation</a></p>\n<p><a href=\"about.html\">About this course</a></p>\n"),
+            $h('Images'),
+            $p('img needs src and alt. alt describes the image for anyone who cannot see it. Width and height can wait for CSS. Prefer a path you control, not a random hotlinked file.'),
+            $code('html', "<img src=\"campus.jpg\" alt=\"Front gate of the college\">\n"),
+            $h('Sections'),
+            $p('header, main, and footer name the parts of the page. nav holds the menu. These tags do not change the look by themselves. They make the structure clear for CSS and for assistive tools.'),
+        ]),
+        'exercise' => null,
+    ],
+    [
+        'title' => 'CSS: selectors, color, and type',
+        'subtitle' => 'Attach style without changing the HTML meaning',
+        'content' => $lesson([
+            $p('CSS selects HTML and sets properties. Put rules in a .css file and link it from head. You can start with a style tag while learning, then move the same rules into a file.'),
+            $code('html', "<link rel=\"stylesheet\" href=\"styles.css\">\n"),
+            $h('Selectors'),
+            $p('An element selector styles every tag of that name. A class selector starts with a dot and only matches elements that have that class. Prefer classes for reusable look. Keep ids for unique landmarks.'),
+            $code('css', "body {\n  font-family: Arial, sans-serif;\n  color: #1a1a1a;\n  background: #f7f7f5;\n}\n\nh1 {\n  font-size: 2rem;\n}\n\n.note {\n  color: #334155;\n}\n"),
+            $h('Color and type', 3),
+            $p('Use hex colors you can reuse. Set a readable font size on body, then scale headings from that. Line-height around 1.5 keeps paragraphs easy to scan.'),
+        ]),
+        'exercise' => [
+            'title' => 'Style a heading and a note',
+            'language' => 'css',
+            'instructions' => 'Write CSS that makes h1 dark and .note a smaller muted paragraph. Save Attempt stores the CSS text. It is not applied to a live page here.',
+            'boilerplate' => "h1 {\n  color: #111827;\n}\n\n.note {\n  font-size: 0.95rem;\n  color: #4b5563;\n}\n",
         ],
     ],
-    'frameworks' => [
-        [
-            'topic' => 'demo-react-components',
-            'title' => 'React Components for Beginners',
-            'description' => 'Components, props, and a tiny list. Students who match both the selected department and the 2027 passout year can open this course.',
-            'mode' => 'both',
-            'modules' => [
-                ['title' => 'A component is a function', 'content' => $lesson('A React component returns the markup for one piece of the page.', ['Props are inputs. Do not change them inside the child.', 'A list needs a stable key, not the array index when the order can change.']), 'exercise' => ['title' => 'Outline a component', 'language' => 'javascript', 'instructions' => 'Keep the starter function and add a comment naming the prop it should display. Save the attempt. It is not executed.', 'boilerplate' => "function CourseTitle(props) {\n  // display props.title\n  return null;\n}\n", 'stdin' => '', 'expected' => "props.title\n"]],
-                ['title' => 'Rendering a list', 'content' => $lesson('Map an array of modules to one element each.', ['The parent owns the array.', 'The child receives one module at a time.']), 'exercise' => null],
-            ],
-        ],
-        [
-            'topic' => 'demo-bootstrap-layout',
-            'title' => 'Bootstrap Layout Essentials',
-            'description' => 'Rows, columns, and a card, using the same Bootstrap the placement portal already loads.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Rows and columns', 'content' => $lesson('A row holds columns. On a phone the columns stack. On a wide screen they sit side by side.', ['Use col-lg-4 and col-lg-8 when a course needs a list and an editor.', 'Do not add a horizontal scrollbar for a button row. Wrap it.']), 'exercise' => null],
-                ['title' => 'Cards', 'content' => $lesson('A course card shows the title, category, counts, and one action.', ['Keep the card short.', 'Do not invent ratings or enrolment counts.']), 'exercise' => null],
-            ],
-        ],
+    [
+        'title' => 'The box model',
+        'subtitle' => 'Content, padding, border, and margin',
+        'content' => $lesson([
+            $p('Every element is a box. Inside is the content. Padding is space inside the border. Margin is space outside the border. Width usually means the content width unless you set box-sizing.'),
+            $h('A practical default'),
+            $p('border-box counts padding and border inside the width you set. That makes columns easier to reason about.'),
+            $code('css', "* {\n  box-sizing: border-box;\n}\n\n.card {\n  width: 320px;\n  padding: 1rem;\n  border: 1px solid #d0d5dd;\n  margin: 0 0 1rem;\n  background: #fff;\n}\n"),
+            $h('Spacing without empty tags', 3),
+            $p('Do not add extra br tags to push things around. Use margin on headings and paragraphs. Adjacent vertical margins collapse, so one of the two values wins.'),
+        ]),
+        'exercise' => null,
     ],
-    'databases' => [
-        [
-            'topic' => 'demo-sql-fundamentals',
-            'title' => 'SQL Fundamentals',
-            'description' => 'Relational tables, SELECT, and a filter. The exercise is a query the student saves. The page does not run it.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Tables, rows, and keys', 'content' => $lesson('A table stores one kind of fact. A row is one instance. A key identifies that row.', ['students has one row per student.', 'A foreign key points at a row in another table.', 'Do not store the same fact in two columns that can disagree.']), 'exercise' => null],
-                ['title' => 'SELECT and WHERE', 'content' => $lesson('SELECT chooses columns. WHERE keeps the rows that match.', ['Name the columns you need instead of using SELECT * in a submitted answer.', 'Compare numbers without quotes and text with quotes.', 'ORDER BY is separate from the filter.']), 'exercise' => ['title' => 'Students above 80', 'language' => 'sql', 'instructions' => 'Write a query that returns name and marks from students where marks are greater than 80.', 'boilerplate' => "SELECT name, marks\nFROM students\nWHERE marks > 80;\n", 'stdin' => '', 'expected' => "SELECT name, marks FROM students WHERE marks > 80;\n"]],
-            ],
-        ],
-        [
-            'topic' => 'demo-sql-joins',
-            'title' => 'SQL Joins',
-            'description' => 'How to read two tables together without duplicating their rows by hand.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Why a join exists', 'content' => $lesson('A join matches rows from two tables on a shared key.', ['An inner join keeps matches only.', 'A missing key on one side drops that row from an inner join.']), 'exercise' => null],
-                ['title' => 'Writing the ON clause', 'content' => $lesson('ON says which columns correspond. WHERE then filters the combined rows.', ['Use the key, not a display name, in ON.', 'Alias tables when the query names both.']), 'exercise' => null],
-            ],
-        ],
-    ],
-    'computer-science' => [
-        [
-            'topic' => 'demo-data-structures',
-            'title' => 'Data Structures Fundamentals',
-            'description' => 'Arrays, linked lists, stacks, and queues for interview explanations. This course is limited to the 2028 passout year.',
-            'mode' => 'year-2028',
-            'modules' => [
-                ['title' => 'Arrays', 'content' => $lesson('An array stores items in a fixed order so an index reaches one item quickly.', ['Index 0 is the first item.', 'Inserting in the middle shifts later items.']), 'exercise' => ['title' => 'First and last index', 'language' => 'python', 'instructions' => 'Given a list in a comment, note the index of the first item and the last item. Save the attempt.', 'boilerplate' => "items = ['arrays', 'lists', 'stacks']\n# first index 0, last index 2\n", 'stdin' => '', 'expected' => "0 2\n"]],
-                ['title' => 'Stacks and queues', 'content' => $lesson('A stack removes the most recently added item. A queue removes the oldest.', ['Stack: push and pop.', 'Queue: enqueue and dequeue.', 'Use a stack for undo and a queue for a waiting line.']), 'exercise' => null],
-            ],
-        ],
-        [
-            'topic' => 'demo-complexity',
-            'title' => 'Complexity in Plain Language',
-            'description' => 'How to talk about time cost without pretending the portal will time a program.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Constant and linear', 'content' => $lesson('Constant work does not grow with the list. Linear work walks each item once.', ['Reading one index is constant.', 'Finding a value by scanning is linear.']), 'exercise' => null],
-                ['title' => 'What not to claim', 'content' => $lesson('This course does not measure a running program.', ['Say what the loop counts.', 'Do not report a runtime the page did not measure.']), 'exercise' => null],
-            ],
-        ],
-    ],
-    'devops' => [
-        [
-            'topic' => 'demo-deploy-basics',
-            'title' => 'Deploying a PHP App',
-            'description' => 'The path from a Git commit to a PHP and MariaDB site on shared hosting. Visible to one academic department when one exists.',
-            'mode' => 'department',
-            'modules' => [
-                ['title' => 'What the server needs', 'content' => $lesson('This portal runs on PHP, MariaDB, and Apache. It does not need a background worker for tutorials.', ['PHP files keep their capital letters on Linux.', 'Tables for tutorials are created by the tutorial models.', 'Do not put database passwords in a page.']), 'exercise' => null],
-                ['title' => 'Pull and refresh', 'content' => $lesson('After a pull, a cached script name can still be the old file until the query string changes.', ['Hard-refresh the tutorials page after a deploy.', 'Confirm the new script version in the page source.']), 'exercise' => ['title' => 'Name the refresh step', 'language' => 'javascript', 'instructions' => 'In a comment, name the browser action that loads the new tutorial script after a deploy. Save the attempt.', 'boilerplate' => "// hard refresh\n", 'stdin' => '', 'expected' => "hard refresh\n"]],
-            ],
-        ],
-        [
-            'topic' => 'demo-env-safety',
-            'title' => 'Environment Files and Secrets',
-            'description' => 'Which settings stay on the server and which files must not be committed.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'What stays off Git', 'content' => $lesson('.env holds the database password and must not be committed.', ['The repository already ignores environment files.', 'A demo course does not store a password.']), 'exercise' => null],
-                ['title' => 'Safe defaults', 'content' => $lesson('Tutorials do not add a new environment variable.', ['Use the existing application configuration.', 'If a setting is missing, fail with a short message, not a stack dump to the student.']), 'exercise' => null],
-            ],
-        ],
-    ],
-    'other' => [
-        [
-            'topic' => 'demo-interview-answers',
-            'title' => 'Explaining a Project in an Interview',
-            'description' => 'A short course on describing one project clearly: problem, your part, and a result you can defend.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'Problem and your part', 'content' => $lesson('Start with the user problem, then the piece you built.', ['One sentence for the problem.', 'One sentence for your part.', 'Leave out tools you did not use.']), 'exercise' => ['title' => 'Two-sentence project summary', 'language' => 'javascript', 'instructions' => 'Replace the comments with two sentences about a project you can discuss. Save the attempt.', 'boilerplate' => "// Problem: students could not find practice material for their department.\n// My part: I built the course list and the lesson page.\n", 'stdin' => '', 'expected' => ""]],
-                ['title' => 'A result you can defend', 'content' => $lesson('A result is something a reviewer can see.', ['Point at a page, a query, or a saved attempt.', 'Do not claim a grade the system does not calculate.']), 'exercise' => null],
-            ],
-        ],
-        [
-            'topic' => 'demo-study-plan',
-            'title' => 'A Weekly Study Plan',
-            'description' => 'How to use the course list: one module, one exercise attempt, then the next module.',
-            'mode' => 'all',
-            'modules' => [
-                ['title' => 'One module at a time', 'content' => $lesson('Finish the lesson you opened before jumping to the last module.', ['Previous and Next move through the outline.', 'Next does not mark the current module complete.']), 'exercise' => null],
-                ['title' => 'Save the attempt', 'content' => $lesson('When the exercise has starter code, edit it and choose Save Attempt.', ['The message is that the attempt was saved.', 'A second save creates another attempt.']), 'exercise' => null],
-            ],
-        ],
+    [
+        'title' => 'A simple page layout',
+        'subtitle' => 'Header, content, and a row of cards',
+        'content' => $lesson([
+            $p('Flexbox is enough for a first layout. A row is display flex. gap separates children. flex-wrap lets cards drop to the next line on a narrow screen.'),
+            $code('css', ".page {\n  max-width: 720px;\n  margin: 0 auto;\n  padding: 1.5rem;\n}\n\n.cards {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 1rem;\n}\n\n.cards article {\n  flex: 1 1 200px;\n  padding: 1rem;\n  border: 1px solid #e5e7eb;\n}\n"),
+            $code('html', "<main class=\"page\">\n  <header>\n    <h1>HTML and CSS basics</h1>\n    <p>Structure first, then appearance.</p>\n  </header>\n  <section class=\"cards\">\n    <article>\n      <h2>HTML</h2>\n      <p>Headings, lists, links, images.</p>\n    </article>\n    <article>\n      <h2>CSS</h2>\n      <p>Selectors, color, boxes, layout.</p>\n    </article>\n  </section>\n</main>\n"),
+            $p('When you finish this course you should be able to write a short page, link a stylesheet, and explain why a heading is a heading and not just large text.'),
+        ]),
+        'exercise' => null,
     ],
 ];
 
-$created = 0;
-$skipped = 0;
-foreach ($catalog as $slug => $courses) {
-    $categoryId = $bySlug[$slug] ?? '';
-    if ($categoryId === '') {
-        echo "SKIP category {$slug}: not in the active category list.\n";
-        continue;
-    }
-    foreach ($courses as $course) {
-        $topic = (string) $course['topic'];
-        if (isset($existing[$topic])) {
-            $skipped++;
-            echo "SKIP {$topic}: already present.\n";
-            continue;
-        }
-        $audience = $scope((string) $course['mode']);
-        $row = $service->createTutorial($admin, [
-            'title' => (string) $course['title'],
-            'categoryId' => $categoryId,
-            'topic' => $topic,
-            'description' => (string) $course['description'],
-            'visibility' => $audience['visibility'],
-            'departmentIds' => $audience['departmentIds'],
-            'passingYears' => $audience['passingYears'],
-        ]);
-        foreach ($course['modules'] as $module) {
-            $savedModule = $service->createModule($admin, $row['id'], [
-                'title' => (string) $module['title'],
-                'content' => (string) $module['content'],
-            ]);
-            $exercise = $module['exercise'] ?? null;
-            if (is_array($exercise)) {
-                $savedExercise = $service->createExercise($admin, $row['id'], $savedModule['id'], [
-                    'title' => (string) $exercise['title'],
-                    'instructions' => '<p>' . htmlspecialchars((string) $exercise['instructions'], ENT_QUOTES, 'UTF-8') . '</p>',
-                    'language' => (string) $exercise['language'],
-                    'boilerplate' => (string) $exercise['boilerplate'],
-                ]);
-                $expected = (string) ($exercise['expected'] ?? '');
-                if ($expected !== '') {
-                    $service->createTestCase($admin, $savedExercise['id'], [
-                        'stdin' => (string) ($exercise['stdin'] ?? ''),
-                        'expectedOutput' => $expected,
-                        'sample' => true,
-                    ]);
-                    if (($exercise['language'] ?? '') === 'python' || ($exercise['language'] ?? '') === 'c') {
-                        $service->createTestCase($admin, $savedExercise['id'], [
-                            'stdin' => 'hidden',
-                            'expectedOutput' => 'not shown to students',
-                            'sample' => false,
-                        ]);
-                    }
-                }
-            }
-        }
-        $service->publish($admin, $row['id']);
-        $existing[$topic] = true;
-        $created++;
-        echo "CREATED {$topic} ({$audience['visibility']}).\n";
-    }
+$gitModules = [
+    [
+        'title' => 'Why version control',
+        'subtitle' => 'What Git is for before any command',
+        'content' => $lesson([
+            $p('Version control records snapshots of a project. You can see what changed, who changed it, and go back if a change was wrong. Emailing zip files does not do that.'),
+            $h('What Git stores'),
+            $p('Git stores a repository: the files plus a history of commits. A commit is one intentional step with a message. The working copy is the files on disk right now. Those two can differ until you commit.'),
+            $h('What not to put in Git', 3),
+            $p('Do not commit passwords, .env files, downloaded vendor folders you can restore, or large binaries you do not need. The project already ignores environment files for that reason.'),
+        ]),
+        'exercise' => null,
+    ],
+    [
+        'title' => 'Repository, status, add, and commit',
+        'subtitle' => 'The daily Git loop',
+        'content' => $lesson([
+            $p('git init creates a repository in the current folder. Do that once per project, not inside another Git project. git clone copies an existing remote repository instead.'),
+            $code('bash', "git status\ngit add index.html styles.css\ngit commit -m \"Add the first HTML page and stylesheet\"\n", "On branch main\nChanges to be committed:\n  new file:   index.html\n  new file:   styles.css\n"),
+            $h('Status first'),
+            $p('git status tells you which files are new, changed, or staged. Read it before every commit. Stage only the files that belong in that step.'),
+            $h('Commit messages', 3),
+            $p('Write the message in the present tense and say why, not only what. “Add student search on the course list” is better than “updates”. One idea per commit is easier to explain in an interview.'),
+        ]),
+        'exercise' => [
+            'title' => 'Write a commit message',
+            'language' => 'bash',
+            'instructions' => 'Replace the message with one line you would use after adding an about page. Save Attempt stores the text. Git is not run here.',
+            'boilerplate' => "git commit -m \"Add an about page with the course outline\"\n",
+        ],
+    ],
+    [
+        'title' => 'History and what a commit contains',
+        'subtitle' => 'Reading git log without rewriting the past',
+        'content' => $lesson([
+            $p('git log lists commits from newest to oldest. Each commit has a hash, an author, a date, and a message. You only need the short hash when you talk about a specific change.'),
+            $code('bash', "git log --oneline -5\n", "a1b2c3d Add an about page with the course outline\n9f8e7d6 Add the first HTML page and stylesheet\n"),
+            $h('Changing the last commit'),
+            $p('If you have not pushed, you can amend the last commit to fix a typo in the message or add a forgotten file. If others already pulled that commit, make a new commit instead. Do not rewrite shared history.'),
+            $p('A revert commit undoes a change by adding a new commit. The old commit stays in the log. That is safer than deleting history on a shared branch.'),
+        ]),
+        'exercise' => null,
+    ],
+    [
+        'title' => 'Branches',
+        'subtitle' => 'Work on a feature without touching the main line',
+        'content' => $lesson([
+            $p('A branch is a movable name for a commit. main (or master) is the line you keep stable. A feature branch is where you try work that is not ready yet.'),
+            $code('bash', "git branch\ngit switch -c css-layout\n", ""),
+            $h('Switching'),
+            $p('git switch moves your working copy to that branch. Commit or stash before you switch if you have unfinished files, or Git will refuse to overwrite them.'),
+            $h('Merging', 3),
+            $p('When the feature is ready, switch to main and merge the branch. If both sides changed the same lines, Git stops with a conflict. Open the file, keep the correct lines, remove the conflict markers, then add and commit.'),
+        ]),
+        'exercise' => null,
+    ],
+    [
+        'title' => 'Remotes, push, and pull',
+        'subtitle' => 'Sharing the repository',
+        'content' => $lesson([
+            $p('A remote is another copy of the repository, usually on GitHub. origin is the usual name for that copy. git push sends your commits there. git pull brings down commits you do not have yet.'),
+            $code('bash', "git remote -v\ngit pull origin main\ngit push -u origin main\n", ""),
+            $h('Clone versus download zip'),
+            $p('Clone keeps the history and the remote. A zip download is only files. For coursework and placement projects, clone so you can pull updates and push your own commits.'),
+            $h('Before you push', 3),
+            $p('Run status. Confirm you are on the branch you intend. Confirm you did not stage secrets. Pull first if others may have pushed. Then push.'),
+        ]),
+        'exercise' => null,
+    ],
+];
+
+$catalog = [
+    [
+        'topic' => 'html-css-basics',
+        'title' => 'HTML and CSS Basics',
+        'category' => 'programming-languages',
+        'description' => 'Build a small web page from structure to layout: HTML tags, links and images, CSS selectors, the box model, and a simple flex layout. Code in the lessons is for reading. Exercises use Save Attempt only.',
+        'modules' => $htmlCssModules,
+    ],
+    [
+        'topic' => 'version-control-git',
+        'title' => 'Version Control with Git',
+        'category' => 'tools',
+        'description' => 'Use Git the way a placement project needs it: repository, commit, history, branches, and remotes. Commands are shown as examples. Nothing in this course runs Git on the server.',
+        'modules' => $gitModules,
+    ],
+];
+
+$keepTopics = [];
+foreach ($catalog as $course) {
+    $keepTopics[(string) $course['topic']] = true;
 }
 
-echo $created . ' demo courses created, ' . $skipped . " already present.\n";
+$deleted = 0;
+foreach ($service->listManaged($admin) as $course) {
+    $topic = strtolower(trim((string) ($course['topic'] ?? '')));
+    $title = strtolower(trim((string) ($course['title'] ?? '')));
+    $isOldDemo = str_starts_with($topic, 'demo-');
+    $isReplacement = isset($keepTopics[$topic]);
+    $isScreenshotSample = $title === 'programming fundamentals' && in_array($topic, ['git', 'c'], true);
+    if (!$isOldDemo && !$isReplacement && !$isScreenshotSample) {
+        continue;
+    }
+    $service->deleteTutorial($admin, (string) $course['id']);
+    $deleted++;
+    echo 'DELETED ' . (string) ($course['topic'] ?? '') . ' (' . (string) ($course['title'] ?? '') . ").\n";
+}
+
+$created = 0;
+foreach ($catalog as $course) {
+    $categoryId = $bySlug[(string) $course['category']] ?? '';
+    if ($categoryId === '') {
+        echo 'SKIP ' . (string) $course['topic'] . ': category ' . (string) $course['category'] . " is missing.\n";
+        continue;
+    }
+    $row = $service->createTutorial($admin, [
+        'title' => (string) $course['title'],
+        'categoryId' => $categoryId,
+        'topic' => (string) $course['topic'],
+        'description' => (string) $course['description'],
+        'visibility' => 'all',
+        'departmentIds' => [],
+        'passingYears' => [],
+    ]);
+    foreach ($course['modules'] as $module) {
+        $savedModule = $service->createModule($admin, $row['id'], [
+            'title' => (string) $module['title'],
+            'subtitle' => (string) ($module['subtitle'] ?? ''),
+            'content' => (string) $module['content'],
+        ]);
+        $exercise = $module['exercise'] ?? null;
+        if (!is_array($exercise)) {
+            continue;
+        }
+        $service->createExercise($admin, $row['id'], $savedModule['id'], [
+            'title' => (string) $exercise['title'],
+            'instructions' => '<p>' . htmlspecialchars((string) $exercise['instructions'], ENT_QUOTES, 'UTF-8') . '</p>',
+            'language' => (string) $exercise['language'],
+            'boilerplate' => (string) $exercise['boilerplate'],
+        ]);
+    }
+    $service->publish($admin, $row['id']);
+    $created++;
+    echo 'CREATED ' . (string) $course['topic'] . " (all students).\n";
+}
+
+echo $deleted . ' sample courses removed, ' . $created . " courses published.\n";
