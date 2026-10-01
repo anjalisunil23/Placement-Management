@@ -735,6 +735,14 @@ final class StaffController
         if ($encid === '') {
             Response::error('Could not encode that course id.', 500);
         }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+        try {
+            AesSyllabusCipher::fetchPdf($encid);
+        } catch (\RuntimeException) {
+            // The viewer request retries the download if this warm-up fails.
+        }
         Response::success([
             'semsubId' => $semsubId,
             'encid' => $encid,
@@ -760,6 +768,9 @@ final class StaffController
         if ($encid === '') {
             Response::error('Could not encode that course id.', 500);
         }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
         try {
             $pdf = AesSyllabusCipher::fetchPdf($encid);
         } catch (\RuntimeException $e) {
@@ -768,7 +779,8 @@ final class StaffController
         $file = preg_replace('/[^A-Za-z0-9_-]+/', '-', $courseCode !== '' ? $courseCode : 'syllabus') ?: 'syllabus';
         header('Content-Type: application/pdf');
         header('Content-Disposition: inline; filename="' . $file . '.pdf"');
-        header('Cache-Control: private, max-age=120');
+        header('Content-Length: ' . strlen($pdf));
+        header('Cache-Control: private, max-age=86400');
         header('X-Content-Type-Options: nosniff');
         echo $pdf;
         exit;

@@ -312,46 +312,71 @@ PROMPT;
             ]];
         }
         $bank = new SyllabusQuestionBankModel();
-        $picked = [];
-        $codes = [];
+        $grouped = [];
         foreach ($sources as $source) {
             if (!is_array($source)) {
                 continue;
             }
             $code = $this->assertVisibleCourseCode($user, (string) ($source['courseCode'] ?? $source['code'] ?? ''));
-            if (in_array($code, $codes, true)) {
-                throw new \InvalidArgumentException($code . ' is already in this MCQ.');
+            if (!isset($grouped[$code])) {
+                $grouped[$code] = ['manual' => [], 'random' => 0, 'all' => false];
             }
+            $mode = strtolower(trim((string) ($source['mode'] ?? 'random')));
+            if ($mode === 'manual') {
+                foreach ((array) ($source['questionIds'] ?? $source['ids'] ?? []) as $id) {
+                    $id = trim((string) $id);
+                    if ($id !== '') {
+                        $grouped[$code]['manual'][$id] = true;
+                    }
+                }
+                continue;
+            }
+            $count = (int) ($source['count'] ?? 0);
+            if ($count < 1) {
+                $grouped[$code]['all'] = true;
+                continue;
+            }
+            $grouped[$code]['random'] += $count;
+        }
+        $picked = [];
+        $codes = [];
+        foreach ($grouped as $code => $request) {
             $pool = $bank->listByCourseCode($code, 500);
             if ($pool === []) {
                 throw new \InvalidArgumentException('Add questions to ' . $code . ' before creating an MCQ.');
             }
-            $mode = strtolower(trim((string) ($source['mode'] ?? 'random')));
-            if ($mode === 'manual') {
-                $wanted = [];
-                foreach ((array) ($source['questionIds'] ?? $source['ids'] ?? []) as $id) {
-                    $wanted[trim((string) $id)] = true;
+            $chosen = [];
+            $chosenIds = [];
+            foreach ($pool as $question) {
+                $id = (string) ($question['id'] ?? '');
+                if ($id !== '' && isset($request['manual'][$id])) {
+                    $chosen[] = $question;
+                    $chosenIds[$id] = true;
                 }
-                $chosen = [];
+            }
+            if ($request['manual'] !== [] && $chosen === [] && (int) $request['random'] < 1) {
+                throw new \InvalidArgumentException('Pick the questions to include from ' . $code . '.');
+            }
+            $need = !empty($request['all']) ? count($pool) : (int) $request['random'];
+            if ($need > 0) {
+                $rest = [];
                 foreach ($pool as $question) {
                     $id = (string) ($question['id'] ?? '');
-                    if ($id !== '' && isset($wanted[$id])) {
-                        $chosen[] = $question;
+                    if ($id === '' || !isset($chosenIds[$id])) {
+                        $rest[] = $question;
                     }
                 }
-                if ($chosen === []) {
-                    throw new \InvalidArgumentException('Pick the questions to include from ' . $code . '.');
+                if ($need > count($rest)) {
+                    $available = count($pool);
+                    throw new \InvalidArgumentException($code . ' has only ' . $available . ' question' . ($available === 1 ? '' : 's') . '.');
                 }
-            } else {
-                $count = (int) ($source['count'] ?? 0);
-                if ($count < 1) {
-                    $count = count($pool);
+                shuffle($rest);
+                foreach (array_slice($rest, 0, $need) as $question) {
+                    $chosen[] = $question;
                 }
-                if ($count > count($pool)) {
-                    throw new \InvalidArgumentException($code . ' has only ' . count($pool) . ' question' . (count($pool) === 1 ? '' : 's') . '.');
-                }
-                shuffle($pool);
-                $chosen = array_slice($pool, 0, $count);
+            }
+            if ($chosen === []) {
+                throw new \InvalidArgumentException('Choose questions from ' . $code . '.');
             }
             foreach ($chosen as $question) {
                 $picked[] = $question;

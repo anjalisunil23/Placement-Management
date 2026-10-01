@@ -110,37 +110,42 @@ final class AesSyllabusCipher
 
     private static function rememberPdf(string $encid, string $pdf): void
     {
-        if (session_status() !== PHP_SESSION_ACTIVE || strlen($pdf) > 1500000) {
+        if ($pdf === '' || strlen($pdf) > 8000000) {
             return;
         }
-        $_SESSION[self::sessionKey($encid)] = [
-            'pdf' => $pdf,
-            'at' => time(),
-        ];
+        $path = self::cachePath($encid);
+        $dir = dirname($path);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return;
+        }
+        $tmp = $path . '.tmp';
+        if (file_put_contents($tmp, $pdf, LOCK_EX) === false) {
+            @unlink($tmp);
+
+            return;
+        }
+        @rename($tmp, $path);
     }
 
     private static function cachedPdf(string $encid): string
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
+        $path = self::cachePath($encid);
+        if (!is_readable($path)) {
             return '';
         }
-        $row = $_SESSION[self::sessionKey($encid)] ?? null;
-        if (!is_array($row)) {
-            return '';
-        }
-        if ((time() - (int) ($row['at'] ?? 0)) > 600) {
-            unset($_SESSION[self::sessionKey($encid)]);
+        if ((time() - (int) filemtime($path)) > 43200) {
+            @unlink($path);
 
             return '';
         }
-        $pdf = $row['pdf'] ?? '';
+        $pdf = file_get_contents($path);
 
         return is_string($pdf) && str_starts_with($pdf, '%PDF') ? $pdf : '';
     }
 
-    private static function sessionKey(string $encid): string
+    private static function cachePath(string $encid): string
     {
-        return 'aes_syl_pdf_' . hash('sha256', $encid);
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms-syllabus' . DIRECTORY_SEPARATOR . hash('sha256', $encid) . '.pdf';
     }
 
     private static function pdftotext(string $pdf): string

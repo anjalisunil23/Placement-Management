@@ -126,6 +126,30 @@
   </div>
 </div>
 
+<div class="modal fade" id="draftModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="draftModalTitle">Generated questions</h5>
+          <p class="small text-muted-2 mb-0" id="draftModalHint">Select the questions you want to add to the question bank.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="draftModalBody"></div>
+      <div class="modal-footer justify-content-between">
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSelectAllDraft">Select all</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDraft">Clear</button>
+        </div>
+        <button type="button" class="btn btn-primary" id="btnAddSelected">
+          <i class="bi bi-plus-lg me-1"></i>Add selected to question bank
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="createMcqModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
@@ -167,8 +191,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261001mcqpick"></script>
-<script src="js/app.js?v=20261001mcqpick"></script>
+<script src="js/api.js?v=20261001mcqback"></script>
+<script src="js/app.js?v=20261001mcqback"></script>
 <script>
 let courses = [];
 let picked = null;
@@ -253,7 +277,7 @@ async function getSelectedCourse() {
     return;
   }
   button.disabled = true;
-  label.textContent = 'Loading course…';
+    label.textContent = 'Loading syllabus PDF…';
   try {
     const res = await api('/staff/courses/get', {
       method: 'POST',
@@ -305,7 +329,7 @@ function renderSyllabus() {
       </div>
       ${syllabusSrc ? `<a class="small text-decoration-none" href="${esc(syllabusSrc)}" target="_blank" rel="noopener">Open PDF in new tab</a>` : ''}
     </div>
-    ${syllabusSrc ? `<iframe class="w-100 rounded border" style="min-height:70vh;background:#fff" title="Course syllabus" src="${esc(syllabusSrc)}"></iframe>` : '<p class="text-muted-2 mb-0">Could not open that syllabus PDF.</p>'}`;
+    ${syllabusSrc ? `<p class="small text-muted-2 mb-2" id="syllabusLoading">Opening the syllabus PDF…</p><iframe class="w-100 rounded border" style="min-height:70vh;background:#fff" title="Course syllabus" src="${esc(syllabusSrc)}" onload="var n=document.getElementById('syllabusLoading'); if(n) n.remove();"></iframe>` : '<p class="text-muted-2 mb-0">Could not open that syllabus PDF.</p>'}`;
 }
 
 function setBankHint(text) {
@@ -488,13 +512,13 @@ async function deleteBankQuestion(id) {
 }
 
 function selectedDraftIndexes() {
-  return Array.from(document.querySelectorAll('#practicePanel [data-draft-index]:checked'))
+  return Array.from(document.querySelectorAll('#draftModalBody [data-draft-index]:checked'))
     .map((el) => Number(el.getAttribute('data-draft-index')))
     .filter((index) => Number.isInteger(index) && index >= 0);
 }
 
 function setDraftSelection(checked) {
-  document.querySelectorAll('#practicePanel [data-draft-index]').forEach((el) => {
+  document.querySelectorAll('#draftModalBody [data-draft-index]').forEach((el) => {
     el.checked = !!checked;
   });
 }
@@ -502,30 +526,21 @@ function setDraftSelection(checked) {
 function renderPractice(payload) {
   practice = payload;
   const rows = payload?.questions || [];
-  const root = document.getElementById('practicePanel');
+  const body = document.getElementById('draftModalBody');
+  const modal = document.getElementById('draftModal');
   if (!rows.length) {
-    root.innerHTML = '';
+    body.innerHTML = '';
+    const instance = bootstrap.Modal.getInstance(modal);
+    if (instance) instance.hide();
     return;
   }
   const mix = Array.isArray(payload?.mixes)
     ? payload.mixes.map((row) => `${row.count} ${row.difficulty}`).join(', ')
     : (payload.difficulty || '');
-  root.innerHTML = `
-    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
-      <div>
-        <h2 class="h5 mb-1">Generated questions · ${esc(payload.courseCode || '')}</h2>
-        <p class="small text-muted-2 mb-0">Select the questions you want to add to the ${esc(payload.courseCode || 'course')} question bank.</p>
-      </div>
-      <span class="badge-soft info">${esc(mix || '')} · ${rows.length} questions</span>
-    </div>
-    <div class="d-flex flex-wrap gap-2 mb-3">
-      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSelectAllDraft">Select all</button>
-      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDraft">Clear</button>
-      <button type="button" class="btn btn-primary" id="btnAddSelected">
-        <i class="bi bi-plus-lg me-1"></i>Add selected to question bank
-      </button>
-    </div>
-    ${rows.map((q, i) => renderQuestionCard(q, i, true)).join('')}`;
+  document.getElementById('draftModalTitle').textContent = `Generated questions · ${payload.courseCode || ''}`;
+  document.getElementById('draftModalHint').textContent = `${mix ? mix + ' · ' : ''}${rows.length} question${rows.length === 1 ? '' : 's'}. Select the ones to add to the ${payload.courseCode || 'course'} question bank.`;
+  body.innerHTML = rows.map((q, i) => renderQuestionCard(q, i, true)).join('');
+  bootstrap.Modal.getOrCreateInstance(modal).show();
 }
 
 function mcqToolbar() {
@@ -609,13 +624,28 @@ function refreshMcqSourceRow(row) {
     : '<p class="small text-muted-2 mb-0">No questions in this course card.</p>';
 }
 
+function selectedMcqCourseCodes() {
+  return Array.from(document.querySelectorAll('#mcqSources [data-mcq-course]'))
+    .map((el) => String(el.value || '').toUpperCase())
+    .filter(Boolean);
+}
+
 function addMcqSourceRow(courseCode) {
   const root = document.getElementById('mcqSources');
   const groups = mcqBankGroups();
+  const used = selectedMcqCourseCodes();
+  let first = String(courseCode || '');
+  if (!first || used.includes(first.toUpperCase())) {
+    const free = groups.find((course) => !used.includes(String(course.courseCode || '').toUpperCase()));
+    if (!free) {
+      if (typeof toast === 'function') toast('Each course code can be added once. Change the number of questions on the course already in this MCQ.', 'error');
+      return;
+    }
+    first = free.courseCode;
+  }
   const row = document.createElement('div');
   row.className = 'border rounded p-3';
   row.setAttribute('data-mcq-source', '1');
-  const first = courseCode || groups[0]?.courseCode || '';
   row.innerHTML = `
     <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
       <div class="small fw-semibold">Course</div>
@@ -741,7 +771,9 @@ function renderMcqQuiz(payload) {
   const minutes = Number(payload?.durationMinutes || 0);
   const title = payload?.title || payload?.courseTitle || payload?.courseCode || 'MCQ';
   panel.innerHTML = `
-    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-mcq-back aria-label="Back"><i class="bi bi-arrow-left"></i></button>
+      <div class="d-flex flex-wrap justify-content-between gap-2 flex-grow-1">
       <div>
         <h2 class="h5 mb-1">${esc(title)}</h2>
         <p class="small text-muted-2 mb-0">${esc(payload.courseCode || '')}${payload.courseCode ? ' · ' : ''}Choose one option for each question, then submit.</p>
@@ -749,6 +781,7 @@ function renderMcqQuiz(payload) {
       <div class="d-flex gap-2 align-items-center">
         ${minutes ? `<span class="fw-semibold" id="mcqTimer" data-seconds="${minutes * 60}">${String(minutes).padStart(2, '0')}:00</span>` : ''}
         <span class="badge-soft info">${rows.length} question${rows.length === 1 ? '' : 's'}</span>
+      </div>
       </div>
     </div>
     ${rows.map((q, i) => {
@@ -783,10 +816,13 @@ function renderMcqResult(payload) {
   if (!panel) return;
   setMcqHint('');
   panel.innerHTML = `
-    <div class="card-surface p-3 p-md-4 mb-3">
-      <div class="small text-muted-2">MCQ result · ${esc(payload.courseCode || loaded?.code || '')}</div>
-      <div class="h4 mb-2">${esc(payload.score ?? 0)} / ${esc(payload.total ?? results.length)}</div>
-      <button type="button" class="btn btn-primary" data-mcq-start-test="${esc(mcq?.testId || '')}">Start again</button>
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-mcq-back aria-label="Back"><i class="bi bi-arrow-left"></i></button>
+      <div>
+        <div class="small text-muted-2">MCQ result · ${esc(payload.courseCode || loaded?.code || '')}</div>
+        <div class="h4 mb-0">${esc(payload.score ?? 0)} / ${esc(payload.total ?? results.length)}</div>
+      </div>
+      <button type="button" class="btn btn-primary ms-auto" data-mcq-start-test="${esc(mcq?.testId || '')}">Start again</button>
     </div>
     ${results.map((q, i) => {
       const options = (q.options || []).map((opt, idx) => {
@@ -935,8 +971,8 @@ async function generate() {
       ? `Generated ${count} question${count === 1 ? '' : 's'} for ${course.code}. Select the ones to add to the question bank.`
       : 'No questions were generated.';
     const modalEl = document.getElementById('generateModal');
+    modalEl.addEventListener('hidden.bs.modal', () => renderPractice(res.data), { once: true });
     bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-    renderPractice(res.data);
   } catch (err) {
     status.textContent = '';
     document.getElementById('practicePanel').innerHTML = `<div class="card-surface p-3 text-danger">${esc(err?.message || 'Could not generate questions.')}</div>`;
@@ -1066,7 +1102,7 @@ document.getElementById('btnGenerate').addEventListener('click', () => {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).show();
 });
 document.getElementById('btnConfirmGenerate').addEventListener('click', generate);
-document.getElementById('practicePanel').addEventListener('click', (event) => {
+document.getElementById('draftModal').addEventListener('click', (event) => {
   if (event.target.closest('#btnSelectAllDraft')) {
     setDraftSelection(true);
     return;
@@ -1108,7 +1144,7 @@ document.getElementById('mcqPanel').addEventListener('click', (event) => {
     submitMcq();
     return;
   }
-  if (event.target.closest('#btnResetMcq')) {
+  if (event.target.closest('#btnResetMcq') || event.target.closest('[data-mcq-back]')) {
     clearMcqTimer();
     clearMcq();
     renderMcqTests();
