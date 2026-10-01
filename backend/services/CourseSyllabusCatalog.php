@@ -128,7 +128,7 @@ final class CourseSyllabusCatalog
      * @param mixed $payload AES searchSyllabus4Placement body
      * @return list<array{code:string,title:string,semsubId:string,subjectType:string,department:string}>
      */
-    public static function filterSearchRows(mixed $payload, string $code, string $name, string $shortName): array
+    public static function filterSearchRows(mixed $payload, string $code, string $name, string $shortName, bool $allDepartments = false): array
     {
         $out = [];
         $seen = [];
@@ -146,7 +146,7 @@ final class CourseSyllabusCatalog
             if (isset($seen[$key])) {
                 continue;
             }
-            if (!self::subjectVisibleToStaff($subjectCode, $code, $name, $shortName)) {
+            if (!$allDepartments && !self::subjectVisibleToStaff($subjectCode, $code, $name, $shortName)) {
                 continue;
             }
             $seen[$key] = true;

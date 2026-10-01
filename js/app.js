@@ -97,7 +97,8 @@ const NAV = [
       },
     ],
   },
-  { href: "staff-courses.html", icon: "bi-journal-richtext", label: "Syllabus", roles: ['staff', 'placement_officer'], staffSyllabus: true },
+  { href: "staff-courses.html", icon: "bi-journal-richtext", label: "Autonomous MCQ", roles: ['admin', 'placement_officer', 'staff'], staffSyllabus: true },
+  { href: "autonomous-mcq.html", icon: "bi-journal-richtext", label: "Autonomous MCQ", roles: ['student'], studentOnly: true },
 
   { section: "Placement", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'] },
   { href: "drives.html", icon: "bi-briefcase-fill", label: "Placement Drives", roles: ['admin', 'placement_officer', 'staff'] },
@@ -166,7 +167,8 @@ const PAGE_LABELS = {
   'staff-jobs.html': 'Job Posts',
   'staff-recommend.html': 'Recommend Company',
   'staff-placements.html': 'Placements & Higher Education',
-  'staff-courses.html': 'Syllabus',
+  'staff-courses.html': 'Autonomous MCQ',
+  'autonomous-mcq.html': 'Autonomous MCQ',
   'users.html': 'User Management',
   'rules.html': 'Placement Rules',
   'applications.html': 'Student · Management · Application',
@@ -411,8 +413,7 @@ function navItemHidden(n) {
 function navItemVisible(n, role) {
   if (navItemHidden(n)) return false;
   if (n.staffSyllabus) {
-    const hod = typeof Auth !== 'undefined' && typeof Auth.isHod === 'function' && Auth.isHod();
-    return role === 'staff' || hod;
+    return role === 'admin' || role === 'placement_officer' || role === 'staff';
   }
   if (n.studentOnly && role !== 'student') return false;
   if (!n.roles.includes(role)) return false;

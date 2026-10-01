@@ -1,17 +1,26 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Syllabus · AJCE Placements</title>
+<title>Autonomous MCQ · AJCE Placements</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+<style>
+  .syl-course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10.5rem,1fr));gap:.75rem}
+  .syl-course-card{
+    border:1px solid var(--border);border-radius:.85rem;padding:1rem;background:#fff;text-align:left;
+    cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;height:100%;
+  }
+  .syl-course-card:hover{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+  .syl-course-icon{font-size:1.35rem;line-height:1;margin-bottom:.45rem;color:var(--primary)}
+</style>
 </head>
 <body data-page="staff-courses.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
 
 <div class="page-header">
   <div>
-    <h1 class="page-title">Syllabus</h1>
+    <h1 class="page-title">Autonomous MCQ</h1>
     <p class="page-sub mb-0">Create questions from a course syllabus, pick the ones to keep, review them in that course question bank, then take them as an MCQ.</p>
   </div>
 </div>
@@ -28,18 +37,17 @@
   </li>
 </ul>
 
-<div class="card-surface p-3 p-md-4 mb-3">
-  <label class="form-label small fw-semibold" for="courseSearch">Course code</label>
-  <div class="d-flex gap-2">
-    <input class="form-control" id="courseSearch" type="search" placeholder="Type at least 3 letters, for example 26M" autocomplete="off" />
-    <button type="button" class="btn btn-primary flex-shrink-0" id="btnGet">Get</button>
-  </div>
-  <div class="border rounded mt-2 d-none" id="courseResults" style="max-height:16rem;overflow:auto"></div>
-  <div class="form-text" id="deptLabel">Type at least 3 letters of a course code.</div>
-</div>
-
 <div class="tab-content">
   <div class="tab-pane fade show active" id="tabCreate" role="tabpanel" aria-labelledby="tabCreateBtn">
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <label class="form-label small fw-semibold" for="courseSearch">Course code</label>
+      <div class="d-flex gap-2">
+        <input class="form-control" id="courseSearch" type="search" placeholder="Type at least 3 letters, for example 26M" autocomplete="off" />
+        <button type="button" class="btn btn-primary flex-shrink-0" id="btnGet">Get</button>
+      </div>
+      <div class="border rounded mt-2 d-none" id="courseResults" style="max-height:16rem;overflow:auto"></div>
+      <div class="form-text" id="deptLabel">Type at least 3 letters of a course code.</div>
+    </div>
     <div id="syllabusPanel" class="card-surface p-3 p-md-4 mb-3">
       <p class="text-muted-2 mb-0">Search a course code, then click Get to open the syllabus PDF.</p>
     </div>
@@ -52,11 +60,11 @@
     <div id="practicePanel"></div>
   </div>
   <div class="tab-pane fade" id="tabBank" role="tabpanel" aria-labelledby="tabBankBtn">
-    <p class="small text-muted-2 mb-3" id="bankHint">Each course code has one card. Questions generated again for the same code stay in that card.</p>
+    <p class="small text-muted-2 mb-3 d-none" id="bankHint"></p>
     <div id="bankPanel"></div>
   </div>
   <div class="tab-pane fade" id="tabMcq" role="tabpanel" aria-labelledby="tabMcqBtn">
-    <p class="small text-muted-2 mb-3" id="mcqHint">Start the MCQ from a course card. The same course code always uses the same card.</p>
+    <p class="small text-muted-2 mb-3 d-none" id="mcqHint"></p>
     <div id="mcqPanel"></div>
   </div>
 </div>
@@ -114,18 +122,58 @@
   </div>
 </div>
 
+<div class="modal fade" id="createMcqModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Create MCQ</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted-2 mb-3">Choose one or more course codes. For each course, set how many questions to draw at random, or pick them from the question bank.</p>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold" for="mcqTitle">Title</label>
+          <input class="form-control" id="mcqTitle" maxlength="120" placeholder="Module test" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold" for="mcqDuration">Duration (minutes)</label>
+          <select class="form-select" id="mcqDuration">
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="20">20</option>
+            <option value="30" selected>30</option>
+            <option value="45">45</option>
+            <option value="60">60</option>
+          </select>
+        </div>
+        <div id="mcqSources" class="d-flex flex-column gap-2 mb-2"></div>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddMcqSource">
+          <i class="bi bi-plus-lg me-1"></i>Add course
+        </button>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnSaveMcq">
+          <i class="bi bi-plus-lg me-1"></i>Create MCQ
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261001sylcards"></script>
-<script src="js/app.js?v=20261001sylcards"></script>
+<script src="js/api.js?v=20261001stumcq"></script>
+<script src="js/app.js?v=20261001stumcq"></script>
 <script>
 let courses = [];
 let picked = null;
 let loaded = null;
 let bank = null;
-let expandedBank = {};
+let openBankCode = '';
 let practice = null;
 let mcq = null;
+let mcqTests = [];
 let searchTimer = 0;
 let searchSeq = 0;
 
@@ -326,11 +374,30 @@ function bankCourses(payload) {
   }];
 }
 
-function isBankExpanded(code, payload) {
-  const key = String(code || '').toUpperCase();
-  if (Object.prototype.hasOwnProperty.call(expandedBank, key)) return !!expandedBank[key];
-  const focus = String(payload?.focusCode || payload?.courseCode || loaded?.code || '').toUpperCase();
-  return key !== '' && key === focus;
+function courseCardHtml(course, actionAttr, actionValue) {
+  const code = String(course.courseCode || '').trim();
+  const count = Array.isArray(course.questions) ? course.questions.length : Number(course.total || 0);
+  return `
+    <button type="button" class="syl-course-card" ${actionAttr}="${esc(actionValue || code)}">
+      <div class="syl-course-icon"><i class="bi bi-diagram-3"></i></div>
+      <div class="fw-semibold">${esc(code)}</div>
+      <div class="small text-muted-2 mt-1">${count} question${count === 1 ? '' : 's'}</div>
+    </button>`;
+}
+
+function renderBankDetail(course) {
+  const code = String(course?.courseCode || openBankCode || '').trim();
+  const title = String(course?.courseTitle || '').trim();
+  const rows = Array.isArray(course?.questions) ? course.questions : [];
+  return `
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bank-back aria-label="Back to courses"><i class="bi bi-arrow-left"></i></button>
+      <div>
+        <h2 class="h5 mb-0">${esc(code)}</h2>
+        <div class="small text-muted-2">${title && title !== code ? esc(title) + ' · ' : ''}${rows.length} question${rows.length === 1 ? '' : 's'}</div>
+      </div>
+    </div>
+    ${rows.length ? rows.map((q, i) => renderBankQuestion(q, i)).join('') : '<p class="text-muted-2 mb-0">No questions in this course yet.</p>'}`;
 }
 
 function renderBankQuestion(q, i) {
@@ -360,42 +427,19 @@ function renderBank(payload) {
   const panel = document.getElementById('bankPanel');
   if (!panel) return;
   const groups = bankCourses(payload);
-  const focus = String(payload?.focusCode || payload?.courseCode || loaded?.code || '').toUpperCase();
-  if (focus && expandedBank[focus] === undefined) expandedBank[focus] = true;
+  const open = groups.find((course) => String(course.courseCode || '').toUpperCase() === openBankCode);
+  if (openBankCode && !open) openBankCode = '';
   if (!groups.length) {
-    panel.innerHTML = `
-      <div class="card-surface p-3 p-md-4">
-        <p class="text-muted-2 mb-0">No course cards yet. Generate questions and add them — each course code becomes one card.</p>
-      </div>`;
-    setBankHint('Each course code has one card. Questions generated again for the same code stay in that card.');
+    panel.innerHTML = '<p class="text-muted-2 mb-0">No course cards yet. Generate questions and add them — each course code becomes one card.</p>';
+    setBankHint('');
     return;
   }
-  setBankHint('Each course code has one card. Questions generated again for the same code stay in that card.');
-  panel.innerHTML = groups.map((course) => {
-    const code = String(course.courseCode || '').trim();
-    const title = String(course.courseTitle || '').trim();
-    const rows = Array.isArray(course.questions) ? course.questions : [];
-    const open = isBankExpanded(code, payload);
-    return `
-      <article class="card-surface p-3 p-md-4 mb-3" data-course-card="${esc(code)}">
-        <button type="button" class="btn btn-link text-decoration-none text-reset w-100 p-0" data-bank-toggle="${esc(code)}" style="text-align:left">
-          <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
-            <div>
-              <div class="small text-muted-2">Course card</div>
-              <h2 class="h5 mb-0">${esc(code)}</h2>
-              ${title && title !== code ? `<div class="small text-muted-2">${esc(title)}</div>` : ''}
-            </div>
-            <div class="d-flex gap-2 align-items-center">
-              <span class="badge-soft info">${rows.length} question${rows.length === 1 ? '' : 's'}</span>
-              <i class="bi ${open ? 'bi-chevron-up' : 'bi-chevron-down'}"></i>
-            </div>
-          </div>
-        </button>
-        <div class="mt-3 ${open ? '' : 'd-none'}" data-bank-body="${esc(code)}">
-          ${rows.length ? rows.map((q, i) => renderBankQuestion(q, i)).join('') : '<p class="text-muted-2 mb-0">No questions in this course card yet.</p>'}
-        </div>
-      </article>`;
-  }).join('');
+  setBankHint('');
+  if (open) {
+    panel.innerHTML = renderBankDetail(open);
+    return;
+  }
+  panel.innerHTML = `<div class="syl-course-grid">${groups.map((course) => courseCardHtml(course, 'data-open-bank', course.courseCode)).join('')}</div>`;
 }
 
 async function loadBank(focusCode) {
@@ -463,41 +507,196 @@ function renderPractice(payload) {
     ${rows.map((q, i) => renderQuestionCard(q, i, true)).join('')}`;
 }
 
-function renderMcqIdle() {
+function mcqToolbar() {
+  return `
+    <div class="d-flex flex-wrap justify-content-end mb-3">
+      <button type="button" class="btn btn-sm btn-primary" id="btnCreateMcq">
+        <i class="bi bi-plus-lg me-1"></i>Create MCQ
+      </button>
+    </div>`;
+}
+
+function renderMcqTests() {
   const panel = document.getElementById('mcqPanel');
   if (!panel) return;
-  const groups = bankCourses(bank);
-  if (!groups.length) {
-    panel.innerHTML = `
-      <div class="card-surface p-3 p-md-4">
-        <p class="text-muted-2 mb-0">No course cards yet. Add questions to the syllabus question bank first — one card per course code.</p>
-      </div>`;
-    setMcqHint('Start the MCQ from a course card. The same course code always uses the same card.');
-    return;
-  }
-  setMcqHint('Start the MCQ from a course card. The same course code always uses the same card.');
-  panel.innerHTML = groups.map((course) => {
-    const code = String(course.courseCode || '').trim();
-    const title = String(course.courseTitle || '').trim();
-    const count = Array.isArray(course.questions) ? course.questions.length : Number(course.total || 0);
+  setMcqHint('');
+  const cards = mcqTests.map((test) => {
+    const count = Number(test.questionCount || 0);
+    const minutes = Number(test.durationMinutes || 0);
     return `
-      <article class="card-surface p-3 p-md-4 mb-3">
-        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
-          <div>
-            <div class="small text-muted-2">Course card</div>
-            <h2 class="h5 mb-0">${esc(code)}</h2>
-            ${title && title !== code ? `<div class="small text-muted-2">${esc(title)}</div>` : ''}
-            <p class="small text-muted-2 mb-0 mt-2">All saved questions for this course code are in this card.</p>
-          </div>
-          <div class="d-flex flex-wrap gap-2 align-items-center">
-            <span class="badge-soft info">${count} question${count === 1 ? '' : 's'}</span>
-            <button type="button" class="btn btn-primary" data-mcq-start="${esc(code)}" ${count ? '' : 'disabled'}>
-              <i class="bi bi-play-fill me-1"></i>Start MCQ
-            </button>
-          </div>
-        </div>
+      <article class="syl-course-card">
+        <button type="button" class="btn p-0 border-0 bg-transparent text-start w-100" data-mcq-start-test="${esc(test.id)}">
+          <div class="syl-course-icon"><i class="bi bi-ui-checks"></i></div>
+          <div class="fw-semibold">${esc(test.title || test.courseCode || 'MCQ')}</div>
+          <div class="small text-muted-2 mt-1">${esc(test.courseCode || '')}${test.courseCode ? ' · ' : ''}${count} question${count === 1 ? '' : 's'}${minutes ? ` · ${minutes} min` : ''}</div>
+        </button>
+        <button type="button" class="btn btn-link btn-sm text-danger p-0 mt-2" data-mcq-delete="${esc(test.id)}">Remove</button>
       </article>`;
   }).join('');
+  panel.innerHTML = `
+    ${mcqToolbar()}
+    ${cards
+      ? `<div class="syl-course-grid">${cards}</div>`
+      : '<p class="text-muted-2 mb-0">No MCQ tests yet. Create one from a course card.</p>'}`;
+}
+
+function mcqBankGroups() {
+  return bankCourses(bank).filter((course) => (course.questions || []).length);
+}
+
+function mcqCourseOptions(selected) {
+  const current = String(selected || '').toUpperCase();
+  return mcqBankGroups().map((course) => {
+    const count = (course.questions || []).length;
+    const title = course.courseTitle && course.courseTitle !== course.courseCode ? ` — ${course.courseTitle}` : '';
+    const isSelected = String(course.courseCode || '').toUpperCase() === current ? ' selected' : '';
+    return `<option value="${esc(course.courseCode)}"${isSelected}>${esc(course.courseCode)}${esc(title)} (${count})</option>`;
+  }).join('');
+}
+
+function refreshMcqSourceRow(row) {
+  const code = row.querySelector('[data-mcq-course]')?.value || '';
+  const mode = row.querySelector('[data-mcq-mode]')?.value || 'random';
+  const course = mcqBankGroups().find((item) => String(item.courseCode || '').toUpperCase() === String(code).toUpperCase());
+  const questions = course?.questions || [];
+  const countWrap = row.querySelector('[data-mcq-count-wrap]');
+  const manual = row.querySelector('[data-mcq-manual]');
+  const countInput = row.querySelector('[data-mcq-count]');
+  if (countInput) countInput.max = String(Math.max(1, questions.length));
+  if (countWrap) countWrap.classList.toggle('d-none', mode !== 'random');
+  if (!manual) return;
+  manual.classList.toggle('d-none', mode !== 'manual');
+  if (mode !== 'manual') return;
+  manual.innerHTML = questions.length
+    ? questions.map((q) => `
+        <label class="d-flex gap-2 align-items-start mb-2">
+          <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-mcq-qid="${esc(q.id)}">
+          <span class="small">${esc(q.question)}</span>
+        </label>`).join('')
+    : '<p class="small text-muted-2 mb-0">No questions in this course card.</p>';
+}
+
+function addMcqSourceRow(courseCode) {
+  const root = document.getElementById('mcqSources');
+  const groups = mcqBankGroups();
+  const row = document.createElement('div');
+  row.className = 'border rounded p-3';
+  row.setAttribute('data-mcq-source', '1');
+  const first = courseCode || groups[0]?.courseCode || '';
+  row.innerHTML = `
+    <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+      <div class="small fw-semibold">Course</div>
+      <button type="button" class="btn btn-link btn-sm text-danger p-0" data-mcq-remove-source>Remove</button>
+    </div>
+    <div class="row g-2">
+      <div class="col-12 col-md-6">
+        <select class="form-select form-select-sm" data-mcq-course>${mcqCourseOptions(first)}</select>
+      </div>
+      <div class="col-12 col-md-3">
+        <select class="form-select form-select-sm" data-mcq-mode>
+          <option value="random">Random</option>
+          <option value="manual">Pick manually</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-3" data-mcq-count-wrap>
+        <input class="form-control form-control-sm" data-mcq-count type="number" min="1" value="5" placeholder="Questions" />
+      </div>
+    </div>
+    <div class="mt-2 d-none" data-mcq-manual style="max-height:14rem;overflow:auto"></div>`;
+  root.appendChild(row);
+  refreshMcqSourceRow(row);
+}
+
+async function openCreateMcq() {
+  await loadBank(loaded?.code || '');
+  if (!mcqBankGroups().length) {
+    setMcqHint('Add questions to a course card before creating an MCQ.');
+    if (typeof toast === 'function') toast('Add questions to a course card before creating an MCQ.', 'error');
+    return;
+  }
+  document.getElementById('mcqSources').innerHTML = '';
+  document.getElementById('mcqTitle').value = '';
+  addMcqSourceRow(loaded?.code || '');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('createMcqModal')).show();
+}
+
+function collectMcqSources() {
+  const sources = [];
+  document.querySelectorAll('#mcqSources [data-mcq-source]').forEach((row) => {
+    const courseCode = row.querySelector('[data-mcq-course]')?.value || '';
+    const mode = row.querySelector('[data-mcq-mode]')?.value || 'random';
+    const count = Number(row.querySelector('[data-mcq-count]')?.value || 0);
+    const questionIds = Array.from(row.querySelectorAll('[data-mcq-qid]:checked')).map((el) => el.getAttribute('data-mcq-qid'));
+    sources.push({ courseCode, mode, count, questionIds });
+  });
+  return sources;
+}
+
+async function saveMcqTest() {
+  const button = document.getElementById('btnSaveMcq');
+  const title = document.getElementById('mcqTitle').value.trim();
+  const durationMinutes = Number(document.getElementById('mcqDuration').value);
+  const sources = collectMcqSources();
+  if (!sources.length) return;
+  if (button) button.disabled = true;
+  try {
+    const res = await api('/staff/courses/mcq-tests', {
+      method: 'POST',
+      body: JSON.stringify({ title, durationMinutes, sources }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not create the MCQ.');
+    mcqTests = Array.isArray(res.data?.tests) ? res.data.tests : mcqTests;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('createMcqModal')).hide();
+    renderMcqTests();
+    if (typeof toast === 'function') toast(res.message || 'MCQ created.', 'success');
+  } catch (err) {
+    if (typeof toast === 'function') toast(err?.message || 'Could not create the MCQ.', 'error');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function loadMcqTests() {
+  const res = await api('/staff/courses/mcq-tests');
+  if (!res?.success) throw new Error(res?.message || 'Could not load MCQ tests.');
+  mcqTests = Array.isArray(res.data?.tests) ? res.data.tests : [];
+}
+
+async function deleteMcqTest(id) {
+  if (!id) return;
+  try {
+    const res = await api('/staff/courses/mcq-tests/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!res?.success) throw new Error(res?.message || 'Could not remove that MCQ.');
+    mcqTests = Array.isArray(res.data?.tests) ? res.data.tests : [];
+    renderMcqTests();
+  } catch (err) {
+    if (typeof toast === 'function') toast(err?.message || 'Could not remove that MCQ.', 'error');
+  }
+}
+
+let mcqTimer = 0;
+
+function clearMcqTimer() {
+  if (mcqTimer) window.clearInterval(mcqTimer);
+  mcqTimer = 0;
+}
+
+function startMcqTimer() {
+  clearMcqTimer();
+  const el = document.getElementById('mcqTimer');
+  if (!el) return;
+  let left = Number(el.getAttribute('data-seconds') || 0);
+  if (left <= 0) return;
+  mcqTimer = window.setInterval(() => {
+    left -= 1;
+    const minutes = Math.max(0, Math.floor(left / 60));
+    const seconds = Math.max(0, left % 60);
+    el.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    if (left <= 0) {
+      clearMcqTimer();
+      submitMcq();
+    }
+  }, 1000);
 }
 
 function renderMcqQuiz(payload) {
@@ -506,13 +705,18 @@ function renderMcqQuiz(payload) {
   const rows = payload?.questions || [];
   if (!panel) return;
   setMcqHint('');
+  const minutes = Number(payload?.durationMinutes || 0);
+  const title = payload?.title || payload?.courseTitle || payload?.courseCode || 'MCQ';
   panel.innerHTML = `
     <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
       <div>
-        <h2 class="h5 mb-1">MCQ · ${esc(payload.courseCode || '')}</h2>
-        <p class="small text-muted-2 mb-0">Choose one option for each question, then submit.</p>
+        <h2 class="h5 mb-1">${esc(title)}</h2>
+        <p class="small text-muted-2 mb-0">${esc(payload.courseCode || '')}${payload.courseCode ? ' · ' : ''}Choose one option for each question, then submit.</p>
       </div>
-      <span class="badge-soft info">${rows.length} question${rows.length === 1 ? '' : 's'}</span>
+      <div class="d-flex gap-2 align-items-center">
+        ${minutes ? `<span class="fw-semibold" id="mcqTimer" data-seconds="${minutes * 60}">${String(minutes).padStart(2, '0')}:00</span>` : ''}
+        <span class="badge-soft info">${rows.length} question${rows.length === 1 ? '' : 's'}</span>
+      </div>
     </div>
     ${rows.map((q, i) => {
       const options = (q.options || []).map((opt, idx) => `
@@ -536,6 +740,7 @@ function renderMcqQuiz(payload) {
       <button type="button" class="btn btn-primary" id="btnSubmitMcq">Submit answers</button>
       <button type="button" class="btn btn-outline-secondary" id="btnResetMcq">Cancel</button>
     </div>`;
+  startMcqTimer();
 }
 
 function renderMcqResult(payload) {
@@ -548,7 +753,7 @@ function renderMcqResult(payload) {
     <div class="card-surface p-3 p-md-4 mb-3">
       <div class="small text-muted-2">MCQ result · ${esc(payload.courseCode || loaded?.code || '')}</div>
       <div class="h4 mb-2">${esc(payload.score ?? 0)} / ${esc(payload.total ?? results.length)}</div>
-      <button type="button" class="btn btn-primary" data-mcq-start="${esc(payload.courseCode || mcq?.courseCode || '')}">Start again</button>
+      <button type="button" class="btn btn-primary" data-mcq-start-test="${esc(mcq?.testId || '')}">Start again</button>
     </div>
     ${results.map((q, i) => {
       const options = (q.options || []).map((opt, idx) => {
@@ -578,36 +783,39 @@ async function showMcqTab() {
   if (mcq?.results) {
     return;
   }
-  await loadBank(loaded?.code || '');
-  renderMcqIdle();
+  try {
+    await loadMcqTests();
+    renderMcqTests();
+  } catch (err) {
+    mcqTests = [];
+    renderMcqTests();
+    setMcqHint(err?.message || 'Could not load MCQ tests.');
+  }
 }
 
-async function startMcq(courseCode) {
-  const code = String(courseCode || mcq?.courseCode || loaded?.code || '').trim();
-  if (!code) return;
-  const groups = bankCourses(bank);
-  const course = groups.find((row) => String(row.courseCode || '').toUpperCase() === code.toUpperCase());
+async function startMcq(testId) {
+  const id = String(testId || mcq?.testId || '').trim();
+  if (!id) return;
+  clearMcqTimer();
   setMcqHint('Starting the MCQ…');
-  document.querySelectorAll('[data-mcq-start]').forEach((el) => { el.disabled = true; });
+  document.querySelectorAll('[data-mcq-start-test]').forEach((el) => { el.disabled = true; });
   try {
     const res = await api('/staff/courses/questions/practice', {
       method: 'POST',
-      body: JSON.stringify({
-        courseCode: code,
-        courseTitle: course?.courseTitle || '',
-      }),
+      body: JSON.stringify({ testId: id }),
     });
     if (!res?.success) throw new Error(res?.message || 'Could not start the MCQ.');
     renderMcqQuiz(res.data || {});
   } catch (err) {
     setMcqHint(err?.message || 'Could not start the MCQ.');
-    renderMcqIdle();
+    renderMcqTests();
     if (typeof toast === 'function') toast(err?.message || 'Could not start the MCQ.', 'error');
   }
 }
 
 async function submitMcq() {
   if (!mcq?.sessionId) return;
+  clearMcqTimer();
   const answers = (mcq.questions || []).map((_, i) => {
     const pickedOpt = document.querySelector(`input[name="mcq${i}"]:checked`);
     return pickedOpt ? Number(pickedOpt.value) : -1;
@@ -733,7 +941,7 @@ async function saveSelected() {
       status.textContent += ` ${skipped} already in the bank.`;
     }
     const savedCode = String(code || '').toUpperCase();
-    if (savedCode) expandedBank[savedCode] = true;
+    if (savedCode) openBankCode = savedCode;
     if (res.data?.bank) {
       renderBank(res.data.bank);
     } else {
@@ -845,9 +1053,18 @@ document.getElementById('tabMcqBtn').addEventListener('shown.bs.tab', () => {
   showMcqTab();
 });
 document.getElementById('mcqPanel').addEventListener('click', (event) => {
-  const start = event.target.closest('[data-mcq-start]');
+  if (event.target.closest('#btnCreateMcq')) {
+    openCreateMcq();
+    return;
+  }
+  const start = event.target.closest('[data-mcq-start-test]');
   if (start) {
-    startMcq(start.getAttribute('data-mcq-start') || '');
+    startMcq(start.getAttribute('data-mcq-start-test') || '');
+    return;
+  }
+  const remove = event.target.closest('[data-mcq-delete]');
+  if (remove) {
+    deleteMcqTest(remove.getAttribute('data-mcq-delete') || '');
     return;
   }
   if (event.target.closest('#btnSubmitMcq')) {
@@ -855,15 +1072,34 @@ document.getElementById('mcqPanel').addEventListener('click', (event) => {
     return;
   }
   if (event.target.closest('#btnResetMcq')) {
+    clearMcqTimer();
     clearMcq();
-    renderMcqIdle();
+    renderMcqTests();
   }
 });
+document.getElementById('btnSaveMcq').addEventListener('click', saveMcqTest);
+document.getElementById('btnAddMcqSource').addEventListener('click', () => addMcqSourceRow(''));
+document.getElementById('mcqSources').addEventListener('change', (event) => {
+  const row = event.target.closest('[data-mcq-source]');
+  if (!row) return;
+  if (event.target.matches('[data-mcq-course], [data-mcq-mode]')) refreshMcqSourceRow(row);
+});
+document.getElementById('mcqSources').addEventListener('click', (event) => {
+  const remove = event.target.closest('[data-mcq-remove-source]');
+  if (!remove) return;
+  const rows = document.querySelectorAll('#mcqSources [data-mcq-source]');
+  if (rows.length < 2) return;
+  remove.closest('[data-mcq-source]')?.remove();
+});
 document.getElementById('bankPanel').addEventListener('click', (event) => {
-  const toggle = event.target.closest('[data-bank-toggle]');
-  if (toggle) {
-    const code = String(toggle.getAttribute('data-bank-toggle') || '').toUpperCase();
-    expandedBank[code] = !isBankExpanded(code, bank);
+  const open = event.target.closest('[data-open-bank]');
+  if (open) {
+    openBankCode = String(open.getAttribute('data-open-bank') || '').toUpperCase();
+    renderBank(bank || { courses: [] });
+    return;
+  }
+  if (event.target.closest('[data-bank-back]')) {
+    openBankCode = '';
     renderBank(bank || { courses: [] });
     return;
   }
@@ -874,8 +1110,7 @@ document.getElementById('bankPanel').addEventListener('click', (event) => {
 
 onAppReady(() => {
   const role = typeof Auth !== 'undefined' && Auth.role ? Auth.role() : '';
-  const hod = typeof Auth !== 'undefined' && typeof Auth.isHod === 'function' && Auth.isHod();
-  if (role !== 'staff' && !hod) {
+  if (role !== 'staff' && role !== 'admin' && role !== 'placement_officer') {
     location.href = 'dashboard.html';
   }
   loadBank();

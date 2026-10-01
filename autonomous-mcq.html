@@ -1,0 +1,300 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Autonomous MCQ · AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+<style>
+  .syl-course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10.5rem,1fr));gap:.75rem}
+  .syl-course-card{
+    border:1px solid var(--border);border-radius:.85rem;padding:1rem;background:#fff;text-align:left;
+    cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;height:100%;
+  }
+  .syl-course-card:hover{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+  .syl-course-icon{font-size:1.35rem;line-height:1;margin-bottom:.45rem;color:var(--primary)}
+</style>
+</head>
+<body data-page="autonomous-mcq.html"><div class="app">
+<aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Autonomous MCQ</h1>
+    <p class="page-sub mb-0">Study the question bank, then attend an MCQ test.</p>
+  </div>
+</div>
+
+<ul class="nav nav-tabs mb-3" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tabStudyBtn" data-bs-toggle="tab" data-bs-target="#tabStudy" type="button" role="tab">Question bank</button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tabTestBtn" data-bs-toggle="tab" data-bs-target="#tabTest" type="button" role="tab">MCQ</button>
+  </li>
+</ul>
+
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="tabStudy" role="tabpanel">
+    <div id="studyPanel"></div>
+  </div>
+  <div class="tab-pane fade" id="tabTest" role="tabpanel">
+    <p class="small text-muted-2 mb-3 d-none" id="testHint"></p>
+    <div id="testPanel"></div>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=20261001stumcq"></script>
+<script src="js/app.js?v=20261001stumcq"></script>
+<script>
+let study = { courses: [] };
+let openStudy = '';
+let tests = [];
+let attempt = null;
+let timer = 0;
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function setHint(text) {
+  const el = document.getElementById('testHint');
+  const value = String(text || '').trim();
+  el.textContent = value;
+  el.classList.toggle('d-none', value === '');
+}
+
+function clearTimer() {
+  if (timer) window.clearInterval(timer);
+  timer = 0;
+}
+
+function cardButton(title, meta, attr, value, icon) {
+  return `
+    <button type="button" class="syl-course-card" ${attr}="${esc(value)}">
+      <div class="syl-course-icon"><i class="bi ${icon}"></i></div>
+      <div class="fw-semibold">${esc(title)}</div>
+      <div class="small text-muted-2 mt-1">${esc(meta)}</div>
+    </button>`;
+}
+
+function renderStudy() {
+  const panel = document.getElementById('studyPanel');
+  const groups = Array.isArray(study.courses) ? study.courses : [];
+  const open = groups.find((course) => String(course.courseCode || '').toUpperCase() === openStudy);
+  if (openStudy && !open) openStudy = '';
+  if (!groups.length) {
+    panel.innerHTML = '<p class="text-muted-2 mb-0">No questions in the bank yet.</p>';
+    return;
+  }
+  if (open) {
+    const rows = open.questions || [];
+    panel.innerHTML = `
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-study-back aria-label="Back"><i class="bi bi-arrow-left"></i></button>
+        <div>
+          <h2 class="h5 mb-0">${esc(open.courseCode)}</h2>
+          <div class="small text-muted-2">${rows.length} question${rows.length === 1 ? '' : 's'} for study</div>
+        </div>
+      </div>
+      ${rows.map((q, i) => {
+        const options = (q.options || []).map((opt, idx) => {
+          const mark = idx === q.correctIndex ? ' fw-semibold' : '';
+          const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
+          return `<li class="${mark} mb-1">${esc(opt)}${right}</li>`;
+        }).join('');
+        const description = String(q.description || q.explanation || '').trim();
+        return `
+          <article class="card-surface p-3 p-md-4 mb-3">
+            <div class="fw-semibold mb-2">Q${i + 1}. ${esc(q.question)}</div>
+            <ol class="mb-2 ps-3" type="A">${options}</ol>
+            ${description ? `<div class="small text-muted-2">${esc(description)}</div>` : ''}
+          </article>`;
+      }).join('')}`;
+    return;
+  }
+  panel.innerHTML = `<div class="syl-course-grid">${groups.map((course) => {
+    const count = (course.questions || []).length;
+    return cardButton(course.courseCode, `${count} question${count === 1 ? '' : 's'}`, 'data-open-study', course.courseCode, 'bi-diagram-3');
+  }).join('')}</div>`;
+}
+
+function renderTests() {
+  const panel = document.getElementById('testPanel');
+  if (attempt?.sessionId && !attempt.results) return;
+  if (!tests.length) {
+    panel.innerHTML = '<p class="text-muted-2 mb-0">No MCQ tests yet.</p>';
+    return;
+  }
+  panel.innerHTML = `<div class="syl-course-grid">${tests.map((test) => {
+    const count = Number(test.questionCount || 0);
+    const minutes = Number(test.durationMinutes || 0);
+    const codes = test.courseCode || (test.courseCodes || []).join(', ');
+    return cardButton(test.title || codes || 'MCQ', `${codes}${codes ? ' · ' : ''}${count} question${count === 1 ? '' : 's'}${minutes ? ` · ${minutes} min` : ''}`, 'data-start-test', test.id, 'bi-ui-checks');
+  }).join('')}</div>`;
+}
+
+function renderQuiz(payload) {
+  attempt = payload;
+  const panel = document.getElementById('testPanel');
+  const rows = payload?.questions || [];
+  const minutes = Number(payload?.durationMinutes || 0);
+  setHint('');
+  panel.innerHTML = `
+    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+      <div>
+        <h2 class="h5 mb-1">${esc(payload.title || 'MCQ')}</h2>
+        <p class="small text-muted-2 mb-0">${esc(payload.courseCode || '')}</p>
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        ${minutes ? `<span class="fw-semibold" id="mcqTimer" data-seconds="${minutes * 60}">${String(minutes).padStart(2, '0')}:00</span>` : ''}
+        <span class="badge-soft info">${rows.length} question${rows.length === 1 ? '' : 's'}</span>
+      </div>
+    </div>
+    ${rows.map((q, i) => `
+      <article class="card-surface p-3 p-md-4 mb-3">
+        <div class="fw-semibold mb-2">Q${i + 1}. ${esc(q.question)}</div>
+        ${(q.options || []).map((opt, idx) => `
+          <label class="d-flex gap-2 align-items-start mb-2">
+            <input class="form-check-input mt-1" type="radio" name="stu${i}" value="${idx}">
+            <span>${esc(opt)}</span>
+          </label>`).join('')}
+      </article>`).join('')}
+    <button type="button" class="btn btn-primary" id="btnSubmitTest">Submit answers</button>`;
+  clearTimer();
+  const el = document.getElementById('mcqTimer');
+  if (!el) return;
+  let left = Number(el.getAttribute('data-seconds') || 0);
+  timer = window.setInterval(() => {
+    left -= 1;
+    const m = Math.max(0, Math.floor(left / 60));
+    const s = Math.max(0, left % 60);
+    el.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    if (left <= 0) {
+      clearTimer();
+      submitTest();
+    }
+  }, 1000);
+}
+
+function renderResult(payload) {
+  clearTimer();
+  attempt = Object.assign({}, attempt || {}, { results: payload.results || [], sessionId: '' });
+  const results = payload.results || [];
+  document.getElementById('testPanel').innerHTML = `
+    <div class="card-surface p-3 p-md-4 mb-3">
+      <div class="small text-muted-2">${esc(payload.title || payload.courseCode || 'MCQ')}</div>
+      <div class="h4 mb-2">${esc(payload.score ?? 0)} / ${esc(payload.total ?? results.length)}</div>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnBackTests">Back to tests</button>
+    </div>
+    ${results.map((q, i) => {
+      const options = (q.options || []).map((opt, idx) => {
+        const yours = idx === q.selectedIndex ? ' <span class="badge-soft ' + (q.correct ? 'success' : 'danger') + '">Your answer</span>' : '';
+        const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
+        return `<li class="${idx === q.correctIndex ? 'fw-semibold' : ''} mb-1">${esc(opt)}${yours}${right}</li>`;
+      }).join('');
+      return `
+        <article class="card-surface p-3 p-md-4 mb-3">
+          <div class="d-flex justify-content-between gap-2 mb-2">
+            <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
+            <span class="badge-soft ${q.correct ? 'success' : 'danger'}">${q.correct ? 'Correct' : 'Incorrect'}</span>
+          </div>
+          <ol class="mb-2 ps-3" type="A">${options}</ol>
+          ${q.explanation ? `<div class="small text-muted-2">${esc(q.explanation)}</div>` : ''}
+        </article>`;
+    }).join('')}`;
+}
+
+async function loadStudy() {
+  const res = await api('/student/autonomous-mcq/bank');
+  if (!res?.success) throw new Error(res?.message || 'Could not load the question bank.');
+  study = res.data || { courses: [] };
+  renderStudy();
+}
+
+async function loadTests() {
+  const res = await api('/student/autonomous-mcq/tests');
+  if (!res?.success) throw new Error(res?.message || 'Could not load MCQ tests.');
+  tests = Array.isArray(res.data?.tests) ? res.data.tests : [];
+  renderTests();
+}
+
+async function startTest(id) {
+  setHint('Starting the MCQ…');
+  try {
+    const res = await api('/student/autonomous-mcq/start', {
+      method: 'POST',
+      body: JSON.stringify({ testId: id }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not start the MCQ.');
+    renderQuiz(res.data || {});
+  } catch (err) {
+    setHint(err?.message || 'Could not start the MCQ.');
+  }
+}
+
+async function submitTest() {
+  if (!attempt?.sessionId) return;
+  clearTimer();
+  const answers = (attempt.questions || []).map((_, i) => {
+    const picked = document.querySelector(`input[name="stu${i}"]:checked`);
+    return picked ? Number(picked.value) : -1;
+  });
+  const button = document.getElementById('btnSubmitTest');
+  if (button) button.disabled = true;
+  try {
+    const res = await api('/student/autonomous-mcq/submit', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId: attempt.sessionId, answers }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not submit the MCQ.');
+    renderResult(res.data || {});
+  } catch (err) {
+    setHint(err?.message || 'Could not submit the MCQ.');
+    if (button) button.disabled = false;
+  }
+}
+
+document.getElementById('studyPanel').addEventListener('click', (event) => {
+  const open = event.target.closest('[data-open-study]');
+  if (open) {
+    openStudy = String(open.getAttribute('data-open-study') || '').toUpperCase();
+    renderStudy();
+    return;
+  }
+  if (event.target.closest('[data-study-back]')) {
+    openStudy = '';
+    renderStudy();
+  }
+});
+document.getElementById('testPanel').addEventListener('click', (event) => {
+  const start = event.target.closest('[data-start-test]');
+  if (start) {
+    startTest(start.getAttribute('data-start-test') || '');
+    return;
+  }
+  if (event.target.closest('#btnSubmitTest')) submitTest();
+  if (event.target.closest('#btnBackTests')) {
+    attempt = null;
+    renderTests();
+  }
+});
+document.getElementById('tabTestBtn').addEventListener('shown.bs.tab', () => {
+  if (attempt?.sessionId && !attempt.results) return;
+  loadTests().catch((err) => setHint(err?.message || 'Could not load MCQ tests.'));
+});
+
+onAppReady(() => {
+  if ((typeof Auth !== 'undefined' && Auth.role ? Auth.role() : '') !== 'student') {
+    location.href = 'dashboard.html';
+    return;
+  }
+  loadStudy().catch(() => {
+    document.getElementById('studyPanel').innerHTML = '<p class="text-danger mb-0">Could not load the question bank.</p>';
+  });
+  loadTests().catch(() => {});
+});
+</script>
+</body></html>

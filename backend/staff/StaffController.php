@@ -680,13 +680,14 @@ final class StaffController
     /** GET /api/staff/courses/search?q=26MCA */
     public function searchCourses(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
         if (strlen($query) > 40) {
             $query = substr($query, 0, 40);
         }
         $dept = $this->staffDepartment($user);
-        $departmentName = $dept['name'] !== '' ? $dept['name'] : $dept['code'];
+        $campusWide = RBACMiddleware::seesAllSyllabusCourses($user);
+        $departmentName = $campusWide ? 'all departments' : ($dept['name'] !== '' ? $dept['name'] : $dept['code']);
         if (strlen($query) < 3) {
             Response::success([
                 'courses' => [],
@@ -702,7 +703,8 @@ final class StaffController
             $response['data'] ?? [],
             $dept['code'],
             $dept['name'],
-            $dept['shortName']
+            $dept['shortName'],
+            $campusWide
         );
         Response::success([
             'courses' => array_slice($courses, 0, 40),
@@ -714,7 +716,7 @@ final class StaffController
     /** POST /api/staff/courses/get */
     public function getCourse(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $raw = file_get_contents('php://input') ?: '{}';
         $body = json_decode($raw, true);
         if (!is_array($body)) {
@@ -726,7 +728,7 @@ final class StaffController
             Response::error('Select a course, then click Get.', 422);
         }
         $dept = $this->staffDepartment($user);
-        if ($courseCode !== '' && !CourseSyllabusCatalog::subjectVisibleToStaff($courseCode, $dept['code'], $dept['name'], $dept['shortName'])) {
+        if ($courseCode !== '' && !RBACMiddleware::seesAllSyllabusCourses($user) && !CourseSyllabusCatalog::subjectVisibleToStaff($courseCode, $dept['code'], $dept['name'], $dept['shortName'])) {
             Response::error('That course is outside your department.', 422);
         }
         $encid = AesSyllabusCipher::encrypt($semsubId);
@@ -744,14 +746,14 @@ final class StaffController
     /** GET /api/staff/courses/syllabus */
     public function downloadSyllabus(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $semsubId = trim((string) ($_GET['semsubId'] ?? $_GET['id'] ?? ''));
         $courseCode = strtoupper(trim((string) ($_GET['courseCode'] ?? $_GET['code'] ?? '')));
         if ($semsubId === '') {
             Response::error('Select a course, then click Get.', 422);
         }
         $dept = $this->staffDepartment($user);
-        if ($courseCode !== '' && !CourseSyllabusCatalog::subjectVisibleToStaff($courseCode, $dept['code'], $dept['name'], $dept['shortName'])) {
+        if ($courseCode !== '' && !RBACMiddleware::seesAllSyllabusCourses($user) && !CourseSyllabusCatalog::subjectVisibleToStaff($courseCode, $dept['code'], $dept['name'], $dept['shortName'])) {
             Response::forbidden('That course is outside your department.');
         }
         $encid = AesSyllabusCipher::encrypt($semsubId);
@@ -775,10 +777,11 @@ final class StaffController
     /** GET /api/staff/courses */
     public function listCourses(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $dept = $this->staffDepartment($user);
+        $campusWide = RBACMiddleware::seesAllSyllabusCourses($user);
         Response::success([
-            'courses' => CourseSyllabusCatalog::forStaff($dept['code'], $dept['name'], $dept['shortName']),
+            'courses' => $campusWide ? [] : CourseSyllabusCatalog::forStaff($dept['code'], $dept['name'], $dept['shortName']),
             'departmentCode' => $dept['code'],
             'departmentName' => $dept['name'] !== '' ? $dept['name'] : $dept['code'],
         ]);
@@ -803,7 +806,7 @@ final class StaffController
     /** POST /api/staff/courses/questions */
     public function generateCourseQuestions(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $body = json_decode((string) file_get_contents('php://input'), true);
         if (!is_array($body)) {
             $body = $_POST;
@@ -824,7 +827,7 @@ final class StaffController
     /** POST /api/staff/courses/questions/save */
     public function saveCourseQuestions(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $body = json_decode((string) file_get_contents('php://input'), true);
         if (!is_array($body)) {
             $body = $_POST;
@@ -849,7 +852,7 @@ final class StaffController
     /** POST /api/staff/courses/questions/practice */
     public function startCoursePractice(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $body = json_decode((string) file_get_contents('php://input'), true);
         if (!is_array($body)) {
             $body = $_POST;
@@ -867,7 +870,7 @@ final class StaffController
     /** POST /api/staff/courses/questions/submit */
     public function submitCoursePractice(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $body = json_decode((string) file_get_contents('php://input'), true);
         if (!is_array($body)) {
             $body = [];
@@ -885,7 +888,7 @@ final class StaffController
     /** GET /api/staff/courses/question-bank?courseCode=26MCAT107 */
     public function listSyllabusQuestionBank(): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         $courseCode = trim((string) ($_GET['courseCode'] ?? $_GET['code'] ?? ''));
         try {
             Response::success((new StaffCourseQuestionService())->listBank($user, $courseCode));
@@ -894,10 +897,49 @@ final class StaffController
         }
     }
 
+    /** GET /api/staff/courses/mcq-tests */
+    public function listSyllabusMcqTests(): void
+    {
+        $user = RBACMiddleware::requireSyllabusAccess();
+        Response::success((new StaffCourseQuestionService())->listTests($user));
+    }
+
+    /** POST /api/staff/courses/mcq-tests */
+    public function createSyllabusMcqTest(): void
+    {
+        $user = RBACMiddleware::requireSyllabusAccess();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            Response::success(
+                (new StaffCourseQuestionService())->createTest($user, $body),
+                'MCQ created.'
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
+    /** DELETE /api/staff/courses/mcq-tests/{id} */
+    public function deleteSyllabusMcqTest(string $id): void
+    {
+        $user = RBACMiddleware::requireSyllabusAccess();
+        try {
+            Response::success(
+                (new StaffCourseQuestionService())->deleteTest($user, $id),
+                'MCQ removed.'
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
     /** DELETE /api/staff/courses/question-bank/{id} */
     public function deleteSyllabusBankQuestion(string $id): void
     {
-        $user = RBACMiddleware::requireStaff();
+        $user = RBACMiddleware::requireSyllabusAccess();
         try {
             Response::success(
                 (new StaffCourseQuestionService())->deleteBankQuestion($user, $id),

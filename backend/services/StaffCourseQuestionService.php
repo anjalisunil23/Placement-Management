@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Middleware\RBACMiddleware;
+use PMS\Models\SyllabusMcqTestModel;
 use PMS\Models\SyllabusQuestionBankModel;
 
 /**
@@ -39,7 +41,7 @@ final class StaffCourseQuestionService
         $deptCode = (string) ($dept['code'] ?? '');
         $deptName = (string) ($dept['name'] ?? '');
         $deptShort = (string) ($dept['shortName'] ?? '');
-        $course = $this->resolveLoadedSyllabus($body, $deptCode, $deptName, $deptShort);
+        $course = $this->resolveLoadedSyllabus($body, $deptCode, $deptName, $deptShort, $this->seesAllCourses($user));
 
         $mixes = $this->parseMixes($body);
         $total = 0;
@@ -181,6 +183,7 @@ PROMPT;
             $this->assertVisibleCourseCode($user, $focus);
         }
 
+        $allDepartments = $this->seesAllCourses($user);
         $ctx = StaffContext::resolve($user);
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
         $deptCode = (string) ($dept['code'] ?? '');
@@ -193,7 +196,7 @@ PROMPT;
             if ($code === '') {
                 continue;
             }
-            if (!CourseSyllabusCatalog::subjectVisibleToStaff($code, $deptCode, $deptName, $deptShort)) {
+            if (!$allDepartments && !CourseSyllabusCatalog::subjectVisibleToStaff($code, $deptCode, $deptName, $deptShort)) {
                 continue;
             }
             $visible[] = $question;
@@ -246,30 +249,232 @@ PROMPT;
      */
     public function startPractice(array $user, array $body): array
     {
+        $testId = trim((string) ($body['testId'] ?? ''));
+        if ($testId !== '') {
+            return $this->startSavedTest($user, $testId);
+        }
+
         $code = $this->assertVisibleCourseCode($user, (string) ($body['courseCode'] ?? $body['code'] ?? ''));
         $rows = (new SyllabusQuestionBankModel())->listByCourseCode($code);
         if ($rows === []) {
             throw new \InvalidArgumentException('Add questions to the syllabus question bank first.');
         }
 
+        return $this->openPractice($user, $code, trim((string) ($rows[0]['courseTitle'] ?? $code)), $rows, '');
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function listTests(array $user): array
+    {
+        $tests = [];
+        foreach ((new SyllabusMcqTestModel())->listCards() as $test) {
+            $codes = is_array($test['courseCodes'] ?? null) ? $test['courseCodes'] : [];
+            if ($codes === []) {
+                continue;
+            }
+            $visible = true;
+            foreach ($codes as $code) {
+                if (!$this->courseVisible($user, (string) $code)) {
+                    $visible = false;
+                    break;
+                }
+            }
+            if (!$visible) {
+                continue;
+            }
+            $tests[] = $test;
+        }
+
+        return ['tests' => $tests];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function createTest(array $user, array $body): array
+    {
+        $title = trim((string) ($body['title'] ?? ''));
+        $duration = (int) ($body['durationMinutes'] ?? 30);
+        if ($duration < 5 || $duration > 180) {
+            throw new \InvalidArgumentException('Duration must be between 5 and 180 minutes.');
+        }
+        $sources = is_array($body['sources'] ?? null) ? $body['sources'] : [];
+        if ($sources === [] && trim((string) ($body['courseCode'] ?? '')) !== '') {
+            $sources = [[
+                'courseCode' => (string) $body['courseCode'],
+                'mode' => 'random',
+                'count' => 0,
+            ]];
+        }
+        $bank = new SyllabusQuestionBankModel();
+        $picked = [];
+        $codes = [];
+        foreach ($sources as $source) {
+            if (!is_array($source)) {
+                continue;
+            }
+            $code = $this->assertVisibleCourseCode($user, (string) ($source['courseCode'] ?? $source['code'] ?? ''));
+            if (in_array($code, $codes, true)) {
+                throw new \InvalidArgumentException($code . ' is already in this MCQ.');
+            }
+            $pool = $bank->listByCourseCode($code, 500);
+            if ($pool === []) {
+                throw new \InvalidArgumentException('Add questions to ' . $code . ' before creating an MCQ.');
+            }
+            $mode = strtolower(trim((string) ($source['mode'] ?? 'random')));
+            if ($mode === 'manual') {
+                $wanted = [];
+                foreach ((array) ($source['questionIds'] ?? $source['ids'] ?? []) as $id) {
+                    $wanted[trim((string) $id)] = true;
+                }
+                $chosen = [];
+                foreach ($pool as $question) {
+                    $id = (string) ($question['id'] ?? '');
+                    if ($id !== '' && isset($wanted[$id])) {
+                        $chosen[] = $question;
+                    }
+                }
+                if ($chosen === []) {
+                    throw new \InvalidArgumentException('Pick the questions to include from ' . $code . '.');
+                }
+            } else {
+                $count = (int) ($source['count'] ?? 0);
+                if ($count < 1) {
+                    $count = count($pool);
+                }
+                if ($count > count($pool)) {
+                    throw new \InvalidArgumentException($code . ' has only ' . count($pool) . ' question' . (count($pool) === 1 ? '' : 's') . '.');
+                }
+                shuffle($pool);
+                $chosen = array_slice($pool, 0, $count);
+            }
+            foreach ($chosen as $question) {
+                $picked[] = $question;
+            }
+            $codes[] = $code;
+        }
+        if ($picked === [] || $codes === []) {
+            throw new \InvalidArgumentException('Choose at least one course and the questions to include.');
+        }
+        if ($title === '') {
+            $title = implode(', ', $codes);
+        }
+        if (mb_strlen($title) > 120) {
+            throw new \InvalidArgumentException('The MCQ title must be 120 characters or fewer.');
+        }
+        $test = (new SyllabusMcqTestModel())->createTest(
+            $title,
+            $duration,
+            $picked,
+            $codes,
+            (string) ($user['_id'] ?? $user['id'] ?? '')
+        );
+
+        return [
+            'test' => $test,
+            'tests' => $this->listTests($user)['tests'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function deleteTest(array $user, string $testId): array
+    {
+        $model = new SyllabusMcqTestModel();
+        $row = $model->findById($testId);
+        if ($row === null) {
+            throw new \InvalidArgumentException('That MCQ was not found.');
+        }
+        $this->assertTestCoursesVisible($user, $row);
+        $model->delete($testId);
+
+        return $this->listTests($user);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function startSavedTest(array $user, string $testId): array
+    {
+        $row = (new SyllabusMcqTestModel())->findById($testId);
+        if ($row === null) {
+            throw new \InvalidArgumentException('That MCQ was not found.');
+        }
+        $this->assertTestCoursesVisible($user, $row);
+        $view = (new SyllabusMcqTestModel())->publicView($row);
+        $code = (string) ($view['courseCode'] ?? '');
+        $questions = [];
+        foreach ((array) ($row['questions'] ?? []) as $question) {
+            if (is_array($question)) {
+                $questions[] = $question;
+            }
+        }
+        if ($questions === []) {
+            throw new \InvalidArgumentException('This MCQ has no questions.');
+        }
+        $title = trim((string) ($row['title'] ?? $code));
+
+        return $this->openPractice(
+            $user,
+            $code,
+            $title !== '' ? $title : $code,
+            $questions,
+            (string) ($row['_id'] ?? $testId),
+            max(1, (int) ($row['durationMinutes'] ?? 30))
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param list<array<string, mixed>> $questions
+     * @return array<string, mixed>
+     */
+    private function openPractice(array $user, string $courseCode, string $title, array $questions, string $testId, int $durationMinutes = 0): array
+    {
         $sessionId = bin2hex(random_bytes(16));
-        $title = trim((string) ($rows[0]['courseTitle'] ?? $body['courseTitle'] ?? $code));
         $_SESSION['staff_course_practice'] = [
             'id' => $sessionId,
             'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
-            'courseCode' => $code,
-            'courseTitle' => $title !== '' ? $title : $code,
-            'questions' => $rows,
+            'testId' => $testId,
+            'courseCode' => $courseCode,
+            'courseTitle' => $title,
+            'durationMinutes' => $durationMinutes,
+            'questions' => $questions,
             'createdAt' => time(),
         ];
 
         return [
             'sessionId' => $sessionId,
-            'courseCode' => $code,
-            'courseTitle' => $title !== '' ? $title : $code,
-            'total' => count($rows),
-            'questions' => $this->questionsForPractice($rows),
+            'testId' => $testId,
+            'courseCode' => $courseCode,
+            'courseTitle' => $title,
+            'title' => $title,
+            'durationMinutes' => $durationMinutes,
+            'total' => count($questions),
+            'questions' => $this->questionsForPractice($questions),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function courseVisible(array $user, string $courseCode): bool
+    {
+        try {
+            $this->assertVisibleCourseCode($user, $courseCode);
+
+            return true;
+        } catch (\InvalidArgumentException) {
+            return false;
+        }
     }
 
     /**
@@ -295,7 +500,19 @@ PROMPT;
             throw new \InvalidArgumentException('This MCQ has expired. Start it again from the MCQ tab.');
         }
 
-        $answers = is_array($body['answers'] ?? null) ? array_values($body['answers']) : [];
+        $graded = $this->gradeAnswers($session, is_array($body['answers'] ?? null) ? array_values($body['answers']) : []);
+        unset($_SESSION['staff_course_practice']);
+
+        return $graded;
+    }
+
+    /**
+     * @param array<string, mixed> $session
+     * @param list<mixed> $answers
+     * @return array<string, mixed>
+     */
+    private function gradeAnswers(array $session, array $answers): array
+    {
         $questions = is_array($session['questions'] ?? null) ? $session['questions'] : [];
         $results = [];
         $score = 0;
@@ -319,11 +536,10 @@ PROMPT;
                 'explanation' => (string) ($question['explanation'] ?? $question['description'] ?? ''),
             ];
         }
-        unset($_SESSION['staff_course_practice']);
 
         return [
             'courseCode' => (string) ($session['courseCode'] ?? ''),
-            'courseTitle' => (string) ($session['courseTitle'] ?? ''),
+            'courseTitle' => (string) ($session['courseTitle'] ?? $session['title'] ?? ''),
             'difficulty' => (string) ($session['difficulty'] ?? ''),
             'score' => $score,
             'total' => count($results),
@@ -354,7 +570,7 @@ PROMPT;
      * @param array<string, mixed> $body
      * @return array<string, mixed>
      */
-    private function resolveLoadedSyllabus(array $body, string $deptCode, string $deptName, string $deptShort): array
+    private function resolveLoadedSyllabus(array $body, string $deptCode, string $deptName, string $deptShort, bool $allDepartments = false): array
     {
         $code = strtoupper(trim((string) ($body['courseCode'] ?? $body['code'] ?? '')));
         $semsubId = trim((string) ($body['semsubId'] ?? $body['id'] ?? ''));
@@ -362,7 +578,7 @@ PROMPT;
         if ($code === '' || $semsubId === '') {
             throw new \InvalidArgumentException('Click Get to load the syllabus first.');
         }
-        if (!CourseSyllabusCatalog::subjectVisibleToStaff($code, $deptCode, $deptName, $deptShort)) {
+        if (!$allDepartments && !CourseSyllabusCatalog::subjectVisibleToStaff($code, $deptCode, $deptName, $deptShort)) {
             throw new \InvalidArgumentException('That course is outside your department.');
         }
 
@@ -518,6 +734,9 @@ PROMPT;
         if ($code === '') {
             throw new \InvalidArgumentException('Click Get to load the syllabus first.');
         }
+        if ($this->seesAllCourses($user)) {
+            return $code;
+        }
         $ctx = StaffContext::resolve($user);
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
         if (!CourseSyllabusCatalog::subjectVisibleToStaff(
@@ -530,6 +749,125 @@ PROMPT;
         }
 
         return $code;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function seesAllCourses(array $user): bool
+    {
+        return RBACMiddleware::seesAllSyllabusCourses($user);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $row
+     */
+    private function assertTestCoursesVisible(array $user, array $row): void
+    {
+        if ($this->seesAllCourses($user)) {
+            return;
+        }
+        $codes = [];
+        foreach ((array) ($row['courseCodes'] ?? []) as $code) {
+            $normalized = SyllabusQuestionBankModel::normalizeCourseCode((string) $code);
+            if ($normalized !== '') {
+                $codes[] = $normalized;
+            }
+        }
+        if ($codes === []) {
+            $fallback = SyllabusQuestionBankModel::normalizeCourseCode((string) ($row['courseCode'] ?? ''));
+            if ($fallback !== '') {
+                $codes[] = $fallback;
+            }
+        }
+        foreach ($codes as $code) {
+            $this->assertVisibleCourseCode($user, $code);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function studentStudyBank(): array
+    {
+        $questions = (new SyllabusQuestionBankModel())->listAll(2000);
+
+        return [
+            'courses' => SyllabusQuestionBankModel::groupByCourseCode($questions),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function studentTests(): array
+    {
+        return ['tests' => (new SyllabusMcqTestModel())->listCards()];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function studentStart(array $user, string $testId): array
+    {
+        $row = (new SyllabusMcqTestModel())->findById($testId);
+        if ($row === null) {
+            throw new \InvalidArgumentException('That MCQ was not found.');
+        }
+        $questions = [];
+        foreach ((array) ($row['questions'] ?? []) as $question) {
+            if (is_array($question)) {
+                $questions[] = $question;
+            }
+        }
+        if ($questions === []) {
+            throw new \InvalidArgumentException('This MCQ has no questions.');
+        }
+        $view = (new SyllabusMcqTestModel())->publicView($row);
+        $sessionId = bin2hex(random_bytes(16));
+        $_SESSION['student_autonomous_mcq'] = [
+            'id' => $sessionId,
+            'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
+            'testId' => (string) ($row['_id'] ?? $testId),
+            'courseCode' => (string) ($view['courseCode'] ?? ''),
+            'title' => (string) ($view['title'] ?? ''),
+            'durationMinutes' => (int) ($view['durationMinutes'] ?? 30),
+            'questions' => $questions,
+            'createdAt' => time(),
+        ];
+
+        return [
+            'sessionId' => $sessionId,
+            'testId' => (string) ($row['_id'] ?? $testId),
+            'courseCode' => (string) ($view['courseCode'] ?? ''),
+            'title' => (string) ($view['title'] ?? ''),
+            'durationMinutes' => (int) ($view['durationMinutes'] ?? 30),
+            'total' => count($questions),
+            'questions' => $this->questionsForPractice($questions),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function studentSubmit(array $user, array $body): array
+    {
+        $session = $_SESSION['student_autonomous_mcq'] ?? null;
+        $sessionId = trim((string) ($body['sessionId'] ?? ''));
+        $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
+        if (!is_array($session) || $sessionId === '' || (string) ($session['id'] ?? '') !== $sessionId || (string) ($session['userId'] ?? '') !== $userId) {
+            throw new \InvalidArgumentException('This MCQ has ended. Start it again.');
+        }
+        $graded = $this->gradeAnswers($session, is_array($body['answers'] ?? null) ? array_values($body['answers']) : []);
+        unset($_SESSION['student_autonomous_mcq']);
+        $graded['title'] = (string) ($session['title'] ?? '');
+        $graded['testId'] = (string) ($session['testId'] ?? '');
+
+        return $graded;
     }
 
     private function assertCooldown(string $userId): void

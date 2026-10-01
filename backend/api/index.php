@@ -263,6 +263,10 @@ $routes = [
     ['GET',    '/admin/recruiting',                  [AdminController::class, 'recruitingOverview']],
 
     // Student
+    ['GET',  '/student/autonomous-mcq/bank',  [StudentController::class, 'autonomousMcqBank']],
+    ['GET',  '/student/autonomous-mcq/tests', [StudentController::class, 'autonomousMcqTests']],
+    ['POST', '/student/autonomous-mcq/start', [StudentController::class, 'autonomousMcqStart']],
+    ['POST', '/student/autonomous-mcq/submit',[StudentController::class, 'autonomousMcqSubmit']],
     ['GET',  '/student/dashboard',         [StudentController::class, 'dashboard']],
     ['GET',  '/student/pca-offer-letter',  [StudentController::class, 'pcaOfferLetter']],
     ['GET',  '/student/profile',           [StudentController::class, 'getProfile']],
@@ -371,6 +375,9 @@ $routes = [
     ['POST', '/staff/courses/questions',          [StaffController::class, 'generateCourseQuestions']],
     ['POST', '/staff/courses/questions/save',     [StaffController::class, 'saveCourseQuestions']],
     ['POST', '/staff/courses/questions/practice', [StaffController::class, 'startCoursePractice']],
+    ['GET',  '/staff/courses/mcq-tests',          [StaffController::class, 'listSyllabusMcqTests']],
+    ['POST', '/staff/courses/mcq-tests',          [StaffController::class, 'createSyllabusMcqTest']],
+    ['DELETE','/staff/courses/mcq-tests/{id}',    [StaffController::class, 'deleteSyllabusMcqTest']],
     ['POST', '/staff/courses/questions/submit',   [StaffController::class, 'submitCoursePractice']],
     ['GET',  '/staff/profile',                    [StaffController::class, 'profile']],
     ['PUT',  '/staff/profile',                    [StaffController::class, 'updateProfile']],

@@ -26,6 +26,7 @@ use PMS\Services\AesLoginService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\NotificationService;
 use PMS\Services\ObjectStorageService;
+use PMS\Services\StaffCourseQuestionService;
 use PMS\Services\StudentProfileEditService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
@@ -2051,6 +2052,56 @@ final class StudentController
     $savedPaths[] = $path;
 
     return $path;
+  }
+
+  /** GET /api/student/autonomous-mcq/bank */
+  public function autonomousMcqBank(): void
+  {
+    RBACMiddleware::requireStudent();
+    Response::success((new StaffCourseQuestionService())->studentStudyBank());
+  }
+
+  /** GET /api/student/autonomous-mcq/tests */
+  public function autonomousMcqTests(): void
+  {
+    RBACMiddleware::requireStudent();
+    Response::success((new StaffCourseQuestionService())->studentTests());
+  }
+
+  /** POST /api/student/autonomous-mcq/start */
+  public function autonomousMcqStart(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $body = json_decode((string) file_get_contents('php://input'), true);
+    if (!is_array($body)) {
+      $body = $_POST;
+    }
+    try {
+      Response::success(
+        (new StaffCourseQuestionService())->studentStart($user, (string) ($body['testId'] ?? '')),
+        'MCQ started.'
+      );
+    } catch (\InvalidArgumentException $e) {
+      Response::error($e->getMessage(), 422);
+    }
+  }
+
+  /** POST /api/student/autonomous-mcq/submit */
+  public function autonomousMcqSubmit(): void
+  {
+    $user = RBACMiddleware::requireStudent();
+    $body = json_decode((string) file_get_contents('php://input'), true);
+    if (!is_array($body)) {
+      $body = [];
+    }
+    try {
+      Response::success(
+        (new StaffCourseQuestionService())->studentSubmit($user, $body),
+        'MCQ submitted.'
+      );
+    } catch (\InvalidArgumentException $e) {
+      Response::error($e->getMessage(), 422);
+    }
   }
 
   private function ageFromDob(string $dob): ?int
