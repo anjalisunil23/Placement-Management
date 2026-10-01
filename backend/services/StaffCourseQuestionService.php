@@ -58,32 +58,18 @@ final class StaffCourseQuestionService
             throw new \RuntimeException('Could not read that syllabus. Click Get, then generate questions.');
         }
         $system = 'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.';
-        $userPrompt = <<<PROMPT
-Course: {$course['code']} {$course['title']}
-Write multiple-choice questions in this mix:
-{$mixText}
-
-Official syllabus:
-{$syllabus}
-
-Rules:
-- Every question must be answerable from the syllabus above.
-- Do not invent topics, tools, or outcomes that are not in the syllabus.
-- Spread questions across the modules and course outcomes.
-- Each question has exactly four distinct options and one correct answer.
-- correctIndex is the 0-based index of the correct option.
-- difficulty must be Easy, Medium, or Hard and must match the mix counts.
-- description is required: 1-2 sentences explaining why the correct option is right.
-- Do not copy a question verbatim from a sample paper if a more direct syllabus fact can be tested.
-
-Return this JSON shape:
-{"questions":[{"module":"Module 1","difficulty":"Medium","question":"...","options":["...","...","...","..."],"correctIndex":0,"description":"..."}]}
-PROMPT;
-
+        $userPrompt = $this->buildGeneratePrompt($course, $syllabus, $mixes, $total, $mixText, '');
         $raw = $this->openai->generateJson($system, $userPrompt);
-        $questions = $this->normalizeQuestions($raw['questions'] ?? $raw, $total);
+        $valid = $this->collectValidQuestions($raw['questions'] ?? $raw);
+        $questions = $this->selectQuestionsForMixes($valid, $mixes, []);
+        $questions = $this->topUpQuestionsForMixes($course, $syllabus, $system, $mixes, $questions);
         if ($questions === []) {
             throw new \RuntimeException('AI did not return any usable questions. Please try again.');
+        }
+        if (count($questions) < $total) {
+            throw new \RuntimeException(
+                'Could only generate ' . count($questions) . ' of ' . $total . ' requested questions. Try again or lower the counts.'
+            );
         }
         foreach ($questions as $index => $question) {
             $questions[$index]['draftIndex'] = $index;
@@ -945,10 +931,186 @@ PROMPT;
     }
 
     /**
-     * @param mixed $raw
+     * @param array<string, mixed> $course
+     * @param list<array{difficulty:string,count:int}> $mixes
+     */
+    private function buildGeneratePrompt(array $course, string $syllabus, array $mixes, int $total, string $mixText, string $avoidBlock): string
+    {
+        $avoid = trim($avoidBlock) !== ''
+            ? "\nDo not repeat or closely paraphrase these questions already written:\n{$avoidBlock}\n"
+            : '';
+
+        return <<<PROMPT
+Course: {$course['code']} {$course['title']}
+Write exactly {$total} multiple-choice questions in this mix (no more, no fewer):
+{$mixText}
+
+Official syllabus:
+{$syllabus}
+{$avoid}
+Rules:
+- Return exactly {$total} questions with the difficulty counts above.
+- Every question must be answerable from the syllabus above.
+- Do not invent topics, tools, or outcomes that are not in the syllabus.
+- Spread questions across the modules and course outcomes.
+- Each question has exactly four distinct options and one correct answer.
+- correctIndex is the 0-based index of the correct option.
+- Each question's difficulty field must be Easy, Medium, or Hard and match the mix.
+- description is required: 1-2 sentences explaining why the correct option is right.
+
+Return this JSON shape:
+{"questions":[{"module":"Module 1","difficulty":"Medium","question":"...","options":["...","...","...","..."],"correctIndex":0,"description":"..."}]}
+PROMPT;
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @param list<array<string, mixed>> $selected
+     * @return list<array{difficulty:string,count:int}>
+     */
+    private function mixShortfall(array $mixes, array $selected): array
+    {
+        $have = ['Easy' => 0, 'Medium' => 0, 'Hard' => 0];
+        foreach ($selected as $question) {
+            $difficulty = (string) ($question['difficulty'] ?? '');
+            if (isset($have[$difficulty])) {
+                $have[$difficulty]++;
+            }
+        }
+
+        $shortfall = [];
+        foreach ($mixes as $mix) {
+            $label = (string) ($mix['difficulty'] ?? '');
+            $need = (int) ($mix['count'] ?? 0) - (int) ($have[$label] ?? 0);
+            if ($need > 0) {
+                $shortfall[] = ['difficulty' => $label, 'count' => $need];
+            }
+        }
+
+        return $shortfall;
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @param list<array<string, mixed>> $selected
      * @return list<array<string, mixed>>
      */
-    private function normalizeQuestions(mixed $raw, int $limit): array
+    private function topUpQuestionsForMixes(array $course, string $syllabus, string $system, array $mixes, array $selected): array
+    {
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $shortfall = $this->mixShortfall($mixes, $selected);
+            if ($shortfall === []) {
+                break;
+            }
+            $totalShort = 0;
+            $mixLines = [];
+            foreach ($shortfall as $mix) {
+                $count = (int) ($mix['count'] ?? 0);
+                if ($count <= 0) {
+                    continue;
+                }
+                $totalShort += $count;
+                $mixLines[] = '- ' . ($mix['difficulty'] ?? 'Medium') . ': ' . $count;
+            }
+            if ($totalShort < 1) {
+                break;
+            }
+            $mixText = implode("\n", $mixLines);
+            $avoid = implode("\n", array_map(
+                static fn(array $q): string => '- ' . trim((string) ($q['question'] ?? '')),
+                array_slice($selected, -25)
+            ));
+            $prompt = $this->buildGeneratePrompt($course, $syllabus, $shortfall, $totalShort, $mixText, $avoid);
+            $raw = $this->openai->generateJson($system, $prompt);
+            $valid = $this->collectValidQuestions($raw['questions'] ?? $raw);
+            $added = $this->selectQuestionsForMixes($valid, $shortfall, $selected);
+            if ($added === []) {
+                continue;
+            }
+            $selected = $this->mergeQuestionLists($selected, $added);
+        }
+
+        return $selected;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $existing
+     * @param list<array<string, mixed>> $added
+     * @return list<array<string, mixed>>
+     */
+    private function mergeQuestionLists(array $existing, array $added): array
+    {
+        $seen = [];
+        foreach ($existing as $question) {
+            $key = mb_strtolower(trim((string) ($question['question'] ?? '')));
+            if ($key !== '') {
+                $seen[$key] = true;
+            }
+        }
+        foreach ($added as $question) {
+            $key = mb_strtolower(trim((string) ($question['question'] ?? '')));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $existing[] = $question;
+        }
+
+        return $existing;
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @param list<array<string, mixed>> $exclude
+     * @return list<array<string, mixed>>
+     */
+    private function selectQuestionsForMixes(array $valid, array $mixes, array $exclude): array
+    {
+        $excludeKeys = [];
+        foreach ($exclude as $question) {
+            $key = mb_strtolower(trim((string) ($question['question'] ?? '')));
+            if ($key !== '') {
+                $excludeKeys[$key] = true;
+            }
+        }
+
+        $buckets = ['Easy' => [], 'Medium' => [], 'Hard' => []];
+        foreach ($valid as $question) {
+            $key = mb_strtolower(trim((string) ($question['question'] ?? '')));
+            if ($key === '' || isset($excludeKeys[$key])) {
+                continue;
+            }
+            $difficulty = (string) ($question['difficulty'] ?? 'Medium');
+            if (!isset($buckets[$difficulty])) {
+                continue;
+            }
+            $buckets[$difficulty][] = $question;
+        }
+
+        $out = [];
+        foreach ($mixes as $mix) {
+            $label = (string) ($mix['difficulty'] ?? '');
+            $need = (int) ($mix['count'] ?? 0);
+            if ($need <= 0 || !isset($buckets[$label])) {
+                continue;
+            }
+            $taken = 0;
+            foreach ($buckets[$label] as $question) {
+                if ($taken >= $need) {
+                    break;
+                }
+                $out[] = $question;
+                $taken++;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function collectValidQuestions(mixed $raw): array
     {
         if (!is_array($raw)) {
             return [];
@@ -992,11 +1154,9 @@ PROMPT;
                 'explanation' => $description,
                 'description' => $description,
             ];
-            if (count($out) >= $limit) {
-                break;
-            }
         }
 
         return $out;
     }
+
 }
