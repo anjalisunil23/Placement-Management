@@ -251,7 +251,7 @@ PROMPT;
     {
         $testId = trim((string) ($body['testId'] ?? ''));
         if ($testId !== '') {
-            return $this->startSavedTest($user, $testId);
+            throw new \InvalidArgumentException('Only students can take MCQ tests. Open the test to review questions.');
         }
 
         $code = $this->assertVisibleCourseCode($user, (string) ($body['courseCode'] ?? $body['code'] ?? ''));
@@ -421,6 +421,40 @@ PROMPT;
         $model->delete($testId);
 
         return $this->listTests($user);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function getTest(array $user, string $testId): array
+    {
+        $row = (new SyllabusMcqTestModel())->findById($testId);
+        if ($row === null) {
+            throw new \InvalidArgumentException('That MCQ was not found.');
+        }
+        $this->assertTestCoursesVisible($user, $row);
+        $view = (new SyllabusMcqTestModel())->publicView($row);
+        $title = trim((string) ($row['title'] ?? ''));
+        $questions = [];
+        foreach ((array) ($row['questions'] ?? []) as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $questions[] = [
+                'module' => (string) ($question['module'] ?? ''),
+                'difficulty' => (string) ($question['difficulty'] ?? ''),
+                'question' => (string) ($question['question'] ?? ''),
+                'options' => array_values((array) ($question['options'] ?? [])),
+                'correctIndex' => (int) ($question['correctIndex'] ?? -1),
+                'description' => (string) ($question['description'] ?? $question['explanation'] ?? ''),
+            ];
+        }
+
+        return array_merge($view, [
+            'title' => $title !== '' ? $title : (string) ($view['title'] ?? ''),
+            'questions' => $questions,
+        ]);
     }
 
     /**

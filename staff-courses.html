@@ -6,6 +6,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
 <style>
+  .syl-course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10.5rem,1fr));gap:.75rem}
+  .syl-course-card{
+    border:1px solid var(--border);border-radius:.85rem;padding:1rem;background:#fff;text-align:left;
+    cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;height:100%;
+  }
+  .syl-course-card:hover{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));box-shadow:var(--shadow-sm);transform:translateY(-1px)}
+  .syl-course-icon{font-size:1.35rem;line-height:1;margin-bottom:.45rem;color:var(--primary)}
   .apt-prob-list{border:1px solid var(--border,#e5e7eb);border-radius:.75rem;overflow:hidden;background:#fff}
   .apt-prob-row{
     display:grid;grid-template-columns:1.6rem minmax(0,1fr) 4.6rem 4.2rem;
@@ -208,7 +215,7 @@ let loaded = null;
 let bank = null;
 let openBankCode = '';
 let practice = null;
-let mcq = null;
+let mcqView = null;
 let mcqTests = [];
 let searchTimer = 0;
 let searchSeq = 0;
@@ -302,7 +309,7 @@ async function getSelectedCourse() {
     practice = null;
     document.getElementById('practicePanel').innerHTML = '';
     document.getElementById('genStatus').textContent = '';
-    clearMcq();
+    clearMcqView();
     const deptName = String(res.data?.departmentName || '').trim();
     label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Course loaded.';
     renderSyllabus();
@@ -362,10 +369,8 @@ function setMcqHint(text) {
   el.classList.toggle('d-none', value === '');
 }
 
-function clearMcq(resetSession) {
-  if (resetSession !== false) mcq = null;
-  const panel = document.getElementById('mcqPanel');
-  if (panel) panel.innerHTML = '';
+function clearMcqView() {
+  mcqView = null;
 }
 
 function questionDescription(q) {
@@ -410,17 +415,18 @@ function bankCourses(payload) {
   }];
 }
 
-function courseListRowHtml(course, index, actionAttr, actionValue) {
+function courseCardHtml(course, actionAttr, actionValue) {
   const code = String(course.courseCode || '').trim();
   const count = Array.isArray(course.questions) ? course.questions.length : Number(course.total || 0);
   const title = String(course.courseTitle || '').trim();
-  const label = title && title !== code ? `${code} · ${title}` : code;
+  const meta = title && title !== code
+    ? `${title} · ${count} question${count === 1 ? '' : 's'}`
+    : `${count} question${count === 1 ? '' : 's'}`;
   return `
-    <button type="button" class="apt-prob-row is-clickable" ${actionAttr}="${esc(actionValue || code)}">
-      <span class="apt-prob-check"></span>
-      <span class="apt-prob-title">${index + 1}. ${esc(label)}</span>
-      <span class="apt-prob-pct">${count} Q</span>
-      <span class="apt-prob-time"></span>
+    <button type="button" class="syl-course-card" ${actionAttr}="${esc(actionValue || code)}">
+      <div class="syl-course-icon"><i class="bi bi-diagram-3"></i></div>
+      <div class="fw-semibold">${esc(code)}</div>
+      <div class="small text-muted-2 mt-1">${esc(meta)}</div>
     </button>`;
 }
 
@@ -450,7 +456,7 @@ function mcqTestListRow(test, index, { staff = false } = {}) {
   const timeLabel = minutes ? `${minutes} min` : '—';
   if (staff) {
     return `
-      <div class="apt-prob-row apt-prob-row--staff" data-mcq-start-test="${esc(test.id)}" role="button" tabindex="0">
+      <div class="apt-prob-row apt-prob-row--staff" data-mcq-view="${esc(test.id)}" role="button" tabindex="0">
         <span class="apt-prob-check"></span>
         <span class="apt-prob-title">${index + 1}. ${esc(title)}</span>
         <span class="apt-prob-pct">${esc(qLabel)}</span>
@@ -459,12 +465,52 @@ function mcqTestListRow(test, index, { staff = false } = {}) {
       </div>`;
   }
   return `
-    <button type="button" class="apt-prob-row is-clickable" data-mcq-start-test="${esc(test.id)}">
+    <button type="button" class="apt-prob-row is-clickable" data-mcq-view="${esc(test.id)}">
       <span class="apt-prob-check"></span>
       <span class="apt-prob-title">${index + 1}. ${esc(title)}</span>
       <span class="apt-prob-pct">${esc(qLabel)}</span>
       <span class="apt-prob-time">${esc(timeLabel)}</span>
     </button>`;
+}
+
+function renderMcqReviewQuestion(q, i) {
+  const description = questionDescription(q);
+  const options = (q.options || []).map((opt, idx) => {
+    const mark = idx === q.correctIndex ? ' fw-semibold' : '';
+    const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
+    return `<li class="${mark} mb-1">${esc(opt)}${right}</li>`;
+  }).join('');
+  return `
+    <article class="card-surface p-3 p-md-4 mb-3">
+      <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+        <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
+        <div class="d-flex flex-wrap gap-2">
+          ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
+          ${q.difficulty ? `<span class="badge-soft info">${esc(q.difficulty)}</span>` : ''}
+        </div>
+      </div>
+      <ol class="mb-2 ps-3" type="A">${options}</ol>
+      ${description ? `<div class="small"><span class="fw-semibold">Description:</span> <span class="text-muted-2">${esc(description)}</span></div>` : ''}
+    </article>`;
+}
+
+function renderMcqReview(payload) {
+  const panel = document.getElementById('mcqPanel');
+  if (!panel) return;
+  setMcqHint('');
+  const rows = payload?.questions || [];
+  const title = mcqListLabel(payload);
+  const codeName = mcqCourseCodeName(payload);
+  const minutes = Number(payload?.durationMinutes || 0);
+  panel.innerHTML = `
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-mcq-back aria-label="Back to MCQ list"><i class="bi bi-arrow-left"></i></button>
+      <div>
+        <h2 class="h5 mb-1">${esc(title)}</h2>
+        <p class="small text-muted-2 mb-0">${codeName ? esc(codeName) + ' · ' : ''}${rows.length} question${rows.length === 1 ? '' : 's'}${minutes ? ` · ${minutes} min for students` : ''}</p>
+      </div>
+    </div>
+    ${rows.length ? rows.map((q, i) => renderMcqReviewQuestion(q, i)).join('') : '<p class="text-muted-2 mb-0">This MCQ has no questions.</p>'}`;
 }
 
 function renderBankDetail(course) {
@@ -537,8 +583,8 @@ function renderBank(payload) {
   }
   const shown = filterBankGroups(groups);
   panel.innerHTML = shown.length
-    ? `<div class="apt-prob-list">${shown.map((course, i) => courseListRowHtml(course, i, 'data-open-bank', course.courseCode)).join('')}</div>`
-    : `<p class="text-muted-2 mb-0">No courses match ${esc(bankSearchQuery())}.</p>`;
+    ? `<div class="syl-course-grid">${shown.map((course) => courseCardHtml(course, 'data-open-bank', course.courseCode)).join('')}</div>`
+    : `<p class="text-muted-2 mb-0">No course cards match ${esc(bankSearchQuery())}.</p>`;
 }
 
 async function loadBank(focusCode) {
@@ -773,126 +819,16 @@ async function deleteMcqTest(id) {
     const res = await api('/staff/courses/mcq-tests/' + encodeURIComponent(id), { method: 'DELETE' });
     if (!res?.success) throw new Error(res?.message || 'Could not remove that MCQ.');
     mcqTests = Array.isArray(res.data?.tests) ? res.data.tests : [];
+    if (mcqView && String(mcqView.id) === String(id)) clearMcqView();
     renderMcqTests();
   } catch (err) {
     if (typeof toast === 'function') toast(err?.message || 'Could not remove that MCQ.', 'error');
   }
 }
 
-let mcqTimer = 0;
-
-function clearMcqTimer() {
-  if (mcqTimer) window.clearInterval(mcqTimer);
-  mcqTimer = 0;
-}
-
-function startMcqTimer() {
-  clearMcqTimer();
-  const el = document.getElementById('mcqTimer');
-  if (!el) return;
-  let left = Number(el.getAttribute('data-seconds') || 0);
-  if (left <= 0) return;
-  mcqTimer = window.setInterval(() => {
-    left -= 1;
-    const minutes = Math.max(0, Math.floor(left / 60));
-    const seconds = Math.max(0, left % 60);
-    el.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    if (left <= 0) {
-      clearMcqTimer();
-      submitMcq();
-    }
-  }, 1000);
-}
-
-function renderMcqQuiz(payload) {
-  mcq = payload;
-  const panel = document.getElementById('mcqPanel');
-  const rows = payload?.questions || [];
-  if (!panel) return;
-  setMcqHint('');
-  const minutes = Number(payload?.durationMinutes || 0);
-  const title = mcqListLabel(payload);
-  const codeName = mcqCourseCodeName(payload);
-  panel.innerHTML = `
-    <div class="d-flex align-items-center gap-2 mb-3">
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-mcq-back aria-label="Back"><i class="bi bi-arrow-left"></i></button>
-      <div class="d-flex flex-wrap justify-content-between gap-2 flex-grow-1">
-      <div>
-        <h2 class="h5 mb-1">${esc(title)}</h2>
-        <p class="small text-muted-2 mb-0">${codeName ? esc(codeName) + ' · ' : ''}Choose one option for each question, then submit.</p>
-      </div>
-      <div class="d-flex gap-2 align-items-center">
-        ${minutes ? `<span class="fw-semibold" id="mcqTimer" data-seconds="${minutes * 60}">${String(minutes).padStart(2, '0')}:00</span>` : ''}
-        <span class="badge-soft info">${rows.length} question${rows.length === 1 ? '' : 's'}</span>
-      </div>
-      </div>
-    </div>
-    ${rows.map((q, i) => {
-      const options = (q.options || []).map((opt, idx) => `
-        <label class="d-flex gap-2 align-items-start mb-2">
-          <input class="form-check-input mt-1 flex-shrink-0" type="radio" name="mcq${i}" value="${idx}">
-          <span>${esc(opt)}</span>
-        </label>`).join('');
-      return `
-        <article class="card-surface p-3 p-md-4 mb-3">
-          <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
-            <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
-            <div class="d-flex flex-wrap gap-2">
-              ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
-              ${q.difficulty ? `<span class="badge-soft info">${esc(q.difficulty)}</span>` : ''}
-            </div>
-          </div>
-          <div>${options}</div>
-        </article>`;
-    }).join('')}
-    <div class="d-flex flex-wrap gap-2 mb-3">
-      <button type="button" class="btn btn-primary" id="btnSubmitMcq">Submit answers</button>
-      <button type="button" class="btn btn-outline-secondary" id="btnResetMcq">Cancel</button>
-    </div>`;
-  startMcqTimer();
-}
-
-function renderMcqResult(payload) {
-  mcq = Object.assign({}, mcq || {}, { results: payload?.results || [], sessionId: '' });
-  const results = payload?.results || [];
-  const panel = document.getElementById('mcqPanel');
-  if (!panel) return;
-  setMcqHint('');
-  panel.innerHTML = `
-    <div class="d-flex align-items-center gap-2 mb-3">
-      <button type="button" class="btn btn-sm btn-outline-secondary" data-mcq-back aria-label="Back"><i class="bi bi-arrow-left"></i></button>
-      <div>
-        <div class="small text-muted-2">MCQ result · ${esc(payload.courseCode || loaded?.code || '')}</div>
-        <div class="h4 mb-0">${esc(payload.score ?? 0)} / ${esc(payload.total ?? results.length)}</div>
-      </div>
-      <button type="button" class="btn btn-primary ms-auto" data-mcq-start-test="${esc(mcq?.testId || '')}">Start again</button>
-    </div>
-    ${results.map((q, i) => {
-      const options = (q.options || []).map((opt, idx) => {
-        let mark = '';
-        if (idx === q.correctIndex) mark = 'fw-semibold';
-        const yours = idx === q.selectedIndex ? ' <span class="badge-soft ' + (q.correct ? 'success' : 'danger') + '">Your answer</span>' : '';
-        const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
-        return `<li class="${mark} mb-1">${esc(opt)}${yours}${right}</li>`;
-      }).join('');
-      return `
-        <article class="card-surface p-3 p-md-4 mb-3">
-          <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
-            <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
-            <span class="badge-soft ${q.correct ? 'success' : 'danger'}">${q.correct ? 'Correct' : 'Incorrect'}</span>
-          </div>
-          <ol class="mb-2 ps-3" type="A">${options}</ol>
-          ${q.explanation ? `<div class="small text-muted-2">${esc(q.explanation)}</div>` : ''}
-        </article>`;
-    }).join('')}`;
-}
-
 async function showMcqTab() {
-  if (mcq?.sessionId && !mcq.results) {
-    renderMcqQuiz(mcq);
-    return;
-  }
-  if (mcq?.results) {
+  if (mcqView?.id) {
+    renderMcqReview(mcqView);
     return;
   }
   try {
@@ -905,48 +841,21 @@ async function showMcqTab() {
   }
 }
 
-async function startMcq(testId) {
-  const id = String(testId || mcq?.testId || '').trim();
+async function viewMcq(testId) {
+  const id = String(testId || '').trim();
   if (!id) return;
-  clearMcqTimer();
-  setMcqHint('Starting the MCQ…');
-  document.querySelectorAll('[data-mcq-start-test]').forEach((el) => { el.disabled = true; });
+  setMcqHint('Loading MCQ…');
+  document.querySelectorAll('[data-mcq-view]').forEach((el) => { el.setAttribute('aria-disabled', 'true'); });
   try {
-    const res = await api('/staff/courses/questions/practice', {
-      method: 'POST',
-      body: JSON.stringify({ testId: id }),
-    });
-    if (!res?.success) throw new Error(res?.message || 'Could not start the MCQ.');
-    renderMcqQuiz(res.data || {});
-  } catch (err) {
-    setMcqHint(err?.message || 'Could not start the MCQ.');
-    renderMcqTests();
-    if (typeof toast === 'function') toast(err?.message || 'Could not start the MCQ.', 'error');
-  }
-}
-
-async function submitMcq() {
-  if (!mcq?.sessionId) return;
-  clearMcqTimer();
-  const answers = (mcq.questions || []).map((_, i) => {
-    const pickedOpt = document.querySelector(`input[name="mcq${i}"]:checked`);
-    return pickedOpt ? Number(pickedOpt.value) : -1;
-  });
-  const button = document.getElementById('btnSubmitMcq');
-  if (button) button.disabled = true;
-  setMcqHint('Checking answers…');
-  try {
-    const res = await api('/staff/courses/questions/submit', {
-      method: 'POST',
-      body: JSON.stringify({ sessionId: mcq.sessionId, answers }),
-    });
-    if (!res?.success) throw new Error(res?.message || 'Could not submit the MCQ.');
+    const res = await api('/staff/courses/mcq-tests/' + encodeURIComponent(id));
+    if (!res?.success) throw new Error(res?.message || 'Could not load the MCQ.');
+    mcqView = Object.assign({ id }, res.data || {});
     setMcqHint('');
-    renderMcqResult(res.data || {});
+    renderMcqReview(mcqView);
   } catch (err) {
-    setMcqHint(err?.message || 'Could not submit the MCQ.');
-    if (button) button.disabled = false;
-    if (typeof toast === 'function') toast(err?.message || 'Could not submit the MCQ.', 'error');
+    setMcqHint(err?.message || 'Could not load the MCQ.');
+    if (typeof toast === 'function') toast(err?.message || 'Could not load the MCQ.', 'error');
+    renderMcqTests();
   }
 }
 
@@ -1106,7 +1015,7 @@ document.getElementById('courseSearch').addEventListener('input', () => {
     loaded = null;
     document.getElementById('practicePanel').innerHTML = '';
     document.getElementById('genStatus').textContent = '';
-    if (mcq?.sessionId) clearMcq();
+    if (mcqView) clearMcqView();
     renderSyllabus();
   }
   window.clearTimeout(searchTimer);
@@ -1135,7 +1044,7 @@ document.getElementById('courseResults').addEventListener('click', (event) => {
   document.getElementById('practicePanel').innerHTML = '';
   document.getElementById('genStatus').textContent = '';
   document.getElementById('deptLabel').textContent = 'Click Get to open the syllabus PDF.';
-  if (mcq?.sessionId) clearMcq();
+  if (mcqView) clearMcqView();
   renderSyllabus();
 });
 document.getElementById('btnGenerate').addEventListener('click', () => {
@@ -1178,18 +1087,13 @@ document.getElementById('mcqPanel').addEventListener('click', (event) => {
     deleteMcqTest(remove.getAttribute('data-mcq-delete') || '');
     return;
   }
-  const start = event.target.closest('[data-mcq-start-test]');
-  if (start) {
-    startMcq(start.getAttribute('data-mcq-start-test') || '');
+  const view = event.target.closest('[data-mcq-view]');
+  if (view) {
+    viewMcq(view.getAttribute('data-mcq-view') || '');
     return;
   }
-  if (event.target.closest('#btnSubmitMcq')) {
-    submitMcq();
-    return;
-  }
-  if (event.target.closest('#btnResetMcq') || event.target.closest('[data-mcq-back]')) {
-    clearMcqTimer();
-    clearMcq();
+  if (event.target.closest('[data-mcq-back]')) {
+    clearMcqView();
     renderMcqTests();
   }
 });
