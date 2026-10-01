@@ -1581,7 +1581,7 @@
     if (!learn.tutorials.length) {
       const message = learn.query || learn.categoryId
         ? 'No tutorials match this search or category.'
-        : 'No tutorials are currently available for your department and passing year.';
+        : 'No tutorials are currently available. Published HTML/CSS and Git courses should appear here for every student.';
       root.innerHTML = `<div class="col-12"><div class="card-surface p-4 text-muted-2">${esc(message)}</div></div>`;
       return;
     }

@@ -12,10 +12,12 @@ $root = dirname(__DIR__, 2);
 require $root . '/vendor/autoload.php';
 require dirname(__DIR__) . '/config/app.php';
 
+use PMS\Models\TutorialCategoryModel;
 use PMS\Models\UserModel;
 use PMS\Services\TutorialService;
 
 $users = new UserModel();
+(new TutorialCategoryModel())->seedDefaults();
 $service = new TutorialService();
 $admins = $users->findByRole('admin', 1);
 $admin = $admins[0] ?? null;
@@ -259,8 +261,60 @@ $sampleTitles = [
     'version control with git',
 ];
 
+foreach (['programming-languages', 'tools'] as $requiredSlug) {
+    if (($bySlug[$requiredSlug] ?? '') === '') {
+        fwrite(STDERR, "Required category {$requiredSlug} is missing. Courses were not replaced.\n");
+        exit(1);
+    }
+}
+
+$created = 0;
+$createdIds = [];
+foreach ($catalog as $course) {
+    $categoryId = $bySlug[(string) $course['category']] ?? '';
+    try {
+        $row = $service->createTutorial($author, [
+            'title' => (string) $course['title'],
+            'categoryId' => $categoryId,
+            'topic' => (string) $course['topic'],
+            'description' => (string) $course['description'],
+            'visibility' => 'all',
+            'departmentIds' => [],
+            'passingYears' => [],
+        ]);
+        foreach ($course['modules'] as $module) {
+            $savedModule = $service->createModule($author, $row['id'], [
+                'title' => (string) $module['title'],
+                'subtitle' => (string) ($module['subtitle'] ?? ''),
+                'content' => (string) $module['content'],
+            ]);
+            $exercise = $module['exercise'] ?? null;
+            if (!is_array($exercise)) {
+                continue;
+            }
+            $service->createExercise($author, $row['id'], $savedModule['id'], [
+                'title' => (string) $exercise['title'],
+                'instructions' => '<p>' . htmlspecialchars((string) $exercise['instructions'], ENT_QUOTES, 'UTF-8') . '</p>',
+                'language' => (string) $exercise['language'],
+                'boilerplate' => (string) $exercise['boilerplate'],
+            ]);
+        }
+        $service->publish($author, $row['id']);
+        $createdIds[(string) $row['id']] = true;
+        $created++;
+        echo 'CREATED ' . (string) $course['topic'] . ' by ' . $authorRole . ' ' . $authorName . " for all students.\n";
+    } catch (Throwable $e) {
+        fwrite(STDERR, 'FAILED ' . (string) $course['topic'] . ': ' . $e->getMessage() . PHP_EOL);
+        exit(1);
+    }
+}
+
 $deleted = 0;
 foreach ($service->listManaged($admin) as $course) {
+    $id = (string) ($course['id'] ?? '');
+    if (isset($createdIds[$id])) {
+        continue;
+    }
     $topic = strtolower(trim((string) ($course['topic'] ?? '')));
     $title = strtolower(trim((string) ($course['title'] ?? '')));
     $isOldDemo = str_starts_with($topic, 'demo-');
@@ -269,47 +323,9 @@ foreach ($service->listManaged($admin) as $course) {
     if (!$isOldDemo && !$isReplacement && !$isSampleTitle) {
         continue;
     }
-    $service->deleteTutorial($admin, (string) $course['id']);
+    $service->deleteTutorial($admin, $id);
     $deleted++;
     echo 'DELETED ' . (string) ($course['topic'] ?? '') . ' (' . (string) ($course['title'] ?? '') . ").\n";
 }
 
-$created = 0;
-foreach ($catalog as $course) {
-    $categoryId = $bySlug[(string) $course['category']] ?? '';
-    if ($categoryId === '') {
-        echo 'SKIP ' . (string) $course['topic'] . ': category ' . (string) $course['category'] . " is missing.\n";
-        continue;
-    }
-    $row = $service->createTutorial($author, [
-        'title' => (string) $course['title'],
-        'categoryId' => $categoryId,
-        'topic' => (string) $course['topic'],
-        'description' => (string) $course['description'],
-        'visibility' => 'all',
-        'departmentIds' => [],
-        'passingYears' => [],
-    ]);
-    foreach ($course['modules'] as $module) {
-        $savedModule = $service->createModule($author, $row['id'], [
-            'title' => (string) $module['title'],
-            'subtitle' => (string) ($module['subtitle'] ?? ''),
-            'content' => (string) $module['content'],
-        ]);
-        $exercise = $module['exercise'] ?? null;
-        if (!is_array($exercise)) {
-            continue;
-        }
-        $service->createExercise($author, $row['id'], $savedModule['id'], [
-            'title' => (string) $exercise['title'],
-            'instructions' => '<p>' . htmlspecialchars((string) $exercise['instructions'], ENT_QUOTES, 'UTF-8') . '</p>',
-            'language' => (string) $exercise['language'],
-            'boilerplate' => (string) $exercise['boilerplate'],
-        ]);
-    }
-    $service->publish($author, $row['id']);
-    $created++;
-    echo 'CREATED ' . (string) $course['topic'] . ' by ' . $authorRole . ' ' . $authorName . " for all students.\n";
-}
-
-echo $deleted . ' sample courses removed, ' . $created . " courses published for all students.\n";
+echo $created . ' courses published for all students, ' . $deleted . " sample courses removed.\n";

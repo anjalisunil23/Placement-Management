@@ -441,7 +441,7 @@ final class TutorialService
     public function listManaged(array $user): array
     {
         $this->assertAuthor($user);
-        $rows = AuthMiddleware::resolvedRole($user) === 'admin'
+        $rows = $this->canManageCampusTutorials($user)
             ? $this->tutorials->findAll([], 500, 0, ['createdAt' => -1])
             : $this->tutorials->listByCreator($this->userId($user));
         $out = [];
@@ -994,6 +994,14 @@ final class TutorialService
 
     /**
      * @param array<string, mixed> $user
+     */
+    private function canManageCampusTutorials(array $user): bool
+    {
+        return in_array(AuthMiddleware::resolvedRole($user), ['admin', 'placement_officer'], true);
+    }
+
+    /**
+     * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
     private function requireStudent(array $user): array
@@ -1033,8 +1041,8 @@ final class TutorialService
         if ((string) ($tutorial['status'] ?? '') !== 'published') {
             return false;
         }
-        $visibility = (string) ($tutorial['visibility'] ?? '');
-        if ($visibility === 'all') {
+        $visibility = strtolower(trim((string) ($tutorial['visibility'] ?? 'all')));
+        if ($visibility === '' || $visibility === 'all') {
             return true;
         }
         if ($visibility !== 'scoped') {
@@ -1144,7 +1152,7 @@ final class TutorialService
         if (!is_array($row)) {
             throw new \RuntimeException('Tutorial not found.', 404);
         }
-        if (AuthMiddleware::resolvedRole($user) !== 'admin' && (string) ($row['createdBy'] ?? '') !== $this->userId($user)) {
+        if (!$this->canManageCampusTutorials($user) && (string) ($row['createdBy'] ?? '') !== $this->userId($user)) {
             throw new \RuntimeException('You can only change tutorials you created.', 403);
         }
 
@@ -1526,7 +1534,7 @@ final class TutorialService
             'title' => (string) ($module['title'] ?? ''),
             'subtitle' => (string) ($module['subtitle'] ?? ''),
             'sortOrder' => (int) ($module['sortOrder'] ?? 0),
-            'content' => (string) ($module['content'] ?? ''),
+            'content' => $this->lessonContentString($module['content'] ?? ''),
         ];
         if ($withExercises) {
             $view['exercises'] = [];
