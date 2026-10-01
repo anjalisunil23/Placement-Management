@@ -72,6 +72,15 @@
       </button>
       <span class="small text-muted-2" id="genStatus"></span>
     </div>
+    <div id="genProgressWrap" class="d-none mb-3" style="max-width:32rem">
+      <div class="d-flex justify-content-between align-items-center small text-muted-2 mb-1">
+        <span id="genProgressLabel">Generating questions…</span>
+        <span id="genProgressPct" class="fw-semibold">0%</span>
+      </div>
+      <div class="progress" style="height:.65rem" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="genProgress" aria-labelledby="genProgressLabel">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" id="genProgressBar" style="width:0%"></div>
+      </div>
+    </div>
     <div id="practicePanel"></div>
   </div>
   <div class="tab-pane fade" id="tabBank" role="tabpanel" aria-labelledby="tabBankBtn">
@@ -130,9 +139,19 @@
             </select>
           </div>
         </div>
+        <div id="genModalProgressWrap" class="d-none mt-3 pt-2 border-top">
+          <div class="d-flex justify-content-between align-items-center small text-muted-2 mb-1">
+            <span id="genModalProgressLabel">Generating questions…</span>
+            <span id="genModalProgressPct" class="fw-semibold">0%</span>
+          </div>
+          <div class="progress" style="height:.65rem" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" id="genModalProgressBar" style="width:0%"></div>
+          </div>
+          <p class="small text-muted-2 mb-0 mt-2">This can take a minute for large mixes. Please keep this window open.</p>
+        </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="btnCancelGenerate">Cancel</button>
         <button type="button" class="btn btn-primary" id="btnConfirmGenerate">
           <i class="bi bi-stars me-1"></i>Generate questions
         </button>
@@ -892,23 +911,88 @@ function renderResult(payload) {
     }).join('')}`;
 }
 
+let genProgressTimer = 0;
+
+function setGenProgressUi(value, { barId, pctId, progressId }) {
+  const v = Math.min(100, Math.max(0, Math.round(value)));
+  const bar = document.getElementById(barId);
+  const pct = document.getElementById(pctId);
+  const root = progressId ? document.getElementById(progressId) : null;
+  if (bar) {
+    bar.style.width = v + '%';
+    bar.classList.toggle('progress-bar-animated', v < 100);
+  }
+  if (pct) pct.textContent = v + '%';
+  if (root) root.setAttribute('aria-valuenow', String(v));
+}
+
+function startGenProgress(requested) {
+  stopGenProgress(true);
+  const code = String(selectedCourse()?.code || 'course').trim();
+  const label = requested > 0
+    ? `Generating ${requested} question${requested === 1 ? '' : 's'} for ${code}…`
+    : 'Generating questions…';
+  document.getElementById('genProgressLabel').textContent = label;
+  document.getElementById('genModalProgressLabel').textContent = label;
+  document.getElementById('genProgressWrap')?.classList.remove('d-none');
+  document.getElementById('genModalProgressWrap')?.classList.remove('d-none');
+  setGenProgressUi(5, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+  setGenProgressUi(5, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+  let value = 5;
+  genProgressTimer = window.setInterval(() => {
+    const bump = value < 55 ? 2.5 : value < 82 ? 1 : 0.35;
+    value = Math.min(96, value + bump);
+    setGenProgressUi(value, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+    setGenProgressUi(value, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+  }, 650);
+}
+
+function finishGenProgress() {
+  stopGenProgress(false);
+  setGenProgressUi(100, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+  setGenProgressUi(100, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+  window.setTimeout(() => stopGenProgress(true), 450);
+}
+
+function stopGenProgress(hide) {
+  if (genProgressTimer) {
+    window.clearInterval(genProgressTimer);
+    genProgressTimer = 0;
+  }
+  if (!hide) return;
+  document.getElementById('genProgressWrap')?.classList.add('d-none');
+  document.getElementById('genModalProgressWrap')?.classList.add('d-none');
+  setGenProgressUi(0, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+  setGenProgressUi(0, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+}
+
+function setGenerateBusy(busy) {
+  const modal = document.getElementById('generateModal');
+  document.getElementById('btnConfirmGenerate').disabled = busy;
+  document.getElementById('btnGenerate').disabled = busy || !selectedCourse()?.semsubId;
+  document.getElementById('btnCancelGenerate').disabled = busy;
+  modal?.querySelector('.btn-close')?.toggleAttribute('disabled', busy);
+  modal?.querySelectorAll('#qEasy,#qMedium,#qHard').forEach((el) => { el.disabled = busy; });
+}
+
 async function generate() {
   const course = selectedCourse();
   if (!course) return;
   const button = document.getElementById('btnConfirmGenerate');
   const status = document.getElementById('genStatus');
-  button.disabled = true;
   const mixes = [
     { difficulty: 'Easy', count: Number(document.getElementById('qEasy').value) },
     { difficulty: 'Medium', count: Number(document.getElementById('qMedium').value) },
     { difficulty: 'Hard', count: Number(document.getElementById('qHard').value) },
   ];
+  const requested = mixes.reduce((sum, row) => sum + row.count, 0);
   if (!mixes.some((row) => row.count > 0)) {
     status.textContent = 'Choose a number of questions for at least one difficulty.';
-    button.disabled = false;
     return;
   }
+  setGenerateBusy(true);
   status.textContent = 'Generating questions for ' + (course.code || 'this course') + '…';
+  startGenProgress(requested);
   document.getElementById('practicePanel').innerHTML = '';
   try {
     const res = await api('/staff/courses/questions', {
@@ -922,6 +1006,7 @@ async function generate() {
       }),
     });
     if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+    finishGenProgress();
     const count = (res.data?.questions || []).length;
     const requested = Number(res.data?.requested || 0);
     status.textContent = count
@@ -933,10 +1018,11 @@ async function generate() {
     modalEl.addEventListener('hidden.bs.modal', () => renderPractice(res.data), { once: true });
     bootstrap.Modal.getOrCreateInstance(modalEl).hide();
   } catch (err) {
+    stopGenProgress(true);
     status.textContent = '';
     document.getElementById('practicePanel').innerHTML = `<div class="card-surface p-3 text-danger">${esc(err?.message || 'Could not generate questions.')}</div>`;
   } finally {
-    button.disabled = false;
+    setGenerateBusy(false);
   }
 }
 
@@ -1057,6 +1143,7 @@ document.getElementById('courseResults').addEventListener('click', (event) => {
 document.getElementById('btnGenerate').addEventListener('click', () => {
   const course = selectedCourse();
   if (!course) return;
+  stopGenProgress(true);
   document.getElementById('generateCourseLabel').textContent = `Questions will be generated from the loaded syllabus for ${course.code} — ${course.title || ''}`;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).show();
 });
