@@ -6,13 +6,19 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
 <style>
-  .syl-course-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10.5rem,1fr));gap:.75rem}
-  .syl-course-card{
-    border:1px solid var(--border);border-radius:.85rem;padding:1rem;background:#fff;text-align:left;
-    cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;height:100%;
+  .apt-prob-list{border:1px solid var(--border,#e5e7eb);border-radius:.75rem;overflow:hidden;background:#fff}
+  .apt-prob-row{
+    display:grid;grid-template-columns:1.6rem minmax(0,1fr) 4.6rem 4.2rem;
+    align-items:center;gap:.75rem;padding:.85rem 1rem;border:0;width:100%;
+    background:#fff;text-align:left;color:inherit;
   }
-  .syl-course-card:hover{border-color:color-mix(in srgb,var(--primary) 35%,var(--border));box-shadow:var(--shadow-sm);transform:translateY(-1px)}
-  .syl-course-icon{font-size:1.35rem;line-height:1;margin-bottom:.45rem;color:var(--primary)}
+  .apt-prob-row:nth-child(even){background:#f8fafc}
+  .apt-prob-row:hover{background:#f1f5f9}
+  .apt-prob-row.is-clickable{cursor:pointer}
+  .apt-prob-check{color:#22c55e;font-size:1rem;line-height:1}
+  .apt-prob-title{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .apt-prob-pct{color:#94a3b8;font-size:.9rem;text-align:right;font-variant-numeric:tabular-nums}
+  .apt-prob-time{font-size:.9rem;font-weight:500;text-align:right;color:#64748b}
 </style>
 </head>
 <body data-page="autonomous-mcq.html"><div class="app">
@@ -71,12 +77,30 @@ function clearTimer() {
   timer = 0;
 }
 
-function cardButton(title, meta, attr, value, icon) {
+function courseStudyRow(course, index) {
+  const code = String(course.courseCode || '').trim();
+  const count = (course.questions || []).length;
   return `
-    <button type="button" class="syl-course-card" ${attr}="${esc(value)}">
-      <div class="syl-course-icon"><i class="bi ${icon}"></i></div>
-      <div class="fw-semibold">${esc(title)}</div>
-      <div class="small text-muted-2 mt-1">${esc(meta)}</div>
+    <button type="button" class="apt-prob-row is-clickable" data-open-study="${esc(code)}">
+      <span class="apt-prob-check"></span>
+      <span class="apt-prob-title">${index + 1}. ${esc(code)}</span>
+      <span class="apt-prob-pct">${count} Q</span>
+      <span class="apt-prob-time"></span>
+    </button>`;
+}
+
+function mcqTestRow(test, index) {
+  const count = Number(test.questionCount || 0);
+  const minutes = Number(test.durationMinutes || 0);
+  const codes = String(test.courseCode || (test.courseCodes || []).join(', ') || '').trim();
+  const title = String(test.title || codes || 'MCQ').trim();
+  const timeLabel = minutes ? `${minutes} min` : '—';
+  return `
+    <button type="button" class="apt-prob-row is-clickable" data-start-test="${esc(test.id)}">
+      <span class="apt-prob-check"></span>
+      <span class="apt-prob-title">${index + 1}. ${esc(title)}</span>
+      <span class="apt-prob-pct">${count} Q</span>
+      <span class="apt-prob-time">${esc(timeLabel)}</span>
     </button>`;
 }
 
@@ -115,10 +139,7 @@ function renderStudy() {
       }).join('')}`;
     return;
   }
-  panel.innerHTML = `<div class="syl-course-grid">${groups.map((course) => {
-    const count = (course.questions || []).length;
-    return cardButton(course.courseCode, `${count} question${count === 1 ? '' : 's'}`, 'data-open-study', course.courseCode, 'bi-diagram-3');
-  }).join('')}</div>`;
+  panel.innerHTML = `<div class="apt-prob-list">${groups.map((course, i) => courseStudyRow(course, i)).join('')}</div>`;
 }
 
 function renderTests() {
@@ -128,12 +149,7 @@ function renderTests() {
     panel.innerHTML = '<p class="text-muted-2 mb-0">No MCQ tests yet.</p>';
     return;
   }
-  panel.innerHTML = `<div class="syl-course-grid">${tests.map((test) => {
-    const count = Number(test.questionCount || 0);
-    const minutes = Number(test.durationMinutes || 0);
-    const codes = test.courseCode || (test.courseCodes || []).join(', ');
-    return cardButton(test.title || codes || 'MCQ', `${codes}${codes ? ' · ' : ''}${count} question${count === 1 ? '' : 's'}${minutes ? ` · ${minutes} min` : ''}`, 'data-start-test', test.id, 'bi-ui-checks');
-  }).join('')}</div>`;
+  panel.innerHTML = `<div class="apt-prob-list">${tests.map((test, i) => mcqTestRow(test, i)).join('')}</div>`;
 }
 
 function renderQuiz(payload) {
