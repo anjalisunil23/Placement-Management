@@ -311,7 +311,8 @@ async function getSelectedCourse() {
     return;
   }
   button.disabled = true;
-    label.textContent = 'Loading syllabus PDF…';
+  label.textContent = '';
+  startSyllabusLoadProgress();
   try {
     const res = await api('/staff/courses/get', {
       method: 'POST',
@@ -341,6 +342,7 @@ async function getSelectedCourse() {
   } catch (err) {
     label.textContent = err?.message || 'Could not load that course.';
   } finally {
+    stopSyllabusLoadProgress();
     button.disabled = false;
   }
 }
@@ -969,6 +971,24 @@ function stopGenProgress(hide) {
   document.getElementById('genModalProgressWrap')?.classList.add('d-none');
   setGenProgressUi(0, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
   setGenProgressUi(0, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+}
+
+function startSyllabusLoadProgress() {
+  stopGenProgress(true);
+  document.getElementById('genProgressLabel').textContent = 'Loading syllabus PDF…';
+  document.getElementById('genProgressPct').textContent = '';
+  document.getElementById('genProgressWrap')?.classList.remove('d-none');
+  const bar = document.getElementById('genProgressBar');
+  if (bar) {
+    bar.style.width = '100%';
+    bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+  }
+  document.getElementById('genProgress')?.setAttribute('aria-valuenow', '100');
+}
+
+function stopSyllabusLoadProgress() {
+  document.getElementById('genProgressWrap')?.classList.add('d-none');
+  setGenProgressUi(0, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
 }
 
 function setGenerateBusy(busy) {
