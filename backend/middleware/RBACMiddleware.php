@@ -48,6 +48,28 @@ final class RBACMiddleware
         Response::forbidden('You do not have permission to access this resource.');
     }
 
+    /** Staff, HOD, admin, and placement officer can use Autonomous MCQ. */
+    public static function requireSyllabusAccess(): array
+    {
+        $user = AuthMiddleware::authenticate();
+        $resolved = AuthMiddleware::resolvedRole($user);
+        $dbRole = trim((string) ($user['role'] ?? ''));
+        if ($dbRole === 'staff' || in_array($resolved, ['staff', 'admin', 'placement_officer'], true)) {
+            return $user;
+        }
+        Response::forbidden('You do not have permission to access this resource.');
+    }
+
+    public static function seesAllSyllabusCourses(array $user): bool
+    {
+        $resolved = AuthMiddleware::resolvedRole($user);
+        if ($resolved === 'admin') {
+            return true;
+        }
+
+        return $resolved === 'placement_officer' && !AuthMiddleware::isHod($user);
+    }
+
     public static function requireCompany(): array
     {
         return self::requireRoles(['company']);
