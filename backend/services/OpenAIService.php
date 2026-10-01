@@ -132,9 +132,17 @@ final class OpenAIService
     private function post(string $path, array $payload): array
     {
         $url = $this->baseUrl . $path;
-        $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
+        $flags = JSON_UNESCAPED_UNICODE;
+        if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+            $flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+        }
+        $body = json_encode($this->sanitizePayload($payload), $flags);
         if ($body === false) {
-            throw new \RuntimeException('Could not encode OpenAI request.');
+            $detail = function_exists('json_last_error_msg') ? json_last_error_msg() : 'unknown error';
+            error_log('[PMS OpenAI] json_encode failed: ' . $detail);
+            throw new \RuntimeException(
+                'Could not send the question generation request. Reload the syllabus with Get and try again.'
+            );
         }
 
         $ch = curl_init($url);
@@ -189,5 +197,42 @@ final class OpenAIService
         }
 
         return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * @param mixed $value
+     * @return mixed
+     */
+    private function sanitizePayload(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            return self::cleanUtf8($value);
+        }
+        if (!is_array($value)) {
+            return $value;
+        }
+        $out = [];
+        foreach ($value as $key => $item) {
+            $outKey = is_string($key) ? self::cleanUtf8($key) : $key;
+            $out[$outKey] = $this->sanitizePayload($item);
+        }
+
+        return $out;
+    }
+
+    public static function cleanUtf8(string $text): string
+    {
+        if ($text === '') {
+            return '';
+        }
+        if (function_exists('iconv')) {
+            $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $text);
+            if (is_string($converted)) {
+                $text = $converted;
+            }
+        }
+        $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $text) ?? $text;
+
+        return $text;
     }
 }

@@ -270,6 +270,7 @@ final class AesSyllabusCipher
         $text = preg_replace('/[ \t]+/', ' ', $text) ?? $text;
         $text = preg_replace('/\s*\n\s*/', "\n", $text) ?? $text;
         $text = trim($text);
+        $text = OpenAIService::cleanUtf8($text);
         if (mb_strlen($text) > 16000) {
             $text = mb_substr($text, 0, 16000);
         }

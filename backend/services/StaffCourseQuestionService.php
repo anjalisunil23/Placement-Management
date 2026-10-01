@@ -57,7 +57,9 @@ final class StaffCourseQuestionService
         if (mb_strlen($syllabus) < 80) {
             throw new \RuntimeException('Could not read that syllabus. Click Get, then generate questions.');
         }
-        $system = 'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.';
+        $system = OpenAIService::cleanUtf8(
+            'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
+        );
         $userPrompt = $this->buildGeneratePrompt($course, $syllabus, $mixes, $total, $mixText, '');
         $raw = $this->openai->generateJson($system, $userPrompt);
         $valid = $this->collectValidQuestions($raw['questions'] ?? $raw);
@@ -936,31 +938,32 @@ final class StaffCourseQuestionService
      */
     private function buildGeneratePrompt(array $course, string $syllabus, array $mixes, int $total, string $mixText, string $avoidBlock): string
     {
+        $code = OpenAIService::cleanUtf8((string) ($course['code'] ?? ''));
+        $title = OpenAIService::cleanUtf8((string) ($course['title'] ?? ''));
+        $syllabus = OpenAIService::cleanUtf8($syllabus);
+        $mixText = OpenAIService::cleanUtf8($mixText);
+        $avoidBlock = OpenAIService::cleanUtf8($avoidBlock);
         $avoid = trim($avoidBlock) !== ''
             ? "\nDo not repeat or closely paraphrase these questions already written:\n{$avoidBlock}\n"
             : '';
 
-        return <<<PROMPT
-Course: {$course['code']} {$course['title']}
-Write exactly {$total} multiple-choice questions in this mix (no more, no fewer):
-{$mixText}
-
-Official syllabus:
-{$syllabus}
-{$avoid}
-Rules:
-- Return exactly {$total} questions with the difficulty counts above.
-- Every question must be answerable from the syllabus above.
-- Do not invent topics, tools, or outcomes that are not in the syllabus.
-- Spread questions across the modules and course outcomes.
-- Each question has exactly four distinct options and one correct answer.
-- correctIndex is the 0-based index of the correct option.
-- Each question's difficulty field must be Easy, Medium, or Hard and match the mix.
-- description is required: 1-2 sentences explaining why the correct option is right.
-
-Return this JSON shape:
-{"questions":[{"module":"Module 1","difficulty":"Medium","question":"...","options":["...","...","...","..."],"correctIndex":0,"description":"..."}]}
-PROMPT;
+        return "Course: {$code} {$title}\n"
+            . "Write exactly {$total} multiple-choice questions in this mix (no more, no fewer):\n"
+            . $mixText . "\n\n"
+            . "Official syllabus:\n"
+            . $syllabus . "\n"
+            . $avoid
+            . "Rules:\n"
+            . "- Return exactly {$total} questions with the difficulty counts above.\n"
+            . "- Every question must be answerable from the syllabus above.\n"
+            . "- Do not invent topics, tools, or outcomes that are not in the syllabus.\n"
+            . "- Spread questions across the modules and course outcomes.\n"
+            . "- Each question has exactly four distinct options and one correct answer.\n"
+            . "- correctIndex is the 0-based index of the correct option.\n"
+            . "- Each question's difficulty field must be Easy, Medium, or Hard and match the mix.\n"
+            . "- description is required: 1-2 sentences explaining why the correct option is right.\n\n"
+            . 'Return this JSON shape:' . "\n"
+            . '{"questions":[{"module":"Module 1","difficulty":"Medium","question":"...","options":["...","...","...","..."],"correctIndex":0,"description":"..."}]}';
     }
 
     /**
