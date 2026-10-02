@@ -1191,7 +1191,7 @@ async function generate() {
   const progressKey = createStaffGenProgressKey();
   document.getElementById('practicePanel').innerHTML = '';
   const batchPlan = chunkMixesByTotal(mixes, 10);
-  const batchTotal = batchPlan.length;
+  let batchTotal = batchPlan.length;
   let sessionId = '';
   let lastData = null;
   try {
