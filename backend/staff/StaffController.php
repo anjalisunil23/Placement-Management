@@ -1046,6 +1046,27 @@ final class StaffController
         }
     }
 
+    /** POST /api/staff/courses/question-bank/bulk-delete */
+    public function bulkDeleteSyllabusBankQuestions(): void
+    {
+        $user = RBACMiddleware::requireSyllabusAccess();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        $ids = is_array($body['ids'] ?? null) ? $body['ids'] : [];
+        try {
+            $result = (new StaffCourseQuestionService())->bulkDeleteBankQuestions($user, $ids);
+            $deleted = (int) ($result['deleted'] ?? 0);
+            Response::success(
+                $result,
+                $deleted === 1 ? 'Question removed from the syllabus bank.' : "{$deleted} questions removed from the syllabus bank."
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
     /** DELETE /api/staff/courses/question-bank/{id} */
     public function deleteSyllabusBankQuestion(string $id): void
     {

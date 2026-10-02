@@ -219,8 +219,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261002counts"></script>
-<script src="js/app.js?v=20261002counts"></script>
+<script src="js/api.js?v=20261002bankdel"></script>
+<script src="js/app.js?v=20261002bankdel"></script>
 <script>
 let courses = [];
 let picked = null;
@@ -460,7 +460,6 @@ function renderQuestionCard(q, i, selectable) {
         <div class="d-flex flex-wrap gap-2 align-items-center">
           ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
           ${q.difficulty ? `<span class="badge-soft info">${esc(q.difficulty)}</span>` : ''}
-          ${q.id ? `<button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(q.id)}">Remove</button>` : ''}
         </div>
       </div>
       <ol class="mb-2 ps-3" type="A">${options}</ol>
@@ -578,36 +577,74 @@ function renderMcqReview(payload) {
     ${rows.length ? rows.map((q, i) => renderMcqReviewQuestion(q, i)).join('') : '<p class="text-muted-2 mb-0">This MCQ has no questions.</p>'}`;
 }
 
+const selectedBankQuestionIds = new Set();
+
+function bankQuestionId(q) {
+  return String(q?.id || q?.bankId || q?._id || '').trim();
+}
+
+function updateBankDeleteToolbar() {
+  const bar = document.getElementById('bankDeleteToolbar');
+  const countEl = document.getElementById('bankDeleteCount');
+  const delBtn = document.getElementById('btnBankDeleteSelected');
+  const n = selectedBankQuestionIds.size;
+  if (countEl) countEl.textContent = n ? `${n} selected` : '';
+  if (delBtn) delBtn.disabled = n < 1;
+  if (bar) {
+    const hasRows = !!document.querySelector('#bankQuestionsList [data-bank-select]');
+    bar.classList.toggle('d-none', !hasRows);
+  }
+}
+
 function renderBankDetail(course) {
   const code = String(course?.courseCode || openBankCode || '').trim();
   const title = String(course?.courseTitle || '').trim();
   const rows = Array.isArray(course?.questions) ? course.questions : [];
+  const validIds = new Set(rows.map((q) => bankQuestionId(q)).filter(Boolean));
+  Array.from(selectedBankQuestionIds).forEach((id) => {
+    if (!validIds.has(id)) selectedBankQuestionIds.delete(id);
+  });
   return `
     <div class="d-flex align-items-center gap-2 mb-3">
       <button type="button" class="btn btn-sm btn-outline-secondary" data-bank-back aria-label="Back to courses"><i class="bi bi-arrow-left"></i></button>
-      <div>
+      <div class="flex-grow-1">
         <h2 class="h5 mb-0">${esc(code)}</h2>
         <div class="small text-muted-2">${title && title !== code ? esc(title) + ' · ' : ''}${rows.length} question${rows.length === 1 ? '' : 's'}</div>
       </div>
     </div>
-    ${rows.length ? rows.map((q, i) => renderBankQuestion(q, i)).join('') : '<p class="text-muted-2 mb-0">No questions in this course yet.</p>'}`;
+    <div id="bankDeleteToolbar" class="d-flex flex-wrap align-items-center gap-2 mb-3 ${rows.length ? '' : 'd-none'}">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bank-select-all>Select all</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-bank-select-none>Clear</button>
+      <span class="small text-muted-2" id="bankDeleteCount"></span>
+      <button type="button" class="btn btn-sm btn-outline-danger ms-auto" id="btnBankDeleteSelected" disabled>
+        <i class="bi bi-trash me-1"></i>Delete selected
+      </button>
+    </div>
+    <div id="bankQuestionsList">
+      ${rows.length ? rows.map((q, i) => renderBankQuestion(q, i)).join('') : '<p class="text-muted-2 mb-0">No questions in this course yet.</p>'}
+    </div>`;
 }
 
 function renderBankQuestion(q, i) {
   const description = questionDescription(q);
+  const id = bankQuestionId(q);
   const options = (q.options || []).map((opt, idx) => {
     const mark = idx === q.correctIndex ? ' fw-semibold' : '';
     const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
     return `<li class="${mark} mb-1">${esc(opt)}${right}</li>`;
   }).join('');
+  const checked = id && selectedBankQuestionIds.has(id) ? ' checked' : '';
   return `
-    <div class="border rounded p-3 mb-2" ${q.id ? `data-bank-id="${esc(q.id)}"` : ''}>
+    <div class="border rounded p-3 mb-2" ${id ? `data-bank-id="${esc(id)}"` : ''}>
       <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
-        <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
+        <div class="d-flex gap-2 align-items-start min-w-0 flex-grow-1">
+          ${id ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-bank-select="${esc(id)}" aria-label="Select question"${checked}>` : ''}
+          <div class="fw-semibold min-w-0">Q${i + 1}. ${esc(q.question)}</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 align-items-center flex-shrink-0">
           ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
           ${q.difficulty ? `<span class="badge-soft info">${esc(q.difficulty)}</span>` : ''}
-          ${q.id ? `<button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(q.id)}">Remove</button>` : ''}
+          ${id ? `<button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>` : ''}
         </div>
       </div>
       <ol class="mb-2 ps-3" type="A">${options}</ol>
@@ -644,8 +681,10 @@ function renderBank(payload) {
   setBankHint('');
   if (open) {
     panel.innerHTML = renderBankDetail(open);
+    updateBankDeleteToolbar();
     return;
   }
+  selectedBankQuestionIds.clear();
   const shown = filterBankGroups(groups);
   panel.innerHTML = shown.length
     ? `<div class="syl-course-grid">${shown.map((course) => courseCardHtml(course, 'data-open-bank', course.courseCode)).join('')}</div>`
@@ -666,13 +705,40 @@ async function loadBank(focusCode) {
 
 async function deleteBankQuestion(id) {
   if (!id) return;
+  if (!confirm('Delete this question from the syllabus question bank?')) return;
   try {
     const res = await api('/staff/courses/question-bank/' + encodeURIComponent(id), { method: 'DELETE' });
-    if (!res?.success) throw new Error(res?.message || 'Could not remove that question.');
+    if (!res?.success) throw new Error(res?.message || 'Could not delete that question.');
+    selectedBankQuestionIds.delete(String(id));
+    const focus = openBankCode || res.data?.focusCode || res.data?.courseCode || '';
+    if (focus) openBankCode = String(focus).toUpperCase();
     renderBank(res.data || { courses: [] });
-    setBankHint('Question removed from ' + (res.data?.focusCode || res.data?.courseCode || 'the bank') + '.');
+    if (typeof toast === 'function') toast(res.message || 'Question deleted.', 'success');
   } catch (err) {
-    if (typeof toast === 'function') toast(err?.message || 'Could not remove that question.', 'error');
+    if (typeof toast === 'function') toast(err?.message || 'Could not delete that question.', 'error');
+  }
+}
+
+async function deleteSelectedBankQuestions() {
+  const ids = [...selectedBankQuestionIds];
+  if (!ids.length) {
+    if (typeof toast === 'function') toast('Select at least one question to delete.', 'warn');
+    return;
+  }
+  if (!confirm(`Delete ${ids.length} selected question${ids.length === 1 ? '' : 's'} from the bank?`)) return;
+  try {
+    const res = await api('/staff/courses/question-bank/bulk-delete', {
+      method: 'POST',
+      body: { ids },
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not delete selected questions.');
+    ids.forEach((id) => selectedBankQuestionIds.delete(String(id)));
+    const focus = openBankCode || res.data?.focusCode || res.data?.courseCode || '';
+    if (focus) openBankCode = String(focus).toUpperCase();
+    renderBank(res.data || { courses: [] });
+    if (typeof toast === 'function') toast(res.message || 'Questions deleted.', 'success');
+  } catch (err) {
+    if (typeof toast === 'function') toast(err?.message || 'Could not delete selected questions.', 'error');
   }
 }
 
@@ -2258,17 +2324,53 @@ document.getElementById('bankPanel').addEventListener('click', (event) => {
   const open = event.target.closest('[data-open-bank]');
   if (open) {
     openBankCode = String(open.getAttribute('data-open-bank') || '').toUpperCase();
+    selectedBankQuestionIds.clear();
     renderBank(bank || { courses: [] });
     return;
   }
   if (event.target.closest('[data-bank-back]')) {
     openBankCode = '';
+    selectedBankQuestionIds.clear();
     renderBank(bank || { courses: [] });
     return;
   }
+  if (event.target.closest('[data-bank-select-all]')) {
+    document.querySelectorAll('#bankQuestionsList [data-bank-select]').forEach((el) => {
+      const id = el.getAttribute('data-bank-select');
+      if (id) {
+        el.checked = true;
+        selectedBankQuestionIds.add(String(id));
+      }
+    });
+    updateBankDeleteToolbar();
+    return;
+  }
+  if (event.target.closest('[data-bank-select-none]')) {
+    document.querySelectorAll('#bankQuestionsList [data-bank-select]').forEach((el) => { el.checked = false; });
+    selectedBankQuestionIds.clear();
+    updateBankDeleteToolbar();
+    return;
+  }
+  if (event.target.closest('#btnBankDeleteSelected')) {
+    event.preventDefault();
+    deleteSelectedBankQuestions();
+    return;
+  }
   const button = event.target.closest('[data-bank-del]');
-  if (!button) return;
-  deleteBankQuestion(button.getAttribute('data-bank-del') || '');
+  if (button) {
+    event.preventDefault();
+    event.stopPropagation();
+    deleteBankQuestion(button.getAttribute('data-bank-del') || '');
+  }
+});
+document.getElementById('bankPanel').addEventListener('change', (event) => {
+  const pick = event.target.closest('[data-bank-select]');
+  if (!pick) return;
+  const id = pick.getAttribute('data-bank-select');
+  if (!id) return;
+  if (pick.checked) selectedBankQuestionIds.add(String(id));
+  else selectedBankQuestionIds.delete(String(id));
+  updateBankDeleteToolbar();
 });
 
 populateDifficultyCountSelects(5);

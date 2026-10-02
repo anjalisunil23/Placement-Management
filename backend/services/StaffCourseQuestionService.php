@@ -1882,15 +1882,46 @@ final class StaffCourseQuestionService
      */
     public function deleteBankQuestion(array $user, string $questionId): array
     {
-        $model = new SyllabusQuestionBankModel();
-        $row = $model->findById($questionId);
-        if ($row === null) {
+        $result = $this->bulkDeleteBankQuestions($user, [$questionId]);
+        if ((int) ($result['deleted'] ?? 0) < 1) {
             throw new \InvalidArgumentException('That question is not in the syllabus bank.');
         }
-        $code = $this->assertVisibleCourseCode($user, (string) ($row['courseCode'] ?? ''));
-        $model->delete($questionId);
 
-        return $this->listBank($user, $code);
+        return $result;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param list<mixed> $ids
+     * @return array<string, mixed>
+     */
+    public function bulkDeleteBankQuestions(array $user, array $ids): array
+    {
+        $model = new SyllabusQuestionBankModel();
+        $deleted = 0;
+        $focusCode = '';
+        foreach ($ids as $rawId) {
+            $questionId = trim((string) $rawId);
+            if ($questionId === '') {
+                continue;
+            }
+            $row = $model->findById($questionId);
+            if ($row === null) {
+                continue;
+            }
+            $code = $this->assertVisibleCourseCode($user, (string) ($row['courseCode'] ?? ''));
+            $model->delete($questionId);
+            $deleted++;
+            $focusCode = $code;
+        }
+        if ($deleted < 1) {
+            throw new \InvalidArgumentException('No matching questions to delete.');
+        }
+
+        return array_merge(
+            $this->listBank($user, $focusCode),
+            ['deleted' => $deleted],
+        );
     }
 
     /**

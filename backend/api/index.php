@@ -371,6 +371,7 @@ $routes = [
     ['GET',  '/staff/courses/syllabus',            [StaffController::class, 'downloadSyllabus']],
     ['POST', '/staff/courses/syllabus/prepare',    [StaffController::class, 'prepareSyllabusForAi']],
     ['GET',  '/staff/courses/question-bank',       [StaffController::class, 'listSyllabusQuestionBank']],
+    ['POST', '/staff/courses/question-bank/bulk-delete', [StaffController::class, 'bulkDeleteSyllabusBankQuestions']],
     ['DELETE','/staff/courses/question-bank/{id}', [StaffController::class, 'deleteSyllabusBankQuestion']],
     ['GET',  '/staff/courses',                     [StaffController::class, 'listCourses']],
     ['GET',  '/staff/courses/questions/generate-progress', [StaffController::class, 'courseQuestionsGenerateProgress']],

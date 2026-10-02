@@ -211,7 +211,7 @@ class SyllabusQuestionBankModel extends BaseModel
         }
 
         return [
-            'id' => (string) ($row['_id'] ?? ''),
+            'id' => (string) ($row['_id'] ?? $row['id'] ?? ''),
             'courseCode' => self::normalizeCourseCode((string) ($row['courseCode'] ?? '')),
             'courseTitle' => trim((string) ($row['courseTitle'] ?? '')),
             'module' => trim((string) ($row['module'] ?? '')),
