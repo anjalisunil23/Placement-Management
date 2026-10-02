@@ -452,12 +452,22 @@ function renderQuestionCard(q, i, selectable) {
     return `<li class="${mark} mb-1">${esc(opt)}${right}</li>`;
   }).join('');
   const draftIndex = Number.isInteger(q.draftIndex) ? q.draftIndex : i;
+  const dupMsg = q.duplicateMessage
+    ? `<div class="small text-warning mt-1">${esc(q.duplicateMessage)}</div>`
+    : '';
+  const defaultSelected = q.selected !== undefined
+    ? !!q.selected
+    : !(q.duplicateInBank || q.duplicateInBatch);
+  const checkedAttr = defaultSelected ? ' checked' : '';
   return `
     <article class="card-surface p-3 p-md-4 mb-3" ${q.id ? `data-bank-id="${esc(q.id)}"` : ''}>
       <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
         <div class="d-flex gap-2 align-items-start">
-          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-draft-index="${draftIndex}" id="draftQ${draftIndex}" checked>` : ''}
-          <label class="fw-semibold mb-0" ${selectable ? `for="draftQ${draftIndex}"` : ''}>Q${i + 1}. ${esc(q.question)}</label>
+          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-draft-index="${draftIndex}" id="draftQ${draftIndex}"${checkedAttr}>` : ''}
+          <div>
+            <label class="fw-semibold mb-0" ${selectable ? `for="draftQ${draftIndex}"` : ''}>Q${i + 1}. ${esc(q.question)}</label>
+            ${dupMsg}
+          </div>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
           ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}

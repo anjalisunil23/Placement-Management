@@ -623,13 +623,6 @@ final class StaffCourseQuestionService
         $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
         $selected = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
         $isContinueFill = !empty($body['continueDifficultyBatch']);
-        /** @var array<string, true> $promptKeys */
-        $promptKeys = $this->promptKeysForSession($selected);
-        $genStateRef = is_array($draft['genState'] ?? null) ? $draft['genState'] : [];
-        $bankAvoid = trim((string) ($genStateRef['bankAvoidCache'] ?? ''));
-        if ($bankAvoid === '') {
-            $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
-        }
 
         $chunk = [$batchPlan[$batchIndex]];
         $currentDifficulty = (string) ($chunk[0]['difficulty'] ?? 'Medium');
@@ -744,8 +737,8 @@ final class StaffCourseQuestionService
                         $chunkShortfall = [['difficulty' => $firstLabel, 'count' => $partTotal]];
                     }
                     $mixText = $this->mixLinesText($chunkShortfall);
-                    $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
-                    // Continue slices already pass group-1 stems in $avoid; "generate extra" prompts are slower.
+                    // Difficulty batches: skip bank/cross-slice duplicate checks during generation (faster).
+                    // Duplicates are flagged when questions are shown to the user, like aptitude AI preview.
                     $part = $this->fetchQuestionBatch(
                         $course,
                         $syllabus,
@@ -753,10 +746,11 @@ final class StaffCourseQuestionService
                         $chunkShortfall,
                         $partTotal,
                         $mixText,
-                        $avoid,
-                        $selected,
-                        $promptKeys,
-                        $fetchAttempts > 0
+                        '',
+                        [],
+                        [],
+                        $fetchAttempts > 0,
+                        true
                     );
                     $fetchAttempts++;
                     if ($part === []) {
@@ -767,8 +761,8 @@ final class StaffCourseQuestionService
                         continue;
                     }
                     $emptyChunkStreak = 0;
-                    $selected = $this->mergeQuestionLists($selected, $part, $promptKeys);
-                    $batchQuestions = $this->mergeQuestionLists($batchQuestions, $part);
+                    $selected = array_merge($selected, $part);
+                    $batchQuestions = array_merge($batchQuestions, $part);
                     break;
                 }
                 if (count($selected) <= $haveAtSliceStart) {
@@ -776,7 +770,7 @@ final class StaffCourseQuestionService
                 }
                 $completedSliceGroups++;
                 $partialDisplay = $this->assignDraftIndexes(
-                    $this->capQuestionsToMixes($batchQuestions, $chunk)
+                    $this->capQuestionsToMixesInOrder($batchQuestions, $chunk)
                 );
                 $this->persistDifficultyBatchSliceDraft(
                     $sessionId,
@@ -810,7 +804,7 @@ final class StaffCourseQuestionService
             $this->hydrateGenerationDraft($sessionId);
         }
 
-        $batchQuestions = $this->capQuestionsToMixes($batchQuestions, $chunk);
+        $batchQuestions = $this->capQuestionsToMixesInOrder($batchQuestions, $chunk);
         $display = $this->assignDraftIndexes($batchQuestions);
         $gotForBatch = count($display);
         $mixes = $this->mixesFromCountByLabel($countByLabel);
@@ -829,14 +823,15 @@ final class StaffCourseQuestionService
         $draft['genState']['difficultyBatchIndex'] = $batchIndex;
         $draft['genState']['currentDifficulty'] = $currentDifficulty;
         $fulfilled = $gotForBatch >= $chunkTotal;
+        if ($fulfilled) {
+            $display = $this->annotateBatchDuplicatePreview($display, $courseCode);
+            $draft['questions'] = $display;
+        }
         $draft['genState']['awaitingBankSave'] = $fulfilled;
         $draft['genState']['batchFillIncomplete'] = !$fulfilled && $gotForBatch > 0;
         unset($draft['genState']['readyForBatchIndex']);
         $draft['genState']['sliceGroupsTotal'] = $sliceGroupsTotal;
         $draft['genState']['accumulatedCount'] = $gotForBatch;
-        if ($bankAvoid !== '') {
-            $draft['genState']['bankAvoidCache'] = $bankAvoid;
-        }
         $draft['createdAt'] = time();
         $this->persistGenerationDraft($draft);
 
@@ -924,9 +919,12 @@ final class StaffCourseQuestionService
         $mixes = $this->mixesFromCountByLabel($countByLabel);
         $courseCode = (string) ($draft['course']['code'] ?? '');
         $batchQuestions = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
-        $display = $this->assignDraftIndexes($this->capQuestionsToMixes($batchQuestions, $chunk));
+        $display = $this->assignDraftIndexes($this->capQuestionsToMixesInOrder($batchQuestions, $chunk));
         $gotForBatch = count($display);
         $fulfilled = $chunkTotal > 0 && $gotForBatch >= $chunkTotal;
+        if ($fulfilled) {
+            $display = $this->annotateBatchDuplicatePreview($display, $courseCode);
+        }
         $sliceGroupsTotal = $this->difficultyBatchSliceGroupsForCount($chunkTotal);
         $completed = is_array($draft['genState']['completedDifficulties'] ?? null)
             ? $draft['genState']['completedDifficulties'] : [];
@@ -3234,7 +3232,8 @@ final class StaffCourseQuestionService
         string $avoidBlock,
         array $selectedSoFar,
         array &$promptKeys,
-        bool $allowExtra
+        bool $allowExtra,
+        bool $skipDuplicateChecks = false
     ): array {
         if ($requestTotal < 1) {
             return [];
@@ -3247,7 +3246,7 @@ final class StaffCourseQuestionService
                 $mixesForRequest,
                 $requestTotal,
                 $mixText,
-                $avoidBlock,
+                $skipDuplicateChecks ? '' : $avoidBlock,
                 $allowExtra
             );
             try {
@@ -3256,14 +3255,85 @@ final class StaffCourseQuestionService
                 continue;
             }
             $valid = $this->dedupeBatchOnly($this->collectValidQuestions($raw['questions'] ?? $raw));
-            $valid = $this->rejectKnownPrompts($valid, $promptKeys);
-            $picked = $this->selectQuestionsForMixes($valid, $mixesForRequest, $selectedSoFar, $promptKeys);
+            if ($skipDuplicateChecks) {
+                $picked = $this->selectQuestionsForMixes($valid, $mixesForRequest, [], []);
+            } else {
+                $valid = $this->rejectKnownPrompts($valid, $promptKeys);
+                $picked = $this->selectQuestionsForMixes($valid, $mixesForRequest, $selectedSoFar, $promptKeys);
+            }
             if ($picked !== []) {
                 return $picked;
             }
         }
 
         return [];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @return list<array<string, mixed>>
+     */
+    private function capQuestionsToMixesInOrder(array $questions, array $mixes): array
+    {
+        $buckets = ['Easy' => [], 'Medium' => [], 'Hard' => []];
+        foreach ($questions as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $difficulty = (string) ($question['difficulty'] ?? 'Medium');
+            if (!isset($buckets[$difficulty])) {
+                continue;
+            }
+            $buckets[$difficulty][] = $question;
+        }
+
+        $out = [];
+        foreach ($mixes as $mix) {
+            $label = (string) ($mix['difficulty'] ?? '');
+            $need = (int) ($mix['count'] ?? 0);
+            if ($need <= 0 || !isset($buckets[$label])) {
+                continue;
+            }
+            $out = array_merge($out, array_slice($buckets[$label], 0, $need));
+        }
+
+        return $out;
+    }
+
+    /**
+     * Mark bank/batch duplicates for the preview UI (same pattern as aptitude AI).
+     *
+     * @param list<array<string, mixed>> $questions
+     * @return list<array<string, mixed>>
+     */
+    private function annotateBatchDuplicatePreview(array $questions, string $courseCode): array
+    {
+        $bankKeys = (new SyllabusQuestionBankModel())->existingPromptKeys($courseCode);
+        $batchKeys = [];
+        $out = [];
+        foreach ($questions as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $key = $this->questionPromptKey($question);
+            $duplicateInBank = $key !== '' && isset($bankKeys[$key]);
+            $duplicateInBatch = $key !== '' && isset($batchKeys[$key]);
+            if ($key !== '') {
+                $batchKeys[$key] = true;
+            }
+            $duplicateMessage = $duplicateInBank
+                ? 'This question already exists in the bank and will not be added if saved unchanged.'
+                : ($duplicateInBatch ? 'Duplicate question within this AI batch.' : null);
+            $out[] = array_merge($question, [
+                'duplicateInBank' => $duplicateInBank,
+                'duplicateInBatch' => $duplicateInBatch,
+                'duplicateMessage' => $duplicateMessage,
+                'selected' => !$duplicateInBank && !$duplicateInBatch,
+            ]);
+        }
+
+        return $out;
     }
 
     /**
