@@ -667,11 +667,11 @@ function updateDraftModalFooter(payload) {
     || (payload?.generationStatus === 'completed' && batchGenerationFulfilled(payload));
   const showAdd = !payload?.generationCompleted
     && payload?.generationStatus !== 'error'
+    && payload?.generationStatus !== 'partial'
     && staffBatchGenStatus !== 'error'
-    && !payload?.generationFailedEmpty
     && !payload?.generationFailedPartial
+    && !payload?.generationFailedEmpty
     && genReady
-    && batchGenerationFulfilled(payload)
     && (payload?.questions || []).length > 0
     && staffBatchSaveStatus !== 'saved'
     && staffBatchSaveStatus !== 'saving'
@@ -754,8 +754,7 @@ function renderPractice(payload) {
   const diff = payload?.currentDifficulty || '';
   let hint = '';
   if (payload?.difficultyBatchMode && batchTotal > 0 && batchNum > 0 && diff) {
-    const target = requested || staffDiffBatchSession?.batchPlan?.[batchIndex]?.count || rows.length;
-    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${target} question${target === 1 ? '' : 's'}.`;
+    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${requested || rows.length} question${(requested || rows.length) === 1 ? '' : 's'}.`;
   } else {
     hint = `${mix ? mix + ' · ' : ''}${countLabel}.`;
   }
@@ -764,12 +763,10 @@ function renderPractice(payload) {
     hint = 'All batches completed successfully.';
   } else if (batchGenerationFulfilled(payload)) {
     hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation complete ✓ — select questions and click Add selected to Question Bank.`;
+  } else if (batchHasGeneratedQuestions(payload) || payload?.generationStatus === 'partial' || payload?.awaitingBankSave) {
+    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${rows.length} of ${requested || rows.length} generated — add these or retry this batch for more.`;
   } else if (isBatchGenerationBusy(payload)) {
-    const target = requested || staffDiffBatchSession?.batchPlan?.[batchIndex]?.count || rows.length;
-    hint = `Generating batch ${batchNum} of ${batchTotal} · ${diff} · ${rows.length} / ${target} question${target === 1 ? '' : 's'}…`;
-  } else if (batchHasGeneratedQuestions(payload) || payload?.generationStatus === 'partial') {
-    const target = requested || staffDiffBatchSession?.batchPlan?.[batchIndex]?.count || rows.length;
-    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${rows.length} of ${target} generated — still collecting questions or retry this batch.`;
+    hint = `Generating batch ${batchNum} of ${batchTotal}… ${diff ? diff + ' questions' : ''}`.trim();
   } else if (payload?.generationStatus === 'error' || payload?.generationFailedEmpty) {
     hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation failed. Retry this batch.`;
   } else if (staffBatchSaveStatus === 'saved' && staffPendingNextBatchIndex != null) {
@@ -1058,11 +1055,8 @@ function batchGenerationFulfilled(payload) {
 
 function isBatchGenerationBusy(payload) {
   if (staffBatchGenStatus === 'generating') return true;
-  if (batchHasGeneratedQuestions(payload)) return false;
-  if (staffBatchGenStatus === 'completed' || staffBatchGenStatus === 'error') return false;
-  if (payload?.generationStatus === 'completed' || payload?.generationStatus === 'error') return false;
+  if (payload?.needsContinueFill) return true;
   if (payload?.generationStatus === 'generating' || payload?.generating === true) return true;
-  if (staffBatchGenStatus === 'generating') return true;
   return false;
 }
 
@@ -1077,7 +1071,7 @@ function enrichPracticePayload(payload) {
   } else if (hasQuestions && (p.generationStatus === 'partial' || p.generationFailedPartial)) {
     p.generationStatus = 'partial';
     p.generating = false;
-    p.awaitingBankSave = p.awaitingBankSave !== false;
+    p.awaitingBankSave = false;
   } else if (staffBatchGenStatus === 'completed' && batchGenerationFulfilled(p)) {
     p.generationStatus = 'completed';
     p.generating = false;
@@ -1092,7 +1086,10 @@ function enrichPracticePayload(payload) {
 }
 
 function markBatchGenerationComplete(planIndex, entry, payload) {
-  staffBatchGenStatus = payload?.generationStatus === 'error' ? 'error' : 'completed';
+  if (staffBatchGenStatus !== 'generating') {
+    staffBatchGenStatus = payload?.generationStatus === 'error' ? 'error'
+      : (batchGenerationFulfilled(payload) ? 'completed' : 'error');
+  }
   staffGenerationActive = false;
   stopStaffGenProgressPoll();
   if (genProgressTimer) {
@@ -1321,12 +1318,6 @@ function readDifficultyCounts() {
   };
 }
 
-function staffGenDebug(...args) {
-  if (typeof console !== 'undefined' && typeof console.log === 'function') {
-    console.log('[staff-gen]', ...args);
-  }
-}
-
 function mixesFromCounts(counts) {
   return ['Easy', 'Medium', 'Hard']
     .map((difficulty) => ({ difficulty, count: Number(counts[difficulty] || 0) }));
@@ -1434,27 +1425,19 @@ function normalizeBatchPayload(data, mixes) {
   if (batchGenerationFulfilled(payload)) {
     payload.generationStatus = 'completed';
     payload.generating = false;
+    payload.needsContinueFill = false;
     payload.awaitingBankSave = true;
-  } else if ((payload.questions || []).length > 0 && payload.generationStatus !== 'error') {
+  } else if ((payload.questions || []).length > 0 && payload.generationStatus === 'partial') {
     payload.generating = false;
-    payload.awaitingBankSave = true;
+    payload.needsContinueFill = payload.needsContinueFill !== false;
+    payload.awaitingBankSave = false;
   }
   return payload;
 }
 
 async function postDifficultyBatchRequest(planIndex, { retry = false, continueFill = false } = {}) {
   const ctx = staffDiffBatchSession;
-  const { course, mixes, progressKey, batchPlan } = ctx;
-  const entry = batchPlan?.[planIndex];
-  const difficulty = entry?.difficulty || '';
-  const questionCount = Number(entry?.count || 0);
-  staffGenDebug('API batch request', {
-    difficulty,
-    questionCount,
-    batchIndex: planIndex,
-    continueFill: !!continueFill,
-    sessionId: ctx.sessionId || null,
-  });
+  const { course, mixes, progressKey } = ctx;
   return api('/staff/courses/questions/batch', {
     method: 'POST',
     body: JSON.stringify({
@@ -1465,8 +1448,6 @@ async function postDifficultyBatchRequest(planIndex, { retry = false, continueFi
       encid: course.encid || '',
       mixes,
       batchIndex: planIndex,
-      difficulty,
-      questionCount,
       sessionId: ctx.sessionId || undefined,
       progressKey,
       retryDifficultyBatch: retry || undefined,
@@ -1506,60 +1487,76 @@ async function runDifficultyBatch(planIndex, retry = false) {
   }
   ctx.sessionId = res.data?.sessionId || ctx.sessionId;
   let payload = normalizeBatchPayload(res.data, mixes);
-  staffGenDebug('Batch response', {
-    difficulty: entry.difficulty,
-    requested: entry.count,
-    generated: (payload.questions || []).length,
-    fulfilled: batchGenerationFulfilled(payload),
-  });
-  const maxRounds = Math.max(3, Math.ceil(entry.count / 5) + 6);
   let continueAttempts = 0;
   let stallRounds = 0;
-  let prevGot = (payload.questions || []).length;
+  const maxFillRounds = 12;
   while (
     !batchGenerationFulfilled(payload)
-    && !payload?.generationFailedEmpty
-    && continueAttempts < maxRounds
+    && continueAttempts < maxFillRounds
     && (payload.questions || []).length < entry.count
+    && (payload.needsContinueFill || payload.generationFailedPartial)
   ) {
+    const beforeCount = (payload.questions || []).length;
     continueAttempts += 1;
     staffBatchGenStatus = 'generating';
     staffGenerationActive = true;
-    const got = (payload.questions || []).length;
-    const fillLabel = `Generating batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${got} / ${entry.count}`;
+    const fillLabel = `Finishing batch ${planIndex + 1} of ${batchTotal}… ${entry.difficulty} · ${beforeCount} / ${entry.count}`;
     status.textContent = fillLabel;
     document.getElementById('genProgressLabel').textContent = fillLabel;
-    if (got > 0) {
-      renderPractice(Object.assign({}, payload, { generating: true, generationStatus: 'generating' }));
-    }
+    renderPractice(Object.assign({}, payload, {
+      generating: true,
+      generationStatus: 'generating',
+      needsContinueFill: true,
+    }));
+    updateDraftModalFooter(practice);
     try {
       res = await postDifficultyBatchRequest(planIndex, { continueFill: true });
     } catch (err) {
-      staffGenDebug('Continue fill failed', err?.message || err);
-      break;
+      stallRounds += 1;
+      if (stallRounds >= 2) break;
+      continue;
     }
-    if (!res?.success) break;
+    if (!res?.success) {
+      stallRounds += 1;
+      if (stallRounds >= 2) break;
+      continue;
+    }
     ctx.sessionId = res.data?.sessionId || ctx.sessionId;
     payload = normalizeBatchPayload(res.data, mixes);
-    const newGot = (payload.questions || []).length;
-    staffGenDebug('Continue fill response', {
+    const afterCount = (payload.questions || []).length;
+    if (afterCount <= beforeCount) {
+      stallRounds += 1;
+      if (stallRounds >= 3) break;
+    } else {
+      stallRounds = 0;
+    }
+  }
+  if (typeof console !== 'undefined' && console.debug) {
+    console.debug('[staff-batch]', {
       difficulty: entry.difficulty,
-      requested: entry.count,
-      generated: newGot,
+      requestedQuestionCount: entry.count,
+      generated: (payload?.questions || []).length,
+      generationStatus: payload?.generationStatus,
       fulfilled: batchGenerationFulfilled(payload),
     });
-    if (newGot <= prevGot) stallRounds += 1;
-    else stallRounds = 0;
-    prevGot = newGot;
-    if (stallRounds >= 3) break;
+  }
+  if (batchGenerationFulfilled(payload)) {
+    staffBatchGenStatus = 'completed';
+    payload.generationStatus = 'completed';
+    payload.generating = false;
+    payload.needsContinueFill = false;
+    payload.awaitingBankSave = true;
+  } else if ((payload.questions || []).length > 0) {
+    staffBatchGenStatus = 'error';
+    payload.generationStatus = 'partial';
   }
   markBatchGenerationComplete(planIndex, entry, payload);
   renderPractice(payload);
   updateDraftModalFooter(practice);
   if (payload.generationFailedEmpty && typeof toast === 'function') {
     toast('This batch returned no questions. Click Retry this batch.', 'error');
-  } else if (payload.generationFailedPartial && typeof toast === 'function') {
-    toast(`Generated ${(payload.questions || []).length} of ${entry.count}. You can retry this batch or add what you have.`, 'info');
+  } else if (!batchGenerationFulfilled(payload) && (payload.questions || []).length > 0 && typeof toast === 'function') {
+    toast(`Only ${(payload.questions || []).length} of ${entry.count} could be generated. Click Retry this batch.`, 'error');
   }
   return payload;
 }
@@ -1597,10 +1594,8 @@ async function generate() {
   if (!course) return;
   const status = document.getElementById('genStatus');
   const counts = readDifficultyCounts();
-  staffGenDebug('Generate clicked — counts from dropdown', counts);
   const mixes = mixesFromCounts(counts);
   const batchPlan = buildDifficultyBatchPlan(counts);
-  staffGenDebug('Batch plan', batchPlan);
   if (!batchPlan.length) {
     status.textContent = 'Please select at least one question for generation.';
     return;
@@ -1639,6 +1634,11 @@ async function saveSelected() {
   const button = document.getElementById('btnAddSelected');
   if (isBatchGenerationBusy(practice)) {
     status.textContent = 'Still generating questions — wait for this batch to finish, then add to the bank.';
+    return;
+  }
+  if (!batchGenerationFulfilled(practice)) {
+    const need = Number(practice?.requested || 0);
+    status.textContent = `This batch is not complete (${(practice?.questions || []).length} of ${need || '?'}). Retry the batch or wait for generation to finish.`;
     return;
   }
   if (staffBatchSaveStatus === 'saved' && staffPendingNextBatchIndex != null) {
