@@ -671,9 +671,9 @@ final class StaffCourseQuestionService
         }
         /** @var list<array<string, mixed>> $batchQuestions */
         $batchQuestions = $selected;
+        $completedSliceGroups = 0;
         try {
             $emptyChunkStreak = 0;
-            $completedSliceGroups = 0;
             $allowExtraForSlice = $isContinueFill || $startingHave > 0;
             $maxFetchAttemptsPerSlice = $allowExtraForSlice ? 6 : 4;
             while ($completedSliceGroups < $maxSliceGroups) {
@@ -817,6 +817,8 @@ final class StaffCourseQuestionService
         $draft['genState']['awaitingBankSave'] = $fulfilled;
         $draft['genState']['batchFillIncomplete'] = !$fulfilled && $gotForBatch > 0;
         unset($draft['genState']['readyForBatchIndex']);
+        $draft['genState']['sliceGroupsTotal'] = $sliceGroupsTotal;
+        $draft['genState']['accumulatedCount'] = $gotForBatch;
         $draft['createdAt'] = time();
         $this->persistGenerationDraft($draft);
 
@@ -844,14 +846,25 @@ final class StaffCourseQuestionService
         $completed = is_array($draft['genState']['completedDifficulties'] ?? null)
             ? $draft['genState']['completedDifficulties'] : [];
 
+        $sliceGroupHandled = $completedSliceGroups > 0 ? $activeSliceGroup : 0;
+        if ($sliceGroupHandled > 0 && is_array($draft['genState'] ?? null)) {
+            $draft['genState']['lastSliceGroupHandled'] = $sliceGroupHandled;
+            $this->persistGenerationDraft($draft);
+        }
+
+        // Each HTTP handles one slice group; release the full question list only when the batch count is met.
+        $releaseQuestions = $fulfilled;
+
         return $this->releaseSessionAndReturn([
             'sessionId' => $sessionId,
             'courseCode' => $courseCode,
             'courseTitle' => (string) ($course['title'] ?? ''),
             'mixes' => $mixes,
             'requested' => $chunkTotal,
-            'questions' => $display,
-            'batchQuestions' => $display,
+            'questions' => $releaseQuestions ? $display : [],
+            'batchQuestions' => $releaseQuestions ? $display : [],
+            'accumulatedCount' => $gotForBatch,
+            'batchDisplayReady' => $fulfilled,
             'batchIndex' => $batchIndex,
             'batchTotal' => $batchTotal,
             'currentDifficulty' => $currentDifficulty,
@@ -868,6 +881,7 @@ final class StaffCourseQuestionService
             'generationStatus' => $gotForBatch <= 0 ? 'error' : ($fulfilled ? 'completed' : 'partial'),
             'sliceGroupsTotal' => $sliceGroupsTotal,
             'sliceGroupsCompleted' => $this->difficultyBatchSliceGroupsForCount($gotForBatch),
+            'sliceGroupHandled' => $sliceGroupHandled,
         ]);
     }
 
