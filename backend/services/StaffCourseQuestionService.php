@@ -27,10 +27,6 @@ final class StaffCourseQuestionService
     private const BATCH_REQUEST_WALL_SECONDS = 52;
     /** Max questions requested from OpenAI per call (provider slice; UI batch may still be 10). */
     private const DIFFICULTY_BATCH_AI_SLICE = 5;
-    /** Default OpenAI calls per batch HTTP (client continue fills the rest on shared hosting). */
-    private const DIFFICULTY_BATCH_CALLS_PER_HTTP = 1;
-    /** Allow two slices (5+5) in one request when the batch count is 10. */
-    private const DIFFICULTY_BATCH_CALLS_PER_HTTP_MAX = 2;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
     /** Enough for one batched pass + shortfall top-ups without exceeding shared-host timeouts. */
     private const GENERATE_MAX_API_CALLS = 18;
@@ -630,7 +626,8 @@ final class StaffCourseQuestionService
         $this->assertBatchQuestionCountBody($body, $currentDifficulty, $chunkTotal);
         $deadline = (float) (is_array($draft['genState'] ?? null) ? ($draft['genState']['deadline'] ?? 0) : 0);
         $batchWall = microtime(true) + $this->batchRequestWallSeconds($chunkTotal);
-        $maxChunkApiCalls = $this->difficultyBatchCallsAllowedPerHttp($body, $chunkTotal, count($selected));
+        $sliceGroupsTotal = $this->difficultyBatchSliceGroupsForCount($chunkTotal);
+        $maxSliceGroups = $this->difficultyBatchSliceGroupsNeeded($chunkTotal, count($selected));
         if ($deadline <= 0) {
             $deadline = $batchWall;
         }
@@ -638,7 +635,8 @@ final class StaffCourseQuestionService
         if ($progressKey !== '') {
             self::writeGenerationProgress($progressKey, [
                 'phase' => 'generating',
-                'message' => 'Batch ' . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · generating…",
+                'message' => 'Batch ' . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · "
+                    . "group 1 of {$sliceGroupsTotal}…",
                 'generated' => count($selected),
                 'requested' => $chunkTotal,
                 'percent' => $chunkTotal > 0
@@ -657,14 +655,15 @@ final class StaffCourseQuestionService
         /** @var list<array<string, mixed>> $batchQuestions */
         $batchQuestions = $selected;
         try {
-            $chunkApiCalls = 0;
             $emptyChunkStreak = 0;
-            while (
-                $this->mixShortfall($chunk, $selected) !== []
-                && $chunkApiCalls < $maxChunkApiCalls
-                && microtime(true) < $batchWall
-                && !$this->generationDeadlineReached($deadline)
-            ) {
+            $completedSliceGroups = 0;
+            while ($completedSliceGroups < $maxSliceGroups) {
+                if ($this->mixShortfall($chunk, $selected) === []) {
+                    break;
+                }
+                if (microtime(true) >= $batchWall || $this->generationDeadlineReached($deadline)) {
+                    break;
+                }
                 $chunkShortfall = $this->mixShortfall($chunk, $selected);
                 $partTotal = $this->mixTotal($chunkShortfall);
                 if ($partTotal < 1) {
@@ -679,8 +678,18 @@ final class StaffCourseQuestionService
                     $partTotal = self::DIFFICULTY_BATCH_AI_SLICE;
                     $chunkShortfall = [['difficulty' => $firstLabel, 'count' => $partTotal]];
                 }
+                $sliceGroup = $completedSliceGroups + 1;
                 $mixText = $this->mixLinesText($chunkShortfall);
                 $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                if ($progressKey !== '') {
+                    $this->touchGenerationProgress(
+                        $progressKey,
+                        count($batchQuestions),
+                        $chunkTotal,
+                        'Batch ' . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · "
+                        . "group {$sliceGroup} of {$sliceGroupsTotal}…"
+                    );
+                }
                 $part = $this->fetchQuestionBatch(
                     $course,
                     $syllabus,
@@ -693,24 +702,39 @@ final class StaffCourseQuestionService
                     $promptKeys,
                     false
                 );
-                $chunkApiCalls++;
                 if ($part === []) {
                     $emptyChunkStreak++;
-                    if ($emptyChunkStreak >= 8) {
+                    if ($emptyChunkStreak >= 3) {
                         break;
                     }
                     continue;
                 }
                 $emptyChunkStreak = 0;
+                $completedSliceGroups++;
                 $selected = $this->mergeQuestionLists($selected, $part, $promptKeys);
                 $batchQuestions = $this->mergeQuestionLists($batchQuestions, $part);
+                $partialDisplay = $this->assignDraftIndexes(
+                    $this->capQuestionsToMixes($batchQuestions, $chunk)
+                );
+                $this->persistDifficultyBatchSliceDraft(
+                    $sessionId,
+                    $partialDisplay,
+                    $batchPlan,
+                    $countByLabel,
+                    $batchTotal,
+                    $batchIndex,
+                    $currentDifficulty
+                );
                 if ($progressKey !== '') {
                     $this->touchGenerationProgress(
                         $progressKey,
-                        count($batchQuestions),
+                        count($partialDisplay),
                         $chunkTotal,
-                        "Batch " . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · "
-                        . count($batchQuestions) . " / {$chunkTotal}"
+                        'Batch ' . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · "
+                        . count($partialDisplay) . " / {$chunkTotal}"
+                        . ($completedSliceGroups < $sliceGroupsTotal && count($partialDisplay) < $chunkTotal
+                            ? " · group {$completedSliceGroups} of {$sliceGroupsTotal} done"
+                            : '')
                     );
                 }
             }
@@ -795,33 +819,81 @@ final class StaffCourseQuestionService
             'generationFailedPartial' => $gotForBatch > 0 && $gotForBatch < $chunkTotal,
             'generationFailedEmpty' => $gotForBatch === 0 && $chunkTotal > 0,
             'generationStatus' => $gotForBatch <= 0 ? 'error' : ($fulfilled ? 'completed' : 'partial'),
+            'sliceGroupsTotal' => $sliceGroupsTotal,
+            'sliceGroupsCompleted' => $this->difficultyBatchSliceGroupsForCount($gotForBatch),
         ]);
     }
 
     private function batchRequestWallSeconds(int $chunkTotal): int
     {
         $chunkTotal = max(1, $chunkTotal);
+        $groups = $this->difficultyBatchSliceGroupsForCount($chunkTotal);
 
-        return min(120, max(self::BATCH_REQUEST_WALL_SECONDS, 40 + $chunkTotal * 8));
+        return min(180, max(self::BATCH_REQUEST_WALL_SECONDS, 35 + $groups * 45 + $chunkTotal * 4));
     }
 
-    /**
-     * @param array<string, mixed> $body
-     */
-    private function difficultyBatchCallsAllowedPerHttp(array $body, int $chunkTotal, int $haveCount): int
+    /** How many OpenAI slice calls (size ≤5) a batch count needs in total (e.g. 10 → 2). */
+    private function difficultyBatchSliceGroupsForCount(int $batchCount): int
+    {
+        if ($batchCount < 1) {
+            return 0;
+        }
+
+        return (int) ceil($batchCount / self::DIFFICULTY_BATCH_AI_SLICE);
+    }
+
+    /** Slice groups still required to reach the batch count (e.g. 5/10 → 1). */
+    private function difficultyBatchSliceGroupsNeeded(int $chunkTotal, int $haveCount): int
     {
         $shortfall = max(0, $chunkTotal - $haveCount);
         if ($shortfall < 1) {
             return 0;
         }
-        $slicesNeeded = (int) max(1, ceil($shortfall / self::DIFFICULTY_BATCH_AI_SLICE));
-        $cap = !empty($body['continueDifficultyBatch'])
-            ? self::DIFFICULTY_BATCH_CALLS_PER_HTTP_MAX
-            : ($chunkTotal > self::DIFFICULTY_BATCH_AI_SLICE
-                ? self::DIFFICULTY_BATCH_CALLS_PER_HTTP_MAX
-                : self::DIFFICULTY_BATCH_CALLS_PER_HTTP);
 
-        return min($cap, $slicesNeeded);
+        return (int) ceil($shortfall / self::DIFFICULTY_BATCH_AI_SLICE);
+    }
+
+    /**
+     * @param list<array{difficulty:string,count:int}> $batchPlan
+     * @param array{Easy:int,Medium:int,Hard:int} $countByLabel
+     * @param list<array<string, mixed>> $questions
+     */
+    private function persistDifficultyBatchSliceDraft(
+        string $sessionId,
+        array $questions,
+        array $batchPlan,
+        array $countByLabel,
+        int $batchTotal,
+        int $batchIndex,
+        string $currentDifficulty
+    ): void {
+        if ($sessionId === '') {
+            return;
+        }
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            Security::startSession(false);
+        }
+        $this->hydrateGenerationDraft($sessionId);
+        $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
+        if ((string) ($draft['id'] ?? '') !== $sessionId) {
+            return;
+        }
+        $draft['questions'] = $questions;
+        $draft['generating'] = true;
+        if (!isset($draft['genState']) || !is_array($draft['genState'])) {
+            $draft['genState'] = [];
+        }
+        $draft['genState']['difficultyBatchMode'] = true;
+        $draft['genState']['batchPlan'] = $batchPlan;
+        $draft['genState']['counts'] = $countByLabel;
+        $draft['genState']['batchTotal'] = $batchTotal;
+        $draft['genState']['difficultyBatchIndex'] = $batchIndex;
+        $draft['genState']['currentDifficulty'] = $currentDifficulty;
+        unset($draft['genState']['awaitingBankSave'], $draft['genState']['batchFillIncomplete']);
+        $this->persistGenerationDraft($draft);
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
     }
 
     /**
