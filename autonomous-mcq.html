@@ -26,6 +26,9 @@
   .apt-prob-title{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .apt-prob-pct{color:#94a3b8;font-size:.9rem;text-align:right;font-variant-numeric:tabular-nums}
   .apt-prob-time{font-size:.9rem;font-weight:500;text-align:right;color:#64748b}
+  @media (min-width:992px){
+    .mcq-result-sidebar{position:sticky;top:1rem}
+  }
 </style>
 </head>
 <body data-page="autonomous-mcq.html"><div class="app">
@@ -223,30 +226,56 @@ function renderResult(payload) {
   clearTimer();
   attempt = Object.assign({}, attempt || {}, { results: payload.results || [], sessionId: '' });
   const results = payload.results || [];
+  const score = Number(payload.score ?? 0);
+  const total = Number(payload.total ?? results.length) || results.length;
+  const correct = results.filter((q) => q.correct).length;
+  const wrong = Math.max(0, total - correct);
+  const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+  const resultTitle = mcqDisplayTitle(payload) || payload.title || payload.courseCode || 'MCQ';
+  const courseLine = mcqCourseCodeName(payload);
   document.getElementById('testPanel').innerHTML = `
     <div class="d-flex align-items-center gap-2 mb-3">
       <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBackTests" aria-label="Back"><i class="bi bi-arrow-left"></i></button>
       <div>
-        <div class="small text-muted-2">${esc(payload.title || payload.courseCode || 'MCQ')}</div>
-        <div class="h4 mb-0">${esc(payload.score ?? 0)} / ${esc(payload.total ?? results.length)}</div>
+        <h2 class="h5 mb-0">Result</h2>
+        <p class="small text-muted-2 mb-0">${esc(resultTitle)}</p>
       </div>
     </div>
-    ${results.map((q, i) => {
-      const options = (q.options || []).map((opt, idx) => {
-        const yours = idx === q.selectedIndex ? ' <span class="badge-soft ' + (q.correct ? 'success' : 'danger') + '">Your answer</span>' : '';
-        const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
-        return `<li class="${idx === q.correctIndex ? 'fw-semibold' : ''} mb-1">${esc(opt)}${yours}${right}</li>`;
-      }).join('');
-      return `
-        <article class="card-surface p-3 p-md-4 mb-3">
-          <div class="d-flex justify-content-between gap-2 mb-2">
-            <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
-            <span class="badge-soft ${q.correct ? 'success' : 'danger'}">${q.correct ? 'Correct' : 'Incorrect'}</span>
+    <div class="row g-3">
+      <div class="col-lg-8 order-lg-1 order-2">
+        <h6 class="fw-bold mb-3">Question review</h6>
+        ${results.length ? results.map((q, i) => {
+          const options = (q.options || []).map((opt, idx) => {
+            const yours = idx === q.selectedIndex ? ' <span class="badge-soft ' + (q.correct ? 'success' : 'danger') + '">Your answer</span>' : '';
+            const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
+            return `<li class="${idx === q.correctIndex ? 'fw-semibold' : ''} mb-1">${esc(opt)}${yours}${right}</li>`;
+          }).join('');
+          return `
+            <article class="card-surface p-3 p-md-4 mb-3">
+              <div class="d-flex justify-content-between gap-2 mb-2">
+                <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
+                <span class="badge-soft ${q.correct ? 'success' : 'danger'}">${q.correct ? 'Correct' : 'Incorrect'}</span>
+              </div>
+              <ol class="mb-2 ps-3" type="A">${options}</ol>
+              ${q.explanation ? `<div class="small text-muted-2">${esc(q.explanation)}</div>` : ''}
+            </article>`;
+        }).join('') : '<p class="text-muted-2 mb-0">No question details available.</p>'}
+      </div>
+      <div class="col-lg-4 order-lg-2 order-1">
+        <div class="card-surface p-3 p-md-4 mcq-result-sidebar">
+          <h6 class="fw-bold mb-2">Your score</h6>
+          ${courseLine ? `<div class="small text-muted-2 mb-2">${esc(courseLine)}</div>` : ''}
+          <div class="display-6 fw-bold mb-3">${esc(score)} <span class="fs-5 fw-semibold text-muted-2">/ ${esc(total)}</span></div>
+          <div class="row g-2 mb-3">
+            <div class="col-6"><div class="border rounded-3 p-2"><div class="small text-muted-2">Percentage</div><strong>${esc(pct)}%</strong></div></div>
+            <div class="col-6"><div class="border rounded-3 p-2"><div class="small text-muted-2">Questions</div><strong>${esc(total)}</strong></div></div>
+            <div class="col-6"><div class="border rounded-3 p-2"><div class="small text-muted-2">Correct</div><strong class="text-success">${esc(correct)}</strong></div></div>
+            <div class="col-6"><div class="border rounded-3 p-2"><div class="small text-muted-2">Incorrect</div><strong class="text-danger">${esc(wrong)}</strong></div></div>
           </div>
-          <ol class="mb-2 ps-3" type="A">${options}</ol>
-          ${q.explanation ? `<div class="small text-muted-2">${esc(q.explanation)}</div>` : ''}
-        </article>`;
-    }).join('')}`;
+          <button type="button" class="btn btn-outline-secondary w-100" id="btnBackTestsSide">Back to MCQ list</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 async function loadStudy() {
@@ -318,7 +347,7 @@ document.getElementById('testPanel').addEventListener('click', (event) => {
     return;
   }
   if (event.target.closest('#btnSubmitTest')) submitTest();
-  if (event.target.closest('#btnBackTests')) {
+  if (event.target.closest('#btnBackTests') || event.target.closest('#btnBackTestsSide')) {
     clearTimer();
     attempt = null;
     renderTests();
