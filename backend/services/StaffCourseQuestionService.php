@@ -739,6 +739,8 @@ final class StaffCourseQuestionService
                     $mixText = $this->mixLinesText($chunkShortfall);
                     // Difficulty batches: skip bank/cross-slice duplicate checks during generation (faster).
                     // Duplicates are flagged when questions are shown to the user, like aptitude AI preview.
+                    $sliceSelectedSoFar = [];
+                    $slicePromptKeys = [];
                     $part = $this->fetchQuestionBatch(
                         $course,
                         $syllabus,
@@ -747,8 +749,8 @@ final class StaffCourseQuestionService
                         $partTotal,
                         $mixText,
                         '',
-                        [],
-                        [],
+                        $sliceSelectedSoFar,
+                        $slicePromptKeys,
                         $fetchAttempts > 0,
                         true
                     );
