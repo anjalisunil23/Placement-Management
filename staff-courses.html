@@ -231,8 +231,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261001mcqback"></script>
-<script src="js/app.js?v=20261001mcqback"></script>
+<script src="js/api.js?v=20261002search"></script>
+<script src="js/app.js?v=20261002search"></script>
 <script>
 let courses = [];
 let picked = null;
@@ -244,6 +244,9 @@ let mcqView = null;
 let mcqTests = [];
 let searchTimer = 0;
 let searchSeq = 0;
+let searchAbortController = null;
+/** @type {Map<string, {courses: object[], total: number, departmentName: string}>} */
+const courseSearchCache = new Map();
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -272,6 +275,16 @@ function renderCourseResults(total) {
     </button>`).join('') + more;
 }
 
+function applyCourseSearchPayload(data) {
+  courses = Array.isArray(data?.courses) ? data.courses : [];
+  const total = Number(data?.total || courses.length);
+  const deptName = String(data?.departmentName || '').trim();
+  const label = document.getElementById('deptLabel');
+  label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Showing courses for your department.';
+  renderCourseResults(total);
+  return { courses, total, departmentName: deptName };
+}
+
 async function searchCourses() {
   const query = document.getElementById('courseSearch').value.trim();
   const box = document.getElementById('courseResults');
@@ -284,16 +297,36 @@ async function searchCourses() {
     return;
   }
   const seq = ++searchSeq;
-  label.textContent = 'Searching…';
-  try {
-    const res = await api('/staff/courses/search?q=' + encodeURIComponent(query));
+  const cacheKey = query.toUpperCase();
+  const cached = courseSearchCache.get(cacheKey);
+  if (cached) {
     if (seq !== searchSeq) return;
+    applyCourseSearchPayload(cached);
+    return;
+  }
+  if (searchAbortController) {
+    searchAbortController.abort();
+  }
+  searchAbortController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  label.textContent = 'Searching institute course list…';
+  box.classList.remove('d-none');
+  box.innerHTML = '<div class="p-2 small text-muted-2"><span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Contacting AES…</div>';
+  try {
+    const res = await api('/staff/courses/search?q=' + encodeURIComponent(query), {
+      signal: searchAbortController?.signal,
+    });
+    if (seq !== searchSeq || res?.aborted) return;
     if (!res?.success) throw new Error(res?.message || 'Could not search courses.');
-    courses = Array.isArray(res.data?.courses) ? res.data.courses : [];
-    const deptName = String(res.data?.departmentName || '').trim();
-    const total = Number(res.data?.total || courses.length);
-    label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Showing courses for your department.';
-    renderCourseResults(total);
+    const payload = {
+      courses: Array.isArray(res.data?.courses) ? res.data.courses : [],
+      total: Number(res.data?.total || 0),
+      departmentName: String(res.data?.departmentName || '').trim(),
+    };
+    if (payload.total < 1 && payload.courses.length) {
+      payload.total = payload.courses.length;
+    }
+    courseSearchCache.set(cacheKey, payload);
+    applyCourseSearchPayload(payload);
   } catch (err) {
     if (seq !== searchSeq) return;
     courses = [];
@@ -2099,7 +2132,7 @@ document.getElementById('courseSearch').addEventListener('input', () => {
     renderSyllabus();
   }
   window.clearTimeout(searchTimer);
-  searchTimer = window.setTimeout(searchCourses, 300);
+  searchTimer = window.setTimeout(searchCourses, 550);
 });
 document.getElementById('courseSearch').addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;

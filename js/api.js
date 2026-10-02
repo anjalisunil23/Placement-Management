@@ -5685,12 +5685,16 @@ async function apiFetch(path, opts = {}) {
     headers['Content-Type'] = 'application/json';
   }
   try {
-    const res = await fetch(API_BASE + path, {
+    const fetchOpts = {
       method: opts.method || 'GET',
       headers,
       body,
       credentials: 'include',
-    });
+    };
+    if (opts.signal) {
+      fetchOpts.signal = opts.signal;
+    }
+    const res = await fetch(API_BASE + path, fetchOpts);
     const text = await res.text();
     let json = null;
     try {
@@ -5751,6 +5755,9 @@ async function apiFetch(path, opts = {}) {
     json.status = res.status;
     return json;
   } catch (e) {
+    if (e && typeof e === 'object' && e.name === 'AbortError') {
+      return { success: false, message: 'Request cancelled', data: null, aborted: true };
+    }
     return { success: false, message: e.message || 'Network error', data: null, _offline: true };
   }
 }

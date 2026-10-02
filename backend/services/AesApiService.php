@@ -309,6 +309,8 @@ final class AesApiService
         return $this->callAESApi('getStudInfo4Placement', $params);
     }
 
+    private const SYLLABUS_SEARCH_CACHE_TTL = 900;
+
     /**
      * POST method=searchSyllabus4Placement — course codes matching a search string.
      *
@@ -316,7 +318,77 @@ final class AesApiService
      */
     public function searchSyllabus4Placement(string $search): array
     {
-        return $this->callAESApi('searchSyllabus4Placement', ['search' => $search]);
+        $search = trim($search);
+        if ($search === '') {
+            return [
+                'success' => false,
+                'status'  => 0,
+                'error'   => 'Empty search string.',
+            ];
+        }
+
+        $cached = $this->readSyllabusSearchCache($search);
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        $response = $this->callAESApi('searchSyllabus4Placement', ['search' => $search]);
+        if (!empty($response['success'])) {
+            $this->writeSyllabusSearchCache($search, $response);
+        }
+
+        return $response;
+    }
+
+    /**
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}|null
+     */
+    private function readSyllabusSearchCache(string $search): ?array
+    {
+        $path = $this->syllabusSearchCachePath($search);
+        if (!is_readable($path)) {
+            return null;
+        }
+        $raw = file_get_contents($path);
+        if (!is_string($raw) || $raw === '') {
+            return null;
+        }
+        try {
+            $envelope = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+        if (!is_array($envelope) || !is_array($envelope['response'] ?? null)) {
+            return null;
+        }
+        if (time() - (int) ($envelope['savedAt'] ?? 0) > self::SYLLABUS_SEARCH_CACHE_TTL) {
+            @unlink($path);
+
+            return null;
+        }
+
+        return $envelope['response'];
+    }
+
+    /**
+     * @param array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string} $response
+     */
+    private function writeSyllabusSearchCache(string $search, array $response): void
+    {
+        $path = $this->syllabusSearchCachePath($search);
+        $payload = json_encode([
+            'savedAt' => time(),
+            'response' => $response,
+        ], JSON_UNESCAPED_UNICODE);
+        if ($payload !== false) {
+            @file_put_contents($path, $payload, LOCK_EX);
+        }
+    }
+
+    private function syllabusSearchCachePath(string $search): string
+    {
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_aes_syllabus_search_'
+            . hash('sha256', strtolower($search)) . '.json';
     }
 
     /**

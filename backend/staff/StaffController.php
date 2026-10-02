@@ -695,6 +695,9 @@ final class StaffController
                 'departmentName' => $departmentName,
             ]);
         }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
         $response = (new AesApiService())->searchSyllabus4Placement($query);
         if (empty($response['success'])) {
             Response::error((string) ($response['error'] ?? 'Could not search the syllabus.'), 502);
