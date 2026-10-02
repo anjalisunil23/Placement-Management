@@ -1035,6 +1035,7 @@ function renderResult(payload) {
 
 let genProgressTimer = 0;
 let staffGenProgressPollTimer = 0;
+let staffSliceWaitTimer = 0;
 let staffGenerationActive = false;
 /** @type {'idle'|'generating'|'completed'|'error'} */
 let staffBatchGenStatus = 'idle';
@@ -1076,9 +1077,32 @@ function batchGenerationFulfilled(payload) {
 function batchNeedsMoreSliceRequests(payload, entryCount) {
   if (!payload) return true;
   if (batchGenerationFulfilled(payload)) return false;
+  return batchPayloadAccumulatedCount(payload) < entryCount;
+}
+
+function stashAccumulatedBatchQuestions(data) {
+  const acc = Array.isArray(data?.accumulatedQuestions) ? data.accumulatedQuestions : [];
+  if (acc.length && staffDiffBatchSession) {
+    staffDiffBatchSession.accumulatedQuestions = acc;
+  }
+}
+
+function mergeAccumulatedQuestionsIntoPayload(payload, entryCount) {
+  if (!payload) return payload;
+  const need = entryCount || batchRequestedCount(payload);
   const got = batchPayloadAccumulatedCount(payload);
-  if (got >= entryCount) return false;
-  return payload.needsContinueFill !== false || payload.continueRequired === true || got >= 0;
+  const acc = staffDiffBatchSession?.accumulatedQuestions || payload?.accumulatedQuestions || [];
+  if (got >= need && acc.length >= got) {
+    if (!(payload.questions || []).length) {
+      payload.questions = acc.slice(0, need);
+      payload.batchQuestions = payload.questions;
+    }
+    payload.fulfilled = true;
+    payload.batchDisplayReady = true;
+    payload.generationStatus = 'completed';
+    payload.generationFailedPartial = false;
+  }
+  return payload;
 }
 
 function setBatchFillProgressUi(got, need) {
@@ -1189,6 +1213,32 @@ function stopStaffGenProgressPoll() {
   }
 }
 
+function stopSliceWaitProgress() {
+  if (staffSliceWaitTimer) {
+    window.clearInterval(staffSliceWaitTimer);
+    staffSliceWaitTimer = 0;
+  }
+}
+
+/** Creep progress while waiting on the next slice HTTP (group 2 often takes longer than group 1). */
+function startSliceWaitProgress(got, need, labelText) {
+  stopSliceWaitProgress();
+  const needN = Math.max(1, Number(need) || 1);
+  const gotN = Math.max(0, Number(got) || 0);
+  let v = gotN >= needN ? 99 : Math.min(96, Math.max(2, Math.round((gotN / needN) * 100) + 1));
+  const cap = gotN >= needN ? 99 : Math.min(97, Math.round(((gotN + Math.min(4, needN - gotN)) / needN) * 100));
+  if (labelText) {
+    document.getElementById('genProgressLabel').textContent = labelText;
+    document.getElementById('genModalProgressLabel').textContent = labelText;
+  }
+  staffSliceWaitTimer = window.setInterval(() => {
+    if (v >= cap) return;
+    v = Math.min(cap, v + 0.35);
+    setGenProgressUi(v, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+    setGenProgressUi(v, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+  }, 450);
+}
+
 function setBatchGenerationProgress(got, need, labelText) {
   const needN = Math.max(1, Number(need) || 1);
   const gotN = Math.max(0, Number(got) || 0);
@@ -1211,14 +1261,18 @@ function showDifficultyBatchProgressUi() {
 function updateStaffGenProgressFromServer(progress) {
   if (!progress) return;
   if (staffBatchGenStatus === 'completed' || staffBatchGenStatus === 'error') return;
-  if (staffDiffBatchSession?.batchPlan?.length && staffBatchGenStatus === 'generating') return;
   const message = progress.message || 'Generating questions…';
   document.getElementById('genProgressLabel').textContent = message;
   document.getElementById('genModalProgressLabel').textContent = message;
   const requested = Number(progress.requested || 0);
+  const generated = Number(progress.generated || 0);
   const percent = requested > 0
-    ? Math.min(100, Math.max(0, Number(progress.percent ?? Math.round((Number(progress.generated || 0) / requested) * 100))))
+    ? Math.min(100, Math.max(0, Number(progress.percent ?? Math.round((generated / requested) * 100))))
     : Number(progress.percent || 0);
+  if (staffBatchGenStatus === 'generating' && requested > 0) {
+    setBatchGenerationProgress(generated, requested, message);
+    return;
+  }
   setGenProgressUi(percent, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
   setGenProgressUi(percent, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
 }
@@ -1462,6 +1516,21 @@ function showDraftGeneratingDifficulty(course, batchIndex, batchTotal, difficult
   bootstrap.Modal.getOrCreateInstance(document.getElementById('draftModal')).show();
 }
 
+function showBatchSliceGroupStepComplete(course, planIndex, batchTotal, difficulty, targetCount, groupsDone, groupsTotal, gotSoFar) {
+  const code = course?.code || '';
+  const batchNum = planIndex + 1;
+  const nextGroup = Math.min(groupsTotal, groupsDone + 1);
+  document.getElementById('draftModalTitle').textContent = `Generating · ${code}`;
+  document.getElementById('draftModalHint').textContent = `Batch ${batchNum} of ${batchTotal} · ${difficulty} · ${gotSoFar} / ${targetCount}`;
+  document.getElementById('draftModalBody').innerHTML = `
+    <div class="p-3 text-center">
+      <p class="text-success mb-2"><i class="bi bi-check-circle-fill me-1"></i>Group ${groupsDone} of ${groupsTotal} finished</p>
+      <p class="text-muted mb-0 small">${gotSoFar} of ${targetCount} questions ready on the server — starting group ${nextGroup} of ${groupsTotal}…</p>
+      <div class="spinner-border spinner-border-sm text-primary mt-3" role="status" aria-hidden="true"></div>
+    </div>`;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('draftModal')).show();
+}
+
 function showBatchSliceGroupGenerating(course, planIndex, batchTotal, difficulty, targetCount, groupNum, groupsTotal, hint) {
   const code = course?.code || '';
   const batchNum = planIndex + 1;
@@ -1472,7 +1541,9 @@ function showBatchSliceGroupGenerating(course, planIndex, batchTotal, difficulty
     <div class="p-3 text-center">
       <div class="spinner-border text-primary mb-3" role="status" aria-hidden="true"></div>
       <p class="text-muted mb-0">Running group ${groupNum} of ${groupsTotal} on the server (${targetCount} ${difficulty} total)…</p>
-      <p class="small text-muted-2 mt-2 mb-0">Each group usually takes 30–60 seconds. Questions appear when this batch is complete.</p>
+      <p class="small text-muted-2 mt-2 mb-0">${groupNum > 1
+        ? 'The next group can take a bit longer while the AI avoids repeating earlier questions. Usually 30–60 seconds.'
+        : 'Each group usually takes 30–60 seconds. Questions appear when this batch is complete.'}</p>
     </div>`;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('draftModal')).show();
   updateDraftModalFooter({ difficultyBatchMode: true, generating: true, generationStatus: 'generating' });
@@ -1588,8 +1659,10 @@ async function runDifficultyBatch(planIndex, retry = false) {
   const groupsTotal = Math.max(1, Math.ceil(entry.count / 5));
   const maxSliceRounds = Math.max(groupsTotal * 4, 12);
   stopStaffGenProgressPoll();
+  stopSliceWaitProgress();
   stopGenProgress(false);
   showDifficultyBatchProgressUi();
+  if (ctx.progressKey) startStaffGenProgressPoll(ctx.progressKey);
   staffBatchGenStatus = 'generating';
   staffBatchSaveStatus = 'idle';
   staffPendingNextBatchIndex = null;
@@ -1597,34 +1670,40 @@ async function runDifficultyBatch(planIndex, retry = false) {
   const batchLabel = `Generating batch ${planIndex + 1} of ${batchTotal}… ${entry.difficulty} → ${entry.count} questions`;
   status.textContent = batchLabel;
   setBatchGenerationProgress(0, entry.count, batchLabel);
-  showDraftGeneratingDifficulty(course, planIndex, batchTotal, entry.difficulty, entry.count);
 
-  /** Group 1 → group 2 → … until entry.count; questions UI only after batchGenerationFulfilled. */
+  /** Group 1 → group 2 → … until entry.count; show cards only when the full batch count is met. */
   let payload = null;
   let res = null;
   let stallRounds = 0;
-  for (let round = 0; round < maxSliceRounds; round++) {
-    const beforeCount = payload ? batchPayloadAccumulatedCount(payload) : 0;
-    if (round > 0 && payload && !batchNeedsMoreSliceRequests(payload, entry.count)) break;
-    if (payload && batchGenerationFulfilled(payload)) break;
+  let got = 0;
+  let sliceAttempt = 0;
+  ctx.accumulatedQuestions = [];
 
-    const isContinue = round > 0;
-    const groupNum = Math.min(groupsTotal, Math.floor(beforeCount / 5) + 1);
-    if (isContinue) {
-      const fillLabel = `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · group ${groupNum} of ${groupsTotal} · ${beforeCount} / ${entry.count}`;
+  while (got < entry.count && sliceAttempt < maxSliceRounds) {
+    sliceAttempt += 1;
+    const isContinue = got > 0;
+    const groupNum = Math.min(groupsTotal, Math.floor(got / 5) + 1);
+    let fillLabel = '';
+    if (!isContinue) {
+      showDraftGeneratingDifficulty(course, planIndex, batchTotal, entry.difficulty, entry.count);
+    } else {
+      fillLabel = `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · group ${groupNum} of ${groupsTotal} · ${got} / ${entry.count}`;
       status.textContent = fillLabel;
-      setBatchGenerationProgress(beforeCount, entry.count, fillLabel);
+      setBatchGenerationProgress(got, entry.count, fillLabel);
       showBatchSliceGroupGenerating(course, planIndex, batchTotal, entry.difficulty, entry.count, groupNum, groupsTotal, fillLabel);
+      startSliceWaitProgress(got, entry.count, fillLabel);
     }
 
     staffBatchGenStatus = 'generating';
     staffGenerationActive = true;
     try {
-      res = isContinue
-        ? await postDifficultyBatchRequestResilient(planIndex, { continueFill: true })
-        : await postDifficultyBatchRequestResilient(planIndex, { retry });
+      res = await postDifficultyBatchRequestResilient(planIndex, {
+        continueFill: isContinue,
+        retry: retry && sliceAttempt === 1 && !isContinue,
+      });
     } catch (err) {
-      if (round === 0) {
+      stopSliceWaitProgress();
+      if (sliceAttempt === 1 && !isContinue) {
         staffBatchGenStatus = 'error';
         staffGenerationActive = false;
         throw err;
@@ -1633,8 +1712,10 @@ async function runDifficultyBatch(planIndex, retry = false) {
       if (stallRounds >= 5) break;
       continue;
     }
+    stopSliceWaitProgress();
+
     if (!res?.success) {
-      if (round === 0) {
+      if (sliceAttempt === 1 && !isContinue) {
         staffBatchGenStatus = 'error';
         staffGenerationActive = false;
         throw new Error(res?.message || 'Could not generate questions.');
@@ -1648,40 +1729,44 @@ async function runDifficultyBatch(planIndex, retry = false) {
     }
 
     ctx.sessionId = res.data?.sessionId || ctx.sessionId;
-    payload = normalizeBatchPayload(res.data, mixes);
+    stashAccumulatedBatchQuestions(res.data);
+    payload = mergeAccumulatedQuestionsIntoPayload(normalizeBatchPayload(res.data, mixes), entry.count);
     if (!batchGenerationFulfilled(payload) && batchPayloadAccumulatedCount(payload) < entry.count) {
       payload.needsContinueFill = true;
-      payload.continueRequired = res.data?.continueRequired !== false;
+      payload.continueRequired = true;
     }
-    const afterCount = batchPayloadAccumulatedCount(payload);
-    const progressLabel = afterCount >= entry.count
-      ? `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${afterCount} / ${entry.count} · complete`
-      : `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${afterCount} / ${entry.count}`;
-    setBatchGenerationProgress(afterCount, entry.count, progressLabel);
 
-    if (isContinue && afterCount <= beforeCount) {
+    const prevGot = got;
+    got = batchPayloadAccumulatedCount(payload);
+    const progressLabel = got >= entry.count
+      ? `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${got} / ${entry.count} · complete`
+      : `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${got} / ${entry.count}`;
+    setBatchGenerationProgress(got, entry.count, progressLabel);
+
+    if (got >= entry.count || batchGenerationFulfilled(payload)) {
+      payload = mergeAccumulatedQuestionsIntoPayload(payload, entry.count);
+      break;
+    }
+
+    if (got <= prevGot) {
       stallRounds += 1;
       if (stallRounds >= 6) break;
-    } else if (afterCount > beforeCount) {
-      stallRounds = 0;
-    }
-
-    if (batchGenerationFulfilled(payload)) break;
-    if (batchNeedsMoreSliceRequests(payload, entry.count) && round + 1 < maxSliceRounds) {
-      const nextGroup = Math.min(groupsTotal, Math.floor(afterCount / 5) + 1);
-      showBatchSliceGroupGenerating(
-        course,
-        planIndex,
-        batchTotal,
-        entry.difficulty,
-        entry.count,
-        nextGroup,
-        groupsTotal,
-        `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · group ${nextGroup} of ${groupsTotal} (server)…`
-      );
       continue;
     }
-    break;
+    stallRounds = 0;
+
+    const groupsDone = Math.min(groupsTotal, Math.ceil(got / 5));
+    showBatchSliceGroupStepComplete(
+      course,
+      planIndex,
+      batchTotal,
+      entry.difficulty,
+      entry.count,
+      groupsDone,
+      groupsTotal,
+      got
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
   }
   if (typeof console !== 'undefined' && typeof console.log === 'function') {
     console.log('Requested difficulty:', entry.difficulty);
@@ -1689,6 +1774,7 @@ async function runDifficultyBatch(planIndex, retry = false) {
     console.log('Generated questions:', batchPayloadAccumulatedCount(payload));
   }
   if (batchGenerationFulfilled(payload)) {
+    payload = mergeAccumulatedQuestionsIntoPayload(payload, entry.count);
     staffBatchGenStatus = 'completed';
     payload.generationStatus = 'completed';
     payload.generating = false;
@@ -1705,6 +1791,7 @@ async function runDifficultyBatch(planIndex, retry = false) {
     payload.needsContinueFill = false;
     payload.generating = false;
   }
+  stopSliceWaitProgress();
   markBatchGenerationComplete(planIndex, entry, payload);
   if (batchGenerationFulfilled(payload)) {
     finishGenProgress();
@@ -1729,7 +1816,8 @@ async function runDifficultyBatch(planIndex, retry = false) {
     updateDraftModalFooter(payload);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('draftModal')).show();
   } else if (batchGenerationFulfilled(payload)) {
-    renderPractice(payload);
+    practice = mergeAccumulatedQuestionsIntoPayload(payload, entry.count);
+    renderPractice(practice);
     updateDraftModalFooter(practice);
   } else {
     const got = batchPayloadAccumulatedCount(payload);

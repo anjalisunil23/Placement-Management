@@ -592,8 +592,11 @@ final class StaffCourseQuestionService
                 $planForContinue = is_array($draft['genState']['batchPlan'] ?? null) ? $draft['genState']['batchPlan'] : $batchPlan;
                 $plannedCount = (int) ($planForContinue[$batchIndex]['count'] ?? 0);
                 $haveCount = count(is_array($draft['questions'] ?? null) ? $draft['questions'] : []);
-                if ($plannedCount < 1 || $haveCount >= $plannedCount) {
-                    throw new \InvalidArgumentException('This batch already has the requested number of questions.');
+                if ($plannedCount >= 1 && $haveCount >= $plannedCount) {
+                    return $this->releaseDifficultyBatchFromDraft($draft, $sessionId, $batchIndex, $batchPlan);
+                }
+                if ($plannedCount < 1) {
+                    throw new \InvalidArgumentException('Invalid batch size for continue fill.');
                 }
                 $draft['generating'] = true;
                 $this->persistGenerationDraft($draft);
@@ -622,7 +625,11 @@ final class StaffCourseQuestionService
         $isContinueFill = !empty($body['continueDifficultyBatch']);
         /** @var array<string, true> $promptKeys */
         $promptKeys = $this->promptKeysForSession($selected);
-        $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
+        $genStateRef = is_array($draft['genState'] ?? null) ? $draft['genState'] : [];
+        $bankAvoid = trim((string) ($genStateRef['bankAvoidCache'] ?? ''));
+        if ($bankAvoid === '') {
+            $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
+        }
 
         $chunk = [$batchPlan[$batchIndex]];
         $currentDifficulty = (string) ($chunk[0]['difficulty'] ?? 'Medium');
@@ -674,9 +681,10 @@ final class StaffCourseQuestionService
         $completedSliceGroups = 0;
         try {
             $emptyChunkStreak = 0;
-            $allowExtraForSlice = $isContinueFill || $startingHave > 0;
-            // One primary OpenAI call per HTTP (+ one retry if empty) to stay under ~60s proxy limits.
-            $maxFetchAttemptsPerSlice = 2;
+            // One primary OpenAI call per HTTP (+ retries if empty) to stay under ~60s proxy limits.
+            $maxFetchAttemptsPerSlice = ($isContinueFill && $shortfallAtStart > 0 && $shortfallAtStart <= self::DIFFICULTY_BATCH_AI_SLICE)
+                ? 3
+                : 2;
             while ($completedSliceGroups < $maxSliceGroups) {
                 if ($this->mixShortfall($chunk, $selected) === []) {
                     break;
@@ -729,6 +737,7 @@ final class StaffCourseQuestionService
                     }
                     $mixText = $this->mixLinesText($chunkShortfall);
                     $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                    // Continue slices already pass group-1 stems in $avoid; "generate extra" prompts are slower.
                     $part = $this->fetchQuestionBatch(
                         $course,
                         $syllabus,
@@ -739,7 +748,7 @@ final class StaffCourseQuestionService
                         $avoid,
                         $selected,
                         $promptKeys,
-                        $allowExtraForSlice
+                        $fetchAttempts > 0
                     );
                     $fetchAttempts++;
                     if ($part === []) {
@@ -817,6 +826,9 @@ final class StaffCourseQuestionService
         unset($draft['genState']['readyForBatchIndex']);
         $draft['genState']['sliceGroupsTotal'] = $sliceGroupsTotal;
         $draft['genState']['accumulatedCount'] = $gotForBatch;
+        if ($bankAvoid !== '') {
+            $draft['genState']['bankAvoidCache'] = $bankAvoid;
+        }
         $draft['createdAt'] = time();
         $this->persistGenerationDraft($draft);
 
@@ -859,6 +871,7 @@ final class StaffCourseQuestionService
             'courseTitle' => (string) ($course['title'] ?? ''),
             'mixes' => $mixes,
             'requested' => $chunkTotal,
+            'accumulatedQuestions' => $display,
             'questions' => $releaseQuestions ? $display : [],
             'batchQuestions' => $releaseQuestions ? $display : [],
             'accumulatedCount' => $gotForBatch,
@@ -881,6 +894,64 @@ final class StaffCourseQuestionService
             'sliceGroupsTotal' => $sliceGroupsTotal,
             'sliceGroupsCompleted' => $this->difficultyBatchSliceGroupsForCount($gotForBatch),
             'sliceGroupHandled' => $sliceGroupHandled,
+        ]);
+    }
+
+    /**
+     * Return current draft batch state (used when continue is called but the batch is already full).
+     *
+     * @param array<string, mixed> $draft
+     * @param list<array{difficulty:string,count:int}> $batchPlan
+     * @return array<string, mixed>
+     */
+    private function releaseDifficultyBatchFromDraft(array $draft, string $sessionId, int $batchIndex, array $batchPlan): array
+    {
+        $batchTotal = count($batchPlan);
+        $chunk = [$batchPlan[$batchIndex] ?? ['difficulty' => 'Medium', 'count' => 0]];
+        $chunkTotal = (int) ($chunk[0]['count'] ?? 0);
+        $currentDifficulty = (string) ($chunk[0]['difficulty'] ?? 'Medium');
+        $countByLabel = is_array($draft['genState']['counts'] ?? null)
+            ? $draft['genState']['counts']
+            : ['Easy' => 0, 'Medium' => 0, 'Hard' => 0];
+        $mixes = $this->mixesFromCountByLabel($countByLabel);
+        $courseCode = (string) ($draft['course']['code'] ?? '');
+        $batchQuestions = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
+        $display = $this->assignDraftIndexes($this->capQuestionsToMixes($batchQuestions, $chunk));
+        $gotForBatch = count($display);
+        $fulfilled = $chunkTotal > 0 && $gotForBatch >= $chunkTotal;
+        $sliceGroupsTotal = $this->difficultyBatchSliceGroupsForCount($chunkTotal);
+        $completed = is_array($draft['genState']['completedDifficulties'] ?? null)
+            ? $draft['genState']['completedDifficulties'] : [];
+
+        return $this->releaseSessionAndReturn([
+            'sessionId' => $sessionId,
+            'courseCode' => $courseCode,
+            'courseTitle' => (string) ($draft['course']['title'] ?? ''),
+            'mixes' => $mixes,
+            'requested' => $chunkTotal,
+            'accumulatedQuestions' => $display,
+            'questions' => $fulfilled ? $display : [],
+            'batchQuestions' => $fulfilled ? $display : [],
+            'accumulatedCount' => $gotForBatch,
+            'batchDisplayReady' => $fulfilled,
+            'batchIndex' => $batchIndex,
+            'batchTotal' => $batchTotal,
+            'currentDifficulty' => $currentDifficulty,
+            'completedDifficulties' => $completed,
+            'counts' => $countByLabel,
+            'generating' => false,
+            'awaitingBankSave' => $fulfilled,
+            'needsContinueFill' => !$fulfilled && $chunkTotal > $gotForBatch,
+            'continueRequired' => !$fulfilled && $chunkTotal > $gotForBatch,
+            'difficultyBatchMode' => true,
+            'batchComplete' => false,
+            'fulfilled' => $fulfilled,
+            'generationFailedPartial' => $gotForBatch > 0 && $gotForBatch < $chunkTotal,
+            'generationFailedEmpty' => $gotForBatch === 0 && $chunkTotal > 0,
+            'generationStatus' => $gotForBatch <= 0 ? 'error' : ($fulfilled ? 'completed' : 'partial'),
+            'sliceGroupsTotal' => $sliceGroupsTotal,
+            'sliceGroupsCompleted' => $this->difficultyBatchSliceGroupsForCount($gotForBatch),
+            'sliceGroupHandled' => $this->difficultyBatchSliceGroupsForCount($gotForBatch),
         ]);
     }
 

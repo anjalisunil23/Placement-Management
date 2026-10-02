@@ -874,7 +874,7 @@ final class StaffController
         try {
             $result = (new StaffCourseQuestionService())->generateBatch($user, $body);
             $requested = (int) ($result['requested'] ?? 0);
-            $got = count($result['questions'] ?? []);
+            $got = (int) ($result['accumulatedCount'] ?? count($result['questions'] ?? []));
             $batchNum = (int) ($result['batchIndex'] ?? 0) + 1;
             $batchTotal = (int) ($result['batchTotal'] ?? 1);
             $complete = !empty($result['batchComplete']);

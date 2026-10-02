@@ -88,6 +88,13 @@ const NAV = [
         roles: ['admin', 'placement_officer', 'student'],
         children: [],
       },
+      {
+        group: "tutorials",
+        label: "Tutorials",
+        href: "tutorials.html",
+        roles: ['admin', 'placement_officer', 'student', 'staff'],
+        children: [],
+      },
     ],
   },
   { href: "staff-courses.html", icon: "bi-journal-richtext", label: "Autonomous MCQ", roles: ['admin', 'placement_officer', 'staff'], staffSyllabus: true },
@@ -177,6 +184,7 @@ const PAGE_LABELS = {
   'coding.html#progress': 'Practice · Coding · Progress',
   'coding.html#manage': 'Practice · Coding · Manage',
   'certifications.html': 'Practice · Certification',
+  'tutorials.html': 'Practice · Tutorials',
 };
 
 function initials(name = '') {
@@ -409,6 +417,7 @@ function navItemVisible(n, role) {
   }
   if (n.studentOnly && role !== 'student') return false;
   if (!n.roles.includes(role)) return false;
+  if (n.hodOnly && (typeof Auth === 'undefined' || typeof Auth.isHod !== 'function' || !Auth.isHod())) return false;
   if (n.staffViewerOnly) {
     if (role === 'staff') return typeof Auth !== 'undefined' && Auth.canViewPlacementAdminData();
     // Admin/PO entries that also list staff still show for admin/PO.

@@ -16,7 +16,7 @@ function pms_load_backend_services(string $backendDir): void
         require_once $serviceFile;
     }
 
-    foreach (['WandboxExecutionClient.php', 'PistonExecutionClient.php'] as $serviceFile) {
+    foreach (['PistonExecutionClient.php', 'CodingExecutionConfig.php'] as $serviceFile) {
         $class = 'PMS\\Services\\' . basename($serviceFile, '.php');
         if (class_exists($class, false)) {
             continue;

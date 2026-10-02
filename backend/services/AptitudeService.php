@@ -1146,7 +1146,7 @@ final class AptitudeService
         // Query only attempts in the viewer's authorized subject set (not a general dump).
         $completed = $this->attempts->completed(
             array_merge(
-            array_diff_key($dbFilter, ['status' => true]),
+                array_diff_key($dbFilter, ['status' => true]),
                 $this->attemptFiltersFromDirectoryFilters($filters)
             ),
             2000
@@ -3023,7 +3023,7 @@ final class AptitudeService
             if (!$useTimeTiebreak || $row['timeTakenSeconds'] >= $timeTakenSeconds) {
                 $rank = $i + 1;
                 break;
-        }
+            }
         }
         $better = 0;
         foreach ($rows as $row) {
@@ -3693,7 +3693,7 @@ final class AptitudeService
 
         $history = [];
         if ($includeHistory) {
-        foreach ($completed as $a) {
+            foreach ($completed as $a) {
                 $history[] = $this->publicAttempt($a, '', '', $historyViewer);
             }
         }
@@ -3925,20 +3925,20 @@ final class AptitudeService
         if ($classBatch !== '') {
             $rowClass = trim((string) ($summary['classBatch'] ?? ''));
             if ($rowClass === '' || !self::classLabelMatches($rowClass, $classBatch)) {
-            return false;
-        }
+                return false;
+            }
         } else {
             if ($departmentId !== '' && !$this->idsEqual((string) ($summary['departmentId'] ?? ''), $departmentId)) {
-            return false;
-        }
+                return false;
+            }
             if ($course !== '' && !self::courseLabelMatches(
                 (string) ($summary['course'] ?? ''),
                 $course,
                 (string) ($summary['classBatch'] ?? ''),
                 (string) ($summary['programme'] ?? '')
             )) {
-            return false;
-        }
+                return false;
+            }
         }
         if ($semester !== '' && strcasecmp((string) ($summary['semester'] ?? ''), $semester) !== 0) {
             return false;

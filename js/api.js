@@ -519,12 +519,13 @@ const PAGE_PERMS = {
   'aptitude-training.html': ['admin','placement_officer','student','staff'],
   'coding.html':            ['admin','placement_officer','student','staff'],
   'certifications.html':    ['admin','placement_officer','student'],
+  'tutorials.html':         ['admin','placement_officer','staff','student'],
 };
 
 const ALUMNI_EMPLOYED_PAGES = ['dashboard.html', 'alumni-jobs.html', 'alumni-referrals.html', 'alumni-success-stories.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const ALUMNI_SEEKING_PAGES = ['dashboard.html', 'drives.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html'];
 const COMPANY_PAGES = ['dashboard.html', 'company.html', 'applicants.html', 'notifications.html', 'settings.html'];
-const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'staff-courses.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'aptitude-training.html', 'coding.html'];
+const STAFF_PAGES = ['dashboard.html', 'staff-recommend.html', 'staff-jobs.html', 'staff-placements.html', 'staff-courses.html', 'drives.html', 'students.html', 'job-posts.html', 'settings.html', 'notifications.html', 'public-stats.html', 'aptitude-training.html', 'coding.html', 'tutorials.html'];
 const STAFF_VIEW_ONLY_PAGES = ['admin-companies.html', 'reports.html'];
 const STUDENT_PAGES = ['dashboard.html', 'drives.html', 'get-placed.html', 'job-posts.html', 'internal-jobs.html', 'notifications.html', 'settings.html', 'placement-registration.html', 'aptitude-training.html', 'coding.html', 'certifications.html', 'tutorials.html', 'autonomous-mcq.html'];
 
@@ -978,9 +979,7 @@ const Auth = {
     if (role === 'company') return COMPANY_PAGES.includes(base);
     if (role === 'staff') {
       if (STAFF_VIEW_ONLY_PAGES.includes(base)) return this.canViewPlacementAdminData();
-      if (STAFF_PAGES.includes(base)) return true;
-      const pageRoles = PAGE_PERMS[base];
-      return Array.isArray(pageRoles) && pageRoles.includes('staff');
+      return STAFF_PAGES.includes(base);
     }
     if (role === 'student') {
       if (studentNeedsPlacementRegistration()) {
