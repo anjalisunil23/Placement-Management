@@ -978,7 +978,9 @@ const Auth = {
     if (role === 'company') return COMPANY_PAGES.includes(base);
     if (role === 'staff') {
       if (STAFF_VIEW_ONLY_PAGES.includes(base)) return this.canViewPlacementAdminData();
-      return STAFF_PAGES.includes(base);
+      if (STAFF_PAGES.includes(base)) return true;
+      const pageRoles = PAGE_PERMS[base];
+      return Array.isArray(pageRoles) && pageRoles.includes('staff');
     }
     if (role === 'student') {
       if (studentNeedsPlacementRegistration()) {
