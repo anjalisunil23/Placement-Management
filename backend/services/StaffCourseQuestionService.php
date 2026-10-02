@@ -22,9 +22,9 @@ final class StaffCourseQuestionService
     /** Max OpenAI calls per HTTP top-up request (shared-host proxy limits). */
     private const BATCH_TOPUP_MAX_API_CALLS = 8;
     /** Max OpenAI calls while filling one syllabus chunk inside a batch request. */
-    private const BATCH_CHUNK_MAX_API_CALLS = 12;
+    private const BATCH_CHUNK_MAX_API_CALLS = 6;
     /** Wall clock per batch/top-up HTTP request (stay under typical LiteSpeed ~60s). */
-    private const BATCH_REQUEST_WALL_SECONDS = 52;
+    private const BATCH_REQUEST_WALL_SECONDS = 48;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
     /** Enough for one batched pass + shortfall top-ups without exceeding shared-host timeouts. */
     private const GENERATE_MAX_API_CALLS = 18;
@@ -398,9 +398,11 @@ final class StaffCourseQuestionService
 
         $selected = $this->assignDraftIndexes($selected);
         $isLastBatch = ($batchIndex + 1) >= $batchTotal;
+        $chunkComplete = $this->mixShortfall($chunk, $selected) === [];
 
         if (!$isLastBatch) {
-            $this->saveGeneratingDraftState($sessionId, $selected, $batchIndex + 1, null);
+            $nextBatchIndex = $chunkComplete ? $batchIndex + 1 : $batchIndex;
+            $this->saveGeneratingDraftState($sessionId, $selected, $nextBatchIndex, null);
 
             return $this->releaseSessionAndReturn([
                 'sessionId' => $sessionId,
@@ -412,58 +414,14 @@ final class StaffCourseQuestionService
                 'batchQuestions' => $batchQuestions,
                 'batchIndex' => $batchIndex,
                 'batchTotal' => $batchTotal,
-                'nextBatchIndex' => $batchIndex + 1,
+                'nextBatchIndex' => $nextBatchIndex,
+                'chunkComplete' => $chunkComplete,
                 'generating' => true,
                 'batchComplete' => false,
             ]);
         }
 
         $this->saveGeneratingDraftState($sessionId, $selected, $batchTotal, 'topup');
-
-        if ($this->mixShortfall($mixes, $selected) !== []) {
-            $requestDeadline = microtime(true) + self::BATCH_REQUEST_WALL_SECONDS;
-            if (!isset($deadline) || $deadline <= 0 || $deadline > $requestDeadline) {
-                $deadline = $requestDeadline;
-            }
-            $inlineTopUpCalls = 0;
-            $wasActiveInline = session_status() === PHP_SESSION_ACTIVE;
-            if ($wasActiveInline) {
-                session_write_close();
-            }
-            try {
-                $selected = $this->fillMixShortfalls(
-                    $course,
-                    $syllabus,
-                    $system,
-                    $mixes,
-                    $bankAvoid,
-                    $promptKeys,
-                    $selected,
-                    $inlineTopUpCalls,
-                    $progressKey,
-                    $total,
-                    $deadline,
-                    4
-                );
-            } finally {
-                if ($wasActiveInline && session_status() !== PHP_SESSION_ACTIVE) {
-                    Security::startSession(false);
-                }
-            }
-            if ($sessionId !== '') {
-                $this->hydrateGenerationDraft($sessionId);
-            }
-            $selected = $this->assignDraftIndexes($selected);
-            $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
-            $draft['questions'] = $selected;
-            $draft['generating'] = true;
-            if (!isset($draft['genState']) || !is_array($draft['genState'])) {
-                $draft['genState'] = [];
-            }
-            $draft['genState']['phase'] = 'topup';
-            $draft['genState']['topUpStalls'] = 0;
-            $this->persistGenerationDraft($draft);
-        }
 
         if ($this->mixShortfall($mixes, $this->selectionForMixCheck($selected, $mixes)) === []) {
             return $this->finalizeGenerationDraft(
@@ -479,7 +437,7 @@ final class StaffCourseQuestionService
             );
         }
 
-        return $this->resumeGenerationTopUp(
+        $payload = $this->resumeGenerationTopUp(
             $sessionId,
             $course,
             $mixes,
@@ -491,6 +449,9 @@ final class StaffCourseQuestionService
             $batchQuestions,
             0
         );
+        $payload['chunkComplete'] = $chunkComplete;
+
+        return $payload;
     }
 
     /**
