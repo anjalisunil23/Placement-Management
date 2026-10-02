@@ -17,6 +17,8 @@ final class AesApiService
     private string $authKey;
     private string $refHost;
     private bool $sslVerify;
+    private int $curlTimeout;
+    private int $curlConnectTimeout;
 
     /** @var list<array{code:string,name:string,short:string}>|null */
     private static ?array $departmentCache = null;
@@ -46,6 +48,8 @@ final class AesApiService
         $this->refHost = trim((string) ($aes['ref_host'] ?? ''));
         $sslVerify = $aes['ssl_verify'] ?? true;
         $this->sslVerify = is_bool($sslVerify) ? $sslVerify : filter_var((string) $sslVerify, FILTER_VALIDATE_BOOLEAN);
+        $this->curlTimeout = max(15, min(120, (int) ($aes['curl_timeout'] ?? 45)));
+        $this->curlConnectTimeout = max(5, min(30, (int) ($aes['curl_connect_timeout'] ?? 12)));
     }
 
     /**
@@ -71,6 +75,39 @@ final class AesApiService
      */
     private function executeAesCurl(string $url, ?string $postBody, string $httpMethod = 'POST', array $extraHeaders = []): array
     {
+        $last = [
+            'success' => false,
+            'status'  => 0,
+            'error'   => 'AES request failed.',
+        ];
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $timeout = $this->curlTimeout + ($attempt > 0 ? 15 : 0);
+            $last = $this->executeAesCurlOnce($url, $postBody, $httpMethod, $extraHeaders, $timeout);
+            if (!empty($last['success'])) {
+                return $last;
+            }
+            $err = strtolower((string) ($last['error'] ?? ''));
+            if ($attempt === 0 && (str_contains($err, 'timed out') || str_contains($err, 'timeout'))) {
+                usleep(400000);
+                continue;
+            }
+            break;
+        }
+
+        return $last;
+    }
+
+    /**
+     * @param list<string> $extraHeaders
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
+    private function executeAesCurlOnce(
+        string $url,
+        ?string $postBody,
+        string $httpMethod,
+        array $extraHeaders,
+        int $timeoutSec
+    ): array {
         $ch = curl_init();
         if ($ch === false) {
             return [
@@ -83,8 +120,8 @@ final class AesApiService
         $options = [
             CURLOPT_URL            => $url,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 15,
-            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_TIMEOUT        => max(15, $timeoutSec),
+            CURLOPT_CONNECTTIMEOUT => $this->curlConnectTimeout,
             CURLOPT_SSL_VERIFYPEER => $this->sslVerify,
             CURLOPT_HTTPHEADER     => array_merge([
                 'Accept: application/json, */*;q=0.1',
@@ -111,10 +148,20 @@ final class AesApiService
         curl_close($ch);
 
         if ($response === false) {
+            $message = trim($curlErr);
+            if ($message !== '' && str_contains(strtolower($message), 'timed out')) {
+                $message = 'AES institute API timed out after ' . max(15, $timeoutSec)
+                    . ' seconds with no response. Wait a moment and try again.';
+            } elseif ($message !== '') {
+                $message = 'cURL error: ' . $message;
+            } else {
+                $message = 'Could not reach the AES institute API.';
+            }
+
             return [
                 'success' => false,
                 'status'  => $statusCode ?: 0,
-                'error'   => 'cURL error: ' . $curlErr,
+                'error'   => $message,
             ];
         }
 

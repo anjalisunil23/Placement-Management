@@ -77,4 +77,7 @@ return [
     'api_origin' => $readEnv('AES_API_ORIGIN') ?: 'https://www.aesajce.in',
     'api_referer' => $readEnv('AES_API_REFERER') ?: 'https://www.aesajce.in/',
     'ssl_verify' => filter_var($readEnv('AES_SSL_VERIFY') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+    // api.aesajce.in can exceed 15s under load (course search, placement filters).
+    'curl_timeout' => max(15, min(120, (int) ($readEnv('AES_API_TIMEOUT') ?: 45))),
+    'curl_connect_timeout' => max(5, min(30, (int) ($readEnv('AES_API_CONNECT_TIMEOUT') ?: 12))),
 ];
