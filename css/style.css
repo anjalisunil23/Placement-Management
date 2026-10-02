@@ -77,21 +77,14 @@ html.ph-app-ready::after {
 }
 #hiringOverviewRoot.ph-hiring-loading {
   position: relative;
-  min-height: 12rem;
 }
-#hiringOverviewRoot.ph-hiring-loading::after {
-  content: 'Loading dashboard…';
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 3rem;
-  font-size: .875rem;
+#hiringOverviewRoot.ph-hiring-loading::before {
+  content: 'Updating live data…';
+  display: block;
+  font-size: .8125rem;
   color: var(--muted, #64748b);
-  background: color-mix(in srgb, var(--bg, #f8fafc) 82%, transparent);
+  margin-bottom: .75rem;
   pointer-events: none;
-  z-index: 2;
 }
 @keyframes ph-boot-spin {
   to { transform: rotate(360deg); }

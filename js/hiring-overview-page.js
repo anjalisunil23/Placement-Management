@@ -1368,10 +1368,14 @@
   HiringOverviewPage.prototype.$id = function (id) { return this.$(id); };
 
   HiringOverviewPage.prototype.renderForDept = function (dept) {
-    // Lite payload has no per-row applicants — always hydrate full recruiting for live dashboards
-    // so staff/officer (own dept) and campus View (selected dept/branch) can paint real KPIs.
+    // Lite payload has no per-row applicants — hydrate full recruiting when filtering campus-wide
+    // or when branch/status lists need rows. Officer/staff lite is already department-scoped.
     const batch = this.selectedBatch();
+    const deptScopedLite = !!(this.campusRecruitingData?.lite
+      && this.campusRecruitingData?.scope === 'department'
+      && !this.isCampusWideViewer());
     const needsFull = !!(this.campusRecruitingData?.lite && this.campusLive
+      && (!deptScopedLite || batch)
       && (dept || batch || !this.isCampusWideViewer()));
     if (needsFull) {
       const waitingOnCampusFilter = this.isCampusWideViewer() && !!(dept || batch);
@@ -1570,41 +1574,42 @@
       this.populateDeptSelect();
       DepartmentStore.fetch().then(() => this.populateDeptSelect()).catch(() => {});
 
+      const notifyFirstPaint = () => {
+        if (typeof opts.onFirstPaint === 'function') {
+          try { opts.onFirstPaint(); } catch (_) { /* ignore */ }
+        }
+      };
+
       // Instant seed from session/prefetch (sub-1s KPI paint).
       const seed = window.__phCachedHiringSeed || window.__phReadDashKpi?.(role);
       if (seed?.recruiting) {
         const seedStats = seed.stats || null;
         this.applyRecruitingData(seed.recruiting, seedStats);
-      }
-
-      // First paint / revalidate: ultra-lite recruiting + lite stats only.
-      if (this.campusLive) {
-        const staffCampus = this.isCampusWideViewer() && role === 'staff';
-        const dashOpts = staffCampus ? { lite: true, adminView: true } : { lite: true };
-        const fetchLite = Promise.all([
-          RecruitingStore.fetch({ lite: true }).catch(() => null),
-          dashboardStats(dashOpts).catch(() => null),
-        ]);
-        const [liteData, liteStats] = await Promise.race([
-          fetchLite,
-          new Promise((resolve) => window.setTimeout(() => resolve([null, null]), 12000)),
-        ]);
-        if (liteData) {
-          this.applyRecruitingData(liteData, liteStats);
-          try {
-            window.__phWriteDashKpi?.(staffCampus ? 'admin' : role, { recruiting: liteData, stats: liteStats });
-          } catch (_) { /* ignore */ }
-        } else if (!seed?.recruiting) {
-          this.updateLiveBadge();
-          this.configurePageForRole(role);
-          this.setDeptUI(this.selectedDept());
-          this.renderForDept(this.selectedDept());
-        }
+        notifyFirstPaint();
       } else {
         this.updateLiveBadge();
         this.configurePageForRole(role);
         this.setDeptUI(this.selectedDept());
         this.renderForDept(this.selectedDept());
+        notifyFirstPaint();
+      }
+
+      // Revalidate in background — do not block dashboard interactivity.
+      if (this.campusLive) {
+        const staffCampus = this.isCampusWideViewer() && role === 'staff';
+        const dashOpts = staffCampus ? { lite: true, adminView: true } : { lite: true };
+        Promise.all([
+          RecruitingStore.fetch({ lite: true }).catch(() => null),
+          dashboardStats(dashOpts).catch(() => null),
+        ]).then(([liteData, liteStats]) => {
+          if (liteData) {
+            this.applyRecruitingData(liteData, liteStats);
+            notifyFirstPaint();
+            try {
+              window.__phWriteDashKpi?.(staffCampus ? 'admin' : role, { recruiting: liteData, stats: liteStats });
+            } catch (_) { /* ignore */ }
+          }
+        }).catch(() => {});
       }
 
       // Background: full applicant rows + stats (lite cannot filter by dept/branch).
