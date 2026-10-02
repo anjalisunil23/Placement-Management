@@ -837,6 +837,9 @@ final class StaffController
     {
         RBACMiddleware::requireSyllabusAccess();
         $key = (string) ($_GET['key'] ?? '');
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
         $progress = StaffCourseQuestionService::readGenerationProgress($key);
         if ($progress === null) {
             Response::success(['active' => false]);

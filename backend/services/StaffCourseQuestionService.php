@@ -7,6 +7,7 @@ namespace PMS\Services;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Models\SyllabusMcqTestModel;
 use PMS\Models\SyllabusQuestionBankModel;
+use PMS\Utils\Security;
 
 /**
  * Generates multiple-choice questions from the official syllabus PDF loaded with Get.
@@ -174,6 +175,10 @@ final class StaffCourseQuestionService
         $progressKey = self::sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
         $sessionId = trim((string) ($body['sessionId'] ?? ''));
 
+        if ($sessionId !== '') {
+            $this->hydrateGenerationDraft($sessionId);
+        }
+
         if ($sessionId !== '' && $batchIndex === 0) {
             $existing = $_SESSION['staff_course_draft'] ?? null;
             if (
@@ -250,10 +255,12 @@ final class StaffCourseQuestionService
                 'batchIndex' => 0,
                 'batchTotal' => $batchTotal,
             ]);
+            $this->persistGenerationDraft($_SESSION['staff_course_draft']);
         } else {
             if ($sessionId === '') {
                 throw new \InvalidArgumentException('Missing session for the next generation batch.');
             }
+            $this->hydrateGenerationDraft($sessionId);
             $draft = $this->requireGeneratingDraft($user, $sessionId, $batchIndex);
             $mixes = is_array($draft['mixes'] ?? null) ? $draft['mixes'] : $mixes;
             $total = $this->mixTotal($mixes);
@@ -308,8 +315,11 @@ final class StaffCourseQuestionService
             );
         } finally {
             if ($wasActive && session_status() !== PHP_SESSION_ACTIVE) {
-                session_start();
+                Security::startSession(false);
             }
+        }
+        if ($sessionId !== '') {
+            $this->hydrateGenerationDraft($sessionId);
         }
         if ($batchQuestions !== []) {
             $selected = $this->mergeQuestionLists($selected, $batchQuestions, $promptKeys);
@@ -338,11 +348,9 @@ final class StaffCourseQuestionService
         $isLastBatch = ($batchIndex + 1) >= $batchTotal;
 
         if (!$isLastBatch) {
-            $_SESSION['staff_course_draft']['questions'] = $selected;
-            $_SESSION['staff_course_draft']['genState']['nextBatchIndex'] = $batchIndex + 1;
-            $_SESSION['staff_course_draft']['createdAt'] = time();
+            $this->saveGeneratingDraftState($sessionId, $selected, $batchIndex + 1, null);
 
-            return [
+            return $this->releaseSessionAndReturn([
                 'sessionId' => $sessionId,
                 'courseCode' => $courseCode,
                 'courseTitle' => (string) ($course['title'] ?? ''),
@@ -355,13 +363,10 @@ final class StaffCourseQuestionService
                 'nextBatchIndex' => $batchIndex + 1,
                 'generating' => true,
                 'batchComplete' => false,
-            ];
+            ]);
         }
 
-        $_SESSION['staff_course_draft']['questions'] = $selected;
-        $_SESSION['staff_course_draft']['genState']['nextBatchIndex'] = $batchTotal;
-        $_SESSION['staff_course_draft']['genState']['phase'] = 'topup';
-        $_SESSION['staff_course_draft']['createdAt'] = time();
+        $this->saveGeneratingDraftState($sessionId, $selected, $batchTotal, 'topup');
 
         if ($this->mixShortfall($mixes, $selected) === []) {
             return $this->finalizeGenerationDraft(
@@ -384,7 +389,7 @@ final class StaffCourseQuestionService
             'Finishing counts… (' . count($selected) . ' / ' . $total . ')'
         );
 
-        return [
+        return $this->releaseSessionAndReturn([
             'sessionId' => $sessionId,
             'courseCode' => $courseCode,
             'courseTitle' => (string) ($course['title'] ?? ''),
@@ -397,7 +402,7 @@ final class StaffCourseQuestionService
             'generating' => true,
             'batchComplete' => false,
             'phase' => 'topup',
-        ];
+        ]);
     }
 
     /**
@@ -411,6 +416,7 @@ final class StaffCourseQuestionService
         if ($sessionId === '') {
             throw new \InvalidArgumentException('Missing session for generation top-up.');
         }
+        $this->hydrateGenerationDraft($sessionId);
         $draft = $this->requireDraft($user, $sessionId);
         if (empty($draft['generating']) || (string) ($draft['genState']['phase'] ?? '') !== 'topup') {
             throw new \InvalidArgumentException('No generation top-up is pending for this session.');
@@ -475,49 +481,81 @@ final class StaffCourseQuestionService
             );
         } finally {
             if ($wasActive && session_status() !== PHP_SESSION_ACTIVE) {
-                session_start();
+                Security::startSession(false);
             }
         }
+        $this->hydrateGenerationDraft($sessionId);
         $selected = $this->assignDraftIndexes($selected);
-        $_SESSION['staff_course_draft']['questions'] = $selected;
-        $_SESSION['staff_course_draft']['createdAt'] = time();
-
-        if ($this->mixShortfall($mixes, $selected) !== [] && $topUpCalls >= self::BATCH_TOPUP_MAX_API_CALLS) {
-            $got = count($selected);
-            $this->touchGenerationProgress(
-                $progressKey,
-                $got,
-                $total,
-                'Finishing counts… (' . $got . ' / ' . $total . ')'
-            );
-
-            return [
-                'sessionId' => $sessionId,
-                'courseCode' => $courseCode,
-                'courseTitle' => (string) ($course['title'] ?? ''),
-                'mixes' => $mixes,
-                'requested' => $total,
-                'questions' => $selected,
-                'batchQuestions' => [],
-                'batchIndex' => $batchIndex,
-                'batchTotal' => $batchTotal,
-                'generating' => true,
-                'batchComplete' => false,
-                'phase' => 'topup',
-            ];
+        $prevCount = count(is_array($draft['questions'] ?? null) ? $draft['questions'] : []);
+        $got = count($selected);
+        $stalls = (int) ($draft['genState']['topUpStalls'] ?? 0);
+        if ($got <= $prevCount) {
+            $stalls++;
+        } else {
+            $stalls = 0;
         }
 
-        return $this->finalizeGenerationDraft(
-            $sessionId,
-            $course,
-            $mixes,
-            $selected,
+        if ($this->mixShortfall($mixes, $selected) === []) {
+            return $this->finalizeGenerationDraft(
+                $sessionId,
+                $course,
+                $mixes,
+                $selected,
+                $progressKey,
+                $total,
+                $batchIndex,
+                $batchTotal,
+                []
+            );
+        }
+
+        $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
+        if (!isset($draft['genState']) || !is_array($draft['genState'])) {
+            $draft['genState'] = [];
+        }
+        $draft['genState']['topUpStalls'] = $stalls;
+        $draft['questions'] = $selected;
+        $draft['generating'] = true;
+        $draft['genState']['phase'] = 'topup';
+        $draft['genState']['nextBatchIndex'] = $batchTotal;
+        $draft['createdAt'] = time();
+        $this->persistGenerationDraft($draft);
+
+        if ($stalls >= 4) {
+            return $this->finalizeGenerationDraft(
+                $sessionId,
+                $course,
+                $mixes,
+                $selected,
+                $progressKey,
+                $total,
+                $batchIndex,
+                $batchTotal,
+                []
+            );
+        }
+
+        $this->touchGenerationProgress(
             $progressKey,
+            $got,
             $total,
-            $batchIndex,
-            $batchTotal,
-            []
+            'Finishing counts… (' . $got . ' / ' . $total . ')'
         );
+
+        return $this->releaseSessionAndReturn([
+            'sessionId' => $sessionId,
+            'courseCode' => $courseCode,
+            'courseTitle' => (string) ($course['title'] ?? ''),
+            'mixes' => $mixes,
+            'requested' => $total,
+            'questions' => $selected,
+            'batchQuestions' => [],
+            'batchIndex' => $batchIndex,
+            'batchTotal' => $batchTotal,
+            'generating' => true,
+            'batchComplete' => false,
+            'phase' => 'topup',
+        ]);
     }
 
     /**
@@ -544,12 +582,16 @@ final class StaffCourseQuestionService
         $got = count($selected);
         $courseCode = (string) ($course['code'] ?? '');
 
-        unset($_SESSION['staff_course_draft']['generating'], $_SESSION['staff_course_draft']['genState']);
-        $_SESSION['staff_course_draft']['questions'] = $selected;
-        $_SESSION['staff_course_draft']['createdAt'] = time();
+        $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
+        unset($draft['generating'], $draft['genState']);
+        $draft['questions'] = $selected;
+        $draft['createdAt'] = time();
+        $this->persistGenerationDraft($draft);
+        self::deleteGenerationDraftFile($sessionId);
 
         if ($selected === []) {
             unset($_SESSION['staff_course_draft']);
+            self::deleteGenerationDraftFile($sessionId);
             throw new \RuntimeException('AI did not return any usable questions. Please try again.');
         }
 
@@ -566,7 +608,9 @@ final class StaffCourseQuestionService
             'batchTotal' => $batchTotal,
         ]);
 
-        return [
+        $fulfilled = $got >= $total && $this->mixShortfall($mixes, $selected) === [];
+
+        return $this->releaseSessionAndReturn([
             'sessionId' => $sessionId,
             'courseCode' => $courseCode,
             'courseTitle' => (string) ($course['title'] ?? ''),
@@ -578,7 +622,83 @@ final class StaffCourseQuestionService
             'batchTotal' => $batchTotal,
             'generating' => false,
             'batchComplete' => true,
-        ];
+            'fulfilled' => $fulfilled,
+        ]);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $selected
+     */
+    private function saveGeneratingDraftState(string $sessionId, array $selected, int $nextBatchIndex, ?string $phase): void
+    {
+        $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
+        if ($draft === [] && $sessionId !== '') {
+            $fromDisk = self::readGenerationDraftFile($sessionId);
+            if (is_array($fromDisk)) {
+                $draft = $fromDisk;
+            }
+        }
+        $draft['questions'] = $selected;
+        if (!isset($draft['genState']) || !is_array($draft['genState'])) {
+            $draft['genState'] = [];
+        }
+        $draft['genState']['nextBatchIndex'] = $nextBatchIndex;
+        if ($phase !== null && $phase !== '') {
+            $draft['genState']['phase'] = $phase;
+        } else {
+            unset($draft['genState']['phase']);
+        }
+        $draft['generating'] = true;
+        $draft['createdAt'] = time();
+        $this->persistGenerationDraft($draft);
+    }
+
+    /**
+     * @param array<string, mixed> $draft
+     */
+    private function persistGenerationDraft(array $draft): void
+    {
+        $_SESSION['staff_course_draft'] = $draft;
+        $id = trim((string) ($draft['id'] ?? ''));
+        if ($id !== '') {
+            self::writeGenerationDraftFile($id, $draft);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function hydrateGenerationDraft(string $sessionId): ?array
+    {
+        $sessionId = self::sanitizeDraftSessionId($sessionId);
+        if ($sessionId === '') {
+            return null;
+        }
+        $disk = self::readGenerationDraftFile($sessionId);
+        if ($disk !== null) {
+            $_SESSION['staff_course_draft'] = $disk;
+
+            return $disk;
+        }
+        $draft = $_SESSION['staff_course_draft'] ?? null;
+        if (is_array($draft) && (string) ($draft['id'] ?? '') === $sessionId) {
+            return $draft;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function releaseSessionAndReturn(array $payload): array
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
+        return $payload;
     }
 
     /**
@@ -592,6 +712,7 @@ final class StaffCourseQuestionService
         if ($sessionId === '') {
             throw new \InvalidArgumentException('Missing generation session.');
         }
+        $this->hydrateGenerationDraft($sessionId);
         $draft = $this->requireDraft($user, $sessionId);
         if (empty($draft['generating'])) {
             return [
@@ -600,11 +721,11 @@ final class StaffCourseQuestionService
                 'questions' => is_array($draft['questions'] ?? null) ? $draft['questions'] : [],
             ];
         }
-        unset($_SESSION['staff_course_draft']['generating'], $_SESSION['staff_course_draft']['genState']);
-        $_SESSION['staff_course_draft']['createdAt'] = time();
-        $questions = is_array($_SESSION['staff_course_draft']['questions'] ?? null)
-            ? $_SESSION['staff_course_draft']['questions']
-            : [];
+        unset($draft['generating'], $draft['genState']);
+        $draft['createdAt'] = time();
+        $this->persistGenerationDraft($draft);
+        self::deleteGenerationDraftFile($sessionId);
+        $questions = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
 
         return [
             'sessionId' => $sessionId,
@@ -1244,7 +1365,8 @@ final class StaffCourseQuestionService
         if ($cached !== null) {
             $text = $cached;
         } else {
-            if (session_status() === PHP_SESSION_ACTIVE) {
+            $skipSessionClose = !empty($_SESSION['staff_course_draft']['generating']);
+            if (session_status() === PHP_SESSION_ACTIVE && !$skipSessionClose) {
                 session_write_close();
             }
             try {
@@ -1254,7 +1376,7 @@ final class StaffCourseQuestionService
             }
             $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
             if (session_status() !== PHP_SESSION_ACTIVE) {
-                session_start();
+                Security::startSession(false);
             }
             self::putSyllabusCache($semsubId, $encid, $text);
         }
@@ -1333,6 +1455,57 @@ final class StaffCourseQuestionService
         }
 
         return $key;
+    }
+
+    public static function sanitizeDraftSessionId(string $sessionId): string
+    {
+        $sessionId = trim($sessionId);
+
+        return preg_match('/^[a-f0-9]{32}$/i', $sessionId) ? $sessionId : '';
+    }
+
+    /**
+     * @param array<string, mixed> $draft
+     */
+    public static function writeGenerationDraftFile(string $sessionId, array $draft): void
+    {
+        $sessionId = self::sanitizeDraftSessionId($sessionId);
+        if ($sessionId === '') {
+            return;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_staff_course_draft_' . hash('sha256', $sessionId) . '.json';
+        $payload = array_merge($draft, ['id' => $sessionId, 'diskUpdatedAt' => time()]);
+        @file_put_contents($path, json_encode($payload, JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public static function readGenerationDraftFile(string $sessionId): ?array
+    {
+        $sessionId = self::sanitizeDraftSessionId($sessionId);
+        if ($sessionId === '') {
+            return null;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_staff_course_draft_' . hash('sha256', $sessionId) . '.json';
+        if (!is_readable($path)) {
+            return null;
+        }
+        $data = json_decode((string) file_get_contents($path), true);
+
+        return is_array($data) ? $data : null;
+    }
+
+    public static function deleteGenerationDraftFile(string $sessionId): void
+    {
+        $sessionId = self::sanitizeDraftSessionId($sessionId);
+        if ($sessionId === '') {
+            return;
+        }
+        $path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_staff_course_draft_' . hash('sha256', $sessionId) . '.json';
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 
     /**
@@ -1492,10 +1665,14 @@ final class StaffCourseQuestionService
      */
     private function requireDraft(array $user, string $sessionId): array
     {
-        $draft = $_SESSION['staff_course_draft'] ?? null;
         $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
         $sessionId = trim($sessionId);
-        if (!is_array($draft) || $sessionId === '' || (string) ($draft['id'] ?? '') !== $sessionId) {
+        if ($sessionId === '') {
+            throw new \InvalidArgumentException('Generate questions first, then select the ones to add.');
+        }
+        $this->hydrateGenerationDraft($sessionId);
+        $draft = $_SESSION['staff_course_draft'] ?? null;
+        if (!is_array($draft) || (string) ($draft['id'] ?? '') !== $sessionId) {
             throw new \InvalidArgumentException('Generate questions first, then select the ones to add.');
         }
         if ((string) ($draft['userId'] ?? '') !== $userId) {
@@ -1503,6 +1680,7 @@ final class StaffCourseQuestionService
         }
         if ((time() - (int) ($draft['createdAt'] ?? 0)) > 7200) {
             unset($_SESSION['staff_course_draft']);
+            self::deleteGenerationDraftFile($sessionId);
             throw new \InvalidArgumentException('This generated set has expired. Generate questions again.');
         }
 

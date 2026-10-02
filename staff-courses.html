@@ -697,6 +697,8 @@ function renderPractice(payload) {
     } else {
       hint += ' Generation in progress…';
     }
+  } else if (requested > 0 && rows.length < requested) {
+    hint += ` Only ${rows.length} of ${requested} could be generated (batch 2 or top-up may still be needed on older deploys). You can add these now or run Generate again for the rest.`;
   } else {
     hint += ` Select the ones to add to the ${payload.courseCode || 'course'} question bank.`;
   }
@@ -1202,7 +1204,10 @@ async function generate() {
     startStaffGenProgressPoll(progressKey);
     showDraftGenerating(course, 0, batchTotal, requested);
     for (let batchIndex = 0; batchIndex < batchTotal; ) {
-      if (batchIndex > 0 && !(lastData?.questions || []).length) {
+      const batchLabel = `Generating batch ${batchIndex + 1} of ${batchTotal}…`;
+      status.textContent = batchLabel;
+      document.getElementById('genProgressLabel').textContent = batchLabel;
+      if (batchIndex > 0 || !(lastData?.questions || []).length) {
         showDraftGenerating(course, batchIndex, batchTotal, requested);
       }
       const res = await api('/staff/courses/questions/batch', {
@@ -1221,6 +1226,9 @@ async function generate() {
       if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
       sessionId = res.data?.sessionId || sessionId;
       lastData = res.data;
+      if (Number(res.data?.batchTotal) > 0) {
+        batchTotal = Number(res.data.batchTotal);
+      }
       if ((res.data?.questions || []).length) {
         renderPractice(res.data);
       }
@@ -1231,17 +1239,19 @@ async function generate() {
         break;
       }
       const next = Number(res.data?.nextBatchIndex);
-      if (Number.isInteger(next) && next > batchIndex && next < batchTotal) {
-        batchIndex = next;
-      } else if (batchIndex + 1 < batchTotal) {
-        batchIndex += 1;
-      } else {
-        break;
+      if (!Number.isInteger(next) || next <= batchIndex) {
+        throw new Error(`Batch ${batchIndex + 1} finished but the server did not queue batch ${batchIndex + 2}. Try Generate again.`);
       }
+      batchIndex = next;
     }
     let topUpGuard = 0;
-    while (lastData && !lastData.batchComplete && topUpGuard++ < 24) {
-      document.getElementById('draftModalHint').textContent = 'Finishing question counts…';
+    while (lastData && !lastData.batchComplete && topUpGuard++ < 32) {
+      const got = (lastData.questions || []).length;
+      const need = Number(lastData.requested || requested);
+      document.getElementById('draftModalHint').textContent = need > 0
+        ? `Finishing question counts (${got} / ${need})…`
+        : 'Finishing question counts…';
+      status.textContent = document.getElementById('draftModalHint').textContent;
       const res = await api('/staff/courses/questions/batch', {
         method: 'POST',
         body: JSON.stringify({
