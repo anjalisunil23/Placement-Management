@@ -1191,7 +1191,7 @@ async function generate() {
   const progressKey = createStaffGenProgressKey();
   document.getElementById('practicePanel').innerHTML = '';
   const batchPlan = chunkMixesByTotal(mixes, 10);
-  let batchTotal = batchPlan.length;
+  const plannedBatches = batchPlan.length;
   let sessionId = '';
   let lastData = null;
   try {
@@ -1202,47 +1202,49 @@ async function generate() {
     status.textContent = 'Generating questions for ' + (course.code || 'this course') + '…';
     startGenProgress(requested, true);
     startStaffGenProgressPoll(progressKey);
-    showDraftGenerating(course, 0, batchTotal, requested);
-    for (let batchIndex = 0; batchIndex < batchTotal; ) {
-      const batchLabel = `Generating batch ${batchIndex + 1} of ${batchTotal}…`;
+    showDraftGenerating(course, 0, plannedBatches, requested);
+    for (let batchIndex = 0; batchIndex < plannedBatches; batchIndex++) {
+      const batchLabel = `Generating batch ${batchIndex + 1} of ${plannedBatches}…`;
       status.textContent = batchLabel;
       document.getElementById('genProgressLabel').textContent = batchLabel;
+      document.getElementById('genProgressPct').textContent = '';
       if (batchIndex > 0 || !(lastData?.questions || []).length) {
-        showDraftGenerating(course, batchIndex, batchTotal, requested);
+        showDraftGenerating(course, batchIndex, plannedBatches, requested);
       }
-      const res = await api('/staff/courses/questions/batch', {
-        method: 'POST',
-        body: JSON.stringify({
-          courseCode: course.code,
-          courseTitle: course.title || '',
-          semsubId: course.semsubId || '',
-          encid: course.encid || '',
-          mixes,
-          batchIndex,
-          sessionId: sessionId || undefined,
-          progressKey,
-        }),
-      });
+      let batchRes = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await api('/staff/courses/questions/batch', {
+          method: 'POST',
+          body: JSON.stringify({
+            courseCode: course.code,
+            courseTitle: course.title || '',
+            semsubId: course.semsubId || '',
+            encid: course.encid || '',
+            mixes,
+            batchIndex,
+            plannedBatchTotal: plannedBatches,
+            sessionId: sessionId || undefined,
+            progressKey,
+          }),
+        });
+        if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+        batchRes = res;
+        const added = (res.data?.batchQuestions || []).length;
+        if (added > 0 || attempt === 1 || res.data?.batchComplete) {
+          break;
+        }
+        status.textContent = `Retrying batch ${batchIndex + 1}…`;
+      }
+      const res = batchRes;
       if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
       sessionId = res.data?.sessionId || sessionId;
       lastData = res.data;
-      if (Number(res.data?.batchTotal) > 0) {
-        batchTotal = Number(res.data.batchTotal);
-      }
       if ((res.data?.questions || []).length) {
         renderPractice(res.data);
       }
       if (res.data?.batchComplete) {
         break;
       }
-      if (res.data?.phase === 'topup') {
-        break;
-      }
-      const next = Number(res.data?.nextBatchIndex);
-      if (!Number.isInteger(next) || next <= batchIndex) {
-        throw new Error(`Batch ${batchIndex + 1} finished but the server did not queue batch ${batchIndex + 2}. Try Generate again.`);
-      }
-      batchIndex = next;
     }
     let topUpGuard = 0;
     while (lastData && !lastData.batchComplete && topUpGuard++ < 32) {

@@ -20,7 +20,7 @@ final class StaffCourseQuestionService
     private const COOLDOWN_SECONDS = 8;
     private const GENERATE_BATCH_SIZE = 10;
     /** Max OpenAI calls per HTTP top-up request (shared-host proxy limits). */
-    private const BATCH_TOPUP_MAX_API_CALLS = 2;
+    private const BATCH_TOPUP_MAX_API_CALLS = 3;
     /** Wall clock per batch/top-up HTTP request (stay under typical LiteSpeed ~60s). */
     private const BATCH_REQUEST_WALL_SECONDS = 52;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
@@ -274,6 +274,10 @@ final class StaffCourseQuestionService
             $syllabus = $this->syllabusText($course);
             $deadline = (float) ($draft['genState']['deadline'] ?? 0);
             $batchTotal = (int) ($draft['genState']['batchTotal'] ?? $batchTotal);
+            $chunks = $this->chunkMixesByTotal($mixes, self::GENERATE_BATCH_SIZE);
+            if ($batchIndex >= count($chunks)) {
+                throw new \InvalidArgumentException('Invalid generation batch.');
+            }
         }
 
         $courseCode = (string) ($course['code'] ?? '');
@@ -323,6 +327,13 @@ final class StaffCourseQuestionService
         }
         if ($batchQuestions !== []) {
             $selected = $this->mergeQuestionLists($selected, $batchQuestions, $promptKeys);
+        } elseif ($chunkTotal > 0 && $batchIndex + 1 < $batchTotal) {
+            $this->touchGenerationProgress(
+                $progressKey,
+                count($selected),
+                $total,
+                'Batch ' . ($batchIndex + 2) . " of {$batchTotal} is next…"
+            );
         }
 
         $got = count($selected);
