@@ -179,21 +179,6 @@ final class StaffCourseQuestionService
             $this->hydrateGenerationDraft($sessionId);
         }
 
-        if ($sessionId !== '' && $batchIndex === 0) {
-            $existing = $_SESSION['staff_course_draft'] ?? null;
-            if (
-                is_array($existing)
-                && (string) ($existing['id'] ?? '') === $sessionId
-                && !empty($existing['generating'])
-                && (string) ($existing['genState']['phase'] ?? '') !== 'topup'
-            ) {
-                $resumeAt = (int) ($existing['genState']['nextBatchIndex'] ?? 0);
-                if ($resumeAt > 0 && $resumeAt < $batchTotal) {
-                    $batchIndex = $resumeAt;
-                }
-            }
-        }
-
         if ($batchIndex < 0 || $batchIndex >= $batchTotal) {
             throw new \InvalidArgumentException('Invalid generation batch.');
         }
@@ -261,6 +246,17 @@ final class StaffCourseQuestionService
                 throw new \InvalidArgumentException('Missing session for the next generation batch.');
             }
             $this->hydrateGenerationDraft($sessionId);
+            if (!empty($body['retryEmptyBatch'])) {
+                $pending = $_SESSION['staff_course_draft'] ?? null;
+                if (is_array($pending) && !empty($pending['generating'])) {
+                    if (!isset($pending['genState']) || !is_array($pending['genState'])) {
+                        $pending['genState'] = [];
+                    }
+                    $pending['genState']['nextBatchIndex'] = $batchIndex;
+                    unset($pending['genState']['phase']);
+                    $this->persistGenerationDraft($pending);
+                }
+            }
             $draft = $this->requireGeneratingDraft($user, $sessionId, $batchIndex);
             $mixes = is_array($draft['mixes'] ?? null) ? $draft['mixes'] : $mixes;
             $total = $this->mixTotal($mixes);

@@ -1211,9 +1211,25 @@ async function generate() {
       if (batchIndex > 0 || !(lastData?.questions || []).length) {
         showDraftGenerating(course, batchIndex, plannedBatches, requested);
       }
-      let batchRes = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const res = await api('/staff/courses/questions/batch', {
+      let res = await api('/staff/courses/questions/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          courseCode: course.code,
+          courseTitle: course.title || '',
+          semsubId: course.semsubId || '',
+          encid: course.encid || '',
+          mixes,
+          batchIndex,
+          plannedBatchTotal: plannedBatches,
+          sessionId: sessionId || undefined,
+          progressKey,
+        }),
+      });
+      if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+      const added = (res.data?.batchQuestions || []).length;
+      if (added === 0 && !res.data?.batchComplete && batchIndex + 1 < plannedBatches) {
+        status.textContent = `Retrying batch ${batchIndex + 1}…`;
+        res = await api('/staff/courses/questions/batch', {
           method: 'POST',
           body: JSON.stringify({
             courseCode: course.code,
@@ -1223,20 +1239,13 @@ async function generate() {
             mixes,
             batchIndex,
             plannedBatchTotal: plannedBatches,
+            retryEmptyBatch: true,
             sessionId: sessionId || undefined,
             progressKey,
           }),
         });
         if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
-        batchRes = res;
-        const added = (res.data?.batchQuestions || []).length;
-        if (added > 0 || attempt === 1 || res.data?.batchComplete) {
-          break;
-        }
-        status.textContent = `Retrying batch ${batchIndex + 1}…`;
       }
-      const res = batchRes;
-      if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
       sessionId = res.data?.sessionId || sessionId;
       lastData = res.data;
       if ((res.data?.questions || []).length) {
