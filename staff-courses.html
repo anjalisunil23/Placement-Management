@@ -1287,8 +1287,8 @@ async function generate() {
       const got = (lastData.questions || []).length;
       const need = Number(lastData.requested || requested);
       document.getElementById('draftModalHint').textContent = need > 0
-        ? `Finishing question counts (${got} / ${need})…`
-        : 'Finishing question counts…';
+        ? `Finishing question counts (${got} / ${need})… This step can take several minutes; keep this tab open.`
+        : 'Finishing question counts… Keep this tab open.';
       status.textContent = document.getElementById('draftModalHint').textContent;
       const res = await api('/staff/courses/questions/batch', {
         method: 'POST',
@@ -1305,9 +1305,11 @@ async function generate() {
       });
       if (!res?.success) throw new Error(res?.message || 'Could not finish generating questions.');
       lastData = res.data;
-      if ((res.data?.questions || []).length) {
-        renderPractice(res.data);
-      }
+      renderPractice(Object.assign({}, res.data, {
+        generating: res.data.generating !== false,
+        phase: res.data.phase || 'topup',
+        mixes,
+      }));
     }
     if (!lastData) throw new Error('Could not generate questions.');
     if (!staffGenerationFulfilled(lastData)) {

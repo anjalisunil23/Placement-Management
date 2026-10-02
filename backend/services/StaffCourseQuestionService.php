@@ -21,6 +21,8 @@ final class StaffCourseQuestionService
     private const GENERATE_BATCH_SIZE = 10;
     /** Max OpenAI calls per HTTP top-up request (shared-host proxy limits). */
     private const BATCH_TOPUP_MAX_API_CALLS = 8;
+    /** Max OpenAI calls while filling one syllabus chunk inside a batch request. */
+    private const BATCH_CHUNK_MAX_API_CALLS = 12;
     /** Wall clock per batch/top-up HTTP request (stay under typical LiteSpeed ~60s). */
     private const BATCH_REQUEST_WALL_SECONDS = 52;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
@@ -302,25 +304,62 @@ final class StaffCourseQuestionService
         $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
         $chunk = $chunks[$batchIndex];
         $chunkTotal = $this->mixTotal($chunk);
-        $mixText = $this->mixLinesText($chunk);
-        $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+        $batchWall = microtime(true) + self::BATCH_REQUEST_WALL_SECONDS;
+        if (!isset($deadline) || $deadline <= 0) {
+            $deadline = $batchWall;
+        }
         $wasActive = session_status() === PHP_SESSION_ACTIVE;
         if ($wasActive) {
             session_write_close();
         }
+        /** @var list<array<string, mixed>> $batchQuestions */
+        $batchQuestions = [];
         try {
-            $batchQuestions = $this->fetchQuestionBatch(
-                $course,
-                $syllabus,
-                $system,
-                $chunk,
-                $chunkTotal,
-                $mixText,
-                $avoid,
-                $selected,
-                $promptKeys,
-                true
-            );
+            $chunkApiCalls = 0;
+            $emptyChunkStreak = 0;
+            while (
+                $this->mixShortfall($chunk, $selected) !== []
+                && $chunkApiCalls < self::BATCH_CHUNK_MAX_API_CALLS
+                && !$this->generationDeadlineReached($deadline)
+                && microtime(true) < $batchWall
+            ) {
+                $chunkShortfall = $this->mixShortfall($chunk, $selected);
+                $partTotal = $this->mixTotal($chunkShortfall);
+                if ($partTotal < 1) {
+                    break;
+                }
+                $mixText = $this->mixLinesText($chunkShortfall);
+                $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                $part = $this->fetchQuestionBatch(
+                    $course,
+                    $syllabus,
+                    $system,
+                    $chunkShortfall,
+                    $partTotal,
+                    $mixText,
+                    $avoid,
+                    $selected,
+                    $promptKeys,
+                    true
+                );
+                $chunkApiCalls++;
+                if ($part === []) {
+                    $emptyChunkStreak++;
+                    if ($emptyChunkStreak >= 3) {
+                        break;
+                    }
+                    continue;
+                }
+                $emptyChunkStreak = 0;
+                $selected = $this->mergeQuestionLists($selected, $part, $promptKeys);
+                $batchQuestions = $this->mergeQuestionLists($batchQuestions, $part);
+                $this->touchGenerationProgress(
+                    $progressKey,
+                    count($selected),
+                    $total,
+                    "Batch " . ($batchIndex + 1) . " of {$batchTotal} · " . count($selected) . " / {$total} questions"
+                );
+            }
         } finally {
             if ($wasActive && session_status() !== PHP_SESSION_ACTIVE) {
                 Security::startSession(false);
@@ -329,9 +368,7 @@ final class StaffCourseQuestionService
         if ($sessionId !== '') {
             $this->hydrateGenerationDraft($sessionId);
         }
-        if ($batchQuestions !== []) {
-            $selected = $this->mergeQuestionLists($selected, $batchQuestions, $promptKeys);
-        } elseif ($chunkTotal > 0 && $batchIndex + 1 < $batchTotal) {
+        if ($batchQuestions === [] && $chunkTotal > 0 && $batchIndex + 1 < $batchTotal) {
             $this->touchGenerationProgress(
                 $progressKey,
                 count($selected),
