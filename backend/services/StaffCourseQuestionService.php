@@ -675,7 +675,8 @@ final class StaffCourseQuestionService
         try {
             $emptyChunkStreak = 0;
             $allowExtraForSlice = $isContinueFill || $startingHave > 0;
-            $maxFetchAttemptsPerSlice = $allowExtraForSlice ? 6 : 4;
+            // One primary OpenAI call per HTTP (+ one retry if empty) to stay under ~60s proxy limits.
+            $maxFetchAttemptsPerSlice = 2;
             while ($completedSliceGroups < $maxSliceGroups) {
                 if ($this->mixShortfall($chunk, $selected) === []) {
                     break;
@@ -751,10 +752,7 @@ final class StaffCourseQuestionService
                     $emptyChunkStreak = 0;
                     $selected = $this->mergeQuestionLists($selected, $part, $promptKeys);
                     $batchQuestions = $this->mergeQuestionLists($batchQuestions, $part);
-                    $addedThisSlice = count($selected) - $haveAtSliceStart;
-                    if ($addedThisSlice >= $sliceTargetAdd) {
-                        break;
-                    }
+                    break;
                 }
                 if (count($selected) <= $haveAtSliceStart) {
                     break;
@@ -887,10 +885,9 @@ final class StaffCourseQuestionService
 
     private function batchRequestWallSeconds(int $chunkTotal): int
     {
-        $chunkTotal = max(1, $chunkTotal);
-        $groups = $this->difficultyBatchSliceGroupsForCount($chunkTotal);
+        $chunkTotal = max(1, min($chunkTotal, self::DIFFICULTY_BATCH_AI_SLICE));
 
-        return min(180, max(self::BATCH_REQUEST_WALL_SECONDS, 35 + $groups * 45 + $chunkTotal * 4));
+        return min(58, max(48, 40 + $chunkTotal * 3));
     }
 
     /** How many OpenAI slice calls (size ≤5) a batch count needs in total (e.g. 10 → 2). */
@@ -3116,7 +3113,7 @@ final class StaffCourseQuestionService
         if ($requestTotal < 1) {
             return [];
         }
-        $maxAttempts = $allowExtra ? 5 : 3;
+        $maxAttempts = $allowExtra ? 3 : 2;
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             $prompt = $this->buildGeneratePrompt(
                 $course,

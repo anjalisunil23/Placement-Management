@@ -1463,7 +1463,7 @@ function showBatchSliceGroupGenerating(course, planIndex, batchTotal, difficulty
     <div class="p-3 text-center">
       <div class="spinner-border text-primary mb-3" role="status" aria-hidden="true"></div>
       <p class="text-muted mb-0">Running group ${groupNum} of ${groupsTotal} on the server (${targetCount} ${difficulty} total)…</p>
-      <p class="small text-muted-2 mt-2 mb-0">Questions appear here when all groups for this batch finish.</p>
+      <p class="small text-muted-2 mt-2 mb-0">Each group usually takes 30–60 seconds. Questions appear when this batch is complete.</p>
     </div>`;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('draftModal')).show();
   updateDraftModalFooter({ difficultyBatchMode: true, generating: true, generationStatus: 'generating' });
@@ -1511,6 +1511,28 @@ function normalizeBatchPayload(data, mixes) {
     payload.awaitingBankSave = false;
   }
   return payload;
+}
+
+function isTransientBatchApiError(res) {
+  const msg = String(res?.message || '');
+  const status = Number(res?.status || 0);
+  return res?._offline
+    || status === 502
+    || status === 503
+    || status === 504
+    || status === 522
+    || /timeout|timed out|gateway|network error|502|503|504|522/i.test(msg);
+}
+
+async function postDifficultyBatchRequestResilient(planIndex, opts, maxAttempts = 4) {
+  let last = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    last = await postDifficultyBatchRequest(planIndex, opts);
+    if (last?.success) return last;
+    if (!isTransientBatchApiError(last) || attempt + 1 >= maxAttempts) return last;
+    await new Promise((resolve) => window.setTimeout(resolve, 2000 * (attempt + 1)));
+  }
+  return last;
 }
 
 async function postDifficultyBatchRequest(planIndex, { retry = false, continueFill = false } = {}) {
@@ -1600,7 +1622,7 @@ async function runDifficultyBatch(planIndex, retry = false) {
   );
   let continueAttempts = 0;
   let stallRounds = 0;
-  const maxFillRounds = 12;
+  const maxFillRounds = 16;
   while (
     !batchGenerationFulfilled(payload)
     && continueAttempts < maxFillRounds
@@ -1617,16 +1639,19 @@ async function runDifficultyBatch(planIndex, retry = false) {
     setBatchGenerationProgress(beforeCount, entry.count, fillLabel);
     showBatchSliceGroupGenerating(course, planIndex, batchTotal, entry.difficulty, entry.count, groupNum, groupsTotal, fillLabel);
     try {
-      res = await postDifficultyBatchRequest(planIndex, { continueFill: true });
+      res = await postDifficultyBatchRequestResilient(planIndex, { continueFill: true });
     } catch (err) {
       stallRounds += 1;
-      if (stallRounds >= 2) break;
+      if (stallRounds >= 5) break;
       continue;
     }
     if (!res?.success) {
-      stallRounds += 1;
-      if (stallRounds >= 2) break;
-      continue;
+      if (isTransientBatchApiError(res)) {
+        stallRounds += 1;
+        if (stallRounds >= 5) break;
+        continue;
+      }
+      break;
     }
     ctx.sessionId = res.data?.sessionId || ctx.sessionId;
     payload = normalizeBatchPayload(res.data, mixes);
@@ -1641,7 +1666,7 @@ async function runDifficultyBatch(planIndex, retry = false) {
     );
     if (afterCount <= beforeCount) {
       stallRounds += 1;
-      if (stallRounds >= 3) break;
+      if (stallRounds >= 6) break;
     } else {
       stallRounds = 0;
     }
