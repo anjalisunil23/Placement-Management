@@ -176,9 +176,14 @@
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSelectAllDraft">Select all</button>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDraft">Clear</button>
         </div>
-        <button type="button" class="btn btn-primary" id="btnAddSelected">
-          <i class="bi bi-plus-lg me-1"></i>Add selected to question bank
-        </button>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-primary d-none" id="btnNextBatch">
+            <i class="bi bi-arrow-right me-1"></i>Next batch
+          </button>
+          <button type="button" class="btn btn-primary" id="btnAddSelected">
+            <i class="bi bi-plus-lg me-1"></i>Add selected to question bank
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -653,6 +658,7 @@ function setDraftSelection(checked) {
 
 function updateDraftModalFooter(payload) {
   const btn = document.getElementById('btnAddSelected');
+  const nextBtn = document.getElementById('btnNextBatch');
   const busy = staffGenerationActive || payload?.generating === true;
   if (btn) {
     btn.disabled = busy;
@@ -661,6 +667,20 @@ function updateDraftModalFooter(payload) {
   document.querySelectorAll('#btnSelectAllDraft,#btnClearDraft').forEach((el) => {
     el.disabled = busy;
   });
+  const canNext = payload?.awaitingNextBatch && !staffGenerationActive && !payload?.generating;
+  if (nextBtn) {
+    nextBtn.classList.toggle('d-none', !canNext);
+    nextBtn.disabled = !!staffGenerationActive;
+    const total = Number(payload?.batchTotal || 0);
+    const nextIdx = Number(payload?.nextBatchIndex ?? 0);
+    if (payload?.phase === 'topup') {
+      nextBtn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Continue generating';
+    } else if (total > 0 && nextIdx < total) {
+      nextBtn.innerHTML = `<i class="bi bi-arrow-right me-1"></i>Next batch (${nextIdx + 1} of ${total})`;
+    } else {
+      nextBtn.innerHTML = '<i class="bi bi-arrow-right me-1"></i>Next batch';
+    }
+  }
 }
 
 function renderPractice(payload) {
@@ -669,6 +689,13 @@ function renderPractice(payload) {
   const body = document.getElementById('draftModalBody');
   const modal = document.getElementById('draftModal');
   if (!rows.length) {
+    if (payload?.awaitingNextBatch) {
+      body.innerHTML = '<p class="text-muted mb-0">This batch was added to the bank. Click <strong>Next batch</strong> below to generate the rest.</p>';
+      document.getElementById('draftModalHint').textContent = 'Ready for the next batch.';
+      updateDraftModalFooter(payload);
+      bootstrap.Modal.getOrCreateInstance(modal).show();
+      return;
+    }
     body.innerHTML = '';
     updateDraftModalFooter(payload);
     const instance = bootstrap.Modal.getInstance(modal);
@@ -697,6 +724,8 @@ function renderPractice(payload) {
     } else {
       hint += ' Generation in progress…';
     }
+  } else if (payload?.awaitingNextBatch) {
+    hint += ' Add the ones you want to the bank, then click Next batch.';
   } else if (requested > 0 && rows.length < requested) {
     hint += ` Only ${rows.length} of ${requested} could be generated (batch 2 or top-up may still be needed on older deploys). You can add these now or run Generate again for the rest.`;
   } else {
@@ -956,6 +985,8 @@ function renderResult(payload) {
 let genProgressTimer = 0;
 let staffGenProgressPollTimer = 0;
 let staffGenerationActive = false;
+/** @type {{ course: object|null, mixes: array, requested: number, progressKey: string, plannedBatches: number, sessionId: string }|null} */
+let staffStepSession = null;
 
 function createStaffGenProgressKey() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -976,8 +1007,6 @@ function updateStaffGenProgressFromServer(progress) {
   const message = progress.message || 'Generating questions…';
   document.getElementById('genProgressLabel').textContent = message;
   document.getElementById('genModalProgressLabel').textContent = message;
-  const status = document.getElementById('genStatus');
-  if (status && staffGenerationActive) status.textContent = message;
   const requested = Number(progress.requested || 0);
   const percent = requested > 0
     ? Math.min(100, Math.max(0, Number(progress.percent ?? Math.round((Number(progress.generated || 0) / requested) * 100))))
@@ -1195,10 +1224,131 @@ function showDraftGenerating(course, batchIndex, batchTotal, requested) {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('draftModal')).show();
 }
 
+function applyStepBatchResponse(data, mixes) {
+  return Object.assign({}, data, {
+    mixes: data.mixes || mixes,
+    generating: data.generating === true,
+    awaitingNextBatch: data.awaitingNextBatch === true,
+  });
+}
+
+async function runStepBatch(batchIndex) {
+  const status = document.getElementById('genStatus');
+  const ctx = staffStepSession;
+  if (!ctx?.course) throw new Error('No generation session.');
+  const { course, mixes, requested, progressKey, plannedBatches, sessionId } = ctx;
+  const batchLabel = `Generating batch ${batchIndex + 1} of ${plannedBatches}…`;
+  status.textContent = batchLabel;
+  document.getElementById('genProgressLabel').textContent = batchLabel;
+  showDraftGenerating(course, batchIndex, plannedBatches, requested);
+  let res = await api('/staff/courses/questions/batch', {
+    method: 'POST',
+    body: JSON.stringify({
+      stepMode: true,
+      courseCode: course.code,
+      courseTitle: course.title || '',
+      semsubId: course.semsubId || '',
+      encid: course.encid || '',
+      mixes,
+      batchIndex,
+      plannedBatchTotal: plannedBatches,
+      sessionId: sessionId || undefined,
+      progressKey,
+    }),
+  });
+  if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+  const added = (res.data?.batchQuestions || []).length;
+  if (added === 0 && !res.data?.batchComplete && batchIndex + 1 < plannedBatches) {
+    res = await api('/staff/courses/questions/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        stepMode: true,
+        courseCode: course.code,
+        courseTitle: course.title || '',
+        semsubId: course.semsubId || '',
+        encid: course.encid || '',
+        mixes,
+        batchIndex,
+        plannedBatchTotal: plannedBatches,
+        retryEmptyBatch: true,
+        sessionId: ctx.sessionId || undefined,
+        progressKey,
+      }),
+    });
+    if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+  }
+  ctx.sessionId = res.data?.sessionId || ctx.sessionId;
+  const payload = applyStepBatchResponse(res.data, mixes);
+  if (staffGenerationFulfilled(payload)) {
+    updateStaffGenProgressFromServer({
+      message: `${(payload.questions || []).length} / ${requested} completed`,
+      requested,
+      generated: (payload.questions || []).length,
+      percent: 100,
+      done: true,
+    });
+    finishGenProgress();
+    status.textContent = `Generated ${requested} question${requested === 1 ? '' : 's'} for ${course.code}. Add any remaining selections to the bank.`;
+  }
+  renderPractice(payload);
+  return payload;
+}
+
+async function runStepTopUp() {
+  const status = document.getElementById('genStatus');
+  const ctx = staffStepSession;
+  if (!ctx?.course) throw new Error('No generation session.');
+  const { course, mixes, requested, progressKey, sessionId } = ctx;
+  status.textContent = 'Finishing question counts…';
+  document.getElementById('genProgressLabel').textContent = status.textContent;
+  const res = await api('/staff/courses/questions/batch', {
+    method: 'POST',
+    body: JSON.stringify({
+      stepMode: true,
+      topUp: true,
+      courseCode: course.code,
+      courseTitle: course.title || '',
+      semsubId: course.semsubId || '',
+      encid: course.encid || '',
+      mixes,
+      sessionId,
+      progressKey,
+    }),
+  });
+  if (!res?.success) throw new Error(res?.message || 'Could not finish generating questions.');
+  const payload = applyStepBatchResponse(res.data, mixes);
+  if (staffGenerationFulfilled(payload)) {
+    finishGenProgress();
+    status.textContent = `Generated ${requested} question${requested === 1 ? '' : 's'} for ${course.code}.`;
+  }
+  renderPractice(payload);
+  return payload;
+}
+
+async function continueNextBatch() {
+  if (!practice?.awaitingNextBatch || staffGenerationActive) return;
+  setGenerateBusy(true);
+  staffGenerationActive = true;
+  try {
+    if (practice.phase === 'topup') {
+      await runStepTopUp();
+    } else {
+      const nextIndex = Number(practice.nextBatchIndex ?? 0);
+      await runStepBatch(nextIndex);
+    }
+  } catch (err) {
+    document.getElementById('genStatus').textContent = '';
+    if (typeof toast === 'function') toast(err?.message || 'Could not continue generation.', 'error');
+  } finally {
+    staffGenerationActive = false;
+    if (practice) renderPractice(Object.assign({}, practice, { generating: false }));
+    setGenerateBusy(false);
+  }
+}
+
 async function generate() {
   const course = selectedCourse();
   if (!course) return;
-  const button = document.getElementById('btnConfirmGenerate');
   const status = document.getElementById('genStatus');
   const mixes = [
     { difficulty: 'Easy', count: Number(document.getElementById('qEasy').value) },
@@ -1216,160 +1366,28 @@ async function generate() {
   document.getElementById('practicePanel').innerHTML = '';
   const batchPlan = chunkMixesByTotal(mixes, 10);
   const plannedBatches = batchPlan.length;
-  let sessionId = '';
-  let lastData = null;
+  staffStepSession = { course, mixes, requested, progressKey, plannedBatches, sessionId: '' };
   try {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).hide();
     status.textContent = 'Reading syllabus PDF for AI (' + (course.code || 'course') + ')…';
     startAiSyllabusPrepareProgress();
     await prepareSyllabusForAiWithRetry(course);
-    status.textContent = 'Generating questions for ' + (course.code || 'this course') + '…';
+    status.textContent = 'Generating batch 1…';
     startGenProgress(requested, true);
     startStaffGenProgressPoll(progressKey);
-    showDraftGenerating(course, 0, plannedBatches, requested);
-    let batchIndex = 0;
-    let sameBatchRetries = 0;
-    while (batchIndex < plannedBatches) {
-      const batchLabel = `Generating batch ${batchIndex + 1} of ${plannedBatches}…`;
-      status.textContent = batchLabel;
-      document.getElementById('genProgressLabel').textContent = batchLabel;
-      document.getElementById('genProgressPct').textContent = '';
-      if (batchIndex > 0 || !(lastData?.questions || []).length) {
-        showDraftGenerating(course, batchIndex, plannedBatches, requested);
-      }
-      let res = await api('/staff/courses/questions/batch', {
-        method: 'POST',
-        body: JSON.stringify({
-          courseCode: course.code,
-          courseTitle: course.title || '',
-          semsubId: course.semsubId || '',
-          encid: course.encid || '',
-          mixes,
-          batchIndex,
-          plannedBatchTotal: plannedBatches,
-          sessionId: sessionId || undefined,
-          progressKey,
-        }),
-      });
-      if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
-      const added = (res.data?.batchQuestions || []).length;
-      if (added === 0 && !res.data?.batchComplete && batchIndex + 1 < plannedBatches) {
-        status.textContent = `Retrying batch ${batchIndex + 1}…`;
-        res = await api('/staff/courses/questions/batch', {
-          method: 'POST',
-          body: JSON.stringify({
-            courseCode: course.code,
-            courseTitle: course.title || '',
-            semsubId: course.semsubId || '',
-            encid: course.encid || '',
-            mixes,
-            batchIndex,
-            plannedBatchTotal: plannedBatches,
-            retryEmptyBatch: true,
-            sessionId: sessionId || undefined,
-            progressKey,
-          }),
-        });
-        if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
-      }
-      sessionId = res.data?.sessionId || sessionId;
-      lastData = res.data;
-      if ((res.data?.questions || []).length) {
-        renderPractice(res.data);
-      }
-      if (staffGenerationFulfilled(res.data)) {
-        break;
-      }
-      if (res.data?.phase === 'topup') {
-        break;
-      }
-      const chunkDone = res.data?.chunkComplete !== false;
-      if (!chunkDone && res.data?.generating && sameBatchRetries++ < 8) {
-        status.textContent = `Continuing batch ${batchIndex + 1}… (${(res.data?.questions || []).length} / ${requested})`;
-        continue;
-      }
-      sameBatchRetries = 0;
-      batchIndex++;
-    }
-    let topUpGuard = 0;
-    while (
-      lastData
-      && !staffGenerationFulfilled(lastData)
-      && (lastData.generating || lastData.phase === 'topup')
-      && topUpGuard++ < 64
-    ) {
-      const got = (lastData.questions || []).length;
-      const need = Number(lastData.requested || requested);
-      document.getElementById('draftModalHint').textContent = need > 0
-        ? `Finishing question counts (${got} / ${need})… This step can take several minutes; keep this tab open.`
-        : 'Finishing question counts… Keep this tab open.';
-      status.textContent = document.getElementById('draftModalHint').textContent;
-      const res = await api('/staff/courses/questions/batch', {
-        method: 'POST',
-        body: JSON.stringify({
-          topUp: true,
-          courseCode: course.code,
-          courseTitle: course.title || '',
-          semsubId: course.semsubId || '',
-          encid: course.encid || '',
-          mixes,
-          sessionId,
-          progressKey,
-        }),
-      });
-      if (!res?.success) throw new Error(res?.message || 'Could not finish generating questions.');
-      lastData = res.data;
-      renderPractice(Object.assign({}, res.data, {
-        generating: res.data.generating !== false,
-        phase: res.data.phase || 'topup',
-        mixes,
-      }));
-    }
-    if (!lastData) throw new Error('Could not generate questions.');
-    if (!staffGenerationFulfilled(lastData)) {
-      const partial = (lastData.questions || []).length;
-      const need = Number(lastData.requested || requested);
-      throw new Error(
-        need > 0 && partial > 0
-          ? `Generation stopped at ${partial} of ${need}. Click Generate again to try filling the rest.`
-          : 'Generation stopped early. Try again with fewer questions per difficulty.'
-      );
-    }
-    updateStaffGenProgressFromServer({
-      message: `${(lastData.questions || []).length} / ${Number(lastData.requested || requested)} completed`,
-      requested: Number(lastData.requested || requested),
-      generated: (lastData.questions || []).length,
-      percent: 100,
-      done: true,
-    });
-    finishGenProgress();
-    const count = (lastData.questions || []).length;
-    const gotRequested = Number(lastData.requested || requested);
-    status.textContent = count
-      ? (gotRequested > 0 && count !== gotRequested
-        ? `Generated ${count} of ${gotRequested} requested for ${course.code}. Select the ones to add to the question bank.`
-        : `Generated ${count} question${count === 1 ? '' : 's'} for ${course.code}. Select the ones to add to the question bank.`)
-      : 'No questions were generated.';
-    renderPractice(lastData);
+    await runStepBatch(0);
   } catch (err) {
     stopGenProgress(true);
     status.textContent = '';
-    if (sessionId) {
-      const cancelRes = await api('/staff/courses/questions/cancel', {
+    if (staffStepSession?.sessionId) {
+      await api('/staff/courses/questions/cancel', {
         method: 'POST',
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId: staffStepSession.sessionId }),
       }).catch(() => null);
-      if (cancelRes?.success && (cancelRes.data?.questions || []).length) {
-        lastData = Object.assign({}, lastData || {}, cancelRes.data, { generating: false, batchComplete: true });
-        renderPractice(lastData);
-      }
     }
     document.getElementById('practicePanel').innerHTML = `<div class="card-surface p-3 text-danger">${esc(err?.message || 'Could not generate questions.')}</div>`;
   } finally {
     staffGenerationActive = false;
-    if (lastData?.questions?.length) {
-      renderPractice(Object.assign({}, lastData, { generating: false }));
-    }
     setGenerateBusy(false);
   }
 }
@@ -1379,8 +1397,8 @@ async function saveSelected() {
   const indexes = selectedDraftIndexes();
   const status = document.getElementById('genStatus');
   const button = document.getElementById('btnAddSelected');
-  if (staffGenerationActive || practice?.generating) {
-    status.textContent = 'Still generating questions — wait for all batches to finish, then add to the bank.';
+  if (staffGenerationActive || (practice?.generating && !practice?.awaitingNextBatch)) {
+    status.textContent = 'Still generating questions — wait for this batch to finish, then add to the bank.';
     return;
   }
   if (!indexes.length) {
@@ -1419,6 +1437,11 @@ async function saveSelected() {
       courseTitle: res.data?.courseTitle || practice.courseTitle || '',
       mixes: res.data?.mixes || practice.mixes,
       questions: remaining,
+      awaitingNextBatch: res.data?.awaitingNextBatch ?? practice.awaitingNextBatch,
+      nextBatchIndex: res.data?.nextBatchIndex ?? practice.nextBatchIndex,
+      batchTotal: res.data?.batchTotal ?? practice.batchTotal,
+      phase: res.data?.phase ?? practice.phase,
+      generating: false,
     }));
     if (typeof toast === 'function') toast(status.textContent, added ? 'success' : 'info');
   } catch (err) {
@@ -1496,7 +1519,7 @@ document.getElementById('btnGenerate').addEventListener('click', () => {
   const course = selectedCourse();
   if (!course) return;
   stopGenProgress(true);
-  document.getElementById('generateCourseLabel').textContent = `${course.code} — ${course.title || ''}. The server will read the syllabus PDF for AI (separate from the viewer), then generate questions in batches of up to 10.`;
+  document.getElementById('generateCourseLabel').textContent = `${course.code} — ${course.title || ''}. The server reads the syllabus for AI, generates the first batch (up to 10 questions), then you add to the bank and click Next batch for the rest.`;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).show();
 });
 document.getElementById('btnConfirmGenerate').addEventListener('click', generate);
@@ -1511,6 +1534,10 @@ document.getElementById('draftModal').addEventListener('click', (event) => {
   }
   if (event.target.closest('#btnAddSelected')) {
     saveSelected();
+    return;
+  }
+  if (event.target.closest('#btnNextBatch')) {
+    continueNextBatch();
   }
 });
 document.getElementById('bankSearch').addEventListener('input', () => {

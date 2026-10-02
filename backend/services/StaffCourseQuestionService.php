@@ -395,7 +395,24 @@ final class StaffCourseQuestionService
         $selected = $this->assignDraftIndexes($selected);
         $isLastBatch = ($batchIndex + 1) >= $batchTotal;
 
+        $stepMode = !empty($body['stepMode']);
+
         if (!$isLastBatch) {
+            if ($stepMode) {
+                return $this->pauseStepBatch(
+                    $sessionId,
+                    $course,
+                    $mixes,
+                    $selected,
+                    $batchQuestions,
+                    $progressKey,
+                    $total,
+                    $batchIndex,
+                    $batchTotal,
+                    $batchIndex + 1,
+                    null
+                );
+            }
             $this->saveGeneratingDraftState($sessionId, $selected, $batchIndex + 1, null);
 
             return $this->releaseSessionAndReturn([
@@ -430,6 +447,22 @@ final class StaffCourseQuestionService
             );
         }
 
+        if ($stepMode) {
+            return $this->pauseStepBatch(
+                $sessionId,
+                $course,
+                $mixes,
+                $selected,
+                $batchQuestions,
+                $progressKey,
+                $total,
+                $batchIndex,
+                $batchTotal,
+                $batchTotal,
+                'topup'
+            );
+        }
+
         return $this->resumeGenerationTopUp(
             $sessionId,
             $course,
@@ -457,6 +490,13 @@ final class StaffCourseQuestionService
         }
         $this->hydrateGenerationDraft($sessionId);
         $draft = $this->requireDraft($user, $sessionId);
+        $stepMode = !empty($body['stepMode']);
+        $awaitingStep = !empty($draft['genState']['awaitingNextBatch']);
+        if ($awaitingStep) {
+            $draft['generating'] = true;
+            unset($draft['genState']['awaitingNextBatch']);
+            $this->persistGenerationDraft($draft);
+        }
         if (empty($draft['generating']) || (string) ($draft['genState']['phase'] ?? '') !== 'topup') {
             throw new \InvalidArgumentException('No generation top-up is pending for this session.');
         }
@@ -524,8 +564,9 @@ final class StaffCourseQuestionService
             }
         }
         $this->hydrateGenerationDraft($sessionId);
-        $selected = $this->assignDraftIndexes($selected);
         $prevCount = count(is_array($draft['questions'] ?? null) ? $draft['questions'] : []);
+        $selected = $this->assignDraftIndexes($selected);
+        $addedThisRequest = array_slice($selected, $prevCount);
         $got = count($selected);
         $stalls = (int) ($draft['genState']['topUpStalls'] ?? 0);
         if ($got <= $prevCount) {
@@ -548,6 +589,22 @@ final class StaffCourseQuestionService
             );
         }
 
+        if ($stepMode) {
+            return $this->pauseStepBatch(
+                $sessionId,
+                $course,
+                $mixes,
+                $selected,
+                $addedThisRequest !== [] ? $addedThisRequest : $selected,
+                $progressKey,
+                $total,
+                $batchIndex,
+                $batchTotal,
+                $batchTotal,
+                'topup'
+            );
+        }
+
         return $this->resumeGenerationTopUp(
             $sessionId,
             $course,
@@ -560,6 +617,78 @@ final class StaffCourseQuestionService
             [],
             $stalls
         );
+    }
+
+    /**
+     * @param list<array<string, mixed>> $batchQuestions
+     * @return array<string, mixed>
+     */
+    private function pauseStepBatch(
+        string $sessionId,
+        array $course,
+        array $mixes,
+        array $selected,
+        array $batchQuestions,
+        string $progressKey,
+        int $total,
+        int $batchIndex,
+        int $batchTotal,
+        int $nextBatchIndex,
+        ?string $phase
+    ): array {
+        $courseCode = (string) ($course['code'] ?? '');
+        $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
+        if ($draft === [] && $sessionId !== '') {
+            $fromDisk = self::readGenerationDraftFile($sessionId);
+            if (is_array($fromDisk)) {
+                $draft = $fromDisk;
+            }
+        }
+        $draft['questions'] = $selected;
+        $draft['generating'] = false;
+        if (!isset($draft['genState']) || !is_array($draft['genState'])) {
+            $draft['genState'] = [];
+        }
+        $draft['genState']['awaitingNextBatch'] = true;
+        $draft['genState']['nextBatchIndex'] = $nextBatchIndex;
+        $draft['genState']['batchTotal'] = $batchTotal;
+        $draft['genState']['stepMode'] = true;
+        if ($phase !== null && $phase !== '') {
+            $draft['genState']['phase'] = $phase;
+        } else {
+            unset($draft['genState']['phase']);
+        }
+        $draft['createdAt'] = time();
+        $this->persistGenerationDraft($draft);
+
+        $display = $this->assignDraftIndexes($batchQuestions);
+        $got = count($selected);
+        $batchNum = $batchIndex + 1;
+        $this->touchGenerationProgress(
+            $progressKey,
+            $got,
+            $total,
+            "Batch {$batchNum} of {$batchTotal} ready · {$got} / {$total} total"
+        );
+
+        return $this->releaseSessionAndReturn([
+            'sessionId' => $sessionId,
+            'courseCode' => $courseCode,
+            'courseTitle' => (string) ($course['title'] ?? ''),
+            'mixes' => $mixes,
+            'requested' => $total,
+            'questions' => $display,
+            'batchQuestions' => $display,
+            'batchIndex' => $batchIndex,
+            'batchTotal' => $batchTotal,
+            'nextBatchIndex' => $nextBatchIndex,
+            'generating' => false,
+            'batchComplete' => false,
+            'awaitingNextBatch' => true,
+            'fulfilled' => false,
+            'phase' => $phase ?? '',
+            'stepMode' => true,
+        ]);
     }
 
     /**
@@ -852,14 +981,21 @@ final class StaffCourseQuestionService
     private function requireGeneratingDraft(array $user, string $sessionId, int $batchIndex): array
     {
         $draft = $this->requireDraft($user, $sessionId);
-        if (empty($draft['generating'])) {
-            throw new \InvalidArgumentException('This generation session is no longer active. Generate questions again.');
-        }
         $expected = (int) ($draft['genState']['nextBatchIndex'] ?? -1);
         if ($expected !== $batchIndex) {
             throw new \InvalidArgumentException(
                 "Generation batches must be run in order (expected batch {$expected}, got {$batchIndex})."
             );
+        }
+        if (!empty($draft['genState']['awaitingNextBatch'])) {
+            unset($draft['genState']['awaitingNextBatch']);
+            $draft['generating'] = true;
+            $this->persistGenerationDraft($draft);
+
+            return $draft;
+        }
+        if (empty($draft['generating'])) {
+            throw new \InvalidArgumentException('This generation session is no longer active. Generate questions again.');
         }
 
         return $draft;
@@ -873,7 +1009,8 @@ final class StaffCourseQuestionService
     public function saveSelected(array $user, array $body): array
     {
         $draft = $this->requireDraft($user, (string) ($body['sessionId'] ?? ''));
-        if (!empty($draft['generating'])) {
+        $awaitingStep = !empty($draft['genState']['awaitingNextBatch']);
+        if (!empty($draft['generating']) && !$awaitingStep) {
             throw new \InvalidArgumentException('Wait until all generation batches finish, then select questions to add.');
         }
         $indexes = [];
@@ -908,16 +1045,38 @@ final class StaffCourseQuestionService
         );
 
         $remaining = [];
-        foreach ($source as $index => $question) {
-            if (!is_array($question) || in_array((int) $index, $indexes, true)) {
-                continue;
+        if ($awaitingStep) {
+            foreach ($source as $index => $question) {
+                if (!is_array($question)) {
+                    continue;
+                }
+                if (in_array((int) $index, $indexes, true)) {
+                    $question['savedToBank'] = true;
+                }
+                $question['draftIndex'] = count($remaining);
+                $remaining[] = $question;
             }
-            $question['draftIndex'] = count($remaining);
-            $remaining[] = $question;
+        } else {
+            foreach ($source as $index => $question) {
+                if (!is_array($question) || in_array((int) $index, $indexes, true)) {
+                    continue;
+                }
+                $question['draftIndex'] = count($remaining);
+                $remaining[] = $question;
+            }
         }
         $draft['questions'] = $remaining;
         $draft['createdAt'] = time();
-        $_SESSION['staff_course_draft'] = $draft;
+        $this->persistGenerationDraft($draft);
+
+        $display = $awaitingStep
+            ? array_values(array_filter($remaining, static fn(array $q): bool => empty($q['savedToBank'])))
+            : $remaining;
+        foreach ($display as $i => $question) {
+            if (is_array($question)) {
+                $display[$i]['draftIndex'] = $i;
+            }
+        }
 
         return [
             'sessionId' => (string) ($draft['id'] ?? ''),
@@ -925,8 +1084,13 @@ final class StaffCourseQuestionService
             'courseTitle' => (string) ($bank['courseTitle'] ?? $course['title'] ?? ''),
             'added' => (int) ($bank['added'] ?? 0),
             'skipped' => (int) ($bank['skipped'] ?? 0),
-            'questions' => $remaining,
+            'questions' => $display,
             'mixes' => $draft['mixes'] ?? [],
+            'awaitingNextBatch' => $awaitingStep,
+            'nextBatchIndex' => (int) ($draft['genState']['nextBatchIndex'] ?? 0),
+            'batchTotal' => (int) ($draft['genState']['batchTotal'] ?? 0),
+            'phase' => (string) ($draft['genState']['phase'] ?? ''),
+            'stepMode' => !empty($draft['genState']['stepMode']),
             'bank' => $this->listBank($user, (string) ($bank['courseCode'] ?? $course['code'] ?? '')),
         ];
     }
