@@ -1545,10 +1545,15 @@ async function runDifficultyBatch(planIndex, retry = false) {
   if (!batchGenerationFulfilled(payload) && (payload.questions || []).length < entry.count) {
     payload.needsContinueFill = true;
   }
+  const firstGot = (payload.questions || []).length;
+  const groupsTotalInit = Math.max(1, Math.ceil(entry.count / 5));
+  const firstGroupDone = firstGot > 0 && firstGot < entry.count;
   setBatchGenerationProgress(
-    (payload.questions || []).length,
+    firstGot,
     entry.count,
-    `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${(payload.questions || []).length} / ${entry.count}`
+    firstGroupDone
+      ? `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · group 1 of ${groupsTotalInit} done · starting group 2…`
+      : `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${firstGot} / ${entry.count}`
   );
   let continueAttempts = 0;
   let stallRounds = 0;
@@ -1562,7 +1567,9 @@ async function runDifficultyBatch(planIndex, retry = false) {
     continueAttempts += 1;
     staffBatchGenStatus = 'generating';
     staffGenerationActive = true;
-    const fillLabel = `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · finishing… ${beforeCount} / ${entry.count}`;
+    const groupsTotal = Math.max(1, Math.ceil(entry.count / 5));
+    const groupNum = Math.min(groupsTotal, Math.floor(beforeCount / 5) + 1);
+    const fillLabel = `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · group ${groupNum} of ${groupsTotal} · ${beforeCount} / ${entry.count}`;
     status.textContent = fillLabel;
     setBatchGenerationProgress(beforeCount, entry.count, fillLabel);
     renderPractice(Object.assign({}, payload, {

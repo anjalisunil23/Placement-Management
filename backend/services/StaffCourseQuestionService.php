@@ -614,8 +614,12 @@ final class StaffCourseQuestionService
 
         $syllabus = $this->syllabusText($course);
         $courseCode = (string) ($course['code'] ?? '');
-        $draft = $_SESSION['staff_course_draft'] ?? null;
+        if ($sessionId !== '') {
+            $this->hydrateGenerationDraft($sessionId);
+        }
+        $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
         $selected = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
+        $isContinueFill = !empty($body['continueDifficultyBatch']);
         /** @var array<string, true> $promptKeys */
         $promptKeys = $this->promptKeysForSession($selected);
         $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
@@ -625,7 +629,10 @@ final class StaffCourseQuestionService
         $chunkTotal = (int) ($chunk[0]['count'] ?? 0);
         $this->assertBatchQuestionCountBody($body, $currentDifficulty, $chunkTotal);
         $deadline = (float) (is_array($draft['genState'] ?? null) ? ($draft['genState']['deadline'] ?? 0) : 0);
-        $batchWall = microtime(true) + $this->batchRequestWallSeconds($chunkTotal);
+        $shortfallAtStart = max(0, $chunkTotal - count($selected));
+        $batchWall = microtime(true) + $this->batchRequestWallSeconds(
+            $isContinueFill && $shortfallAtStart > 0 ? $shortfallAtStart : $chunkTotal
+        );
         $sliceGroupsTotal = $this->difficultyBatchSliceGroupsForCount($chunkTotal);
         // One OpenAI slice (≤5 questions) per HTTP request so shared-host ~60s limits still allow
         // reliable group 1 → group 2 via continueDifficultyBatch from the browser.
@@ -637,11 +644,16 @@ final class StaffCourseQuestionService
             $deadline = $batchWall;
         }
 
+        $startingHave = count($selected);
+        $activeSliceGroup = min(
+            $sliceGroupsTotal,
+            max(1, (int) floor($startingHave / self::DIFFICULTY_BATCH_AI_SLICE) + 1)
+        );
         if ($progressKey !== '') {
             self::writeGenerationProgress($progressKey, [
                 'phase' => 'generating',
                 'message' => 'Batch ' . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · "
-                    . "group 1 of {$sliceGroupsTotal}…",
+                    . "group {$activeSliceGroup} of {$sliceGroupsTotal}…",
                 'generated' => count($selected),
                 'requested' => $chunkTotal,
                 'percent' => $chunkTotal > 0
@@ -662,6 +674,8 @@ final class StaffCourseQuestionService
         try {
             $emptyChunkStreak = 0;
             $completedSliceGroups = 0;
+            $allowExtraForSlice = $isContinueFill || $startingHave > 0;
+            $maxFetchAttemptsPerSlice = $allowExtraForSlice ? 6 : 4;
             while ($completedSliceGroups < $maxSliceGroups) {
                 if ($this->mixShortfall($chunk, $selected) === []) {
                     break;
@@ -669,23 +683,18 @@ final class StaffCourseQuestionService
                 if (microtime(true) >= $batchWall || $this->generationDeadlineReached($deadline)) {
                     break;
                 }
-                $chunkShortfall = $this->mixShortfall($chunk, $selected);
-                $partTotal = $this->mixTotal($chunkShortfall);
-                if ($partTotal < 1) {
+                $haveAtSliceStart = count($selected);
+                $sliceGroup = min(
+                    $sliceGroupsTotal,
+                    max(1, (int) floor($haveAtSliceStart / self::DIFFICULTY_BATCH_AI_SLICE) + 1)
+                );
+                $sliceTargetAdd = min(
+                    self::DIFFICULTY_BATCH_AI_SLICE,
+                    $this->mixTotal($this->mixShortfall($chunk, $selected))
+                );
+                if ($sliceTargetAdd < 1) {
                     break;
                 }
-                if ($emptyChunkStreak >= 2 && $partTotal > 1) {
-                    $firstLabel = (string) ($chunkShortfall[0]['difficulty'] ?? 'Medium');
-                    $partTotal = 1;
-                    $chunkShortfall = [['difficulty' => $firstLabel, 'count' => 1]];
-                } elseif ($partTotal > self::DIFFICULTY_BATCH_AI_SLICE) {
-                    $firstLabel = (string) ($chunkShortfall[0]['difficulty'] ?? 'Medium');
-                    $partTotal = self::DIFFICULTY_BATCH_AI_SLICE;
-                    $chunkShortfall = [['difficulty' => $firstLabel, 'count' => $partTotal]];
-                }
-                $sliceGroup = $completedSliceGroups + 1;
-                $mixText = $this->mixLinesText($chunkShortfall);
-                $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
                 if ($progressKey !== '') {
                     $this->touchGenerationProgress(
                         $progressKey,
@@ -695,29 +704,62 @@ final class StaffCourseQuestionService
                         . "group {$sliceGroup} of {$sliceGroupsTotal}…"
                     );
                 }
-                $part = $this->fetchQuestionBatch(
-                    $course,
-                    $syllabus,
-                    $system,
-                    $chunkShortfall,
-                    $partTotal,
-                    $mixText,
-                    $avoid,
-                    $selected,
-                    $promptKeys,
-                    false
-                );
-                if ($part === []) {
-                    $emptyChunkStreak++;
-                    if ($emptyChunkStreak >= 3) {
+                $fetchAttempts = 0;
+                while ($fetchAttempts < $maxFetchAttemptsPerSlice) {
+                    if (microtime(true) >= $batchWall || $this->generationDeadlineReached($deadline)) {
                         break;
                     }
-                    continue;
+                    $chunkShortfall = $this->mixShortfall($chunk, $selected);
+                    if ($chunkShortfall === []) {
+                        break;
+                    }
+                    $partTotal = $this->mixTotal($chunkShortfall);
+                    if ($partTotal < 1) {
+                        break;
+                    }
+                    if ($emptyChunkStreak >= 2 && $partTotal > 1) {
+                        $firstLabel = (string) ($chunkShortfall[0]['difficulty'] ?? 'Medium');
+                        $partTotal = 1;
+                        $chunkShortfall = [['difficulty' => $firstLabel, 'count' => 1]];
+                    } elseif ($partTotal > self::DIFFICULTY_BATCH_AI_SLICE) {
+                        $firstLabel = (string) ($chunkShortfall[0]['difficulty'] ?? 'Medium');
+                        $partTotal = self::DIFFICULTY_BATCH_AI_SLICE;
+                        $chunkShortfall = [['difficulty' => $firstLabel, 'count' => $partTotal]];
+                    }
+                    $mixText = $this->mixLinesText($chunkShortfall);
+                    $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                    $part = $this->fetchQuestionBatch(
+                        $course,
+                        $syllabus,
+                        $system,
+                        $chunkShortfall,
+                        $partTotal,
+                        $mixText,
+                        $avoid,
+                        $selected,
+                        $promptKeys,
+                        $allowExtraForSlice
+                    );
+                    $fetchAttempts++;
+                    if ($part === []) {
+                        $emptyChunkStreak++;
+                        if ($emptyChunkStreak >= 3) {
+                            break;
+                        }
+                        continue;
+                    }
+                    $emptyChunkStreak = 0;
+                    $selected = $this->mergeQuestionLists($selected, $part, $promptKeys);
+                    $batchQuestions = $this->mergeQuestionLists($batchQuestions, $part);
+                    $addedThisSlice = count($selected) - $haveAtSliceStart;
+                    if ($addedThisSlice >= $sliceTargetAdd) {
+                        break;
+                    }
                 }
-                $emptyChunkStreak = 0;
+                if (count($selected) <= $haveAtSliceStart) {
+                    break;
+                }
                 $completedSliceGroups++;
-                $selected = $this->mergeQuestionLists($selected, $part, $promptKeys);
-                $batchQuestions = $this->mergeQuestionLists($batchQuestions, $part);
                 $partialDisplay = $this->assignDraftIndexes(
                     $this->capQuestionsToMixes($batchQuestions, $chunk)
                 );
@@ -3060,7 +3102,8 @@ final class StaffCourseQuestionService
         if ($requestTotal < 1) {
             return [];
         }
-        for ($attempt = 0; $attempt < 3; $attempt++) {
+        $maxAttempts = $allowExtra ? 5 : 3;
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             $prompt = $this->buildGeneratePrompt(
                 $course,
                 $syllabus,
