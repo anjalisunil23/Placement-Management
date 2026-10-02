@@ -676,6 +676,8 @@ final class StaffCourseQuestionService
         }
         /** @var list<array<string, mixed>> $batchQuestions */
         $batchQuestions = $selected;
+        /** @var array<string, true> $promptKeys */
+        $promptKeys = $this->generationPromptKeysForCourse($selected, $courseCode);
         $completedSliceGroups = 0;
         try {
             $emptyChunkStreak = 0;
@@ -737,10 +739,7 @@ final class StaffCourseQuestionService
                         $chunkShortfall = [['difficulty' => $firstLabel, 'count' => $partTotal]];
                     }
                     $mixText = $this->mixLinesText($chunkShortfall);
-                    // Difficulty batches: skip bank/cross-slice duplicate checks during generation (faster).
-                    // Duplicates are flagged when questions are shown to the user, like aptitude AI preview.
-                    $sliceSelectedSoFar = [];
-                    $slicePromptKeys = [];
+                    // Reject repeats vs this batch and vs the same course bank card (no heavy avoid block in prompt).
                     $part = $this->fetchQuestionBatch(
                         $course,
                         $syllabus,
@@ -749,10 +748,10 @@ final class StaffCourseQuestionService
                         $partTotal,
                         $mixText,
                         '',
-                        $sliceSelectedSoFar,
-                        $slicePromptKeys,
+                        $selected,
+                        $promptKeys,
                         $fetchAttempts > 0,
-                        true
+                        false
                     );
                     $fetchAttempts++;
                     if ($part === []) {
@@ -763,8 +762,8 @@ final class StaffCourseQuestionService
                         continue;
                     }
                     $emptyChunkStreak = 0;
-                    $selected = array_merge($selected, $part);
-                    $batchQuestions = array_merge($batchQuestions, $part);
+                    $selected = $this->mergeQuestionLists($selected, $part, $promptKeys);
+                    $batchQuestions = $this->mergeQuestionLists($batchQuestions, $part, $promptKeys);
                     break;
                 }
                 if (count($selected) <= $haveAtSliceStart) {
@@ -3525,6 +3524,26 @@ final class StaffCourseQuestionService
     private function questionPromptKey(array $question): string
     {
         return SyllabusQuestionBankModel::normalizePromptKey((string) ($question['question'] ?? $question['prompt'] ?? ''));
+    }
+
+    /**
+     * Known prompt keys for generation dedup: current draft + same course question bank card.
+     *
+     * @param list<array<string, mixed>> $selectedSoFar
+     * @return array<string, true>
+     */
+    private function generationPromptKeysForCourse(array $selectedSoFar, string $courseCode): array
+    {
+        $keys = $this->promptKeysForSession($selectedSoFar);
+        $courseCode = SyllabusQuestionBankModel::normalizeCourseCode($courseCode);
+        if ($courseCode === '') {
+            return $keys;
+        }
+        foreach ((new SyllabusQuestionBankModel())->existingPromptKeys($courseCode) as $key => $_) {
+            $keys[$key] = true;
+        }
+
+        return $keys;
     }
 
     /**
