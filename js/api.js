@@ -609,10 +609,38 @@ function alumniPageAllowed(page) {
     : ALUMNI_SEEKING_PAGES.includes(page);
 }
 
-const API_BASE =
-  (typeof window !== 'undefined' && window.API_BASE_URL) ||
-  localStorage.getItem('ph-api-base') ||
-  '/backend/api';
+const API_BASE_DEFAULT = '/backend/api';
+
+/** Ignore stale DevTools overrides that point at the site root (returns HTML 404 pages). */
+function normalizeApiBase(raw) {
+  const fallback = API_BASE_DEFAULT;
+  const base = String(raw || '').trim().replace(/\/+$/, '');
+  if (!base || base === '/') {
+    return fallback;
+  }
+  const pathPart = base.replace(/^https?:\/\/[^/]+/i, '');
+  const looksLikeApi =
+    /\/backend\/api(\/|$)/.test(pathPart)
+    || /^\/api(\/|$)/.test(pathPart);
+  if (!looksLikeApi) {
+    try {
+      localStorage.removeItem('ph-api-base');
+    } catch {
+      /* ignore */
+    }
+    return fallback;
+  }
+  if (/^https?:\/\//i.test(base)) {
+    return base.replace(/\/+$/, '');
+  }
+  return base.startsWith('/') ? base : `/${base}`;
+}
+
+const API_BASE = normalizeApiBase(
+  (typeof window !== 'undefined' && window.API_BASE_URL)
+  || localStorage.getItem('ph-api-base')
+  || API_BASE_DEFAULT,
+);
 
 /** Ensure a live server session before admin writes; redirects to login when needed. */
 async function requireWriteSession() {
@@ -5739,6 +5767,16 @@ async function apiFetch(path, opts = {}) {
           + 'Click Get and wait for the PDF, then try Generate again with fewer questions. If it keeps failing, ask the host to raise PHP/LiteSpeed timeouts (often 60–120s).';
       } else if (res.status >= 500) {
         message = `Server error (${res.status}). If this persists, redeploy on cPanel and confirm PHP 8.2+ and composer install. ${detail}`;
+      } else if (
+        res.status === 404
+        && /resource requested could not be found|404 Not Found/i.test(plain)
+        && !/"success"\s*:/.test(text)
+      ) {
+        message =
+          'Bad response (404): The server returned an HTML “not found” page instead of the JSON API. '
+          + `Requests must go to ${API_BASE} (for example ${API_BASE}/health). `
+          + 'Clear site local storage key ph-api-base, hard-refresh, and on production run Deploy HEAD Commit in cPanel after git push. '
+          + 'For local dev use: php -S localhost:8080 router.php';
       } else {
         message = `Bad response (${res.status}): ${detail}`;
       }
