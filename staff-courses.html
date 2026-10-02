@@ -106,19 +106,19 @@
       </div>
       <div class="modal-body">
         <p class="small text-muted-2 mb-3" id="generateCourseLabel"></p>
-        <p class="small text-muted-2 mb-3">Choose 0 or 5–100 questions per difficulty (steps of 5). Batches run in order: Easy, then Medium, then Hard (skipped if 0).</p>
+        <p class="small text-muted-2 mb-3">Type 0–100 questions per difficulty. Batches run in order: Easy, then Medium, then Hard (skipped if 0).</p>
         <div class="row g-3">
           <div class="col-12 col-md-4">
             <label class="form-label small fw-semibold" for="qEasy">Easy</label>
-            <select class="form-select" id="qEasy"></select>
+            <input class="form-control" id="qEasy" type="number" min="0" max="100" step="1" value="5" inputmode="numeric" />
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label small fw-semibold" for="qMedium">Medium</label>
-            <select class="form-select" id="qMedium"></select>
+            <input class="form-control" id="qMedium" type="number" min="0" max="100" step="1" value="5" inputmode="numeric" />
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label small fw-semibold" for="qHard">Hard</label>
-            <select class="form-select" id="qHard"></select>
+            <input class="form-control" id="qHard" type="number" min="0" max="100" step="1" value="5" inputmode="numeric" />
           </div>
         </div>
         <div id="genModalProgressWrap" class="d-none mt-3 pt-2 border-top">
@@ -219,8 +219,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261002bankdel"></script>
-<script src="js/app.js?v=20261002bankdel"></script>
+<script src="js/api.js?v=20261002countin"></script>
+<script src="js/app.js?v=20261002countin"></script>
 <script>
 let courses = [];
 let picked = null;
@@ -1560,29 +1560,20 @@ function setGenerateBusy(busy) {
   modal?.querySelectorAll('#qEasy,#qMedium,#qHard').forEach((el) => { el.disabled = busy; });
 }
 
-const DIFFICULTY_COUNT_STEP = 5;
 const DIFFICULTY_COUNT_MAX = 100;
 
-function populateDifficultyCountSelects(defaultCount = 5) {
-  for (const id of ['qEasy', 'qMedium', 'qHard']) {
-    const sel = document.getElementById(id);
-    if (!sel) continue;
-    sel.replaceChildren();
-    for (let n = 0; n <= DIFFICULTY_COUNT_MAX; n += DIFFICULTY_COUNT_STEP) {
-      const opt = document.createElement('option');
-      opt.value = String(n);
-      opt.textContent = String(n);
-      if (n === defaultCount) opt.selected = true;
-      sel.appendChild(opt);
-    }
-  }
+function clampDifficultyCount(raw) {
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  if (n > DIFFICULTY_COUNT_MAX) return DIFFICULTY_COUNT_MAX;
+  return n;
 }
 
 function readDifficultyCounts() {
   return {
-    Easy: Number(document.getElementById('qEasy').value),
-    Medium: Number(document.getElementById('qMedium').value),
-    Hard: Number(document.getElementById('qHard').value),
+    Easy: clampDifficultyCount(document.getElementById('qEasy')?.value),
+    Medium: clampDifficultyCount(document.getElementById('qMedium')?.value),
+    Hard: clampDifficultyCount(document.getElementById('qHard')?.value),
   };
 }
 
@@ -2372,8 +2363,6 @@ document.getElementById('bankPanel').addEventListener('change', (event) => {
   else selectedBankQuestionIds.delete(String(id));
   updateBankDeleteToolbar();
 });
-
-populateDifficultyCountSelects(5);
 
 onAppReady(() => {
   const role = typeof Auth !== 'undefined' && Auth.role ? Auth.role() : '';

@@ -17,8 +17,6 @@ final class StaffCourseQuestionService
     private const MIN_COUNT = 0;
     private const MAX_COUNT = 100;
     private const MAX_TOTAL = 300;
-    /** Allowed per-difficulty counts: 0 or 5, 10, … 100. */
-    private const COUNT_STEP = 5;
     private const COOLDOWN_SECONDS = 8;
     private const GENERATE_BATCH_SIZE = 10;
     /** Max OpenAI calls per HTTP top-up request (shared-host proxy limits). */
@@ -1048,7 +1046,7 @@ final class StaffCourseQuestionService
             if ($questionCount !== $expectedCount) {
                 throw new \InvalidArgumentException(
                     "Question count must match this batch (expected {$expectedCount}, received {$questionCount}; "
-                    . 'use 0 or 5–100 in steps of 5 per difficulty).'
+                    . 'use 0–100 per difficulty).'
                 );
             }
         }
@@ -1125,13 +1123,9 @@ final class StaffCourseQuestionService
 
     private function assertStaffBatchCount(int $count): void
     {
-        if ($count === 0) {
-            return;
-        }
-        if ($count < self::COUNT_STEP || $count > self::MAX_COUNT || $count % self::COUNT_STEP !== 0) {
+        if ($count < self::MIN_COUNT || $count > self::MAX_COUNT) {
             throw new \InvalidArgumentException(
-                'Each difficulty must be 0 or ' . self::COUNT_STEP . '–' . self::MAX_COUNT
-                . ' questions in steps of ' . self::COUNT_STEP . '.'
+                'Each difficulty must be between 0 and ' . self::MAX_COUNT . ' questions.'
             );
         }
     }
