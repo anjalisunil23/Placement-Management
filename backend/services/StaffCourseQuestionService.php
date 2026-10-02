@@ -27,8 +27,10 @@ final class StaffCourseQuestionService
     private const BATCH_REQUEST_WALL_SECONDS = 52;
     /** Max questions requested from OpenAI per call (provider slice; UI batch may still be 10). */
     private const DIFFICULTY_BATCH_AI_SLICE = 5;
-    /** One OpenAI call per batch HTTP request; client loops (continueDifficultyBatch) until count is met. */
+    /** Default OpenAI calls per batch HTTP (client continue fills the rest on shared hosting). */
     private const DIFFICULTY_BATCH_CALLS_PER_HTTP = 1;
+    /** Allow two slices (5+5) in one request when the batch count is 10. */
+    private const DIFFICULTY_BATCH_CALLS_PER_HTTP_MAX = 2;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
     /** Enough for one batched pass + shortfall top-ups without exceeding shared-host timeouts. */
     private const GENERATE_MAX_API_CALLS = 18;
@@ -628,9 +630,24 @@ final class StaffCourseQuestionService
         $this->assertBatchQuestionCountBody($body, $currentDifficulty, $chunkTotal);
         $deadline = (float) (is_array($draft['genState'] ?? null) ? ($draft['genState']['deadline'] ?? 0) : 0);
         $batchWall = microtime(true) + $this->batchRequestWallSeconds($chunkTotal);
-        $maxChunkApiCalls = self::DIFFICULTY_BATCH_CALLS_PER_HTTP;
+        $maxChunkApiCalls = $this->difficultyBatchCallsAllowedPerHttp($body, $chunkTotal, count($selected));
         if ($deadline <= 0) {
             $deadline = $batchWall;
+        }
+
+        if ($progressKey !== '') {
+            self::writeGenerationProgress($progressKey, [
+                'phase' => 'generating',
+                'message' => 'Batch ' . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · generating…",
+                'generated' => count($selected),
+                'requested' => $chunkTotal,
+                'percent' => $chunkTotal > 0
+                    ? min(99, (int) round((count($selected) / $chunkTotal) * 100))
+                    : 0,
+                'done' => false,
+                'batchIndex' => $batchIndex,
+                'batchTotal' => $batchTotal,
+            ]);
         }
 
         $wasActive = session_status() === PHP_SESSION_ACTIVE;
@@ -786,6 +803,25 @@ final class StaffCourseQuestionService
         $chunkTotal = max(1, $chunkTotal);
 
         return min(120, max(self::BATCH_REQUEST_WALL_SECONDS, 40 + $chunkTotal * 8));
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function difficultyBatchCallsAllowedPerHttp(array $body, int $chunkTotal, int $haveCount): int
+    {
+        $shortfall = max(0, $chunkTotal - $haveCount);
+        if ($shortfall < 1) {
+            return 0;
+        }
+        $slicesNeeded = (int) max(1, ceil($shortfall / self::DIFFICULTY_BATCH_AI_SLICE));
+        $cap = !empty($body['continueDifficultyBatch'])
+            ? self::DIFFICULTY_BATCH_CALLS_PER_HTTP_MAX
+            : ($chunkTotal > self::DIFFICULTY_BATCH_AI_SLICE
+                ? self::DIFFICULTY_BATCH_CALLS_PER_HTTP_MAX
+                : self::DIFFICULTY_BATCH_CALLS_PER_HTTP);
+
+        return min($cap, $slicesNeeded);
     }
 
     /**
@@ -2263,12 +2299,16 @@ final class StaffCourseQuestionService
             return;
         }
         self::writeGenerationProgress($key, [
-            'phase' => 'generating',
+            'phase' => $generated >= $requested && $requested > 0 ? 'batch_ready' : 'generating',
             'message' => $message,
             'generated' => $generated,
             'requested' => $requested,
-            'percent' => $requested > 0 ? min(99, (int) round(($generated / $requested) * 100)) : 0,
-            'done' => false,
+            'percent' => $requested > 0
+                ? ($generated >= $requested
+                    ? 100
+                    : min(99, (int) round(($generated / $requested) * 100)))
+                : 0,
+            'done' => $generated >= $requested && $requested > 0,
         ]);
     }
 
