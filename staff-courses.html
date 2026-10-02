@@ -666,12 +666,15 @@ function updateDraftModalFooter(payload) {
   const genReady = batchGenerationFulfilled(payload)
     || (payload?.generationStatus === 'completed' && batchGenerationFulfilled(payload));
   const showAdd = !payload?.generationCompleted
+    && payload?.generationStatus === 'completed'
+    && staffBatchGenStatus === 'completed'
     && payload?.generationStatus !== 'error'
     && payload?.generationStatus !== 'partial'
     && staffBatchGenStatus !== 'error'
     && !payload?.generationFailedPartial
     && !payload?.generationFailedEmpty
     && genReady
+    && batchGenerationFulfilled(payload)
     && (payload?.questions || []).length > 0
     && staffBatchSaveStatus !== 'saved'
     && staffBatchSaveStatus !== 'saving'
@@ -1416,7 +1419,7 @@ function applyDifficultyBatchResponse(data, mixes) {
     generating: status === 'generating',
     generationStatus: status,
     fulfilled: fulfilled || data?.fulfilled,
-    awaitingBankSave: (status === 'completed' || status === 'partial') && data?.awaitingBankSave !== false,
+    awaitingBankSave: status === 'completed' && data?.awaitingBankSave !== false,
   });
 }
 
@@ -1437,7 +1440,10 @@ function normalizeBatchPayload(data, mixes) {
 
 async function postDifficultyBatchRequest(planIndex, { retry = false, continueFill = false } = {}) {
   const ctx = staffDiffBatchSession;
-  const { course, mixes, progressKey } = ctx;
+  const { course, mixes, progressKey, batchPlan } = ctx;
+  const entry = batchPlan?.[planIndex];
+  const difficulty = entry?.difficulty || '';
+  const questionCount = Number(entry?.count || 0);
   return api('/staff/courses/questions/batch', {
     method: 'POST',
     body: JSON.stringify({
@@ -1448,6 +1454,8 @@ async function postDifficultyBatchRequest(planIndex, { retry = false, continueFi
       encid: course.encid || '',
       mixes,
       batchIndex: planIndex,
+      difficulty,
+      questionCount,
       sessionId: ctx.sessionId || undefined,
       progressKey,
       retryDifficultyBatch: retry || undefined,
@@ -1494,7 +1502,6 @@ async function runDifficultyBatch(planIndex, retry = false) {
     !batchGenerationFulfilled(payload)
     && continueAttempts < maxFillRounds
     && (payload.questions || []).length < entry.count
-    && (payload.needsContinueFill || payload.generationFailedPartial)
   ) {
     const beforeCount = (payload.questions || []).length;
     continueAttempts += 1;
@@ -1531,14 +1538,10 @@ async function runDifficultyBatch(planIndex, retry = false) {
       stallRounds = 0;
     }
   }
-  if (typeof console !== 'undefined' && console.debug) {
-    console.debug('[staff-batch]', {
-      difficulty: entry.difficulty,
-      requestedQuestionCount: entry.count,
-      generated: (payload?.questions || []).length,
-      generationStatus: payload?.generationStatus,
-      fulfilled: batchGenerationFulfilled(payload),
-    });
+  if (typeof console !== 'undefined' && typeof console.log === 'function') {
+    console.log('Requested difficulty:', entry.difficulty);
+    console.log('Requested question count:', entry.count);
+    console.log('Generated questions:', (payload?.questions || []).length);
   }
   if (batchGenerationFulfilled(payload)) {
     staffBatchGenStatus = 'completed';
@@ -1546,6 +1549,9 @@ async function runDifficultyBatch(planIndex, retry = false) {
     payload.generating = false;
     payload.needsContinueFill = false;
     payload.awaitingBankSave = true;
+    setGenProgressUi(100, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+    setGenProgressUi(100, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+    stopStaffGenProgressPoll();
   } else if ((payload.questions || []).length > 0) {
     staffBatchGenStatus = 'error';
     payload.generationStatus = 'partial';

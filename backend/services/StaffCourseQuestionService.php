@@ -27,8 +27,8 @@ final class StaffCourseQuestionService
     private const BATCH_REQUEST_WALL_SECONDS = 52;
     /** Max questions requested from OpenAI per call (provider slice; UI batch may still be 10). */
     private const DIFFICULTY_BATCH_AI_SLICE = 5;
-    /** Extra OpenAI calls allowed while filling one difficulty batch (e.g. 10 = 5+5). */
-    private const DIFFICULTY_BATCH_MAX_CHUNK_API_CALLS = 24;
+    /** One OpenAI call per batch HTTP request; client loops (continueDifficultyBatch) until count is met. */
+    private const DIFFICULTY_BATCH_CALLS_PER_HTTP = 1;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
     /** Enough for one batched pass + shortfall top-ups without exceeding shared-host timeouts. */
     private const GENERATE_MAX_API_CALLS = 18;
@@ -625,9 +625,10 @@ final class StaffCourseQuestionService
         $chunk = [$batchPlan[$batchIndex]];
         $currentDifficulty = (string) ($chunk[0]['difficulty'] ?? 'Medium');
         $chunkTotal = (int) ($chunk[0]['count'] ?? 0);
+        $this->assertBatchQuestionCountBody($body, $currentDifficulty, $chunkTotal);
         $deadline = (float) (is_array($draft['genState'] ?? null) ? ($draft['genState']['deadline'] ?? 0) : 0);
         $batchWall = microtime(true) + $this->batchRequestWallSeconds($chunkTotal);
-        $maxChunkApiCalls = self::DIFFICULTY_BATCH_MAX_CHUNK_API_CALLS;
+        $maxChunkApiCalls = self::DIFFICULTY_BATCH_CALLS_PER_HTTP;
         if ($deadline <= 0) {
             $deadline = $batchWall;
         }
@@ -695,29 +696,6 @@ final class StaffCourseQuestionService
                         . count($batchQuestions) . " / {$chunkTotal}"
                     );
                 }
-            }
-            $remainingCalls = max(0, $maxChunkApiCalls - $chunkApiCalls);
-            if (
-                $remainingCalls > 0
-                && microtime(true) < $batchWall
-                && !$this->generationDeadlineReached($deadline)
-                && $this->mixShortfall($chunk, $batchQuestions) !== []
-            ) {
-                $batchQuestions = $this->fillMixShortfalls(
-                    $course,
-                    $syllabus,
-                    $system,
-                    $chunk,
-                    $bankAvoid,
-                    $promptKeys,
-                    $batchQuestions,
-                    $chunkApiCalls,
-                    $progressKey,
-                    $chunkTotal,
-                    min($deadline, $batchWall),
-                    $remainingCalls
-                );
-                $selected = $batchQuestions;
             }
         } finally {
             if ($wasActive && session_status() !== PHP_SESSION_ACTIVE) {
@@ -808,6 +786,32 @@ final class StaffCourseQuestionService
         $chunkTotal = max(1, $chunkTotal);
 
         return min(120, max(self::BATCH_REQUEST_WALL_SECONDS, 40 + $chunkTotal * 8));
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function assertBatchQuestionCountBody(array $body, string $expectedDifficulty, int $expectedCount): void
+    {
+        $this->assertStaffBatchCount($expectedCount);
+        $questionCount = (int) ($body['questionCount'] ?? 0);
+        if ($questionCount > 0) {
+            $this->assertStaffBatchCount($questionCount);
+            if ($questionCount !== $expectedCount) {
+                throw new \InvalidArgumentException(
+                    "Question count must be 0, 5, or 10 for this batch (expected {$expectedCount}, received {$questionCount})."
+                );
+            }
+        }
+        $diffRaw = trim((string) ($body['difficulty'] ?? ''));
+        if ($diffRaw !== '') {
+            $normalized = $this->normalizeDifficulty($diffRaw);
+            if ($normalized !== $expectedDifficulty) {
+                throw new \InvalidArgumentException(
+                    "Difficulty mismatch for this batch (expected {$expectedDifficulty})."
+                );
+            }
+        }
     }
 
     /**
