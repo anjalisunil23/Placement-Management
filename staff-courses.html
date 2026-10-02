@@ -36,7 +36,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Autonomous MCQ</h1>
-    <p class="page-sub mb-0">Create questions from a course syllabus, pick the ones to keep, review them in that course question bank, then take them as an MCQ.</p>
+    <p class="page-sub mb-0">View the syllabus PDF, then generate AI questions in a separate step. Pick questions to keep, review them in the question bank, and create MCQ tests.</p>
   </div>
 </div>
 
@@ -325,15 +325,9 @@ async function getSelectedCourse() {
     picked = Object.assign({}, picked, res.data || {});
     loaded = picked;
     const deptName = String(res.data?.departmentName || '').trim();
-    if (res.data?.syllabusReadable === false) {
-      label.textContent = 'PDF loaded, but the server could not read enough text for AI questions (often a scanned syllabus).';
-    } else if (res.data?.syllabusReadable == null) {
-      label.textContent = deptName
-        ? `Showing courses for ${deptName}. Open the syllabus below; after it loads you can generate questions.`
-        : 'Course selected. Open the syllabus below; after it loads you can generate questions.';
-    } else {
-      label.textContent = deptName ? `Showing courses for ${deptName}.` : 'Course loaded.';
-    }
+    label.textContent = deptName
+      ? `${deptName} · Syllabus PDF below. Generate questions reads the PDF separately for AI.`
+      : 'Syllabus PDF below. Generate questions reads the PDF separately for AI.';
     document.getElementById('courseSearch').value = picked.code || query;
     document.getElementById('courseResults').classList.add('d-none');
     practice = null;
@@ -353,7 +347,7 @@ async function getSelectedCourse() {
 function renderSyllabus() {
   const course = loaded;
   const panel = document.getElementById('syllabusPanel');
-  document.getElementById('btnGenerate').disabled = !course?.semsubId || course?.syllabusReadable === false;
+  document.getElementById('btnGenerate').disabled = !course?.semsubId;
   if (!course) {
     if (picked?.code) {
       panel.innerHTML = `<p class="text-muted-2 mb-0">Selected <span class="fw-semibold">${esc(picked.code)}</span>${picked.title ? ` — ${esc(picked.title)}` : ''}. Click Get to open the syllabus PDF.</p>`;
@@ -1021,9 +1015,43 @@ function stopGenProgress(hide) {
   setGenProgressUi(0, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
 }
 
+function startAiSyllabusPrepareProgress() {
+  stopGenProgress(true);
+  document.getElementById('genProgressWrap')?.classList.remove('d-none');
+  document.getElementById('genProgressLabel').textContent = 'Reading syllabus PDF for AI…';
+  document.getElementById('genProgressPct').textContent = '';
+  const bar = document.getElementById('genProgressBar');
+  if (bar) {
+    bar.style.width = '100%';
+    bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+  }
+}
+
+async function prepareSyllabusForAi(course) {
+  const res = await api('/staff/courses/syllabus/prepare', {
+    method: 'POST',
+    body: JSON.stringify({
+      semsubId: course.semsubId,
+      courseCode: course.code,
+      courseTitle: course.title || '',
+    }),
+  });
+  if (!res?.success) throw new Error(res?.message || 'Could not prepare the syllabus for AI.');
+  if (loaded && String(loaded.semsubId) === String(course.semsubId)) {
+    loaded = Object.assign({}, loaded, res.data || {});
+  }
+  if (res.data?.syllabusReadable === false) {
+    throw new Error(
+      res.message
+        || 'The PDF was loaded, but the server could not read enough text for AI questions (often a scanned syllabus).'
+    );
+  }
+  return res.data;
+}
+
 function startSyllabusLoadProgress() {
   stopGenProgress(true);
-  document.getElementById('genProgressLabel').textContent = 'Loading syllabus PDF…';
+  document.getElementById('genProgressLabel').textContent = 'Opening syllabus PDF…';
   document.getElementById('genProgressPct').textContent = '';
   document.getElementById('genProgressWrap')?.classList.remove('d-none');
   const bar = document.getElementById('genProgressBar');
@@ -1048,6 +1076,44 @@ function setGenerateBusy(busy) {
   modal?.querySelectorAll('#qEasy,#qMedium,#qHard').forEach((el) => { el.disabled = busy; });
 }
 
+/** @param {Array<{difficulty:string,count:number}>} mixes */
+function chunkMixesByTotal(mixes, maxPerChunk) {
+  const size = Math.max(1, Number(maxPerChunk) || 10);
+  const chunks = [];
+  let current = [];
+  let currentTotal = 0;
+  mixes.forEach((mix) => {
+    const label = mix.difficulty || 'Medium';
+    let remaining = Math.max(0, Number(mix.count) || 0);
+    while (remaining > 0) {
+      let room = size - currentTotal;
+      if (room <= 0 && current.length) {
+        chunks.push(current);
+        current = [];
+        currentTotal = 0;
+        room = size;
+      }
+      const take = Math.min(remaining, room);
+      if (take <= 0) break;
+      current.push({ difficulty: label, count: take });
+      currentTotal += take;
+      remaining -= take;
+    }
+  });
+  if (current.length) chunks.push(current);
+  return chunks.length ? chunks : [mixes];
+}
+
+function showDraftGenerating(course, batchIndex, batchTotal, requested) {
+  const code = course?.code || '';
+  document.getElementById('draftModalTitle').textContent = `Generating · ${code}`;
+  document.getElementById('draftModalHint').textContent = requested > 0
+    ? `Batch ${batchIndex + 1} of ${batchTotal} · up to ${requested} question${requested === 1 ? '' : 's'}`
+    : `Batch ${batchIndex + 1} of ${batchTotal}`;
+  document.getElementById('draftModalBody').innerHTML = '<p class="text-muted mb-0">Generating this batch…</p>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('draftModal')).show();
+}
+
 async function generate() {
   const course = selectedCourse();
   if (!course) return;
@@ -1064,35 +1130,55 @@ async function generate() {
     return;
   }
   setGenerateBusy(true);
-  status.textContent = 'Generating questions for ' + (course.code || 'this course') + '…';
   const progressKey = createStaffGenProgressKey();
-  startGenProgress(requested, true);
-  startStaffGenProgressPoll(progressKey);
   document.getElementById('practicePanel').innerHTML = '';
+  const batchPlan = chunkMixesByTotal(mixes, 10);
+  const batchTotal = batchPlan.length;
+  let sessionId = '';
+  let lastData = null;
   try {
-    const res = await api('/staff/courses/questions', {
-      method: 'POST',
-      body: JSON.stringify({
-        courseCode: course.code,
-        courseTitle: course.title || '',
-        semsubId: course.semsubId || '',
-        encid: course.encid || '',
-        mixes,
-        progressKey,
-      }),
-    });
-    if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).hide();
+    status.textContent = 'Reading syllabus PDF for AI (' + (course.code || 'course') + ')…';
+    startAiSyllabusPrepareProgress();
+    await prepareSyllabusForAi(course);
+    status.textContent = 'Generating questions for ' + (course.code || 'this course') + '…';
+    startGenProgress(requested, true);
+    startStaffGenProgressPoll(progressKey);
+    showDraftGenerating(course, 0, batchTotal, requested);
+    for (let batchIndex = 0; batchIndex < batchTotal; batchIndex++) {
+      if (batchIndex > 0) {
+        showDraftGenerating(course, batchIndex, batchTotal, requested);
+      }
+      const res = await api('/staff/courses/questions/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          courseCode: course.code,
+          courseTitle: course.title || '',
+          semsubId: course.semsubId || '',
+          encid: course.encid || '',
+          mixes,
+          batchIndex,
+          sessionId: sessionId || undefined,
+          progressKey,
+        }),
+      });
+      if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+      sessionId = res.data?.sessionId || sessionId;
+      lastData = res.data;
+      if ((res.data?.questions || []).length) {
+        renderPractice(res.data);
+      }
+    }
+    if (!lastData) throw new Error('Could not generate questions.');
     finishGenProgress();
-    const count = (res.data?.questions || []).length;
-    const requested = Number(res.data?.requested || 0);
+    const count = (lastData.questions || []).length;
+    const gotRequested = Number(lastData.requested || requested);
     status.textContent = count
-      ? (requested > 0 && count !== requested
-        ? `Generated ${count} of ${requested} requested for ${course.code}. Select the ones to add to the question bank.`
+      ? (gotRequested > 0 && count !== gotRequested
+        ? `Generated ${count} of ${gotRequested} requested for ${course.code}. Select the ones to add to the question bank.`
         : `Generated ${count} question${count === 1 ? '' : 's'} for ${course.code}. Select the ones to add to the question bank.`)
       : 'No questions were generated.';
-    const modalEl = document.getElementById('generateModal');
-    modalEl.addEventListener('hidden.bs.modal', () => renderPractice(res.data), { once: true });
-    bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    renderPractice(lastData);
   } catch (err) {
     stopGenProgress(true);
     status.textContent = '';
@@ -1220,7 +1306,7 @@ document.getElementById('btnGenerate').addEventListener('click', () => {
   const course = selectedCourse();
   if (!course) return;
   stopGenProgress(true);
-  document.getElementById('generateCourseLabel').textContent = `Questions will be generated from the loaded syllabus for ${course.code} — ${course.title || ''}`;
+  document.getElementById('generateCourseLabel').textContent = `${course.code} — ${course.title || ''}. The server will read the syllabus PDF for AI (separate from the viewer), then generate questions in batches of up to 10.`;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).show();
 });
 document.getElementById('btnConfirmGenerate').addEventListener('click', generate);

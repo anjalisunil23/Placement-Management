@@ -735,21 +735,36 @@ final class StaffController
         if ($encid === '') {
             Response::error('Could not encode that course id.', 500);
         }
-        $syllabusTextChars = 0;
-        $syllabusReadable = null;
-        $cached = StaffCourseQuestionService::getSyllabusCache($semsubId, $encid);
-        if ($cached !== null) {
-            $syllabusTextChars = mb_strlen($cached);
-            $syllabusReadable = AesSyllabusCipher::isUsableSyllabusText($cached);
-        }
         Response::success([
             'semsubId' => $semsubId,
             'encid' => $encid,
             'courseCode' => $courseCode,
             'departmentName' => $dept['name'] !== '' ? $dept['name'] : $dept['code'],
-            'syllabusTextChars' => $syllabusTextChars,
-            'syllabusReadable' => $syllabusReadable,
         ]);
+    }
+
+    /** POST /api/staff/courses/syllabus/prepare — fetch PDF and extract text for AI (separate from PDF download). */
+    public function prepareSyllabusForAi(): void
+    {
+        $user = RBACMiddleware::requireSyllabusAccess();
+        $raw = file_get_contents('php://input') ?: '{}';
+        $body = json_decode($raw, true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            $result = (new StaffCourseQuestionService())->prepareSyllabusForAi($user, $body);
+            $readable = !empty($result['syllabusReadable']);
+            $message = $readable
+                ? 'Syllabus text is ready for AI question generation.'
+                : 'The PDF was loaded, but the server could not read enough text for AI (often a scanned syllabus).';
+            Response::success($result, $message);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            $code = (int) $e->getCode();
+            Response::error($e->getMessage(), ($code >= 400 && $code <= 599) ? $code : 502);
+        }
     }
 
     /** GET /api/staff/courses/syllabus */
@@ -777,12 +792,6 @@ final class StaffController
             $pdf = AesSyllabusCipher::fetchPdf($encid);
         } catch (\RuntimeException $e) {
             Response::error($e->getMessage(), 502);
-        }
-        try {
-            $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
-            StaffCourseQuestionService::putSyllabusCache($semsubId, $encid, $text);
-        } catch (\Throwable) {
-            // PDF still streams; generation may fetch again later.
         }
         $file = preg_replace('/[^A-Za-z0-9_-]+/', '-', $courseCode !== '' ? $courseCode : 'syllabus') ?: 'syllabus';
         header('Content-Type: application/pdf');
@@ -833,6 +842,38 @@ final class StaffController
             Response::success(['active' => false]);
         }
         Response::success(array_merge(['active' => true], $progress));
+    }
+
+    /** POST /api/staff/courses/questions/batch */
+    public function generateCourseQuestionsBatch(): void
+    {
+        $user = RBACMiddleware::requireSyllabusAccess();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            $result = (new StaffCourseQuestionService())->generateBatch($user, $body);
+            $requested = (int) ($result['requested'] ?? 0);
+            $got = count($result['questions'] ?? []);
+            $batchNum = (int) ($result['batchIndex'] ?? 0) + 1;
+            $batchTotal = (int) ($result['batchTotal'] ?? 1);
+            $complete = !empty($result['batchComplete']);
+            if (!$complete) {
+                $message = "Batch {$batchNum} of {$batchTotal} complete ({$got} / {$requested} so far).";
+            } else {
+                $message = 'Questions generated. Select the ones you want to add to the syllabus question bank.';
+                if ($requested > 0 && $got < $requested) {
+                    $message = "Generated {$got} of {$requested} requested. Select the ones to add, or generate again for more.";
+                }
+            }
+            Response::success($result, $message);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\RuntimeException $e) {
+            $code = (int) $e->getCode();
+            Response::error($e->getMessage(), ($code >= 400 && $code <= 599) ? $code : 503);
+        }
     }
 
     /** POST /api/staff/courses/questions */
