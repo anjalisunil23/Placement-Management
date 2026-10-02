@@ -79,7 +79,7 @@ final class StaffCourseQuestionService
                 . 'Click Get again; if the PDF opens but generation still fails, the file may be image-only (scanned).'
             );
         }
-        $courseCode = (string) ($course['code'] ?? '');
+        $courseCode = SyllabusQuestionBankModel::normalizeCourseCode((string) ($course['code'] ?? ''));
         /** @var array<string, true> $promptKeys */
         $promptKeys = $this->promptKeysForSession([]);
         $system = OpenAIService::cleanUtf8(
@@ -616,7 +616,7 @@ final class StaffCourseQuestionService
         }
 
         $syllabus = $this->syllabusText($course);
-        $courseCode = (string) ($course['code'] ?? '');
+        $courseCode = SyllabusQuestionBankModel::normalizeCourseCode((string) ($course['code'] ?? ''));
         if ($sessionId !== '') {
             $this->hydrateGenerationDraft($sessionId);
         }
@@ -919,7 +919,7 @@ final class StaffCourseQuestionService
             ? $draft['genState']['counts']
             : ['Easy' => 0, 'Medium' => 0, 'Hard' => 0];
         $mixes = $this->mixesFromCountByLabel($countByLabel);
-        $courseCode = (string) ($draft['course']['code'] ?? '');
+        $courseCode = SyllabusQuestionBankModel::normalizeCourseCode((string) ($draft['course']['code'] ?? ''));
         $batchQuestions = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
         $display = $this->assignDraftIndexes($this->capQuestionsToMixesInOrder($batchQuestions, $chunk));
         $gotForBatch = count($display);
@@ -1707,7 +1707,8 @@ final class StaffCourseQuestionService
 
         $course = is_array($draft['course'] ?? null) ? $draft['course'] : [];
         $this->assertVisibleCourseCode($user, (string) ($course['code'] ?? ''));
-        $knownKeys = (new SyllabusQuestionBankModel())->existingPromptKeys((string) ($course['code'] ?? ''));
+        $saveCourseCode = SyllabusQuestionBankModel::normalizeCourseCode((string) ($course['code'] ?? ''));
+        $knownKeys = (new SyllabusQuestionBankModel())->existingPromptKeys($saveCourseCode);
         $picked = $this->dedupeWithinList($picked, $knownKeys);
         if ($picked === []) {
             throw new \InvalidArgumentException('The selected questions are already in the bank or duplicate each other.');
@@ -3351,7 +3352,10 @@ final class StaffCourseQuestionService
      */
     private function annotateBatchDuplicatePreview(array $questions, string $courseCode): array
     {
-        $bankKeys = (new SyllabusQuestionBankModel())->existingPromptKeys($courseCode);
+        $courseCode = SyllabusQuestionBankModel::normalizeCourseCode($courseCode);
+        $bankKeys = $courseCode !== ''
+            ? (new SyllabusQuestionBankModel())->existingPromptKeys($courseCode)
+            : [];
         $batchKeys = [];
         $out = [];
         foreach ($questions as $question) {
@@ -3359,19 +3363,20 @@ final class StaffCourseQuestionService
                 continue;
             }
             $key = $this->questionPromptKey($question);
-            $duplicateInBank = $key !== '' && isset($bankKeys[$key]);
+            $duplicateInBank = $key !== '' && $courseCode !== '' && isset($bankKeys[$key]);
             $duplicateInBatch = $key !== '' && isset($batchKeys[$key]);
             if ($key !== '') {
                 $batchKeys[$key] = true;
             }
             $duplicateMessage = $duplicateInBank
-                ? 'This question already exists in the bank and will not be added if saved unchanged.'
-                : ($duplicateInBatch ? 'Duplicate question within this AI batch.' : null);
+                ? ('This question already exists in the ' . $courseCode . ' question bank card and will not be added if saved unchanged.')
+                : ($duplicateInBatch ? 'Duplicate question within this generated batch.' : null);
             $out[] = array_merge($question, [
                 'duplicateInBank' => $duplicateInBank,
                 'duplicateInBatch' => $duplicateInBatch,
                 'duplicateMessage' => $duplicateMessage,
                 'selected' => !$duplicateInBank && !$duplicateInBatch,
+                'duplicateScopeCourseCode' => $courseCode,
             ]);
         }
 

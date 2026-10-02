@@ -135,6 +135,9 @@ class SyllabusQuestionBankModel extends BaseModel
         $rows = $this->findAll(['courseCode' => $courseCode], $limit, 0, ['createdAt' => 1]);
         $out = [];
         foreach ($rows as $row) {
+            if (self::normalizeCourseCode((string) ($row['courseCode'] ?? '')) !== $courseCode) {
+                continue;
+            }
             $out[] = $this->publicView($row);
         }
 
@@ -214,6 +217,7 @@ class SyllabusQuestionBankModel extends BaseModel
             'id' => (string) ($row['_id'] ?? $row['id'] ?? ''),
             'courseCode' => self::normalizeCourseCode((string) ($row['courseCode'] ?? '')),
             'courseTitle' => trim((string) ($row['courseTitle'] ?? '')),
+            'promptKey' => trim((string) ($row['promptKey'] ?? '')),
             'module' => trim((string) ($row['module'] ?? '')),
             'question' => trim((string) ($row['question'] ?? '')),
             'options' => $options,
@@ -235,15 +239,22 @@ class SyllabusQuestionBankModel extends BaseModel
     }
 
     /**
+     * Prompt keys for one course card only (not the whole bank).
+     *
      * @return array<string, true>
      */
     private function promptIndexForCourse(string $courseCode): array
     {
+        $courseCode = self::normalizeCourseCode($courseCode);
+        if ($courseCode === '') {
+            return [];
+        }
+
         $index = [];
-        foreach ($this->findAll(['courseCode' => $courseCode], 1000, 0, ['createdAt' => -1]) as $row) {
-            $key = trim((string) ($row['promptKey'] ?? ''));
+        foreach ($this->listByCourseCode($courseCode, 2000) as $question) {
+            $key = trim((string) ($question['promptKey'] ?? ''));
             if ($key === '') {
-                $key = self::normalizePromptKey((string) ($row['question'] ?? ''));
+                $key = self::normalizePromptKey((string) ($question['question'] ?? ''));
             }
             if ($key !== '') {
                 $index[$key] = true;
