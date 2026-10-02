@@ -6630,8 +6630,8 @@
       } else {
         testsBulkBar?.classList.remove('d-none');
         testsRoot.innerHTML = regular.map((t) => renderManageRow(t, { selectable: true })).join('');
-        bindManageListActions(testsRoot);
-      }
+      bindManageListActions(testsRoot);
+    }
       updateManageTestsSelectionToolbar();
     }
 

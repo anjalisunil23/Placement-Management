@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * CLI smoke test: self-hosted Piston via CodeExecutionService.
+ * CLI smoke test: local miss → Wandbox remote (run on server after deploy).
  * Usage: php backend/scripts/coding-remote-smoke.php
  */
 
@@ -16,12 +16,6 @@ require_once dirname(__DIR__) . '/bootstrap-services.php';
 pms_load_backend_services(dirname(__DIR__));
 
 use PMS\Services\CodeExecutionService;
-use PMS\Services\CodingExecutionConfig;
-
-if (!CodingExecutionConfig::remoteExecutionConfigured()) {
-    fwrite(STDERR, "Set CODE_EXECUTION_URL (e.g. http://127.0.0.1:2000)\n");
-    exit(2);
-}
 
 $svc = new CodeExecutionService();
 $out = $svc->run(

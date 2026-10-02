@@ -108,7 +108,6 @@ use PMS\Api\AptitudeController;
 use PMS\Api\CodingController;
 use PMS\Api\InternalJobController;
 use PMS\Api\CertificationController;
-use PMS\Api\TutorialController;
 use PMS\Api\JobFeedController;
 use PMS\Api\PublicController;
 use PMS\Auth\AuthController;

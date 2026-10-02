@@ -358,7 +358,8 @@ final class CodingController
         $runner = new CodeExecutionService();
         $result = $runner->run($language, $source, $stdin, $timeLimitMs);
         if (is_array($result)) {
-            $result['execBackend'] = 'self-hosted-piston-v1';
+            $engine = (string) ($result['execEngine'] ?? '');
+            $result['execBackend'] = $engine === 'wandbox' ? 'wandbox-v1' : 'local-v1';
         }
         Response::success($result);
     }

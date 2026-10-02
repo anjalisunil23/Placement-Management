@@ -772,15 +772,21 @@
       const ans = attempt.answers[question.id] || {};
       const language = ans.language || 'Python';
       const code = ans.code || '';
+      const graded = await gradePracticeSolution(question, language, code);
       const taken = Number.isFinite(timeTakenSeconds)
         ? timeTakenSeconds
         : Math.max(0, Math.round((Date.now() - attempt.startedAt) / 1000));
-      let graded = null;
       const payload = {
         bankProblemId: attempt.bankProblemId,
         problemTitle: question.title,
         language,
-        sourceCode: code,
+        accepted: graded.accepted,
+        status: graded.status,
+        testsPassed: graded.testsPassed,
+        testsTotal: graded.testsTotal,
+        score: graded.score,
+        totalMarks: graded.totalMarks,
+        percentage: graded.percentage,
         timeTakenSeconds: taken,
         submittedAt: new Date().toISOString(),
       };
@@ -790,42 +796,11 @@
           body: JSON.stringify(payload),
         }).catch(() => null);
         if (!res?.success) {
-          graded = await gradePracticeSolution(question, language, code);
-          Object.assign(payload, {
-            accepted: graded.accepted,
-            status: graded.status,
-            testsPassed: graded.testsPassed,
-            testsTotal: graded.testsTotal,
-            score: graded.score,
-            totalMarks: graded.totalMarks,
-            percentage: graded.percentage,
-            saveWarning: res?.message || 'Result shown locally; server save failed.',
-          });
+          payload.saveWarning = res?.message || 'Result shown locally; server save failed.';
         } else {
-          const data = res.data || {};
-          graded = {
-            accepted: !!data.accepted,
-            status: data.status || (data.accepted ? 'Accepted' : 'Wrong Answer'),
-            testsPassed: data.testsPassed ?? 0,
-            testsTotal: data.testsTotal ?? 0,
-            score: data.score ?? 0,
-            totalMarks: data.totalMarks ?? question.marks ?? 2,
-            percentage: data.percentage ?? 0,
-            caseResults: data.caseResults || [],
-          };
-          Object.assign(payload, data, graded);
+          Object.assign(payload, res.data || {});
         }
       } else {
-        graded = await gradePracticeSolution(question, language, code);
-        Object.assign(payload, {
-          accepted: graded.accepted,
-          status: graded.status,
-          testsPassed: graded.testsPassed,
-          testsTotal: graded.testsTotal,
-          score: graded.score,
-          totalMarks: graded.totalMarks,
-          percentage: graded.percentage,
-        });
         const rows = loadPracticeSubmissions();
         rows.unshift({ id: 'ps-' + Date.now(), ...payload, dateLabel: formatDate(payload.submittedAt) });
         savePracticeSubmissions(rows.slice(0, 100));
@@ -993,73 +968,10 @@
     },
 
     async submitAttempt(attemptId, { timeTakenSeconds, autoSubmitted = false } = {}) {
+      const localResult = async () => {
       const attempt = attempts.get(attemptId);
       if (!attempt) throw new Error('Attempt not found.');
       if (attempt.submitted) throw new Error('This test has already been submitted.');
-
-      const taken = Number.isFinite(timeTakenSeconds)
-        ? timeTakenSeconds
-        : Math.max(0, Math.round((Date.now() - attempt.startedAt) / 1000));
-
-      if (liveApi()) {
-        const answers = {};
-        Object.entries(attempt.answers || {}).forEach(([qid, ans]) => {
-          answers[qid] = {
-            language: ans?.language || 'Python',
-            code: ans?.code || '',
-          };
-        });
-        const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/submit`, {
-          method: 'POST',
-          body: JSON.stringify({
-            timeTakenSeconds: taken,
-            autoSubmitted: !!autoSubmitted,
-            answers,
-          }),
-        }).catch(() => null);
-        if (res?.success && res.data) {
-          attempt.submitted = true;
-          const data = res.data;
-          const result = {
-            ...data,
-            attemptId,
-            timeTakenLabel: data.timeTakenLabel || formatTimer(data.timeTakenSeconds ?? taken),
-            submittedAt: data.submittedAt || new Date().toISOString(),
-            dateLabel: formatDate(data.submittedAt || new Date().toISOString()),
-          };
-          const progress = loadProgress();
-          progress.history.unshift({
-            id: attemptId,
-            testId: result.testId,
-            listTestId: result.listTestId,
-            problemItemId: result.problemItemId,
-            testTitle: result.testTitle,
-            submittedAt: result.submittedAt,
-            score: result.score,
-            totalMarks: result.totalMarks,
-            percentage: result.percentage,
-            status: result.status,
-            correct: result.correct,
-            incorrect: result.incorrect,
-            skipped: result.skipped,
-            timeTakenSeconds: result.timeTakenSeconds,
-          });
-          progress.history = progress.history.slice(0, 20);
-          const set = new Set(progress.solvedQuestionIds);
-          (result.questionResults || []).forEach((qr) => {
-            if (qr.status === 'Correct' && qr.id) set.add(qr.id);
-          });
-          progress.solvedQuestionIds = [...set];
-          saveProgress(progress);
-          attempts.delete(attemptId);
-          return result;
-        }
-        if (res && !res.success) {
-          throw new Error(res.message || 'Submit failed.');
-        }
-      }
-
-      const localResult = async () => {
       attempt.submitted = true;
       const { parentId, problemId } = parseProblemTestId(attempt.testId);
       let full = attempt.test || null;
@@ -1146,6 +1058,9 @@
       const totalMarks = Number(full.marks || full.totalMarks) || (full.items || []).reduce((s, q) => s + Number(q.marks || 0), 0);
       const percentage = totalMarks ? Math.round((score / totalMarks) * 1000) / 10 : 0;
       const passed = percentage >= PASS_PERCENT;
+      const taken = Number.isFinite(timeTakenSeconds)
+        ? timeTakenSeconds
+        : Math.max(0, Math.round((Date.now() - attempt.startedAt) / 1000));
       const listTestId = problemId ? composeProblemTestId(parentId, problemId) : String(full.id || attempt.testId || '');
       const result = {
         attemptId,
@@ -1198,7 +1113,19 @@
       return result;
       };
       const result = await localResult();
-      attempts.delete(attemptId);
+      if (liveApi()) {
+        const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/submit`, {
+          method: 'POST',
+          body: JSON.stringify({ ...result, autoSubmitted: !!autoSubmitted }),
+        }).catch(() => null);
+        if (!res?.success) {
+          result.saveWarning = res?.message || 'Result is shown here. Progress may not have saved to the server.';
+        } else if (res.data) {
+          result.contestType = res.data.contestType || result.contestType;
+          result.winnersPublished = !!res.data.winnersPublished;
+          result.contestClosed = !!res.data.contestClosed;
+        }
+      }
       return result;
     },
   };

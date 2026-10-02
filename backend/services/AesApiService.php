@@ -263,16 +263,6 @@ final class AesApiService
     }
 
     /**
-     * POST method=searchSyllabus4Placement — course codes matching a search string.
-     *
-     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
-     */
-    public function searchSyllabus4Placement(string $search): array
-    {
-        return $this->callAESApi('searchSyllabus4Placement', ['search' => $search]);
-    }
-
-    /**
      * POST method=getAllStudInfo4Placement — department (or campus) student directory from AES.
      *
      * @param array<string, scalar|null> $params

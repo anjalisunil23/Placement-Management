@@ -5,40 +5,10 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 /**
- * Resource limits and execution-service settings for coding sandbox.
+ * Resource limits and paths for the coding sandbox (no Docker).
  */
 final class CodingExecutionConfig
 {
-    /**
-     * Self-hosted Piston (or compatible) base URL, e.g. http://piston:2000/api/v2/piston
-     */
-    public static function executionServiceUrl(): string
-    {
-        foreach (['CODE_EXECUTION_URL', 'CODING_PISTON_URL'] as $key) {
-            $url = trim((string) ($_ENV[$key] ?? ''));
-            if ($url === '' || str_contains(strtolower($url), 'emkc.org')) {
-                continue;
-            }
-            $url = rtrim($url, '/');
-            if (!str_ends_with($url, '/api/v2/piston')) {
-                if (str_ends_with($url, '/piston')) {
-                    $url = rtrim($url, '/piston') . '/api/v2/piston';
-                } elseif (!str_contains($url, '/api/v2/piston')) {
-                    $url .= '/api/v2/piston';
-                }
-            }
-
-            return $url;
-        }
-
-        return '';
-    }
-
-    public static function remoteExecutionConfigured(): bool
-    {
-        return self::executionServiceUrl() !== '';
-    }
-
     /**
      * @return array{
      *   time_limit_sec:int,
@@ -50,17 +20,32 @@ final class CodingExecutionConfig
      *   max_io_bytes:int,
      *   run_user:string,
      *   sandbox_root:string,
-     *   remote_backends:list<string>,
-     *   execution_service_url:string
+     *   remote_backends:list<string>
      * }
      */
     public static function limits(?int $timeLimitMs = null): array
     {
         $timeSec = max(1, min(15, (int) ceil(($timeLimitMs ?? 2000) / 1000)));
-        $memoryMb = max(16, min(512, (int) ($_ENV['CODING_MEMORY_LIMIT_MB'] ?? 256)));
+        $memoryMb = max(16, min(512, (int) ($_ENV['CODING_MEMORY_LIMIT_MB'] ?? 128)));
         $wall = max($timeSec + 1, min(20, (int) ($_ENV['CODING_WALL_CLOCK_SEC'] ?? ($timeSec + 3))));
 
-        $remote = self::resolveRemoteBackends();
+        $remoteRaw = strtolower(trim((string) ($_ENV['CODING_REMOTE_BACKENDS'] ?? '')));
+        if ($remoteRaw === 'none') {
+            $remote = [];
+        } elseif ($remoteRaw === '') {
+            $remote = ['wandbox'];
+        } else {
+            $remote = array_values(array_filter(array_map('trim', explode(',', $remoteRaw))));
+            if ($remote === []) {
+                $remote = ['wandbox'];
+            } elseif (!in_array('wandbox', $remote, true) && !in_array('none', $remote, true)) {
+                $pistonOnly = $remote === ['piston'];
+                $pistonUrl = strtolower(trim((string) ($_ENV['CODING_PISTON_URL'] ?? '')));
+                if ($pistonOnly && ($pistonUrl === '' || str_contains($pistonUrl, 'emkc.org'))) {
+                    array_unshift($remote, 'wandbox');
+                }
+            }
+        }
 
         $root = trim((string) ($_ENV['CODING_SANDBOX_ROOT'] ?? ''));
         if ($root === '') {
@@ -78,33 +63,6 @@ final class CodingExecutionConfig
             'run_user' => trim((string) ($_ENV['CODING_RUN_USER'] ?? '')),
             'sandbox_root' => $root,
             'remote_backends' => $remote,
-            'execution_service_url' => self::executionServiceUrl(),
         ];
-    }
-
-    /**
-     * @return list<string>
-     */
-    private static function resolveRemoteBackends(): array
-    {
-        $remoteRaw = strtolower(trim((string) ($_ENV['CODING_REMOTE_BACKENDS'] ?? '')));
-        if ($remoteRaw === 'none') {
-            return [];
-        }
-        if ($remoteRaw === '') {
-            return self::executionServiceUrl() !== '' ? ['piston'] : [];
-        }
-        $remote = array_values(array_filter(array_map('trim', explode(',', $remoteRaw))));
-        if ($remote === []) {
-            return self::executionServiceUrl() !== '' ? ['piston'] : [];
-        }
-        $allowed = [];
-        foreach ($remote as $b) {
-            if ($b === 'piston' && self::executionServiceUrl() !== '') {
-                $allowed[] = 'piston';
-            }
-        }
-
-        return $allowed;
     }
 }

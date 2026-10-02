@@ -187,8 +187,13 @@ final class CodingSandboxEngine
             return $this->compilationFail($compile['stderr'] ?: $compile['stdout'], $started);
         }
 
+        $binary = $out;
+        if (PHP_OS_FAMILY === 'Windows' && is_file($out . '.exe')) {
+            $binary = $out . '.exe';
+        }
+
         return $this->wrapRun(
-            $this->runCommand([$out], $work, $layout, $stdin, $limitSec + 1, $limits),
+            $this->runCommand([$binary], $work, $layout, $stdin, $limitSec + 1, $limits),
             $started
         );
     }
@@ -242,12 +247,26 @@ final class CodingSandboxEngine
         array $limits
     ): array {
         $wrapped = $this->wrapWithSandbox($command, $cwd, $limits);
+        $tempDir = $layout['temp'];
+        $path = getenv('PATH') ?: '';
+        if ($path === '' && PHP_OS_FAMILY !== 'Windows') {
+            $path = '/usr/bin:/bin';
+        }
         $env = [
-            'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
-            'HOME' => $layout['root'],
-            'TMPDIR' => $layout['temp'],
+            'PATH' => $path,
+            'TMPDIR' => $tempDir,
+            'TEMP' => $tempDir,
+            'TMP' => $tempDir,
             'LANG' => 'C.UTF-8',
         ];
+        if (PHP_OS_FAMILY === 'Windows') {
+            $env['USERPROFILE'] = $tempDir;
+            $env['APPDATA'] = $tempDir;
+            $env['LOCALAPPDATA'] = $tempDir;
+            $env['SystemRoot'] = getenv('SystemRoot') ?: 'C:\\Windows';
+        } else {
+            $env['HOME'] = $layout['root'];
+        }
 
         return $this->execProcess($wrapped, $cwd, $stdin, $timeoutSec, $env, (int) $limits['max_io_bytes']);
     }

@@ -38,12 +38,17 @@ $resultPath = (string) ($job['result_path'] ?? '');
 $engine = new CodingSandboxEngine();
 $result = $engine->execute($job);
 
-$encoded = json_encode($result, JSON_UNESCAPED_UNICODE);
+$encoded = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 if ($encoded === false) {
+    fwrite(STDERR, "Could not encode result JSON\n");
     exit(3);
 }
 if ($resultPath !== '') {
-    file_put_contents($resultPath, $encoded);
+    if (file_put_contents($resultPath, $encoded) === false) {
+        fwrite(STDERR, "Could not write result file\n");
+        exit(3);
+    }
     @chmod($resultPath, 0600);
+    exit(0);
 }
 echo $encoded;
