@@ -106,31 +106,19 @@
       </div>
       <div class="modal-body">
         <p class="small text-muted-2 mb-3" id="generateCourseLabel"></p>
-        <p class="small text-muted-2 mb-3">Choose 0, 5, or 10 questions per difficulty. Batches run in order: Easy, then Medium, then Hard (skipped if 0).</p>
+        <p class="small text-muted-2 mb-3">Enter 0–100 questions per difficulty. Batches run in order: Easy, then Medium, then Hard (skipped if 0).</p>
         <div class="row g-3">
           <div class="col-12 col-md-4">
             <label class="form-label small fw-semibold" for="qEasy">Easy</label>
-            <select class="form-select" id="qEasy">
-              <option value="0">0</option>
-              <option value="5" selected>5</option>
-              <option value="10">10</option>
-            </select>
+            <input type="number" class="form-control" id="qEasy" min="0" max="100" step="1" value="5" inputmode="numeric">
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label small fw-semibold" for="qMedium">Medium</label>
-            <select class="form-select" id="qMedium">
-              <option value="0">0</option>
-              <option value="5" selected>5</option>
-              <option value="10">10</option>
-            </select>
+            <input type="number" class="form-control" id="qMedium" min="0" max="100" step="1" value="5" inputmode="numeric">
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label small fw-semibold" for="qHard">Hard</label>
-            <select class="form-select" id="qHard">
-              <option value="0">0</option>
-              <option value="5" selected>5</option>
-              <option value="10">10</option>
-            </select>
+            <input type="number" class="form-control" id="qHard" min="0" max="100" step="1" value="5" inputmode="numeric">
           </div>
         </div>
         <div id="genModalProgressWrap" class="d-none mt-3 pt-2 border-top">
@@ -1364,12 +1352,35 @@ function setGenerateBusy(busy) {
   modal?.querySelectorAll('#qEasy,#qMedium,#qHard').forEach((el) => { el.disabled = busy; });
 }
 
+const STAFF_DIFFICULTY_COUNT_MAX = 100;
+
+function parseDifficultyCountField(id) {
+  const el = document.getElementById(id);
+  const raw = String(el?.value ?? '').trim();
+  if (raw === '') return 0;
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  return Math.min(STAFF_DIFFICULTY_COUNT_MAX, n);
+}
+
 function readDifficultyCounts() {
   return {
-    Easy: Number(document.getElementById('qEasy').value),
-    Medium: Number(document.getElementById('qMedium').value),
-    Hard: Number(document.getElementById('qHard').value),
+    Easy: parseDifficultyCountField('qEasy'),
+    Medium: parseDifficultyCountField('qMedium'),
+    Hard: parseDifficultyCountField('qHard'),
   };
+}
+
+function validateDifficultyCounts(counts) {
+  for (const label of ['Easy', 'Medium', 'Hard']) {
+    const n = Number(counts[label]);
+    if (!Number.isFinite(n) || n < 0 || n > STAFF_DIFFICULTY_COUNT_MAX) {
+      return `Enter 0–${STAFF_DIFFICULTY_COUNT_MAX} for ${label}.`;
+    }
+  }
+  const total = ['Easy', 'Medium', 'Hard'].reduce((s, d) => s + Number(counts[d] || 0), 0);
+  if (total < 1) return 'Enter at least one question across Easy, Medium, or Hard.';
+  return '';
 }
 
 function mixesFromCounts(counts) {
@@ -1570,7 +1581,7 @@ async function runDifficultyBatch(planIndex, retry = false) {
   if (!entry) throw new Error('Invalid batch.');
   const batchTotal = batchPlan.length;
   const groupsTotal = Math.max(1, Math.ceil(entry.count / 5));
-  const maxSliceRounds = Math.max(groupsTotal + 4, 12);
+  const maxSliceRounds = Math.max(groupsTotal + 10, 16);
   stopStaffGenProgressPoll();
   stopGenProgress(false);
   showDifficultyBatchProgressUi();
@@ -1765,10 +1776,16 @@ async function generate() {
   if (!course) return;
   const status = document.getElementById('genStatus');
   const counts = readDifficultyCounts();
+  const countErr = validateDifficultyCounts(counts);
+  if (countErr) {
+    status.textContent = countErr;
+    if (typeof toast === 'function') toast(countErr, 'error');
+    return;
+  }
   const mixes = mixesFromCounts(counts);
   const batchPlan = buildDifficultyBatchPlan(counts);
   if (!batchPlan.length) {
-    status.textContent = 'Please select at least one question for generation.';
+    status.textContent = 'Please enter at least one question for generation.';
     return;
   }
   setGenerateBusy(true);
@@ -1976,7 +1993,7 @@ document.getElementById('btnGenerate').addEventListener('click', () => {
   const course = selectedCourse();
   if (!course) return;
   stopGenProgress(true);
-  document.getElementById('generateCourseLabel').textContent = `${course.code} — ${course.title || ''}. Generates Easy, then Medium, then Hard (0 / 5 / 10 each). Add each batch to the bank before the next starts automatically.`;
+  document.getElementById('generateCourseLabel').textContent = `${course.code} — ${course.title || ''}. Enter 0–100 per difficulty; runs Easy, then Medium, then Hard. Add each batch to the bank before the next starts automatically.`;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).show();
 });
 document.getElementById('btnConfirmGenerate').addEventListener('click', generate);

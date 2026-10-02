@@ -15,8 +15,9 @@ use PMS\Utils\Security;
 final class StaffCourseQuestionService
 {
     private const MIN_COUNT = 0;
-    private const MAX_COUNT = 20;
-    private const MAX_TOTAL = 40;
+    /** Max questions per difficulty (Easy / Medium / Hard) in one generate run. */
+    private const MAX_COUNT = 100;
+    private const MAX_TOTAL = 300;
     private const COOLDOWN_SECONDS = 8;
     private const GENERATE_BATCH_SIZE = 10;
     /** Max OpenAI calls per HTTP top-up request (shared-host proxy limits). */
@@ -965,7 +966,8 @@ final class StaffCourseQuestionService
             $this->assertStaffBatchCount($questionCount);
             if ($questionCount !== $expectedCount) {
                 throw new \InvalidArgumentException(
-                    "Question count must be 0, 5, or 10 for this batch (expected {$expectedCount}, received {$questionCount})."
+                    "Question count must match this batch (expected {$expectedCount}, received {$questionCount}, max "
+                    . self::MAX_COUNT . ' per difficulty).'
                 );
             }
         }
@@ -1042,8 +1044,10 @@ final class StaffCourseQuestionService
 
     private function assertStaffBatchCount(int $count): void
     {
-        if (!in_array($count, [0, 5, 10], true)) {
-            throw new \InvalidArgumentException('Each difficulty batch must be 0, 5, or 10 questions.');
+        if ($count < self::MIN_COUNT || $count > self::MAX_COUNT) {
+            throw new \InvalidArgumentException(
+                'Each difficulty must be between 0 and ' . self::MAX_COUNT . ' questions.'
+            );
         }
     }
 
@@ -2526,7 +2530,7 @@ final class StaffCourseQuestionService
         foreach ($mixes as $mix) {
             $count = (int) $mix['count'];
             if ($count < self::MIN_COUNT || $count > self::MAX_COUNT) {
-                throw new \InvalidArgumentException('Each difficulty can have 0 to 20 questions.');
+                throw new \InvalidArgumentException('Each difficulty can have 0 to ' . self::MAX_COUNT . ' questions.');
             }
             $difficulty = (string) $mix['difficulty'];
             $seen[$difficulty] = ((int) ($seen[$difficulty] ?? 0)) + $count;
@@ -2539,7 +2543,7 @@ final class StaffCourseQuestionService
                 continue;
             }
             if ($count > self::MAX_COUNT) {
-                throw new \InvalidArgumentException('Each difficulty can have at most 20 questions.');
+                throw new \InvalidArgumentException('Each difficulty can have at most ' . self::MAX_COUNT . ' questions.');
             }
             $merged[] = ['difficulty' => $label, 'count' => $count];
             $total += $count;
@@ -2548,7 +2552,7 @@ final class StaffCourseQuestionService
             throw new \InvalidArgumentException('Choose a number of questions for at least one difficulty.');
         }
         if ($total > self::MAX_TOTAL) {
-            throw new \InvalidArgumentException('Generate at most 40 questions at a time.');
+            throw new \InvalidArgumentException('Generate at most ' . self::MAX_TOTAL . ' questions at a time.');
         }
 
         return $merged;
