@@ -20,11 +20,11 @@ final class StaffCourseQuestionService
     private const COOLDOWN_SECONDS = 8;
     private const GENERATE_BATCH_SIZE = 10;
     /** Max OpenAI calls per HTTP top-up request (shared-host proxy limits). */
-    private const BATCH_TOPUP_MAX_API_CALLS = 8;
+    private const BATCH_TOPUP_MAX_API_CALLS = 12;
     /** Max OpenAI calls while filling one syllabus chunk inside a batch request. */
-    private const BATCH_CHUNK_MAX_API_CALLS = 6;
+    private const BATCH_CHUNK_MAX_API_CALLS = 12;
     /** Wall clock per batch/top-up HTTP request (stay under typical LiteSpeed ~60s). */
-    private const BATCH_REQUEST_WALL_SECONDS = 48;
+    private const BATCH_REQUEST_WALL_SECONDS = 52;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
     /** Enough for one batched pass + shortfall top-ups without exceeding shared-host timeouts. */
     private const GENERATE_MAX_API_CALLS = 18;
@@ -79,7 +79,7 @@ final class StaffCourseQuestionService
         }
         $courseCode = (string) ($course['code'] ?? '');
         /** @var array<string, true> $promptKeys */
-        $promptKeys = (new SyllabusQuestionBankModel())->existingPromptKeys($courseCode);
+        $promptKeys = $this->promptKeysForSession([]);
         $system = OpenAIService::cleanUtf8(
             'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
         );
@@ -287,19 +287,10 @@ final class StaffCourseQuestionService
         }
 
         $courseCode = (string) ($course['code'] ?? '');
-        /** @var array<string, true> $promptKeys */
-        $promptKeys = (new SyllabusQuestionBankModel())->existingPromptKeys($courseCode);
         $draft = $_SESSION['staff_course_draft'] ?? null;
         $selected = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
-        foreach ($selected as $question) {
-            if (!is_array($question)) {
-                continue;
-            }
-            $key = SyllabusQuestionBankModel::normalizePromptKey((string) ($question['question'] ?? ''));
-            if ($key !== '') {
-                $promptKeys[$key] = true;
-            }
-        }
+        /** @var array<string, true> $promptKeys */
+        $promptKeys = $this->promptKeysForSession($selected);
 
         $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
         $chunk = $chunks[$batchIndex];
@@ -328,6 +319,11 @@ final class StaffCourseQuestionService
                 if ($partTotal < 1) {
                     break;
                 }
+                if ($emptyChunkStreak >= 2 && $partTotal > 1) {
+                    $firstLabel = (string) ($chunkShortfall[0]['difficulty'] ?? 'Medium');
+                    $partTotal = 1;
+                    $chunkShortfall = [['difficulty' => $firstLabel, 'count' => 1]];
+                }
                 $mixText = $this->mixLinesText($chunkShortfall);
                 $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
                 $part = $this->fetchQuestionBatch(
@@ -345,7 +341,7 @@ final class StaffCourseQuestionService
                 $chunkApiCalls++;
                 if ($part === []) {
                     $emptyChunkStreak++;
-                    if ($emptyChunkStreak >= 3) {
+                    if ($emptyChunkStreak >= 6) {
                         break;
                     }
                     continue;
@@ -398,11 +394,9 @@ final class StaffCourseQuestionService
 
         $selected = $this->assignDraftIndexes($selected);
         $isLastBatch = ($batchIndex + 1) >= $batchTotal;
-        $chunkComplete = $this->mixShortfall($chunk, $selected) === [];
 
         if (!$isLastBatch) {
-            $nextBatchIndex = $chunkComplete ? $batchIndex + 1 : $batchIndex;
-            $this->saveGeneratingDraftState($sessionId, $selected, $nextBatchIndex, null);
+            $this->saveGeneratingDraftState($sessionId, $selected, $batchIndex + 1, null);
 
             return $this->releaseSessionAndReturn([
                 'sessionId' => $sessionId,
@@ -414,8 +408,7 @@ final class StaffCourseQuestionService
                 'batchQuestions' => $batchQuestions,
                 'batchIndex' => $batchIndex,
                 'batchTotal' => $batchTotal,
-                'nextBatchIndex' => $nextBatchIndex,
-                'chunkComplete' => $chunkComplete,
+                'nextBatchIndex' => $batchIndex + 1,
                 'generating' => true,
                 'batchComplete' => false,
             ]);
@@ -437,7 +430,7 @@ final class StaffCourseQuestionService
             );
         }
 
-        $payload = $this->resumeGenerationTopUp(
+        return $this->resumeGenerationTopUp(
             $sessionId,
             $course,
             $mixes,
@@ -449,9 +442,6 @@ final class StaffCourseQuestionService
             $batchQuestions,
             0
         );
-        $payload['chunkComplete'] = $chunkComplete;
-
-        return $payload;
     }
 
     /**
@@ -503,18 +493,9 @@ final class StaffCourseQuestionService
             'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
         );
         $courseCode = (string) ($course['code'] ?? '');
-        /** @var array<string, true> $promptKeys */
-        $promptKeys = (new SyllabusQuestionBankModel())->existingPromptKeys($courseCode);
         $selected = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
-        foreach ($selected as $question) {
-            if (!is_array($question)) {
-                continue;
-            }
-            $key = SyllabusQuestionBankModel::normalizePromptKey((string) ($question['question'] ?? ''));
-            if ($key !== '') {
-                $promptKeys[$key] = true;
-            }
-        }
+        /** @var array<string, true> $promptKeys */
+        $promptKeys = $this->promptKeysForSession($selected);
         $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
 
         $topUpCalls = 0;
@@ -2491,6 +2472,28 @@ final class StaffCourseQuestionService
     private function questionPromptKey(array $question): string
     {
         return SyllabusQuestionBankModel::normalizePromptKey((string) ($question['question'] ?? $question['prompt'] ?? ''));
+    }
+
+    /**
+     * Keys for questions already in this generation draft (not the whole bank).
+     *
+     * @param list<array<string, mixed>> $questions
+     * @return array<string, true>
+     */
+    private function promptKeysForSession(array $questions): array
+    {
+        $keys = [];
+        foreach ($questions as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $key = $this->questionPromptKey($question);
+            if ($key !== '') {
+                $keys[$key] = true;
+            }
+        }
+
+        return $keys;
     }
 
     private function existingBankQuestionsAvoidBlock(string $courseCode): string
