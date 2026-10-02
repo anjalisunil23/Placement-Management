@@ -169,6 +169,10 @@ final class StaffCourseQuestionService
             return $this->generateBatchTopUp($user, $body);
         }
 
+        if (!empty($body['difficultyBatchMode'])) {
+            return $this->generateDifficultyBatch($user, $body);
+        }
+
         $mixes = $this->parseMixes($body);
         $total = $this->mixTotal($mixes);
         $chunks = $this->chunkMixesByTotal($mixes, self::GENERATE_BATCH_SIZE);
@@ -475,6 +479,336 @@ final class StaffCourseQuestionService
             $batchQuestions,
             0
         );
+    }
+
+    /**
+     * Fixed Easy → Medium → Hard batches (one difficulty per HTTP request).
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    private function generateDifficultyBatch(array $user, array $body): array
+    {
+        $parsed = $this->parseDifficultyBatchPlan($body);
+        /** @var list<array{difficulty:string,count:int}> $batchPlan */
+        $batchPlan = $parsed['plan'];
+        /** @var array{Easy:int,Medium:int,Hard:int} $countByLabel */
+        $countByLabel = $parsed['counts'];
+        $batchTotal = count($batchPlan);
+        $batchIndex = (int) ($body['batchIndex'] ?? 0);
+        if ($batchIndex < 0 || $batchIndex >= $batchTotal) {
+            throw new \InvalidArgumentException('Invalid generation batch.');
+        }
+
+        $progressKey = self::sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
+        $sessionId = trim((string) ($body['sessionId'] ?? ''));
+        if ($sessionId !== '') {
+            $this->hydrateGenerationDraft($sessionId);
+        }
+
+        $ctx = StaffContext::resolve($user);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+        $system = OpenAIService::cleanUtf8(
+            'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
+        );
+
+        $startingNewSession = $sessionId === ''
+            || !is_array($_SESSION['staff_course_draft'] ?? null)
+            || (string) (($_SESSION['staff_course_draft']['id'] ?? '')) !== $sessionId;
+
+        if ($startingNewSession) {
+            if ($batchIndex !== 0) {
+                throw new \InvalidArgumentException('Start difficulty batch generation from batch 1.');
+            }
+            $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? 'staff'));
+            $course = $this->resolveLoadedSyllabus(
+                $body,
+                (string) ($dept['code'] ?? ''),
+                (string) ($dept['name'] ?? ''),
+                (string) ($dept['shortName'] ?? ''),
+                $this->seesAllCourses($user)
+            );
+            $syllabus = $this->syllabusText($course);
+            if (!AesSyllabusCipher::isUsableSyllabusText($syllabus)) {
+                throw new \RuntimeException(
+                    'Could not read enough text from that syllabus PDF for AI generation. '
+                    . 'Click Get again; if the PDF opens but generation still fails, the file may be image-only (scanned).'
+                );
+            }
+            $sessionId = bin2hex(random_bytes(16));
+            $mixes = $this->mixesFromCountByLabel($countByLabel);
+            $_SESSION['staff_course_draft'] = [
+                'id' => $sessionId,
+                'userId' => (string) ($user['_id'] ?? $user['id'] ?? ''),
+                'course' => [
+                    'code' => (string) $course['code'],
+                    'title' => (string) $course['title'],
+                    'semsubId' => (string) ($course['semsubId'] ?? ''),
+                    'department' => (string) ($course['department'] ?? ''),
+                    'syllabusText' => $syllabus,
+                ],
+                'mixes' => $mixes,
+                'questions' => [],
+                'createdAt' => time(),
+                'generating' => true,
+                'genState' => [
+                    'difficultyBatchMode' => true,
+                    'batchPlan' => $batchPlan,
+                    'counts' => $countByLabel,
+                    'batchTotal' => $batchTotal,
+                    'difficultyBatchIndex' => 0,
+                    'completedDifficulties' => [],
+                    'deadline' => microtime(true) + self::GENERATE_MAX_WALL_SECONDS,
+                ],
+            ];
+            $this->persistGenerationDraft($_SESSION['staff_course_draft']);
+        } else {
+            if ($sessionId === '') {
+                throw new \InvalidArgumentException('Missing session for the next generation batch.');
+            }
+            if (!empty($body['retryDifficultyBatch'])) {
+                $draft = $this->requireDraft($user, $sessionId);
+                if (empty($draft['genState']['difficultyBatchMode'])) {
+                    throw new \InvalidArgumentException('This session is not a difficulty batch run.');
+                }
+                if ((int) ($draft['genState']['difficultyBatchIndex'] ?? -1) !== $batchIndex) {
+                    throw new \InvalidArgumentException('Retry the current batch only.');
+                }
+                unset($draft['genState']['awaitingBankSave']);
+                $draft['generating'] = true;
+                $draft['questions'] = [];
+                $this->persistGenerationDraft($draft);
+            } else {
+                $draft = $this->requireDifficultyBatchDraft($user, $sessionId, $batchIndex);
+            }
+            $batchPlan = is_array($draft['genState']['batchPlan'] ?? null) ? $draft['genState']['batchPlan'] : $batchPlan;
+            $batchTotal = count($batchPlan);
+            $countByLabel = is_array($draft['genState']['counts'] ?? null) ? $draft['genState']['counts'] : $countByLabel;
+            $course = [
+                'code' => (string) ($draft['course']['code'] ?? ''),
+                'title' => (string) ($draft['course']['title'] ?? ''),
+                'semsubId' => (string) ($draft['course']['semsubId'] ?? ''),
+                'department' => (string) ($draft['course']['department'] ?? ''),
+                'syllabusText' => (string) ($draft['course']['syllabusText'] ?? ''),
+            ];
+        }
+
+        $syllabus = $this->syllabusText($course);
+        $courseCode = (string) ($course['code'] ?? '');
+        $draft = $_SESSION['staff_course_draft'] ?? null;
+        $selected = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
+        /** @var array<string, true> $promptKeys */
+        $promptKeys = $this->promptKeysForSession($selected);
+        $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
+
+        $chunk = [$batchPlan[$batchIndex]];
+        $currentDifficulty = (string) ($chunk[0]['difficulty'] ?? 'Medium');
+        $chunkTotal = (int) ($chunk[0]['count'] ?? 0);
+        $deadline = (float) (is_array($draft['genState'] ?? null) ? ($draft['genState']['deadline'] ?? 0) : 0);
+        $batchWall = microtime(true) + self::BATCH_REQUEST_WALL_SECONDS;
+        if ($deadline <= 0) {
+            $deadline = $batchWall;
+        }
+
+        $wasActive = session_status() === PHP_SESSION_ACTIVE;
+        if ($wasActive) {
+            session_write_close();
+        }
+        /** @var list<array<string, mixed>> $batchQuestions */
+        $batchQuestions = [];
+        try {
+            $chunkApiCalls = 0;
+            $emptyChunkStreak = 0;
+            while (
+                $this->mixShortfall($chunk, $selected) !== []
+                && $chunkApiCalls < self::BATCH_CHUNK_MAX_API_CALLS
+                && microtime(true) < $batchWall
+            ) {
+                $chunkShortfall = $this->mixShortfall($chunk, $selected);
+                $partTotal = $this->mixTotal($chunkShortfall);
+                if ($partTotal < 1) {
+                    break;
+                }
+                if ($emptyChunkStreak >= 2 && $partTotal > 1) {
+                    $firstLabel = (string) ($chunkShortfall[0]['difficulty'] ?? 'Medium');
+                    $partTotal = 1;
+                    $chunkShortfall = [['difficulty' => $firstLabel, 'count' => 1]];
+                }
+                $mixText = $this->mixLinesText($chunkShortfall);
+                $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                $part = $this->fetchQuestionBatch(
+                    $course,
+                    $syllabus,
+                    $system,
+                    $chunkShortfall,
+                    $partTotal,
+                    $mixText,
+                    $avoid,
+                    $selected,
+                    $promptKeys,
+                    true
+                );
+                $chunkApiCalls++;
+                if ($part === []) {
+                    $emptyChunkStreak++;
+                    if ($emptyChunkStreak >= 6) {
+                        break;
+                    }
+                    continue;
+                }
+                $emptyChunkStreak = 0;
+                $selected = $this->mergeQuestionLists($selected, $part, $promptKeys);
+                $batchQuestions = $this->mergeQuestionLists($batchQuestions, $part);
+            }
+        } finally {
+            if ($wasActive && session_status() !== PHP_SESSION_ACTIVE) {
+                Security::startSession(false);
+            }
+        }
+
+        if ($sessionId !== '') {
+            $this->hydrateGenerationDraft($sessionId);
+        }
+
+        $display = $this->assignDraftIndexes($batchQuestions);
+        $gotForBatch = count($display);
+        $mixes = $this->mixesFromCountByLabel($countByLabel);
+        $totalRequested = $this->mixTotal($mixes);
+
+        $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
+        $draft['questions'] = $display;
+        $draft['generating'] = false;
+        if (!isset($draft['genState']) || !is_array($draft['genState'])) {
+            $draft['genState'] = [];
+        }
+        $draft['genState']['difficultyBatchMode'] = true;
+        $draft['genState']['batchPlan'] = $batchPlan;
+        $draft['genState']['counts'] = $countByLabel;
+        $draft['genState']['batchTotal'] = $batchTotal;
+        $draft['genState']['difficultyBatchIndex'] = $batchIndex;
+        $draft['genState']['currentDifficulty'] = $currentDifficulty;
+        $draft['genState']['awaitingBankSave'] = true;
+        unset($draft['genState']['readyForBatchIndex']);
+        $draft['createdAt'] = time();
+        $this->persistGenerationDraft($draft);
+
+        $batchNum = $batchIndex + 1;
+        $this->touchGenerationProgress(
+            $progressKey,
+            $gotForBatch,
+            $chunkTotal,
+            "Batch {$batchNum} of {$batchTotal} · {$currentDifficulty} · {$gotForBatch} / {$chunkTotal}"
+        );
+
+        $completed = is_array($draft['genState']['completedDifficulties'] ?? null)
+            ? $draft['genState']['completedDifficulties'] : [];
+
+        return $this->releaseSessionAndReturn([
+            'sessionId' => $sessionId,
+            'courseCode' => $courseCode,
+            'courseTitle' => (string) ($course['title'] ?? ''),
+            'mixes' => $mixes,
+            'requested' => $chunkTotal,
+            'questions' => $display,
+            'batchQuestions' => $display,
+            'batchIndex' => $batchIndex,
+            'batchTotal' => $batchTotal,
+            'currentDifficulty' => $currentDifficulty,
+            'completedDifficulties' => $completed,
+            'counts' => $countByLabel,
+            'generating' => false,
+            'awaitingBankSave' => true,
+            'difficultyBatchMode' => true,
+            'batchComplete' => false,
+            'fulfilled' => $gotForBatch >= $chunkTotal,
+            'generationFailedPartial' => $gotForBatch > 0 && $gotForBatch < $chunkTotal,
+            'generationFailedEmpty' => $gotForBatch === 0 && $chunkTotal > 0,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireDifficultyBatchDraft(array $user, string $sessionId, int $batchIndex): array
+    {
+        $draft = $this->requireDraft($user, $sessionId);
+        if (empty($draft['genState']['difficultyBatchMode'])) {
+            throw new \InvalidArgumentException('This session is not a difficulty batch run.');
+        }
+        $ready = (int) ($draft['genState']['readyForBatchIndex'] ?? -1);
+        if ($ready >= 0 && $ready === $batchIndex) {
+            unset($draft['genState']['readyForBatchIndex']);
+            $draft['generating'] = true;
+            $this->persistGenerationDraft($draft);
+
+            return $draft;
+        }
+        if (!empty($draft['generating'])) {
+            return $draft;
+        }
+        throw new \InvalidArgumentException('Add the current batch to the question bank before starting the next batch.');
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     * @return array{plan:list<array{difficulty:string,count:int}>,counts:array{Easy:int,Medium:int,Hard:int}}
+     */
+    private function parseDifficultyBatchPlan(array $body): array
+    {
+        $countByLabel = ['Easy' => 0, 'Medium' => 0, 'Hard' => 0];
+        if (isset($body['mixes']) && is_array($body['mixes'])) {
+            foreach ($body['mixes'] as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $label = $this->normalizeDifficulty((string) ($row['difficulty'] ?? 'Medium'));
+                $count = (int) ($row['count'] ?? 0);
+                $this->assertStaffBatchCount($count);
+                $countByLabel[$label] = $count;
+            }
+        } else {
+            throw new \InvalidArgumentException('Missing difficulty counts for generation.');
+        }
+
+        /** @var list<array{difficulty:string,count:int}> $plan */
+        $plan = [];
+        foreach (['Easy', 'Medium', 'Hard'] as $label) {
+            $count = (int) ($countByLabel[$label] ?? 0);
+            if ($count > 0) {
+                $plan[] = ['difficulty' => $label, 'count' => $count];
+            }
+        }
+        if ($plan === []) {
+            throw new \InvalidArgumentException('Please select at least one question for generation.');
+        }
+
+        return ['plan' => $plan, 'counts' => $countByLabel];
+    }
+
+    private function assertStaffBatchCount(int $count): void
+    {
+        if (!in_array($count, [0, 5, 10], true)) {
+            throw new \InvalidArgumentException('Each difficulty batch must be 0, 5, or 10 questions.');
+        }
+    }
+
+    /**
+     * @param array{Easy:int,Medium:int,Hard:int} $countByLabel
+     * @return list<array{difficulty:string,count:int}>
+     */
+    private function mixesFromCountByLabel(array $countByLabel): array
+    {
+        $mixes = [];
+        foreach (['Easy', 'Medium', 'Hard'] as $label) {
+            $count = (int) ($countByLabel[$label] ?? 0);
+            if ($count > 0) {
+                $mixes[] = ['difficulty' => $label, 'count' => $count];
+            }
+        }
+
+        return $mixes;
     }
 
     /**
@@ -1009,9 +1343,14 @@ final class StaffCourseQuestionService
     public function saveSelected(array $user, array $body): array
     {
         $draft = $this->requireDraft($user, (string) ($body['sessionId'] ?? ''));
+        $difficultyBatchMode = !empty($draft['genState']['difficultyBatchMode']);
         $awaitingStep = !empty($draft['genState']['awaitingNextBatch']);
-        if (!empty($draft['generating']) && !$awaitingStep) {
+        $awaitingBank = !empty($draft['genState']['awaitingBankSave']);
+        if (!empty($draft['generating']) && !$awaitingStep && !$awaitingBank) {
             throw new \InvalidArgumentException('Wait until all generation batches finish, then select questions to add.');
+        }
+        if ($difficultyBatchMode && !$awaitingBank && empty($draft['generating'])) {
+            throw new \InvalidArgumentException('Generate a batch first, then add questions to the bank.');
         }
         $indexes = [];
         foreach ((array) ($body['indexes'] ?? $body['selected'] ?? []) as $index) {
@@ -1043,6 +1382,55 @@ final class StaffCourseQuestionService
             'Medium',
             (string) ($user['_id'] ?? $user['id'] ?? '')
         );
+        $added = (int) ($bank['added'] ?? 0);
+
+        if ($difficultyBatchMode) {
+            if ($added < 1) {
+                throw new \InvalidArgumentException('No new questions were added to the bank. Select different questions or retry generation.');
+            }
+            $genState = is_array($draft['genState'] ?? null) ? $draft['genState'] : [];
+            $batchPlan = is_array($genState['batchPlan'] ?? null) ? $genState['batchPlan'] : [];
+            $batchIndex = (int) ($genState['difficultyBatchIndex'] ?? 0);
+            $currentDifficulty = (string) ($genState['currentDifficulty'] ?? '');
+            $completed = is_array($genState['completedDifficulties'] ?? null) ? $genState['completedDifficulties'] : [];
+            if ($currentDifficulty !== '' && !in_array($currentDifficulty, $completed, true)) {
+                $completed[] = $currentDifficulty;
+            }
+            $nextIndex = $batchIndex + 1;
+            $allDone = $nextIndex >= count($batchPlan);
+            $counts = is_array($genState['counts'] ?? null) ? $genState['counts'] : [];
+            unset($genState['awaitingBankSave']);
+            $genState['completedDifficulties'] = $completed;
+            if ($allDone) {
+                unset($draft['genState']);
+                $draft['questions'] = [];
+                $draft['generating'] = false;
+            } else {
+                $genState['readyForBatchIndex'] = $nextIndex;
+                $draft['genState'] = $genState;
+                $draft['questions'] = [];
+                $draft['generating'] = false;
+            }
+            $draft['createdAt'] = time();
+            $this->persistGenerationDraft($draft);
+
+            return [
+                'sessionId' => (string) ($draft['id'] ?? ''),
+                'courseCode' => (string) ($bank['courseCode'] ?? $course['code'] ?? ''),
+                'courseTitle' => (string) ($bank['courseTitle'] ?? $course['title'] ?? ''),
+                'added' => $added,
+                'skipped' => (int) ($bank['skipped'] ?? 0),
+                'questions' => [],
+                'mixes' => $draft['mixes'] ?? [],
+                'difficultyBatchMode' => true,
+                'generationCompleted' => $allDone,
+                'nextDifficultyBatchIndex' => $allDone ? null : $nextIndex,
+                'completedDifficulties' => $completed,
+                'counts' => $counts,
+                'batchTotal' => count($batchPlan),
+                'bank' => $this->listBank($user, (string) ($bank['courseCode'] ?? $course['code'] ?? '')),
+            ];
+        }
 
         $remaining = [];
         if ($awaitingStep) {
