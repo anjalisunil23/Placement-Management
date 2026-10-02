@@ -870,7 +870,7 @@ final class StaffCourseQuestionService
             'counts' => $countByLabel,
             'generating' => false,
             'awaitingBankSave' => $fulfilled,
-            'needsContinueFill' => !$fulfilled && $gotForBatch > 0 && $chunkTotal > $gotForBatch,
+            'needsContinueFill' => !$fulfilled && $chunkTotal > $gotForBatch,
             'difficultyBatchMode' => true,
             'batchComplete' => false,
             'fulfilled' => $fulfilled,
