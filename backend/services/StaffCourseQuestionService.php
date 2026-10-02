@@ -657,15 +657,20 @@ final class StaffCourseQuestionService
             max(1, (int) floor($startingHave / self::DIFFICULTY_BATCH_AI_SLICE) + 1)
         );
         if ($progressKey !== '') {
+            $haveNow = count($selected);
             self::writeGenerationProgress($progressKey, [
                 'phase' => 'generating',
                 'message' => 'Batch ' . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · "
                     . "group {$activeSliceGroup} of {$sliceGroupsTotal}…",
-                'generated' => count($selected),
+                'generated' => $haveNow,
                 'requested' => $chunkTotal,
-                'percent' => $chunkTotal > 0
-                    ? min(99, (int) round((count($selected) / $chunkTotal) * 100))
-                    : 0,
+                'percent' => $this->difficultyBatchProgressPercent(
+                    $haveNow,
+                    $chunkTotal,
+                    $activeSliceGroup,
+                    $sliceGroupsTotal,
+                    true
+                ),
                 'done' => false,
                 'batchIndex' => $batchIndex,
                 'batchTotal' => $batchTotal,
@@ -707,10 +712,13 @@ final class StaffCourseQuestionService
                 if ($progressKey !== '') {
                     $this->touchGenerationProgress(
                         $progressKey,
-                        count($batchQuestions),
+                        count($selected),
                         $chunkTotal,
                         'Batch ' . ($batchIndex + 1) . " of {$batchTotal} · {$currentDifficulty} · "
-                        . "group {$sliceGroup} of {$sliceGroupsTotal}…"
+                        . "group {$sliceGroup} of {$sliceGroupsTotal}…",
+                        $sliceGroup,
+                        $sliceGroupsTotal,
+                        true
                     );
                 }
                 $fetchAttempts = 0;
@@ -2495,23 +2503,69 @@ final class StaffCourseQuestionService
         @file_put_contents($path, json_encode($payload, JSON_UNESCAPED_UNICODE));
     }
 
-    private function touchGenerationProgress(string $key, int $generated, int $requested, string $message): void
-    {
+    private function touchGenerationProgress(
+        string $key,
+        int $generated,
+        int $requested,
+        string $message,
+        int $sliceGroup = 0,
+        int $sliceGroupsTotal = 0,
+        bool $sliceInFlight = false
+    ): void {
         if ($key === '') {
             return;
         }
+        $fulfilled = $requested > 0 && $generated >= $requested;
+        $percent = 0;
+        if ($requested > 0) {
+            if ($fulfilled) {
+                $percent = 100;
+            } elseif ($sliceGroupsTotal > 0 && $sliceGroup > 0) {
+                $percent = $this->difficultyBatchProgressPercent(
+                    $generated,
+                    $requested,
+                    $sliceGroup,
+                    $sliceGroupsTotal,
+                    $sliceInFlight
+                );
+            } else {
+                $percent = min(99, (int) round(($generated / $requested) * 100));
+            }
+        }
         self::writeGenerationProgress($key, [
-            'phase' => $generated >= $requested && $requested > 0 ? 'batch_ready' : 'generating',
+            'phase' => $fulfilled ? 'batch_ready' : 'generating',
             'message' => $message,
             'generated' => $generated,
             'requested' => $requested,
-            'percent' => $requested > 0
-                ? ($generated >= $requested
-                    ? 100
-                    : min(99, (int) round(($generated / $requested) * 100)))
-                : 0,
-            'done' => $generated >= $requested && $requested > 0,
+            'percent' => $percent,
+            'done' => $fulfilled,
         ]);
+    }
+
+    /** Progress while a slice group is in flight (e.g. 5/10 on group 2 of 2 → ~75%, not stuck at 50%). */
+    private function difficultyBatchProgressPercent(
+        int $have,
+        int $chunkTotal,
+        int $sliceGroup,
+        int $sliceGroupsTotal,
+        bool $sliceInFlight
+    ): int {
+        if ($chunkTotal < 1) {
+            return 0;
+        }
+        if ($have >= $chunkTotal) {
+            return 100;
+        }
+        $groups = max(1, $sliceGroupsTotal);
+        $groupSpan = 100.0 / $groups;
+        $completedGroups = max(0, min($groups, $sliceGroup - 1));
+        $base = $completedGroups * $groupSpan;
+        if ($sliceInFlight) {
+            $base += $groupSpan * 0.5;
+        }
+        $fromCount = ($have / $chunkTotal) * 100.0;
+
+        return min(99, (int) round(max($base, $fromCount)));
     }
 
     private function generationDeadlineReached(float $deadline): bool

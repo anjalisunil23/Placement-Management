@@ -1091,8 +1091,12 @@ function mergeAccumulatedQuestionsIntoPayload(payload, entryCount) {
   if (!payload) return payload;
   const need = entryCount || batchRequestedCount(payload);
   const got = batchPayloadAccumulatedCount(payload);
-  const acc = staffDiffBatchSession?.accumulatedQuestions || payload?.accumulatedQuestions || [];
-  if (got >= need && acc.length >= got) {
+  const fromApi = (payload.questions || []).length ? payload.questions : null;
+  const acc = fromApi
+    || staffDiffBatchSession?.accumulatedQuestions
+    || payload?.accumulatedQuestions
+    || [];
+  if (got >= need && acc.length > 0) {
     if (!(payload.questions || []).length) {
       payload.questions = acc.slice(0, need);
       payload.batchQuestions = payload.questions;
@@ -1103,6 +1107,20 @@ function mergeAccumulatedQuestionsIntoPayload(payload, entryCount) {
     payload.generationFailedPartial = false;
   }
   return payload;
+}
+
+/** Bar percent for multi-group batches (group 2 in flight at 5/10 → ~75%, not 50%). */
+function batchProgressForSlice(got, need, groupNum, groupsTotal, inFlight) {
+  const needN = Math.max(1, Number(need) || 1);
+  const gotN = Math.max(0, Number(got) || 0);
+  if (gotN >= needN) return 100;
+  const groups = Math.max(1, Number(groupsTotal) || 1);
+  const groupNumN = Math.max(1, Math.min(groups, Number(groupNum) || 1));
+  const groupSpan = 100 / groups;
+  let pct = (groupNumN - 1) * groupSpan;
+  if (inFlight) pct += groupSpan * 0.5;
+  pct = Math.max(pct, (gotN / needN) * 100);
+  return Math.min(99, Math.round(pct));
 }
 
 function setBatchFillProgressUi(got, need) {
@@ -1221,16 +1239,25 @@ function stopSliceWaitProgress() {
 }
 
 /** Creep progress while waiting on the next slice HTTP (group 2 often takes longer than group 1). */
-function startSliceWaitProgress(got, need, labelText) {
+function startSliceWaitProgress(got, need, labelText, groupNum, groupsTotal) {
   stopSliceWaitProgress();
   const needN = Math.max(1, Number(need) || 1);
   const gotN = Math.max(0, Number(got) || 0);
-  let v = gotN >= needN ? 99 : Math.min(96, Math.max(2, Math.round((gotN / needN) * 100) + 1));
-  const cap = gotN >= needN ? 99 : Math.min(97, Math.round(((gotN + Math.min(4, needN - gotN)) / needN) * 100));
+  const groups = Math.max(1, Number(groupsTotal) || 1);
+  const groupNumN = Math.max(1, Number(groupNum) || 1);
+  let v = batchProgressForSlice(gotN, needN, groupNumN, groups, true);
+  const cap = Math.min(
+    99,
+    batchProgressForSlice(gotN, needN, groupNumN, groups, false)
+      + Math.round((100 / groups) * 0.85)
+  );
   if (labelText) {
     document.getElementById('genProgressLabel').textContent = labelText;
-    document.getElementById('genModalProgressLabel').textContent = labelText;
+    const modalLbl = document.getElementById('genModalProgressLabel');
+    if (modalLbl) modalLbl.textContent = labelText;
   }
+  setGenProgressUi(v, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+  setGenProgressUi(v, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
   staffSliceWaitTimer = window.setInterval(() => {
     if (v >= cap) return;
     v = Math.min(cap, v + 0.35);
@@ -1263,14 +1290,23 @@ function updateStaffGenProgressFromServer(progress) {
   if (staffBatchGenStatus === 'completed' || staffBatchGenStatus === 'error') return;
   const message = progress.message || 'Generating questions…';
   document.getElementById('genProgressLabel').textContent = message;
-  document.getElementById('genModalProgressLabel').textContent = message;
+  const modalLbl = document.getElementById('genModalProgressLabel');
+  if (modalLbl) modalLbl.textContent = message;
+  if (staffSliceWaitTimer) {
+    return;
+  }
   const requested = Number(progress.requested || 0);
   const generated = Number(progress.generated || 0);
   const percent = requested > 0
     ? Math.min(100, Math.max(0, Number(progress.percent ?? Math.round((generated / requested) * 100))))
     : Number(progress.percent || 0);
   if (staffBatchGenStatus === 'generating' && requested > 0) {
-    setBatchGenerationProgress(generated, requested, message);
+    if (percent > 0 || generated > 0) {
+      setGenProgressUi(percent, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+      setGenProgressUi(percent, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+      const pctEl = document.getElementById('genProgressPct');
+      if (pctEl) pctEl.textContent = `${Math.round(percent)}%`;
+    }
     return;
   }
   setGenProgressUi(percent, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
@@ -1691,7 +1727,7 @@ async function runDifficultyBatch(planIndex, retry = false) {
       status.textContent = fillLabel;
       setBatchGenerationProgress(got, entry.count, fillLabel);
       showBatchSliceGroupGenerating(course, planIndex, batchTotal, entry.difficulty, entry.count, groupNum, groupsTotal, fillLabel);
-      startSliceWaitProgress(got, entry.count, fillLabel);
+      startSliceWaitProgress(got, entry.count, fillLabel, groupNum, groupsTotal);
     }
 
     staffBatchGenStatus = 'generating';
@@ -1741,7 +1777,19 @@ async function runDifficultyBatch(planIndex, retry = false) {
     const progressLabel = got >= entry.count
       ? `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${got} / ${entry.count} · complete`
       : `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${got} / ${entry.count}`;
-    setBatchGenerationProgress(got, entry.count, progressLabel);
+    if (got >= entry.count) {
+      setBatchGenerationProgress(got, entry.count, progressLabel);
+    } else {
+      const groupsDone = Math.min(groupsTotal, Math.ceil(got / 5));
+      const pct = batchProgressForSlice(got, entry.count, groupsDone + 1, groupsTotal, false);
+      document.getElementById('genProgressLabel').textContent = progressLabel;
+      const modalLbl = document.getElementById('genModalProgressLabel');
+      if (modalLbl) modalLbl.textContent = progressLabel;
+      setGenProgressUi(pct, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+      setGenProgressUi(pct, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+      const pctEl = document.getElementById('genProgressPct');
+      if (pctEl) pctEl.textContent = `${pct}%`;
+    }
 
     if (got >= entry.count || batchGenerationFulfilled(payload)) {
       payload = mergeAccumulatedQuestionsIntoPayload(payload, entry.count);
