@@ -36,13 +36,18 @@
   display: none !important;
 }
 
-/* One-shot reveal: keep incomplete shell/body hidden until app.js paints nav + role. */
-html.ph-booting .app,
+/* Boot: block main content until shell is ready; keep sidebar clickable once painted. */
+html.ph-booting .app .main,
 .app:has(#sidebar:empty) {
   opacity: 0;
   pointer-events: none;
 }
-html.ph-app-ready .app {
+html.ph-booting .app .sidebar:not(:empty) {
+  opacity: 1;
+  pointer-events: auto;
+}
+html.ph-app-ready .app,
+html.ph-app-ready .app .main {
   opacity: 1 !important;
   pointer-events: auto;
   transition: opacity .14s ease;
@@ -51,7 +56,7 @@ html.ph-booting,
 html:has(.app #sidebar:empty) {
   background: var(--bg, #F8FAFC);
 }
-html.ph-booting::after,
+html.ph-booting .app .main::before,
 html:has(.app #sidebar:empty):not(.ph-app-ready)::after {
   content: '';
   position: fixed;
@@ -66,8 +71,27 @@ html:has(.app #sidebar:empty):not(.ph-app-ready)::after {
   z-index: 9999;
   pointer-events: none;
 }
+html.ph-app-ready .app .main::before,
 html.ph-app-ready::after {
   display: none !important;
+}
+#hiringOverviewRoot.ph-hiring-loading {
+  position: relative;
+  min-height: 12rem;
+}
+#hiringOverviewRoot.ph-hiring-loading::after {
+  content: 'Loading dashboard…';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 3rem;
+  font-size: .875rem;
+  color: var(--muted, #64748b);
+  background: color-mix(in srgb, var(--bg, #f8fafc) 82%, transparent);
+  pointer-events: none;
+  z-index: 2;
 }
 @keyframes ph-boot-spin {
   to { transform: rotate(360deg); }

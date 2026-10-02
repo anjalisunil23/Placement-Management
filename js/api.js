@@ -971,8 +971,20 @@ const Auth = {
     } catch (_) { /* sessionStorage may be blocked */ }
 
     const qs = opts.fast ? '?fast=1' : '';
-    const res = await apiFetch('/auth/me' + qs, { skipAuthRedirect: true, skipAuthRetry: true });
+    let signal = opts.signal;
+    if (!signal && opts.fast) {
+      const ac = new AbortController();
+      window.setTimeout(() => ac.abort(), 8000);
+      signal = ac.signal;
+    }
+    const res = await apiFetch('/auth/me' + qs, { skipAuthRedirect: true, skipAuthRetry: true, signal });
+    const cachedUser = this.user();
     if (!res.success || !res.data || !res.data.role) {
+      if (opts.fast && cachedUser?.role && cachedUser.role !== 'staff'
+        && (res.aborted || res._offline || res.status >= 500)) {
+        this._sessionReady = true;
+        return true;
+      }
       this._sessionReady = false;
       return false;
     }

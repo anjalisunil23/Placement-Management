@@ -46,6 +46,7 @@ final class Collections
     public const APTITUDE_JD_QUESTION_SETS = 'aptitude_jd_question_sets';
     public const SYLLABUS_QUESTION_BANK = 'syllabus_question_bank';
     public const SYLLABUS_MCQ_TESTS = 'syllabus_mcq_tests';
+    public const SYLLABUS_AUTONOMOUS_MCQ_ATTEMPTS = 'syllabus_autonomous_mcq_attempts';
     public const STUDENT_AI_PRACTICE_SESSIONS = 'student_ai_practice_sessions';
     public const CODING_TESTS = 'coding_tests';
     public const CODING_ATTEMPTS = 'coding_attempts';

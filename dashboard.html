@@ -9,7 +9,7 @@
 <noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" /></noscript>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
 <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
-<link href="css/style.css?v=20260725responsive" rel="stylesheet" />
+<link href="css/style.css?v=20261002dashboot" rel="stylesheet" />
 <script src="js/ph-role-guard.js?v=20260724hod4"></script>
 </head>
 <body data-page="dashboard.html">
@@ -412,8 +412,8 @@
   </div>
 </div>
 
-<script src="js/api.js?v=20261002dashpo"></script>
-<script src="js/app.js?v=20261002dashpo"></script>
+<script src="js/api.js?v=20261002dashboot"></script>
+<script src="js/app.js?v=20261002dashboot"></script>
 <script>
 window.__phCachedRole = (function () {
   try { return JSON.parse(localStorage.getItem('ph-user') || 'null')?.role || ''; } catch (_) { return ''; }
@@ -477,7 +477,7 @@ window.__phLoadDashExtras = function loadDashboardExtras(role) {
     apiScripts.push('js/officer-api.js?v=20260724hodassign');
     apiScripts.push('js/staff-api.js?v=20260724one');
   }
-  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20260725pipeline');
+  if (needHiring) apiScripts.push('js/hiring-overview-page.js?v=20261002dashboot');
   const chartScripts = [];
   if (needCharts) {
     chartScripts.push('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
@@ -720,14 +720,21 @@ if (role === 'placement_officer' || role === 'staff') {
     // hiring script may not be ready yet — stash for init
   }
   window.__phCachedHiringSeed = cached || null;
+  const hiringRoot = document.getElementById('hiringOverviewRoot');
+  hiringRoot?.classList.add('ph-hiring-loading');
 
   if (staffAdminView) {
     const panel = document.getElementById('staffAdminViewPanel');
     if (panel) panel.classList.remove('d-none');
   }
 
+  const finishHiringLoading = () => hiringRoot?.classList.remove('ph-hiring-loading');
+
   apisReady.then(async () => {
-    if (typeof HiringOverviewPage === 'undefined') return;
+    if (typeof HiringOverviewPage === 'undefined') {
+      finishHiringLoading();
+      return;
+    }
     if (staffAdminView && typeof RecruitingStore !== 'undefined') {
       try {
         const liteRecruiting = await RecruitingStore.fetch({ lite: true }).catch(() => null);
@@ -762,7 +769,9 @@ if (role === 'placement_officer' || role === 'staff') {
         });
       }
     }
-    HiringOverviewPage.init({ root: '#hiringOverviewRoot' });
+    Promise.resolve(HiringOverviewPage.init({ root: '#hiringOverviewRoot' }))
+      .catch(() => {})
+      .finally(finishHiringLoading);
     // HOD can assign/change department PO (works even if role elevation is delayed).
     if (typeof Auth !== 'undefined' && Auth.isHod?.()) {
       initHodAssignPo().catch(() => {});

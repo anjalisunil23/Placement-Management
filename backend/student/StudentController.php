@@ -2064,8 +2064,8 @@ final class StudentController
   /** GET /api/student/autonomous-mcq/tests */
   public function autonomousMcqTests(): void
   {
-    RBACMiddleware::requireStudent();
-    Response::success((new StaffCourseQuestionService())->studentTests());
+    $user = RBACMiddleware::requireStudent();
+    Response::success((new StaffCourseQuestionService())->studentTests($user));
   }
 
   /** POST /api/student/autonomous-mcq/start */

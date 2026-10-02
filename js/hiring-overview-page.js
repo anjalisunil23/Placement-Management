@@ -1558,7 +1558,10 @@
 
     try {
       if (!Auth.isDemo() && !Auth.hasLiveSession()) {
-        await Auth.ensureSession();
+        await Promise.race([
+          Auth.ensureSession(),
+          new Promise((resolve) => window.setTimeout(resolve, 2500)),
+        ]);
       }
       this.refreshLiveFlags();
       const role = this.currentRole();
@@ -1578,9 +1581,13 @@
       if (this.campusLive) {
         const staffCampus = this.isCampusWideViewer() && role === 'staff';
         const dashOpts = staffCampus ? { lite: true, adminView: true } : { lite: true };
-        const [liteData, liteStats] = await Promise.all([
+        const fetchLite = Promise.all([
           RecruitingStore.fetch({ lite: true }).catch(() => null),
           dashboardStats(dashOpts).catch(() => null),
+        ]);
+        const [liteData, liteStats] = await Promise.race([
+          fetchLite,
+          new Promise((resolve) => window.setTimeout(() => resolve([null, null]), 12000)),
         ]);
         if (liteData) {
           this.applyRecruitingData(liteData, liteStats);

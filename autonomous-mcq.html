@@ -19,6 +19,8 @@
     align-items:center;gap:.75rem;padding:.85rem 1rem;border:0;width:100%;
     background:#fff;text-align:left;color:inherit;
   }
+  .apt-prob-row.apt-prob-row--result{grid-template-columns:1.6rem minmax(0,1fr) 3.8rem 4.2rem 4.8rem}
+  .apt-prob-result{font-size:.9rem;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;color:#0f766e}
   .apt-prob-row:nth-child(even){background:#f8fafc}
   .apt-prob-row:hover{background:#f1f5f9}
   .apt-prob-row.is-clickable{cursor:pointer}
@@ -114,17 +116,36 @@ function mcqDisplayTitle(test) {
   return title || 'Untitled MCQ';
 }
 
+function mcqListResultLabel(test) {
+  const mine = test?.myAttempt;
+  if (!mine) return '—';
+  const pct = Number(mine.percentage);
+  if (Number.isFinite(pct)) return `${pct}%`;
+  const score = Number(mine.score ?? 0);
+  const total = Number(mine.total ?? 0);
+  return total > 0 ? `${score}/${total}` : '—';
+}
+
+function patchTestAttempt(testId, attempt) {
+  if (!testId || !attempt) return;
+  const idx = tests.findIndex((t) => String(t.id) === String(testId));
+  if (idx >= 0) tests[idx] = Object.assign({}, tests[idx], { myAttempt: attempt });
+}
+
 function mcqTestRow(test, index) {
   const count = Number(test.questionCount || 0);
   const minutes = Number(test.durationMinutes || 0);
   const title = mcqDisplayTitle(test);
   const timeLabel = minutes ? `${minutes} min` : '—';
+  const attempted = !!test.myAttempt;
+  const resultLabel = mcqListResultLabel(test);
   return `
-    <button type="button" class="apt-prob-row is-clickable" data-start-test="${esc(test.id)}">
-      <span class="apt-prob-check"></span>
+    <button type="button" class="apt-prob-row apt-prob-row--result is-clickable" data-start-test="${esc(test.id)}">
+      <span class="apt-prob-check">${attempted ? '<i class="bi bi-check-lg"></i>' : ''}</span>
       <span class="apt-prob-title">${index + 1}. ${esc(title)}</span>
       <span class="apt-prob-pct">${count} Q</span>
       <span class="apt-prob-time">${esc(timeLabel)}</span>
+      <span class="apt-prob-result">${esc(resultLabel)}</span>
     </button>`;
 }
 
@@ -321,7 +342,9 @@ async function submitTest() {
       body: JSON.stringify({ sessionId: attempt.sessionId, answers }),
     });
     if (!res?.success) throw new Error(res?.message || 'Could not submit the MCQ.');
-    renderResult(res.data || {});
+    const data = res.data || {};
+    patchTestAttempt(data.testId || attempt?.testId, data.myAttempt);
+    renderResult(data);
   } catch (err) {
     setHint(err?.message || 'Could not submit the MCQ.');
     if (button) button.disabled = false;

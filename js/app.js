@@ -869,10 +869,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (_) { /* ignore */ }
 
   // Warm visit: paint shell + body immediately from cache (target <1s), verify session after.
-  const canInstantReveal = !freshAesLogin && !!(Auth.role() && Auth.user() && Auth.token());
+  const canInstantReveal = !freshAesLogin && !!(Auth.role() && Auth.user());
   if (canInstantReveal) {
-    paintShell();
+    paintShell(shellActivePage());
     revealApp();
+  }
+
+  let bootRevealTimer = 0;
+  if (!isPublic && !document.documentElement.classList.contains('ph-app-ready')) {
+    bootRevealTimer = window.setTimeout(() => {
+      if (document.documentElement.classList.contains('ph-app-ready')) return;
+      paintShell(shellActivePage());
+      revealApp();
+      if (!window.__phReady) {
+        window.__phReady = true;
+        document.dispatchEvent(new CustomEvent('ph-ready'));
+      }
+    }, 2800);
   }
 
   let hasSession = await Auth.bootstrap(
@@ -955,6 +968,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try { sessionStorage.removeItem('ph_auth_next'); } catch (_) { /* ignore */ }
   }
 
+  if (bootRevealTimer) window.clearTimeout(bootRevealTimer);
   window.__phReady = true;
   document.dispatchEvent(new CustomEvent('ph-ready'));
   ReferralModals.init();

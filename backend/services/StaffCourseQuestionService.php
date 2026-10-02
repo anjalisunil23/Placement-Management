@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Middleware\RBACMiddleware;
+use PMS\Models\SyllabusAutonomousMcqAttemptModel;
 use PMS\Models\SyllabusMcqTestModel;
 use PMS\Models\SyllabusQuestionBankModel;
 use PMS\Utils\Security;
@@ -2832,11 +2833,25 @@ final class StaffCourseQuestionService
     }
 
     /**
+     * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
-    public function studentTests(): array
+    public function studentTests(array $user): array
     {
-        return ['tests' => (new SyllabusMcqTestModel())->listCards()];
+        $tests = (new SyllabusMcqTestModel())->listCards();
+        $studentId = (string) ($user['_id'] ?? $user['id'] ?? '');
+        if ($studentId === '') {
+            return ['tests' => $tests];
+        }
+        $attempts = (new SyllabusAutonomousMcqAttemptModel())->latestMapForStudent($studentId);
+        foreach ($tests as $index => $test) {
+            $testId = (string) ($test['id'] ?? '');
+            if ($testId !== '' && isset($attempts[$testId])) {
+                $tests[$index]['myAttempt'] = $attempts[$testId];
+            }
+        }
+
+        return ['tests' => $tests];
     }
 
     /**
@@ -2899,6 +2914,10 @@ final class StaffCourseQuestionService
         unset($_SESSION['student_autonomous_mcq']);
         $graded['title'] = (string) ($session['title'] ?? '');
         $graded['testId'] = (string) ($session['testId'] ?? '');
+        $testId = (string) ($graded['testId'] ?? '');
+        if ($userId !== '' && $testId !== '') {
+            $graded['myAttempt'] = (new SyllabusAutonomousMcqAttemptModel())->saveLatest($userId, $testId, $graded);
+        }
 
         return $graded;
     }
