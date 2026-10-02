@@ -1161,6 +1161,28 @@ function chunkMixesByTotal(mixes, maxPerChunk) {
   return chunks.length ? chunks : [mixes];
 }
 
+function staffMixShortfall(mixes, questions) {
+  const have = { Easy: 0, Medium: 0, Hard: 0 };
+  (questions || []).forEach((q) => {
+    const d = q?.difficulty;
+    if (Object.prototype.hasOwnProperty.call(have, d)) have[d]++;
+  });
+  return (mixes || []).some((m) => (have[m.difficulty] || 0) < Number(m.count || 0));
+}
+
+function staffGenerationFulfilled(data) {
+  if (!data) return false;
+  if (data.fulfilled === false) return false;
+  if (data.fulfilled === true) return true;
+  if (data.generating) return false;
+  if (data.batchComplete !== true) return false;
+  const need = Number(data.requested || 0);
+  const got = (data.questions || []).length;
+  if (!(need > 0 && got >= need)) return false;
+  if (data.mixes && staffMixShortfall(data.mixes, data.questions)) return false;
+  return true;
+}
+
 function showDraftGenerating(course, batchIndex, batchTotal, requested) {
   const code = course?.code || '';
   document.getElementById('draftModalTitle').textContent = `Generating · ${code}`;
@@ -1251,12 +1273,17 @@ async function generate() {
       if ((res.data?.questions || []).length) {
         renderPractice(res.data);
       }
-      if (res.data?.batchComplete) {
+      if (staffGenerationFulfilled(res.data)) {
         break;
       }
     }
     let topUpGuard = 0;
-    while (lastData && !lastData.batchComplete && topUpGuard++ < 32) {
+    while (
+      lastData
+      && !staffGenerationFulfilled(lastData)
+      && (lastData.generating || lastData.phase === 'topup')
+      && topUpGuard++ < 64
+    ) {
       const got = (lastData.questions || []).length;
       const need = Number(lastData.requested || requested);
       document.getElementById('draftModalHint').textContent = need > 0
@@ -1283,9 +1310,22 @@ async function generate() {
       }
     }
     if (!lastData) throw new Error('Could not generate questions.');
-    if (!lastData.batchComplete) {
-      throw new Error('Generation stopped early. Try again with fewer questions per difficulty.');
+    if (!staffGenerationFulfilled(lastData)) {
+      const partial = (lastData.questions || []).length;
+      const need = Number(lastData.requested || requested);
+      throw new Error(
+        need > 0 && partial > 0
+          ? `Generation stopped at ${partial} of ${need}. Click Generate again to try filling the rest.`
+          : 'Generation stopped early. Try again with fewer questions per difficulty.'
+      );
     }
+    updateStaffGenProgressFromServer({
+      message: `${(lastData.questions || []).length} / ${Number(lastData.requested || requested)} completed`,
+      requested: Number(lastData.requested || requested),
+      generated: (lastData.questions || []).length,
+      percent: 100,
+      done: true,
+    });
     finishGenProgress();
     const count = (lastData.questions || []).length;
     const gotRequested = Number(lastData.requested || requested);

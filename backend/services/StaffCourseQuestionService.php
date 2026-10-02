@@ -20,7 +20,7 @@ final class StaffCourseQuestionService
     private const COOLDOWN_SECONDS = 8;
     private const GENERATE_BATCH_SIZE = 10;
     /** Max OpenAI calls per HTTP top-up request (shared-host proxy limits). */
-    private const BATCH_TOPUP_MAX_API_CALLS = 3;
+    private const BATCH_TOPUP_MAX_API_CALLS = 8;
     /** Wall clock per batch/top-up HTTP request (stay under typical LiteSpeed ~60s). */
     private const BATCH_REQUEST_WALL_SECONDS = 52;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
@@ -269,6 +269,14 @@ final class StaffCourseQuestionService
             ];
             $syllabus = $this->syllabusText($course);
             $deadline = (float) ($draft['genState']['deadline'] ?? 0);
+            if ($deadline <= 0 || $deadline < microtime(true) + 30) {
+                $deadline = microtime(true) + self::GENERATE_MAX_WALL_SECONDS;
+            }
+            if (!isset($draft['genState']) || !is_array($draft['genState'])) {
+                $draft['genState'] = [];
+            }
+            $draft['genState']['deadline'] = microtime(true) + self::GENERATE_MAX_WALL_SECONDS;
+            $this->persistGenerationDraft($draft);
             $batchTotal = (int) ($draft['genState']['batchTotal'] ?? $batchTotal);
             $chunks = $this->chunkMixesByTotal($mixes, self::GENERATE_BATCH_SIZE);
             if ($batchIndex >= count($chunks)) {
@@ -375,7 +383,52 @@ final class StaffCourseQuestionService
 
         $this->saveGeneratingDraftState($sessionId, $selected, $batchTotal, 'topup');
 
-        if ($this->mixShortfall($mixes, $selected) === []) {
+        if ($this->mixShortfall($mixes, $selected) !== []) {
+            $requestDeadline = microtime(true) + self::BATCH_REQUEST_WALL_SECONDS;
+            if (!isset($deadline) || $deadline <= 0 || $deadline > $requestDeadline) {
+                $deadline = $requestDeadline;
+            }
+            $inlineTopUpCalls = 0;
+            $wasActiveInline = session_status() === PHP_SESSION_ACTIVE;
+            if ($wasActiveInline) {
+                session_write_close();
+            }
+            try {
+                $selected = $this->fillMixShortfalls(
+                    $course,
+                    $syllabus,
+                    $system,
+                    $mixes,
+                    $bankAvoid,
+                    $promptKeys,
+                    $selected,
+                    $inlineTopUpCalls,
+                    $progressKey,
+                    $total,
+                    $deadline,
+                    4
+                );
+            } finally {
+                if ($wasActiveInline && session_status() !== PHP_SESSION_ACTIVE) {
+                    Security::startSession(false);
+                }
+            }
+            if ($sessionId !== '') {
+                $this->hydrateGenerationDraft($sessionId);
+            }
+            $selected = $this->assignDraftIndexes($selected);
+            $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
+            $draft['questions'] = $selected;
+            $draft['generating'] = true;
+            if (!isset($draft['genState']) || !is_array($draft['genState'])) {
+                $draft['genState'] = [];
+            }
+            $draft['genState']['phase'] = 'topup';
+            $draft['genState']['topUpStalls'] = 0;
+            $this->persistGenerationDraft($draft);
+        }
+
+        if ($this->mixShortfall($mixes, $this->selectionForMixCheck($selected, $mixes)) === []) {
             return $this->finalizeGenerationDraft(
                 $sessionId,
                 $course,
@@ -389,27 +442,18 @@ final class StaffCourseQuestionService
             );
         }
 
-        $this->touchGenerationProgress(
+        return $this->resumeGenerationTopUp(
+            $sessionId,
+            $course,
+            $mixes,
+            $selected,
             $progressKey,
-            count($selected),
             $total,
-            'Finishing counts… (' . count($selected) . ' / ' . $total . ')'
+            $batchIndex,
+            $batchTotal,
+            $batchQuestions,
+            0
         );
-
-        return $this->releaseSessionAndReturn([
-            'sessionId' => $sessionId,
-            'courseCode' => $courseCode,
-            'courseTitle' => (string) ($course['title'] ?? ''),
-            'mixes' => $mixes,
-            'requested' => $total,
-            'questions' => $selected,
-            'batchQuestions' => $batchQuestions,
-            'batchIndex' => $batchIndex,
-            'batchTotal' => $batchTotal,
-            'generating' => true,
-            'batchComplete' => false,
-            'phase' => 'topup',
-        ]);
     }
 
     /**
@@ -434,11 +478,20 @@ final class StaffCourseQuestionService
         $progressKey = self::sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
         $batchTotal = (int) ($draft['genState']['batchTotal'] ?? 1);
         $batchIndex = max(0, $batchTotal - 1);
-        $deadline = (float) ($draft['genState']['deadline'] ?? 0);
         $requestDeadline = microtime(true) + self::BATCH_REQUEST_WALL_SECONDS;
-        if ($deadline <= 0 || $deadline > $requestDeadline) {
+        $deadline = (float) ($draft['genState']['deadline'] ?? 0);
+        if ($deadline <= 0 || $deadline < microtime(true) + 30) {
+            $deadline = microtime(true) + self::GENERATE_MAX_WALL_SECONDS;
+        }
+        if ($deadline > $requestDeadline) {
             $deadline = $requestDeadline;
         }
+        $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : $draft;
+        if (!isset($draft['genState']) || !is_array($draft['genState'])) {
+            $draft['genState'] = [];
+        }
+        $draft['genState']['deadline'] = microtime(true) + self::GENERATE_MAX_WALL_SECONDS;
+        $this->persistGenerationDraft($draft);
 
         $course = [
             'code' => (string) ($draft['course']['code'] ?? ''),
@@ -502,7 +555,7 @@ final class StaffCourseQuestionService
             $stalls = 0;
         }
 
-        if ($this->mixShortfall($mixes, $selected) === []) {
+        if ($this->mixShortfall($mixes, $this->selectionForMixCheck($selected, $mixes)) === []) {
             return $this->finalizeGenerationDraft(
                 $sessionId,
                 $course,
@@ -516,31 +569,73 @@ final class StaffCourseQuestionService
             );
         }
 
+        return $this->resumeGenerationTopUp(
+            $sessionId,
+            $course,
+            $mixes,
+            $selected,
+            $progressKey,
+            $total,
+            $batchIndex,
+            $batchTotal,
+            [],
+            $stalls
+        );
+    }
+
+    /**
+     * @param list<array<string, mixed>> $selected
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @return list<array<string, mixed>>
+     */
+    private function selectionForMixCheck(array $selected, array $mixes): array
+    {
+        $selected = $this->dedupeBatchOnly($selected);
+
+        return $this->capQuestionsToMixes($selected, $mixes);
+    }
+
+    /**
+     * @param array<string, mixed> $course
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @param list<array<string, mixed>> $selected
+     * @param list<array<string, mixed>> $batchQuestions
+     * @return array<string, mixed>
+     */
+    private function resumeGenerationTopUp(
+        string $sessionId,
+        array $course,
+        array $mixes,
+        array $selected,
+        string $progressKey,
+        int $total,
+        int $batchIndex,
+        int $batchTotal,
+        array $batchQuestions,
+        int $topUpStalls
+    ): array {
+        $selected = $this->assignDraftIndexes($selected);
+        $got = count($selected);
+        $courseCode = (string) ($course['code'] ?? '');
+
         $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
+        if ($draft === [] && $sessionId !== '') {
+            $fromDisk = self::readGenerationDraftFile($sessionId);
+            if (is_array($fromDisk)) {
+                $draft = $fromDisk;
+            }
+        }
         if (!isset($draft['genState']) || !is_array($draft['genState'])) {
             $draft['genState'] = [];
         }
-        $draft['genState']['topUpStalls'] = $stalls;
         $draft['questions'] = $selected;
         $draft['generating'] = true;
         $draft['genState']['phase'] = 'topup';
         $draft['genState']['nextBatchIndex'] = $batchTotal;
+        $draft['genState']['topUpStalls'] = $topUpStalls;
+        $draft['genState']['deadline'] = microtime(true) + self::GENERATE_MAX_WALL_SECONDS;
         $draft['createdAt'] = time();
         $this->persistGenerationDraft($draft);
-
-        if ($stalls >= 4) {
-            return $this->finalizeGenerationDraft(
-                $sessionId,
-                $course,
-                $mixes,
-                $selected,
-                $progressKey,
-                $total,
-                $batchIndex,
-                $batchTotal,
-                []
-            );
-        }
 
         $this->touchGenerationProgress(
             $progressKey,
@@ -556,11 +651,12 @@ final class StaffCourseQuestionService
             'mixes' => $mixes,
             'requested' => $total,
             'questions' => $selected,
-            'batchQuestions' => [],
+            'batchQuestions' => $batchQuestions,
             'batchIndex' => $batchIndex,
             'batchTotal' => $batchTotal,
             'generating' => true,
             'batchComplete' => false,
+            'fulfilled' => false,
             'phase' => 'topup',
         ]);
     }
@@ -588,6 +684,20 @@ final class StaffCourseQuestionService
         $selected = $this->assignDraftIndexes($selected);
         $got = count($selected);
         $courseCode = (string) ($course['code'] ?? '');
+        if ($this->mixShortfall($mixes, $selected) !== []) {
+            return $this->resumeGenerationTopUp(
+                $sessionId,
+                $course,
+                $mixes,
+                $selected,
+                $progressKey,
+                $total,
+                $batchIndex,
+                $batchTotal,
+                $batchQuestions,
+                0
+            );
+        }
 
         $draft = is_array($_SESSION['staff_course_draft'] ?? null) ? $_SESSION['staff_course_draft'] : [];
         unset($draft['generating'], $draft['genState']);
