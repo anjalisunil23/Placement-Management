@@ -25,8 +25,10 @@ final class StaffCourseQuestionService
     private const BATCH_CHUNK_MAX_API_CALLS = 12;
     /** Wall clock per batch/top-up HTTP request (stay under typical LiteSpeed ~60s). */
     private const BATCH_REQUEST_WALL_SECONDS = 52;
-    /** Max questions requested from OpenAI per call (keeps each call fast enough for follow-up fills). */
+    /** Max questions per OpenAI HTTP call; counts of 10 use two calls (5+5) combined by the client. */
     private const DIFFICULTY_BATCH_AI_SLICE = 5;
+    /** One OpenAI call per batch HTTP request (shared-host proxy safe); client loops until count is met. */
+    private const DIFFICULTY_BATCH_CALLS_PER_HTTP = 1;
     private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
     /** Enough for one batched pass + shortfall top-ups without exceeding shared-host timeouts. */
     private const GENERATE_MAX_API_CALLS = 18;
@@ -620,6 +622,19 @@ final class StaffCourseQuestionService
         $chunk = [$batchPlan[$batchIndex]];
         $currentDifficulty = (string) ($chunk[0]['difficulty'] ?? 'Medium');
         $chunkTotal = (int) ($chunk[0]['count'] ?? 0);
+        $bodyQuestionCount = (int) ($body['questionCount'] ?? 0);
+        if ($bodyQuestionCount > 0 && $bodyQuestionCount !== $chunkTotal) {
+            throw new \InvalidArgumentException(
+                "Question count mismatch for {$currentDifficulty} (expected {$chunkTotal}, got {$bodyQuestionCount})."
+            );
+        }
+        $bodyDifficulty = trim((string) ($body['difficulty'] ?? ''));
+        if ($bodyDifficulty !== '' && strcasecmp($bodyDifficulty, $currentDifficulty) !== 0) {
+            throw new \InvalidArgumentException(
+                "Difficulty mismatch for batch " . ($batchIndex + 1) . " (expected {$currentDifficulty})."
+            );
+        }
+        $this->assertStaffBatchCount($chunkTotal);
         $deadline = (float) (is_array($draft['genState'] ?? null) ? ($draft['genState']['deadline'] ?? 0) : 0);
         $batchWall = microtime(true) + $this->batchRequestWallSeconds($chunkTotal);
         if ($deadline <= 0) {
@@ -637,7 +652,7 @@ final class StaffCourseQuestionService
             $emptyChunkStreak = 0;
             while (
                 $this->mixShortfall($chunk, $selected) !== []
-                && $chunkApiCalls < self::BATCH_CHUNK_MAX_API_CALLS
+                && $chunkApiCalls < self::DIFFICULTY_BATCH_CALLS_PER_HTTP
                 && microtime(true) < $batchWall
                 && !$this->generationDeadlineReached($deadline)
             ) {
@@ -667,7 +682,7 @@ final class StaffCourseQuestionService
                     $avoid,
                     $selected,
                     $promptKeys,
-                    true
+                    false
                 );
                 $chunkApiCalls++;
                 if ($part === []) {
@@ -690,29 +705,6 @@ final class StaffCourseQuestionService
                     );
                 }
             }
-            $remainingCalls = max(0, self::BATCH_CHUNK_MAX_API_CALLS - $chunkApiCalls);
-            if (
-                $remainingCalls > 0
-                && microtime(true) < $batchWall
-                && !$this->generationDeadlineReached($deadline)
-                && $this->mixShortfall($chunk, $batchQuestions) !== []
-            ) {
-                $batchQuestions = $this->fillMixShortfalls(
-                    $course,
-                    $syllabus,
-                    $system,
-                    $chunk,
-                    $bankAvoid,
-                    $promptKeys,
-                    $batchQuestions,
-                    $chunkApiCalls,
-                    $progressKey,
-                    $chunkTotal,
-                    min($deadline, $batchWall),
-                    $remainingCalls
-                );
-                $selected = $batchQuestions;
-            }
         } finally {
             if ($wasActive && session_status() !== PHP_SESSION_ACTIVE) {
                 Security::startSession(false);
@@ -723,6 +715,7 @@ final class StaffCourseQuestionService
             $this->hydrateGenerationDraft($sessionId);
         }
 
+        $batchQuestions = $this->capQuestionsToMixes($batchQuestions, $chunk);
         $display = $this->assignDraftIndexes($batchQuestions);
         $gotForBatch = count($display);
         $mixes = $this->mixesFromCountByLabel($countByLabel);
@@ -797,8 +790,9 @@ final class StaffCourseQuestionService
     private function batchRequestWallSeconds(int $chunkTotal): int
     {
         $chunkTotal = max(1, $chunkTotal);
+        $slice = min($chunkTotal, self::DIFFICULTY_BATCH_AI_SLICE);
 
-        return min(118, max(self::BATCH_REQUEST_WALL_SECONDS, 36 + $chunkTotal * 7));
+        return min(118, max(56, 38 + $slice * 5));
     }
 
     /**

@@ -663,16 +663,15 @@ function updateDraftModalFooter(payload) {
   const retrySaveBtn = document.getElementById('btnRetrySave');
   const genBusy = isBatchGenerationBusy(payload);
   const saveBusy = staffBatchSaveStatus === 'saving';
-  const genReady = payload?.generationStatus === 'completed'
-    || payload?.generationStatus === 'partial'
-    || staffBatchGenStatus === 'completed'
-    || (batchHasGeneratedQuestions(payload) && !isBatchGenerationBusy(payload))
-    || (payload?.awaitingBankSave && (payload?.questions || []).length > 0);
+  const genReady = batchGenerationFulfilled(payload)
+    || (payload?.generationStatus === 'completed' && batchGenerationFulfilled(payload));
   const showAdd = !payload?.generationCompleted
     && payload?.generationStatus !== 'error'
     && staffBatchGenStatus !== 'error'
     && !payload?.generationFailedEmpty
+    && !payload?.generationFailedPartial
     && genReady
+    && batchGenerationFulfilled(payload)
     && (payload?.questions || []).length > 0
     && staffBatchSaveStatus !== 'saved'
     && staffBatchSaveStatus !== 'saving'
@@ -709,7 +708,6 @@ function updateDraftModalFooter(payload) {
   const canRetry = payload?.difficultyBatchMode
     && !genBusy
     && !payload?.generationCompleted
-    && !batchHasGeneratedQuestions(payload)
     && (payload?.generationStatus === 'error' || payload?.generationFailedEmpty || payload?.generationFailedPartial);
   if (retryBtn) {
     retryBtn.classList.toggle('d-none', !canRetry);
@@ -756,7 +754,8 @@ function renderPractice(payload) {
   const diff = payload?.currentDifficulty || '';
   let hint = '';
   if (payload?.difficultyBatchMode && batchTotal > 0 && batchNum > 0 && diff) {
-    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${requested || rows.length} question${(requested || rows.length) === 1 ? '' : 's'}.`;
+    const target = requested || staffDiffBatchSession?.batchPlan?.[batchIndex]?.count || rows.length;
+    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${target} question${target === 1 ? '' : 's'}.`;
   } else {
     hint = `${mix ? mix + ' · ' : ''}${countLabel}.`;
   }
@@ -765,10 +764,12 @@ function renderPractice(payload) {
     hint = 'All batches completed successfully.';
   } else if (batchGenerationFulfilled(payload)) {
     hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation complete ✓ — select questions and click Add selected to Question Bank.`;
-  } else if (batchHasGeneratedQuestions(payload) || payload?.generationStatus === 'partial' || payload?.awaitingBankSave) {
-    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${rows.length} of ${requested || rows.length} generated — add these or retry this batch for more.`;
   } else if (isBatchGenerationBusy(payload)) {
-    hint = `Generating batch ${batchNum} of ${batchTotal}… ${diff ? diff + ' questions' : ''}`.trim();
+    const target = requested || staffDiffBatchSession?.batchPlan?.[batchIndex]?.count || rows.length;
+    hint = `Generating batch ${batchNum} of ${batchTotal} · ${diff} · ${rows.length} / ${target} question${target === 1 ? '' : 's'}…`;
+  } else if (batchHasGeneratedQuestions(payload) || payload?.generationStatus === 'partial') {
+    const target = requested || staffDiffBatchSession?.batchPlan?.[batchIndex]?.count || rows.length;
+    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${rows.length} of ${target} generated — still collecting questions or retry this batch.`;
   } else if (payload?.generationStatus === 'error' || payload?.generationFailedEmpty) {
     hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation failed. Retry this batch.`;
   } else if (staffBatchSaveStatus === 'saved' && staffPendingNextBatchIndex != null) {
@@ -1320,6 +1321,12 @@ function readDifficultyCounts() {
   };
 }
 
+function staffGenDebug(...args) {
+  if (typeof console !== 'undefined' && typeof console.log === 'function') {
+    console.log('[staff-gen]', ...args);
+  }
+}
+
 function mixesFromCounts(counts) {
   return ['Easy', 'Medium', 'Hard']
     .map((difficulty) => ({ difficulty, count: Number(counts[difficulty] || 0) }));
@@ -1437,7 +1444,17 @@ function normalizeBatchPayload(data, mixes) {
 
 async function postDifficultyBatchRequest(planIndex, { retry = false, continueFill = false } = {}) {
   const ctx = staffDiffBatchSession;
-  const { course, mixes, progressKey } = ctx;
+  const { course, mixes, progressKey, batchPlan } = ctx;
+  const entry = batchPlan?.[planIndex];
+  const difficulty = entry?.difficulty || '';
+  const questionCount = Number(entry?.count || 0);
+  staffGenDebug('API batch request', {
+    difficulty,
+    questionCount,
+    batchIndex: planIndex,
+    continueFill: !!continueFill,
+    sessionId: ctx.sessionId || null,
+  });
   return api('/staff/courses/questions/batch', {
     method: 'POST',
     body: JSON.stringify({
@@ -1448,6 +1465,8 @@ async function postDifficultyBatchRequest(planIndex, { retry = false, continueFi
       encid: course.encid || '',
       mixes,
       batchIndex: planIndex,
+      difficulty,
+      questionCount,
       sessionId: ctx.sessionId || undefined,
       progressKey,
       retryDifficultyBatch: retry || undefined,
@@ -1487,28 +1506,52 @@ async function runDifficultyBatch(planIndex, retry = false) {
   }
   ctx.sessionId = res.data?.sessionId || ctx.sessionId;
   let payload = normalizeBatchPayload(res.data, mixes);
+  staffGenDebug('Batch response', {
+    difficulty: entry.difficulty,
+    requested: entry.count,
+    generated: (payload.questions || []).length,
+    fulfilled: batchGenerationFulfilled(payload),
+  });
+  const maxRounds = Math.max(3, Math.ceil(entry.count / 5) + 6);
   let continueAttempts = 0;
+  let stallRounds = 0;
+  let prevGot = (payload.questions || []).length;
   while (
-    payload.generationFailedPartial
-    && continueAttempts < 5
+    !batchGenerationFulfilled(payload)
+    && !payload?.generationFailedEmpty
+    && continueAttempts < maxRounds
     && (payload.questions || []).length < entry.count
   ) {
     continueAttempts += 1;
     staffBatchGenStatus = 'generating';
     staffGenerationActive = true;
     const got = (payload.questions || []).length;
-    const fillLabel = `Finishing batch ${planIndex + 1} of ${batchTotal}… ${entry.difficulty} · ${got} / ${entry.count}`;
+    const fillLabel = `Generating batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${got} / ${entry.count}`;
     status.textContent = fillLabel;
     document.getElementById('genProgressLabel').textContent = fillLabel;
-    renderPractice(Object.assign({}, payload, { generating: true, generationStatus: 'generating' }));
+    if (got > 0) {
+      renderPractice(Object.assign({}, payload, { generating: true, generationStatus: 'generating' }));
+    }
     try {
       res = await postDifficultyBatchRequest(planIndex, { continueFill: true });
     } catch (err) {
+      staffGenDebug('Continue fill failed', err?.message || err);
       break;
     }
     if (!res?.success) break;
     ctx.sessionId = res.data?.sessionId || ctx.sessionId;
     payload = normalizeBatchPayload(res.data, mixes);
+    const newGot = (payload.questions || []).length;
+    staffGenDebug('Continue fill response', {
+      difficulty: entry.difficulty,
+      requested: entry.count,
+      generated: newGot,
+      fulfilled: batchGenerationFulfilled(payload),
+    });
+    if (newGot <= prevGot) stallRounds += 1;
+    else stallRounds = 0;
+    prevGot = newGot;
+    if (stallRounds >= 3) break;
   }
   markBatchGenerationComplete(planIndex, entry, payload);
   renderPractice(payload);
@@ -1554,8 +1597,10 @@ async function generate() {
   if (!course) return;
   const status = document.getElementById('genStatus');
   const counts = readDifficultyCounts();
+  staffGenDebug('Generate clicked — counts from dropdown', counts);
   const mixes = mixesFromCounts(counts);
   const batchPlan = buildDifficultyBatchPlan(counts);
+  staffGenDebug('Batch plan', batchPlan);
   if (!batchPlan.length) {
     status.textContent = 'Please select at least one question for generation.';
     return;
