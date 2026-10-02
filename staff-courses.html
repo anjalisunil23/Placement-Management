@@ -766,10 +766,8 @@ function renderPractice(payload) {
     hint = 'All batches completed successfully.';
   } else if (isBatchGenerationBusy(payload)) {
     const target = requested || rows.length;
-    const groupsTotal = target > 0 ? Math.max(1, Math.ceil(target / 5)) : 1;
-    const groupNow = Math.min(groupsTotal, Math.floor(rows.length / 5) + 1);
     hint = rows.length > 0 && rows.length < target
-      ? `Batch ${batchNum} of ${batchTotal} · ${diff} · group ${groupNow} of ${groupsTotal} · ${rows.length} / ${target}`
+      ? `Batch ${batchNum} of ${batchTotal} · ${diff} · finishing… ${rows.length} / ${target}`
       : `Batch ${batchNum} of ${batchTotal} · ${diff} · generating… ${rows.length} / ${target}`;
   } else if (batchGenerationFulfilled(payload)) {
     hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation complete ✓ — select questions and click Add selected to Question Bank.`;
@@ -1181,9 +1179,17 @@ function setBatchGenerationProgress(got, need, labelText) {
   const pct = gotN >= needN ? 100 : Math.min(99, Math.round((gotN / needN) * 100));
   if (labelText) {
     document.getElementById('genProgressLabel').textContent = labelText;
+    const modalLbl = document.getElementById('genModalProgressLabel');
+    if (modalLbl) modalLbl.textContent = labelText;
   }
   setGenProgressUi(pct, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
   setGenProgressUi(pct, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+}
+
+function showDifficultyBatchProgressUi() {
+  stopGenProgress(false);
+  document.getElementById('genProgressWrap')?.classList.remove('d-none');
+  document.getElementById('genModalProgressWrap')?.classList.remove('d-none');
 }
 
 function updateStaffGenProgressFromServer(progress) {
@@ -1511,6 +1517,8 @@ async function runDifficultyBatch(planIndex, retry = false) {
   if (!entry) throw new Error('Invalid batch.');
   const batchTotal = batchPlan.length;
   stopStaffGenProgressPoll();
+  stopGenProgress(false);
+  showDifficultyBatchProgressUi();
   staffBatchGenStatus = 'generating';
   staffBatchSaveStatus = 'idle';
   staffPendingNextBatchIndex = null;
@@ -1545,18 +1553,16 @@ async function runDifficultyBatch(planIndex, retry = false) {
   let continueAttempts = 0;
   let stallRounds = 0;
   const maxFillRounds = 12;
-  const sliceGroupsTotal = Math.max(1, Math.ceil(entry.count / 5));
   while (
     !batchGenerationFulfilled(payload)
     && continueAttempts < maxFillRounds
     && (payload.questions || []).length < entry.count
   ) {
     const beforeCount = (payload.questions || []).length;
-    const nextGroup = Math.min(sliceGroupsTotal, Math.floor(beforeCount / 5) + 1);
     continueAttempts += 1;
     staffBatchGenStatus = 'generating';
     staffGenerationActive = true;
-    const fillLabel = `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · group ${nextGroup} of ${sliceGroupsTotal} · ${beforeCount} / ${entry.count}`;
+    const fillLabel = `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · finishing… ${beforeCount} / ${entry.count}`;
     status.textContent = fillLabel;
     setBatchGenerationProgress(beforeCount, entry.count, fillLabel);
     renderPractice(Object.assign({}, payload, {
@@ -1579,6 +1585,9 @@ async function runDifficultyBatch(planIndex, retry = false) {
     }
     ctx.sessionId = res.data?.sessionId || ctx.sessionId;
     payload = normalizeBatchPayload(res.data, mixes);
+    if (!batchGenerationFulfilled(payload) && (payload.questions || []).length < entry.count) {
+      payload.needsContinueFill = true;
+    }
     const afterCount = (payload.questions || []).length;
     setBatchGenerationProgress(
       afterCount,
@@ -1616,8 +1625,14 @@ async function runDifficultyBatch(planIndex, retry = false) {
   }
   markBatchGenerationComplete(planIndex, entry, payload);
   if (batchGenerationFulfilled(payload)) {
-    setGenProgressUi(100, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
-    setGenProgressUi(100, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+    finishGenProgress();
+  } else {
+    stopGenProgress(false);
+    setBatchGenerationProgress(
+      (payload.questions || []).length,
+      entry.count,
+      document.getElementById('genProgressLabel')?.textContent || ''
+    );
   }
   if (!batchGenerationFulfilled(payload) && !(payload.questions || []).length) {
     document.getElementById('draftModalTitle').textContent = `Generated questions · ${payload.courseCode || course.code || ''}`;
@@ -1690,8 +1705,7 @@ async function generate() {
     status.textContent = 'Reading syllabus PDF for AI (' + (course.code || 'course') + ')…';
     startAiSyllabusPrepareProgress();
     await prepareSyllabusForAiWithRetry(course);
-    const total = batchPlan.reduce((s, r) => s + r.count, 0);
-    startGenProgress(total, false);
+    showDifficultyBatchProgressUi();
     await runDifficultyBatch(0);
   } catch (err) {
     stopGenProgress(true);
