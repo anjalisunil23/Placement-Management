@@ -2065,7 +2065,7 @@ final class StaffCourseQuestionService
             throw new \InvalidArgumentException('Choose at least one course and the questions to include.');
         }
         if ($title === '') {
-            $title = implode(', ', $codes);
+            throw new \InvalidArgumentException('Enter a title for this MCQ test.');
         }
         if (mb_strlen($title) > 120) {
             throw new \InvalidArgumentException('The MCQ title must be 120 characters or fewer.');
