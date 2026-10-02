@@ -766,7 +766,11 @@ function renderPractice(payload) {
     hint = 'All batches completed successfully.';
   } else if (isBatchGenerationBusy(payload)) {
     const target = requested || rows.length;
-    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · generating… ${rows.length} / ${target}`;
+    const groupsTotal = target > 0 ? Math.max(1, Math.ceil(target / 5)) : 1;
+    const groupNow = Math.min(groupsTotal, Math.floor(rows.length / 5) + 1);
+    hint = rows.length > 0 && rows.length < target
+      ? `Batch ${batchNum} of ${batchTotal} · ${diff} · group ${groupNow} of ${groupsTotal} · ${rows.length} / ${target}`
+      : `Batch ${batchNum} of ${batchTotal} · ${diff} · generating… ${rows.length} / ${target}`;
   } else if (batchGenerationFulfilled(payload)) {
     hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation complete ✓ — select questions and click Add selected to Question Bank.`;
   } else if (batchHasGeneratedQuestions(payload) || payload?.generationStatus === 'partial') {
@@ -1185,6 +1189,7 @@ function setBatchGenerationProgress(got, need, labelText) {
 function updateStaffGenProgressFromServer(progress) {
   if (!progress) return;
   if (staffBatchGenStatus === 'completed' || staffBatchGenStatus === 'error') return;
+  if (staffDiffBatchSession?.batchPlan?.length && staffBatchGenStatus === 'generating') return;
   const message = progress.message || 'Generating questions…';
   document.getElementById('genProgressLabel').textContent = message;
   document.getElementById('genModalProgressLabel').textContent = message;
@@ -1529,6 +1534,9 @@ async function runDifficultyBatch(planIndex, retry = false) {
   }
   ctx.sessionId = res.data?.sessionId || ctx.sessionId;
   let payload = normalizeBatchPayload(res.data, mixes);
+  if (!batchGenerationFulfilled(payload) && (payload.questions || []).length < entry.count) {
+    payload.needsContinueFill = true;
+  }
   setBatchGenerationProgress(
     (payload.questions || []).length,
     entry.count,
@@ -1537,16 +1545,18 @@ async function runDifficultyBatch(planIndex, retry = false) {
   let continueAttempts = 0;
   let stallRounds = 0;
   const maxFillRounds = 12;
+  const sliceGroupsTotal = Math.max(1, Math.ceil(entry.count / 5));
   while (
     !batchGenerationFulfilled(payload)
     && continueAttempts < maxFillRounds
     && (payload.questions || []).length < entry.count
   ) {
     const beforeCount = (payload.questions || []).length;
+    const nextGroup = Math.min(sliceGroupsTotal, Math.floor(beforeCount / 5) + 1);
     continueAttempts += 1;
     staffBatchGenStatus = 'generating';
     staffGenerationActive = true;
-    const fillLabel = `Finishing batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${beforeCount} / ${entry.count}`;
+    const fillLabel = `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · group ${nextGroup} of ${sliceGroupsTotal} · ${beforeCount} / ${entry.count}`;
     status.textContent = fillLabel;
     setBatchGenerationProgress(beforeCount, entry.count, fillLabel);
     renderPractice(Object.assign({}, payload, {
@@ -1600,6 +1610,9 @@ async function runDifficultyBatch(planIndex, retry = false) {
   } else {
     staffBatchGenStatus = 'error';
     payload.generationStatus = 'partial';
+    payload.generationFailedPartial = true;
+    payload.needsContinueFill = false;
+    payload.generating = false;
   }
   markBatchGenerationComplete(planIndex, entry, payload);
   if (batchGenerationFulfilled(payload)) {
@@ -1678,8 +1691,7 @@ async function generate() {
     startAiSyllabusPrepareProgress();
     await prepareSyllabusForAiWithRetry(course);
     const total = batchPlan.reduce((s, r) => s + r.count, 0);
-    startGenProgress(total, true);
-    startStaffGenProgressPoll(progressKey);
+    startGenProgress(total, false);
     await runDifficultyBatch(0);
   } catch (err) {
     stopGenProgress(true);

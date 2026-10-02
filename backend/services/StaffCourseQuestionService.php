@@ -627,7 +627,12 @@ final class StaffCourseQuestionService
         $deadline = (float) (is_array($draft['genState'] ?? null) ? ($draft['genState']['deadline'] ?? 0) : 0);
         $batchWall = microtime(true) + $this->batchRequestWallSeconds($chunkTotal);
         $sliceGroupsTotal = $this->difficultyBatchSliceGroupsForCount($chunkTotal);
-        $maxSliceGroups = $this->difficultyBatchSliceGroupsNeeded($chunkTotal, count($selected));
+        // One OpenAI slice (≤5 questions) per HTTP request so shared-host ~60s limits still allow
+        // reliable group 1 → group 2 via continueDifficultyBatch from the browser.
+        $maxSliceGroups = min(
+            1,
+            $this->difficultyBatchSliceGroupsNeeded($chunkTotal, count($selected))
+        );
         if ($deadline <= 0) {
             $deadline = $batchWall;
         }
@@ -812,7 +817,7 @@ final class StaffCourseQuestionService
             'counts' => $countByLabel,
             'generating' => false,
             'awaitingBankSave' => $fulfilled,
-            'needsContinueFill' => !$fulfilled && $gotForBatch > 0,
+            'needsContinueFill' => !$fulfilled && $gotForBatch > 0 && $chunkTotal > $gotForBatch,
             'difficultyBatchMode' => true,
             'batchComplete' => false,
             'fulfilled' => $fulfilled,
