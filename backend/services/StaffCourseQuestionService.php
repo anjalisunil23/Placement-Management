@@ -1154,7 +1154,7 @@ final class StaffCourseQuestionService
         $apiCalls = 0;
         $requestedTotal = max($requestedTotal, $this->mixTotal($mixes));
 
-        foreach ($this->chunkMixesByTotal($mixes, self::GENERATE_BATCH_SIZE) as $chunk) {
+        foreach ($this->initialGenerationChunks($mixes) as $chunk) {
             if ($this->generationDeadlineReached($deadline) || $apiCalls >= self::GENERATE_MAX_API_CALLS) {
                 break;
             }
@@ -1192,45 +1192,42 @@ final class StaffCourseQuestionService
                 break;
             }
             $madeProgress = false;
-            foreach ($shortfall as $mix) {
-                if ($this->generationDeadlineReached($deadline)) {
+            $emptyBatchStreak = 0;
+            foreach ($this->chunkMixesByTotal($shortfall, self::GENERATE_BATCH_SIZE) as $chunk) {
+                if ($this->generationDeadlineReached($deadline) || $apiCalls >= self::GENERATE_MAX_API_CALLS) {
                     break 2;
                 }
-                $label = (string) ($mix['difficulty'] ?? 'Medium');
-                $need = (int) ($mix['count'] ?? 0);
-                $emptyBatchStreak = 0;
-                while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyBatchStreak < 4 && !$this->generationDeadlineReached($deadline)) {
-                    $chunk = min(6, $need);
-                    $slice = [['difficulty' => $label, 'count' => $chunk]];
-                    $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
-                    $added = $this->fetchQuestionBatch(
-                        $course,
-                        $syllabus,
-                        $system,
-                        $slice,
-                        $chunk,
-                        $this->mixLinesText($slice),
-                        $avoid,
-                        $selected,
-                        $promptKeys,
-                        true
-                    );
-                    $apiCalls++;
-                    if ($added === []) {
-                        $emptyBatchStreak++;
-                        continue;
+                $chunkTotal = $this->mixTotal($chunk);
+                $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+                $added = $this->fetchQuestionBatch(
+                    $course,
+                    $syllabus,
+                    $system,
+                    $chunk,
+                    $chunkTotal,
+                    $this->mixLinesText($chunk),
+                    $avoid,
+                    $selected,
+                    $promptKeys,
+                    true
+                );
+                $apiCalls++;
+                if ($added === []) {
+                    $emptyBatchStreak++;
+                    if ($emptyBatchStreak >= 4) {
+                        break;
                     }
-                    $emptyBatchStreak = 0;
-                    $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
-                    $madeProgress = true;
-                    $this->touchGenerationProgress(
-                        $progressKey,
-                        count($selected),
-                        $requestedTotal,
-                        'Generating questions… (' . count($selected) . ' / ' . $requestedTotal . ')'
-                    );
-                    $need = $this->shortfallForDifficulty($mixes, $selected, $label);
+                    continue;
                 }
+                $emptyBatchStreak = 0;
+                $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+                $madeProgress = true;
+                $this->touchGenerationProgress(
+                    $progressKey,
+                    count($selected),
+                    $requestedTotal,
+                    'Generating questions… (' . count($selected) . ' / ' . $requestedTotal . ')'
+                );
             }
             if (!$madeProgress) {
                 $stalls++;
@@ -1239,48 +1236,77 @@ final class StaffCourseQuestionService
             }
         }
 
-        foreach ($this->mixShortfall($mixes, $selected) as $mix) {
-            if ($this->generationDeadlineReached($deadline)) {
+        $emptyStreak = 0;
+        while (
+            $apiCalls < self::GENERATE_MAX_API_CALLS
+            && $emptyStreak < 6
+            && !$this->generationDeadlineReached($deadline)
+        ) {
+            $shortfall = $this->mixShortfall($mixes, $selected);
+            if ($shortfall === []) {
                 break;
             }
-            $label = (string) ($mix['difficulty'] ?? 'Medium');
-            $need = (int) ($mix['count'] ?? 0);
-            $emptyStreak = 0;
-            while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyStreak < 6 && !$this->generationDeadlineReached($deadline)) {
-                $slice = [['difficulty' => $label, 'count' => 1]];
-                $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
-                $added = $this->fetchQuestionBatch(
-                    $course,
-                    $syllabus,
-                    $system,
-                    $slice,
-                    1,
-                    $this->mixLinesText($slice),
-                    $avoid,
-                    $selected,
-                    $promptKeys,
-                    true
-                );
-                $apiCalls++;
-                if ($added === []) {
-                    $emptyStreak++;
+            $micro = [];
+            foreach ($shortfall as $mix) {
+                $need = (int) ($mix['count'] ?? 0);
+                if ($need <= 0) {
                     continue;
                 }
-                $emptyStreak = 0;
-                $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
-                $this->touchGenerationProgress(
-                    $progressKey,
-                    count($selected),
-                    $requestedTotal,
-                    'Generating questions… (' . count($selected) . ' / ' . $requestedTotal . ')'
-                );
-                $need = $this->shortfallForDifficulty($mixes, $selected, $label);
+                $micro[] = [
+                    'difficulty' => (string) ($mix['difficulty'] ?? 'Medium'),
+                    'count' => min(1, $need),
+                ];
             }
+            if ($micro === []) {
+                break;
+            }
+            $microTotal = $this->mixTotal($micro);
+            $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
+            $added = $this->fetchQuestionBatch(
+                $course,
+                $syllabus,
+                $system,
+                $micro,
+                $microTotal,
+                $this->mixLinesText($micro),
+                $avoid,
+                $selected,
+                $promptKeys,
+                true
+            );
+            $apiCalls++;
+            if ($added === []) {
+                $emptyStreak++;
+                continue;
+            }
+            $emptyStreak = 0;
+            $selected = $this->mergeQuestionLists($selected, $added, $promptKeys);
+            $this->touchGenerationProgress(
+                $progressKey,
+                count($selected),
+                $requestedTotal,
+                'Generating questions… (' . count($selected) . ' / ' . $requestedTotal . ')'
+            );
         }
 
         $selected = $this->dedupeBatchOnly($selected);
 
         return $this->capQuestionsToMixes($selected, $mixes);
+    }
+
+    /**
+     * First pass: one OpenAI request with the full Easy/Medium/Hard mix when within product limits.
+     *
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @return list<list<array{difficulty:string,count:int}>>
+     */
+    private function initialGenerationChunks(array $mixes): array
+    {
+        if ($this->mixTotal($mixes) <= self::MAX_TOTAL) {
+            return [$mixes];
+        }
+
+        return $this->chunkMixesByTotal($mixes, self::GENERATE_BATCH_SIZE);
     }
 
     /**
