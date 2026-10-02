@@ -175,8 +175,14 @@
           <button type="button" class="btn btn-outline-secondary d-none" id="btnRetryBatch">
             <i class="bi bi-arrow-clockwise me-1"></i>Retry this batch
           </button>
+          <button type="button" class="btn btn-outline-primary d-none" id="btnNextBatch">
+            <i class="bi bi-arrow-right me-1"></i>Next batch
+          </button>
+          <button type="button" class="btn btn-outline-secondary d-none" id="btnRetrySave">
+            <i class="bi bi-arrow-clockwise me-1"></i>Retry save
+          </button>
           <button type="button" class="btn btn-primary" id="btnAddSelected">
-            <i class="bi bi-plus-lg me-1"></i>Add selected to question bank
+            <i class="bi bi-plus-lg me-1"></i>Add selected to Question Bank
           </button>
         </div>
       </div>
@@ -653,32 +659,65 @@ function setDraftSelection(checked) {
 
 function updateDraftModalFooter(payload) {
   const btn = document.getElementById('btnAddSelected');
-  const busy = staffGenerationActive || payload?.generating === true;
+  const nextBtn = document.getElementById('btnNextBatch');
+  const retrySaveBtn = document.getElementById('btnRetrySave');
+  const genBusy = isBatchGenerationBusy(payload);
+  const saveBusy = staffBatchSaveStatus === 'saving';
+  const genReady = payload?.generationStatus === 'completed'
+    || staffBatchGenStatus === 'completed'
+    || batchHasGeneratedQuestions(payload)
+    || (payload?.awaitingBankSave && (payload?.questions || []).length > 0);
+  const showAdd = !payload?.generationCompleted
+    && payload?.generationStatus !== 'error'
+    && staffBatchGenStatus !== 'error'
+    && !payload?.generationFailedEmpty
+    && genReady
+    && (payload?.questions || []).length > 0
+    && staffBatchSaveStatus !== 'saved'
+    && staffBatchSaveStatus !== 'saving'
+    && staffBatchSaveStatus !== 'error';
+  const showNext = payload?.difficultyBatchMode
+    && staffBatchSaveStatus === 'saved'
+    && staffPendingNextBatchIndex != null
+    && !payload?.generationCompleted;
+  const showRetrySave = staffBatchSaveStatus === 'error'
+    && batchHasGeneratedQuestions(payload)
+    && !payload?.generationCompleted;
   if (btn) {
-    btn.disabled = busy;
-    btn.setAttribute('aria-disabled', busy ? 'true' : 'false');
+    btn.classList.toggle('d-none', !showAdd);
+    btn.disabled = genBusy || saveBusy || !showAdd;
+    btn.setAttribute('aria-disabled', btn.disabled ? 'true' : 'false');
   }
   document.querySelectorAll('#btnSelectAllDraft,#btnClearDraft').forEach((el) => {
-    el.disabled = busy;
+    el.disabled = genBusy || saveBusy || !showAdd;
   });
+  if (nextBtn) {
+    nextBtn.classList.toggle('d-none', !showNext);
+    nextBtn.disabled = genBusy || saveBusy;
+    if (showNext && staffDiffBatchSession?.batchPlan) {
+      const n = staffPendingNextBatchIndex + 1;
+      const t = staffDiffBatchSession.batchPlan.length;
+      nextBtn.innerHTML = `<i class="bi bi-arrow-right me-1"></i>Next batch (${n} of ${t})`;
+    }
+  }
+  if (retrySaveBtn) {
+    retrySaveBtn.classList.toggle('d-none', !showRetrySave);
+    retrySaveBtn.disabled = saveBusy || genBusy;
+  }
   const retryBtn = document.getElementById('btnRetryBatch');
   const canRetry = payload?.difficultyBatchMode
-    && !staffGenerationActive
-    && !payload?.generating
+    && !genBusy
     && !payload?.generationCompleted
-    && (payload?.generationFailedEmpty || payload?.generationFailedPartial);
+    && !batchHasGeneratedQuestions(payload)
+    && (payload?.generationStatus === 'error' || payload?.generationFailedEmpty || payload?.generationFailedPartial);
   if (retryBtn) {
     retryBtn.classList.toggle('d-none', !canRetry);
-    retryBtn.disabled = !!staffGenerationActive;
-  }
-  if (btn && payload?.generationCompleted) {
-    btn.classList.add('d-none');
-  } else if (btn) {
-    btn.classList.remove('d-none');
+    retryBtn.disabled = genBusy || saveBusy;
   }
 }
 
 function renderPractice(payload) {
+  payload = enrichPracticePayload(payload);
   practice = payload;
   const rows = payload?.questions || [];
   const body = document.getElementById('draftModalBody');
@@ -686,6 +725,14 @@ function renderPractice(payload) {
   if (!rows.length) {
     if (payload?.generationCompleted) {
       renderAllBatchesComplete(payload);
+      return;
+    }
+    if (
+      payload?.difficultyBatchMode
+      && staffBatchSaveStatus === 'saved'
+      && staffPendingNextBatchIndex != null
+    ) {
+      renderBatchSavedAwaitingNext(payload);
       return;
     }
     body.innerHTML = '';
@@ -715,10 +762,14 @@ function renderPractice(payload) {
   renderDifficultyBatchProgress(payload);
   if (payload?.generationCompleted) {
     hint = 'All batches completed successfully.';
-  } else if (staffGenerationActive || payload?.generating) {
+  } else if (payload?.generationStatus === 'completed' || batchHasGeneratedQuestions(payload) || payload?.awaitingBankSave) {
+    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation complete ✓ — select questions and click Add selected to Question Bank.`;
+  } else if (isBatchGenerationBusy(payload)) {
     hint = `Generating batch ${batchNum} of ${batchTotal}… ${diff ? diff + ' questions' : ''}`.trim();
-  } else if (payload?.difficultyBatchMode && payload?.awaitingBankSave) {
-    hint += ' Select questions and click Add selected to Question Bank.';
+  } else if (payload?.generationStatus === 'error' || payload?.generationFailedEmpty) {
+    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation failed. Retry this batch.`;
+  } else if (staffBatchSaveStatus === 'saved' && staffPendingNextBatchIndex != null) {
+    hint = `Batch ${batchNum} of ${batchTotal} saved ✓ — click Next batch to continue.`;
   } else if (requested > 0 && rows.length < requested) {
     hint += ` Only ${rows.length} of ${requested} could be generated (batch 2 or top-up may still be needed on older deploys). You can add these now or run Generate again for the rest.`;
   } else {
@@ -978,8 +1029,85 @@ function renderResult(payload) {
 let genProgressTimer = 0;
 let staffGenProgressPollTimer = 0;
 let staffGenerationActive = false;
+/** @type {'idle'|'generating'|'completed'|'error'} */
+let staffBatchGenStatus = 'idle';
+/** @type {'idle'|'saving'|'saved'|'error'} */
+let staffBatchSaveStatus = 'idle';
+/** @type {number|null} */
+let staffPendingNextBatchIndex = null;
 /** @type {{ course: object|null, mixes: array[], batchPlan: array[], counts: object, progressKey: string, sessionId: string }|null} */
 let staffDiffBatchSession = null;
+
+function batchHasGeneratedQuestions(payload) {
+  return (payload?.questions || []).length > 0
+    && !payload?.generationFailedEmpty
+    && payload?.generationStatus !== 'error';
+}
+
+function isBatchGenerationBusy(payload) {
+  if (batchHasGeneratedQuestions(payload)) return false;
+  if (staffBatchGenStatus === 'completed' || staffBatchGenStatus === 'error') return false;
+  if (payload?.generationStatus === 'completed' || payload?.generationStatus === 'error') return false;
+  if (payload?.generationStatus === 'generating' || payload?.generating === true) return true;
+  if (staffBatchGenStatus === 'generating') return true;
+  return false;
+}
+
+function enrichPracticePayload(payload) {
+  const p = Object.assign({}, payload || {});
+  const hasQuestions = batchHasGeneratedQuestions(p)
+    || ((p.questions || []).length > 0 && !p.generationFailedEmpty && p.generationStatus !== 'error');
+  if (hasQuestions || staffBatchGenStatus === 'completed') {
+    p.generationStatus = 'completed';
+    p.generating = false;
+    if (hasQuestions) p.awaitingBankSave = p.awaitingBankSave !== false;
+  } else if (staffBatchGenStatus === 'error' || p.generationStatus === 'error' || p.generationFailedEmpty) {
+    p.generationStatus = 'error';
+    p.generating = false;
+  } else if (staffBatchGenStatus === 'generating' || p.generating === true) {
+    p.generationStatus = 'generating';
+    p.generating = true;
+  }
+  return p;
+}
+
+function markBatchGenerationComplete(planIndex, entry, payload) {
+  staffBatchGenStatus = payload?.generationStatus === 'error' ? 'error' : 'completed';
+  staffGenerationActive = false;
+  stopStaffGenProgressPoll();
+  if (genProgressTimer) {
+    window.clearInterval(genProgressTimer);
+    genProgressTimer = 0;
+  }
+  const batchTotal = staffDiffBatchSession?.batchPlan?.length || payload?.batchTotal || 0;
+  const label = `Batch ${planIndex + 1} of ${batchTotal} · ${entry?.difficulty || payload?.currentDifficulty || ''}`;
+  const got = (payload?.questions || []).length;
+  const need = entry?.count || payload?.requested || got;
+  const status = document.getElementById('genStatus');
+  if (staffBatchGenStatus === 'completed') {
+    if (status) status.textContent = `${label} — Generation complete ✓ (${got}/${need})`;
+    document.getElementById('genProgressLabel').textContent = `${label} — Generation complete ✓`;
+  } else {
+    if (status) status.textContent = `${label} — Generation failed`;
+    document.getElementById('genProgressLabel').textContent = `${label} — Generation failed`;
+  }
+  const pct = staffBatchGenStatus === 'completed' ? 100 : 0;
+  setGenProgressUi(pct, {
+    barId: 'genProgressBar',
+    pctId: 'genProgressPct',
+    progressId: 'genProgress',
+  });
+  setGenProgressUi(pct, {
+    barId: 'genModalProgressBar',
+    pctId: 'genModalProgressPct',
+  });
+  ['genProgressBar', 'genModalProgressBar'].forEach((id) => {
+    const bar = document.getElementById(id);
+    if (bar && pct >= 100) {
+      bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+    }
+  });
+}
 
 function createStaffGenProgressKey() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -997,6 +1125,7 @@ function stopStaffGenProgressPoll() {
 
 function updateStaffGenProgressFromServer(progress) {
   if (!progress) return;
+  if (staffBatchGenStatus === 'completed' || staffBatchGenStatus === 'error') return;
   const message = progress.message || 'Generating questions…';
   document.getElementById('genProgressLabel').textContent = message;
   document.getElementById('genModalProgressLabel').textContent = message;
@@ -1027,6 +1156,7 @@ function setGenProgressUi(value, { barId, pctId, progressId }) {
   if (bar) {
     bar.style.width = v + '%';
     bar.classList.toggle('progress-bar-animated', v < 100);
+    bar.classList.toggle('progress-bar-striped', v < 100);
   }
   if (pct) pct.textContent = v + '%';
   if (root) root.setAttribute('aria-valuenow', String(v));
@@ -1190,7 +1320,7 @@ function renderDifficultyBatchProgress(payload) {
   el.classList.remove('d-none');
   el.innerHTML = parts.map((d, i) => {
     const done = completed.has(d);
-    const active = d === current && !done && !payload?.generationCompleted;
+    const active = d === current && !done && !payload?.generationCompleted && isBatchGenerationBusy(payload);
     let cls = 'badge-soft';
     if (done) cls += ' success';
     else if (active) cls += ' primary';
@@ -1198,6 +1328,27 @@ function renderDifficultyBatchProgress(payload) {
     const arrow = i < parts.length - 1 ? ' <span class="text-muted mx-1">→</span> ' : '';
     return `<span class="${cls}">${esc(label)}</span>${arrow}`;
   }).join('');
+}
+
+function renderBatchSavedAwaitingNext(payload) {
+  const modal = document.getElementById('draftModal');
+  const body = document.getElementById('draftModalBody');
+  const batchTotal = Number(payload?.batchTotal || staffDiffBatchSession?.batchPlan?.length || 0);
+  const batchIndex = Number(payload?.batchIndex ?? -1);
+  const batchNum = batchIndex >= 0 ? batchIndex + 1 : 0;
+  const diff = payload?.currentDifficulty || '';
+  document.getElementById('draftModalTitle').textContent = `Generated questions · ${payload.courseCode || ''}`;
+  document.getElementById('draftModalHint').textContent = batchNum > 0 && batchTotal > 0
+    ? `Batch ${batchNum} of ${batchTotal} · ${diff} · added to Question Bank ✓ — click Next batch to continue.`
+    : 'Batch added to Question Bank ✓ — click Next batch to continue.';
+  body.innerHTML = `
+    <div class="card-surface p-4 text-center">
+      <p class="fw-semibold mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i>Batch ${batchNum} of ${batchTotal} saved successfully</p>
+      <p class="small text-muted-2 mb-0">${esc(diff)} questions were added to the question bank.</p>
+    </div>`;
+  renderDifficultyBatchProgress(payload);
+  updateDraftModalFooter(payload);
+  bootstrap.Modal.getOrCreateInstance(modal).show();
 }
 
 function renderAllBatchesComplete(payload) {
@@ -1226,11 +1377,17 @@ function showDraftGeneratingDifficulty(course, batchIndex, batchTotal, difficult
 }
 
 function applyDifficultyBatchResponse(data, mixes) {
+  const hasQuestions = (data?.questions || []).length > 0;
+  const status = hasQuestions && !data?.generationFailedEmpty
+    ? 'completed'
+    : (data?.generationStatus
+      || (data?.generationFailedEmpty ? 'error' : (hasQuestions ? 'completed' : 'error')));
   return Object.assign({}, data, {
     mixes: data.mixes || mixes,
     difficultyBatchMode: true,
-    generating: data.generating === true,
-    awaitingBankSave: data.awaitingBankSave === true,
+    generating: status === 'generating',
+    generationStatus: status,
+    awaitingBankSave: status === 'completed' && data?.awaitingBankSave !== false,
   });
 }
 
@@ -1242,11 +1399,17 @@ async function runDifficultyBatch(planIndex, retry = false) {
   const entry = batchPlan[planIndex];
   if (!entry) throw new Error('Invalid batch.');
   const batchTotal = batchPlan.length;
+  staffBatchGenStatus = 'generating';
+  staffBatchSaveStatus = 'idle';
+  staffPendingNextBatchIndex = null;
+  staffGenerationActive = true;
   const batchLabel = `Generating batch ${planIndex + 1} of ${batchTotal}… ${entry.difficulty} → ${entry.count} questions`;
   status.textContent = batchLabel;
   document.getElementById('genProgressLabel').textContent = batchLabel;
   showDraftGeneratingDifficulty(course, planIndex, batchTotal, entry.difficulty, entry.count);
-  const res = await api('/staff/courses/questions/batch', {
+  let res;
+  try {
+  res = await api('/staff/courses/questions/batch', {
     method: 'POST',
     body: JSON.stringify({
       difficultyBatchMode: true,
@@ -1261,14 +1424,44 @@ async function runDifficultyBatch(planIndex, retry = false) {
       retryDifficultyBatch: retry || undefined,
     }),
   });
-  if (!res?.success) throw new Error(res?.message || 'Could not generate questions.');
+  } catch (err) {
+    staffBatchGenStatus = 'error';
+    staffGenerationActive = false;
+    throw err;
+  }
+  if (!res?.success) {
+    staffBatchGenStatus = 'error';
+    staffGenerationActive = false;
+    throw new Error(res?.message || 'Could not generate questions.');
+  }
   ctx.sessionId = res.data?.sessionId || ctx.sessionId;
   const payload = applyDifficultyBatchResponse(res.data, mixes);
+  if ((payload.questions || []).length > 0 && payload.generationStatus !== 'error') {
+    payload.generationStatus = 'completed';
+    payload.generating = false;
+    payload.awaitingBankSave = true;
+  }
+  markBatchGenerationComplete(planIndex, entry, payload);
   renderPractice(payload);
+  updateDraftModalFooter(practice);
   if (payload.generationFailedEmpty && typeof toast === 'function') {
     toast('This batch returned no questions. Click Retry this batch.', 'error');
   }
   return payload;
+}
+
+async function continueNextDifficultyBatch() {
+  if (staffPendingNextBatchIndex == null || staffBatchGenStatus === 'generating') return;
+  setGenerateBusy(true);
+  try {
+    await runDifficultyBatch(staffPendingNextBatchIndex);
+    staffPendingNextBatchIndex = null;
+    staffBatchSaveStatus = 'idle';
+  } catch (err) {
+    if (typeof toast === 'function') toast(err?.message || 'Could not start the next batch.', 'error');
+  } finally {
+    setGenerateBusy(false);
+  }
 }
 
 async function retryCurrentDifficultyBatch() {
@@ -1301,6 +1494,9 @@ async function generate() {
   const progressKey = createStaffGenProgressKey();
   document.getElementById('practicePanel').innerHTML = '';
   staffDiffBatchSession = { course, mixes, batchPlan, counts, progressKey, sessionId: '' };
+  staffBatchGenStatus = 'idle';
+  staffBatchSaveStatus = 'idle';
+  staffPendingNextBatchIndex = null;
   try {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).hide();
     status.textContent = 'Reading syllabus PDF for AI (' + (course.code || 'course') + ')…';
@@ -1325,8 +1521,12 @@ async function saveSelected() {
   const indexes = selectedDraftIndexes();
   const status = document.getElementById('genStatus');
   const button = document.getElementById('btnAddSelected');
-  if (staffGenerationActive || (practice?.generating && !practice?.awaitingBankSave)) {
+  if (isBatchGenerationBusy(practice)) {
     status.textContent = 'Still generating questions — wait for this batch to finish, then add to the bank.';
+    return;
+  }
+  if (staffBatchSaveStatus === 'saved' && staffPendingNextBatchIndex != null) {
+    status.textContent = 'This batch is already saved. Click Next batch to continue.';
     return;
   }
   if (!indexes.length) {
@@ -1334,6 +1534,8 @@ async function saveSelected() {
     return;
   }
   if (button) button.disabled = true;
+  staffBatchSaveStatus = 'saving';
+  updateDraftModalFooter(practice);
   status.textContent = `Adding ${indexes.length} question${indexes.length === 1 ? '' : 's'} to ${practice.courseCode || 'the bank'}…`;
   try {
     const res = await api('/staff/courses/questions/save', {
@@ -1376,21 +1578,29 @@ async function saveSelected() {
         if (typeof toast === 'function') toast(status.textContent, 'success');
         return;
       }
+      staffBatchSaveStatus = 'saved';
       const nextIndex = res.data.nextDifficultyBatchIndex;
       if (typeof nextIndex === 'number' && staffDiffBatchSession) {
         staffDiffBatchSession.sessionId = res.data.sessionId || staffDiffBatchSession.sessionId;
+        staffPendingNextBatchIndex = nextIndex;
+        const savedPayload = Object.assign({}, practice, res.data, {
+          sessionId: res.data.sessionId || practice.sessionId,
+          courseCode: code,
+          questions: [],
+          generating: false,
+          generationStatus: 'completed',
+          awaitingBankSave: false,
+          completedDifficulties: res.data.completedDifficulties || [],
+          counts: res.data.counts || staffDiffBatchSession.counts,
+        });
+        practice = savedPayload;
+        status.textContent = `Batch saved ✓ — ${code}. Click Next batch to generate the next difficulty.`;
+        renderBatchSavedAwaitingNext(savedPayload);
         if (typeof toast === 'function') toast(status.textContent, 'success');
-        setGenerateBusy(true);
-        staffGenerationActive = true;
-        try {
-          await runDifficultyBatch(nextIndex);
-        } finally {
-          staffGenerationActive = false;
-          setGenerateBusy(false);
-        }
         return;
       }
     }
+    staffBatchSaveStatus = 'idle';
     renderPractice(Object.assign({}, practice, {
       sessionId: res.data?.sessionId || practice.sessionId,
       courseCode: code,
@@ -1401,10 +1611,12 @@ async function saveSelected() {
     }));
     if (typeof toast === 'function') toast(status.textContent, added ? 'success' : 'info');
   } catch (err) {
-    status.textContent = err?.message || 'Could not add those questions.';
+    staffBatchSaveStatus = 'error';
+    status.textContent = err?.message || 'Failed to add questions to Question Bank.';
     if (typeof toast === 'function') toast(err?.message || 'Could not add those questions.', 'error');
+    updateDraftModalFooter(practice);
   } finally {
-    if (button) button.disabled = false;
+    if (button && staffBatchSaveStatus !== 'saved') button.disabled = false;
   }
 }
 
@@ -1494,6 +1706,15 @@ document.getElementById('draftModal').addEventListener('click', (event) => {
   }
   if (event.target.closest('#btnRetryBatch')) {
     retryCurrentDifficultyBatch();
+    return;
+  }
+  if (event.target.closest('#btnNextBatch')) {
+    continueNextDifficultyBatch();
+    return;
+  }
+  if (event.target.closest('#btnRetrySave')) {
+    staffBatchSaveStatus = 'idle';
+    saveSelected();
   }
 });
 document.getElementById('bankSearch').addEventListener('input', () => {

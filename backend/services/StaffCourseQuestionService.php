@@ -694,12 +694,21 @@ final class StaffCourseQuestionService
         $this->persistGenerationDraft($draft);
 
         $batchNum = $batchIndex + 1;
-        $this->touchGenerationProgress(
-            $progressKey,
-            $gotForBatch,
-            $chunkTotal,
-            "Batch {$batchNum} of {$batchTotal} · {$currentDifficulty} · {$gotForBatch} / {$chunkTotal}"
-        );
+        $batchReady = $gotForBatch > 0;
+        if ($progressKey !== '') {
+            self::writeGenerationProgress($progressKey, [
+                'phase' => $batchReady ? 'batch_ready' : 'batch_error',
+                'message' => $batchReady
+                    ? "Batch {$batchNum} of {$batchTotal} · {$currentDifficulty} · generation complete"
+                    : "Batch {$batchNum} of {$batchTotal} · {$currentDifficulty} · generation failed",
+                'generated' => $gotForBatch,
+                'requested' => $chunkTotal,
+                'percent' => $batchReady ? 100 : ($chunkTotal > 0 ? min(99, (int) round(($gotForBatch / $chunkTotal) * 100)) : 0),
+                'done' => false,
+                'batchIndex' => $batchIndex,
+                'batchTotal' => $batchTotal,
+            ]);
+        }
 
         $completed = is_array($draft['genState']['completedDifficulties'] ?? null)
             ? $draft['genState']['completedDifficulties'] : [];
@@ -724,6 +733,7 @@ final class StaffCourseQuestionService
             'fulfilled' => $gotForBatch >= $chunkTotal,
             'generationFailedPartial' => $gotForBatch > 0 && $gotForBatch < $chunkTotal,
             'generationFailedEmpty' => $gotForBatch === 0 && $chunkTotal > 0,
+            'generationStatus' => $gotForBatch > 0 ? 'completed' : 'error',
         ]);
     }
 
