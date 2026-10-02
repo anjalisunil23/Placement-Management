@@ -764,12 +764,13 @@ function renderPractice(payload) {
   renderDifficultyBatchProgress(payload);
   if (payload?.generationCompleted) {
     hint = 'All batches completed successfully.';
+  } else if (isBatchGenerationBusy(payload)) {
+    const target = requested || rows.length;
+    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · generating… ${rows.length} / ${target}`;
   } else if (batchGenerationFulfilled(payload)) {
     hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation complete ✓ — select questions and click Add selected to Question Bank.`;
-  } else if (batchHasGeneratedQuestions(payload) || payload?.generationStatus === 'partial' || payload?.awaitingBankSave) {
-    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${rows.length} of ${requested || rows.length} generated — add these or retry this batch for more.`;
-  } else if (isBatchGenerationBusy(payload)) {
-    hint = `Generating batch ${batchNum} of ${batchTotal}… ${diff ? diff + ' questions' : ''}`.trim();
+  } else if (batchHasGeneratedQuestions(payload) || payload?.generationStatus === 'partial') {
+    hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · ${rows.length} of ${requested || rows.length} generated — click Retry this batch to get the rest.`;
   } else if (payload?.generationStatus === 'error' || payload?.generationFailedEmpty) {
     hint = `Batch ${batchNum} of ${batchTotal} · ${diff} · Generation failed. Retry this batch.`;
   } else if (staffBatchSaveStatus === 'saved' && staffPendingNextBatchIndex != null) {
@@ -1170,6 +1171,17 @@ function stopStaffGenProgressPoll() {
   }
 }
 
+function setBatchGenerationProgress(got, need, labelText) {
+  const needN = Math.max(1, Number(need) || 1);
+  const gotN = Math.max(0, Number(got) || 0);
+  const pct = gotN >= needN ? 100 : Math.min(99, Math.round((gotN / needN) * 100));
+  if (labelText) {
+    document.getElementById('genProgressLabel').textContent = labelText;
+  }
+  setGenProgressUi(pct, { barId: 'genProgressBar', pctId: 'genProgressPct', progressId: 'genProgress' });
+  setGenProgressUi(pct, { barId: 'genModalProgressBar', pctId: 'genModalProgressPct' });
+}
+
 function updateStaffGenProgressFromServer(progress) {
   if (!progress) return;
   if (staffBatchGenStatus === 'completed' || staffBatchGenStatus === 'error') return;
@@ -1493,13 +1505,14 @@ async function runDifficultyBatch(planIndex, retry = false) {
   const entry = batchPlan[planIndex];
   if (!entry) throw new Error('Invalid batch.');
   const batchTotal = batchPlan.length;
+  stopStaffGenProgressPoll();
   staffBatchGenStatus = 'generating';
   staffBatchSaveStatus = 'idle';
   staffPendingNextBatchIndex = null;
   staffGenerationActive = true;
   const batchLabel = `Generating batch ${planIndex + 1} of ${batchTotal}… ${entry.difficulty} → ${entry.count} questions`;
   status.textContent = batchLabel;
-  document.getElementById('genProgressLabel').textContent = batchLabel;
+  setBatchGenerationProgress(0, entry.count, batchLabel);
   showDraftGeneratingDifficulty(course, planIndex, batchTotal, entry.difficulty, entry.count);
   let res;
   try {
@@ -1516,6 +1529,11 @@ async function runDifficultyBatch(planIndex, retry = false) {
   }
   ctx.sessionId = res.data?.sessionId || ctx.sessionId;
   let payload = normalizeBatchPayload(res.data, mixes);
+  setBatchGenerationProgress(
+    (payload.questions || []).length,
+    entry.count,
+    `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${(payload.questions || []).length} / ${entry.count}`
+  );
   let continueAttempts = 0;
   let stallRounds = 0;
   const maxFillRounds = 12;
@@ -1528,9 +1546,9 @@ async function runDifficultyBatch(planIndex, retry = false) {
     continueAttempts += 1;
     staffBatchGenStatus = 'generating';
     staffGenerationActive = true;
-    const fillLabel = `Finishing batch ${planIndex + 1} of ${batchTotal}… ${entry.difficulty} · ${beforeCount} / ${entry.count}`;
+    const fillLabel = `Finishing batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${beforeCount} / ${entry.count}`;
     status.textContent = fillLabel;
-    document.getElementById('genProgressLabel').textContent = fillLabel;
+    setBatchGenerationProgress(beforeCount, entry.count, fillLabel);
     renderPractice(Object.assign({}, payload, {
       generating: true,
       generationStatus: 'generating',
@@ -1552,6 +1570,11 @@ async function runDifficultyBatch(planIndex, retry = false) {
     ctx.sessionId = res.data?.sessionId || ctx.sessionId;
     payload = normalizeBatchPayload(res.data, mixes);
     const afterCount = (payload.questions || []).length;
+    setBatchGenerationProgress(
+      afterCount,
+      entry.count,
+      `Batch ${planIndex + 1} of ${batchTotal} · ${entry.difficulty} · ${afterCount} / ${entry.count}`
+    );
     if (afterCount <= beforeCount) {
       stallRounds += 1;
       if (stallRounds >= 3) break;
@@ -1663,6 +1686,10 @@ async function generate() {
     status.textContent = '';
     document.getElementById('practicePanel').innerHTML = `<div class="card-surface p-3 text-danger">${esc(err?.message || 'Could not generate questions.')}</div>`;
   } finally {
+    stopStaffGenProgressPoll();
+    if (staffBatchGenStatus === 'generating') {
+      staffBatchGenStatus = 'error';
+    }
     staffGenerationActive = false;
     setGenerateBusy(false);
   }
