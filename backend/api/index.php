@@ -375,6 +375,7 @@ $routes = [
     ['GET',  '/staff/courses',                     [StaffController::class, 'listCourses']],
     ['GET',  '/staff/courses/questions/generate-progress', [StaffController::class, 'courseQuestionsGenerateProgress']],
     ['POST', '/staff/courses/questions/batch',   [StaffController::class, 'generateCourseQuestionsBatch']],
+    ['POST', '/staff/courses/questions/cancel',  [StaffController::class, 'cancelCourseQuestionGeneration']],
     ['POST', '/staff/courses/questions',          [StaffController::class, 'generateCourseQuestions']],
     ['POST', '/staff/courses/questions/save',     [StaffController::class, 'saveCourseQuestions']],
     ['POST', '/staff/courses/questions/practice', [StaffController::class, 'startCoursePractice']],

@@ -171,12 +171,27 @@ final class StaffCourseQuestionService
         $chunks = $this->chunkMixesByTotal($mixes, self::GENERATE_BATCH_SIZE);
         $batchTotal = count($chunks);
         $batchIndex = (int) ($body['batchIndex'] ?? 0);
+        $progressKey = self::sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
+        $sessionId = trim((string) ($body['sessionId'] ?? ''));
+
+        if ($sessionId !== '' && $batchIndex === 0) {
+            $existing = $_SESSION['staff_course_draft'] ?? null;
+            if (
+                is_array($existing)
+                && (string) ($existing['id'] ?? '') === $sessionId
+                && !empty($existing['generating'])
+                && (string) ($existing['genState']['phase'] ?? '') !== 'topup'
+            ) {
+                $resumeAt = (int) ($existing['genState']['nextBatchIndex'] ?? 0);
+                if ($resumeAt > 0 && $resumeAt < $batchTotal) {
+                    $batchIndex = $resumeAt;
+                }
+            }
+        }
+
         if ($batchIndex < 0 || $batchIndex >= $batchTotal) {
             throw new \InvalidArgumentException('Invalid generation batch.');
         }
-
-        $progressKey = self::sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
-        $sessionId = trim((string) ($body['sessionId'] ?? ''));
 
         $ctx = StaffContext::resolve($user);
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
@@ -189,7 +204,11 @@ final class StaffCourseQuestionService
             'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
         );
 
-        if ($batchIndex === 0) {
+        $startingNewSession = ($batchIndex === 0 && ($sessionId === '' || !is_array($_SESSION['staff_course_draft'] ?? null)
+            || (string) (($_SESSION['staff_course_draft']['id'] ?? '')) !== $sessionId
+            || empty($_SESSION['staff_course_draft']['generating'])));
+
+        if ($startingNewSession) {
             $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? 'staff'));
             $course = $this->resolveLoadedSyllabus($body, $deptCode, $deptName, $deptShort, $allCourses);
             $syllabus = $this->syllabusText($course);
@@ -270,18 +289,28 @@ final class StaffCourseQuestionService
         $chunkTotal = $this->mixTotal($chunk);
         $mixText = $this->mixLinesText($chunk);
         $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
-        $batchQuestions = $this->fetchQuestionBatch(
-            $course,
-            $syllabus,
-            $system,
-            $chunk,
-            $chunkTotal,
-            $mixText,
-            $avoid,
-            $selected,
-            $promptKeys,
-            true
-        );
+        $wasActive = session_status() === PHP_SESSION_ACTIVE;
+        if ($wasActive) {
+            session_write_close();
+        }
+        try {
+            $batchQuestions = $this->fetchQuestionBatch(
+                $course,
+                $syllabus,
+                $system,
+                $chunk,
+                $chunkTotal,
+                $mixText,
+                $avoid,
+                $selected,
+                $promptKeys,
+                true
+            );
+        } finally {
+            if ($wasActive && session_status() !== PHP_SESSION_ACTIVE) {
+                session_start();
+            }
+        }
         if ($batchQuestions !== []) {
             $selected = $this->mergeQuestionLists($selected, $batchQuestions, $promptKeys);
         }
@@ -323,6 +352,8 @@ final class StaffCourseQuestionService
                 'batchQuestions' => $batchQuestions,
                 'batchIndex' => $batchIndex,
                 'batchTotal' => $batchTotal,
+                'nextBatchIndex' => $batchIndex + 1,
+                'generating' => true,
                 'batchComplete' => false,
             ];
         }
@@ -363,6 +394,7 @@ final class StaffCourseQuestionService
             'batchQuestions' => $batchQuestions,
             'batchIndex' => $batchIndex,
             'batchTotal' => $batchTotal,
+            'generating' => true,
             'batchComplete' => false,
             'phase' => 'topup',
         ];
@@ -422,20 +454,30 @@ final class StaffCourseQuestionService
         $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
 
         $topUpCalls = 0;
-        $selected = $this->fillMixShortfalls(
-            $course,
-            $syllabus,
-            $system,
-            $mixes,
-            $bankAvoid,
-            $promptKeys,
-            $selected,
-            $topUpCalls,
-            $progressKey,
-            $total,
-            $deadline,
-            self::BATCH_TOPUP_MAX_API_CALLS
-        );
+        $wasActive = session_status() === PHP_SESSION_ACTIVE;
+        if ($wasActive) {
+            session_write_close();
+        }
+        try {
+            $selected = $this->fillMixShortfalls(
+                $course,
+                $syllabus,
+                $system,
+                $mixes,
+                $bankAvoid,
+                $promptKeys,
+                $selected,
+                $topUpCalls,
+                $progressKey,
+                $total,
+                $deadline,
+                self::BATCH_TOPUP_MAX_API_CALLS
+            );
+        } finally {
+            if ($wasActive && session_status() !== PHP_SESSION_ACTIVE) {
+                session_start();
+            }
+        }
         $selected = $this->assignDraftIndexes($selected);
         $_SESSION['staff_course_draft']['questions'] = $selected;
         $_SESSION['staff_course_draft']['createdAt'] = time();
@@ -459,6 +501,7 @@ final class StaffCourseQuestionService
                 'batchQuestions' => [],
                 'batchIndex' => $batchIndex,
                 'batchTotal' => $batchTotal,
+                'generating' => true,
                 'batchComplete' => false,
                 'phase' => 'topup',
             ];
@@ -533,7 +576,40 @@ final class StaffCourseQuestionService
             'batchQuestions' => $batchQuestions,
             'batchIndex' => $batchIndex,
             'batchTotal' => $batchTotal,
+            'generating' => false,
             'batchComplete' => true,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function cancelGeneration(array $user, array $body): array
+    {
+        $sessionId = trim((string) ($body['sessionId'] ?? ''));
+        if ($sessionId === '') {
+            throw new \InvalidArgumentException('Missing generation session.');
+        }
+        $draft = $this->requireDraft($user, $sessionId);
+        if (empty($draft['generating'])) {
+            return [
+                'sessionId' => $sessionId,
+                'generating' => false,
+                'questions' => is_array($draft['questions'] ?? null) ? $draft['questions'] : [],
+            ];
+        }
+        unset($_SESSION['staff_course_draft']['generating'], $_SESSION['staff_course_draft']['genState']);
+        $_SESSION['staff_course_draft']['createdAt'] = time();
+        $questions = is_array($_SESSION['staff_course_draft']['questions'] ?? null)
+            ? $_SESSION['staff_course_draft']['questions']
+            : [];
+
+        return [
+            'sessionId' => $sessionId,
+            'generating' => false,
+            'questions' => $questions,
         ];
     }
 
@@ -564,7 +640,9 @@ final class StaffCourseQuestionService
         }
         $expected = (int) ($draft['genState']['nextBatchIndex'] ?? -1);
         if ($expected !== $batchIndex) {
-            throw new \InvalidArgumentException('Generation batches must be run in order.');
+            throw new \InvalidArgumentException(
+                "Generation batches must be run in order (expected batch {$expected}, got {$batchIndex})."
+            );
         }
 
         return $draft;

@@ -844,6 +844,22 @@ final class StaffController
         Response::success(array_merge(['active' => true], $progress));
     }
 
+    /** POST /api/staff/courses/questions/cancel */
+    public function cancelCourseQuestionGeneration(): void
+    {
+        $user = RBACMiddleware::requireSyllabusAccess();
+        $body = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($body)) {
+            $body = $_POST;
+        }
+        try {
+            $result = (new StaffCourseQuestionService())->cancelGeneration($user, $body);
+            Response::success($result, 'Generation stopped. You can add the questions generated so far.');
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+    }
+
     /** POST /api/staff/courses/questions/batch */
     public function generateCourseQuestionsBatch(): void
     {

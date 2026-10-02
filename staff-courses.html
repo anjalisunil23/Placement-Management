@@ -651,6 +651,18 @@ function setDraftSelection(checked) {
   });
 }
 
+function updateDraftModalFooter(payload) {
+  const btn = document.getElementById('btnAddSelected');
+  const busy = staffGenerationActive || payload?.generating === true;
+  if (btn) {
+    btn.disabled = busy;
+    btn.setAttribute('aria-disabled', busy ? 'true' : 'false');
+  }
+  document.querySelectorAll('#btnSelectAllDraft,#btnClearDraft').forEach((el) => {
+    el.disabled = busy;
+  });
+}
+
 function renderPractice(payload) {
   practice = payload;
   const rows = payload?.questions || [];
@@ -658,6 +670,7 @@ function renderPractice(payload) {
   const modal = document.getElementById('draftModal');
   if (!rows.length) {
     body.innerHTML = '';
+    updateDraftModalFooter(payload);
     const instance = bootstrap.Modal.getInstance(modal);
     if (instance) instance.hide();
     return;
@@ -670,8 +683,26 @@ function renderPractice(payload) {
   const countLabel = requested > 0 && rows.length !== requested
     ? `${rows.length} of ${requested} requested question${requested === 1 ? '' : 's'}`
     : `${rows.length} question${rows.length === 1 ? '' : 's'}`;
-  document.getElementById('draftModalHint').textContent = `${mix ? mix + ' · ' : ''}${countLabel}. Select the ones to add to the ${payload.courseCode || 'course'} question bank.`;
+  const batchTotal = Number(payload?.batchTotal || 0);
+  const batchIndex = Number(payload?.batchIndex ?? -1);
+  const batchNum = batchIndex >= 0 ? batchIndex + 1 : 0;
+  let hint = `${mix ? mix + ' · ' : ''}${countLabel}.`;
+  if (staffGenerationActive || payload?.generating) {
+    if (payload?.phase === 'topup') {
+      hint += ' Finishing counts… more questions may still appear.';
+    } else if (batchTotal > 0 && batchNum > 0 && batchNum < batchTotal) {
+      hint += ` Generating batch ${batchNum + 1} of ${batchTotal}…`;
+    } else if (batchTotal > 1) {
+      hint += ' Generating the next batch…';
+    } else {
+      hint += ' Generation in progress…';
+    }
+  } else {
+    hint += ` Select the ones to add to the ${payload.courseCode || 'course'} question bank.`;
+  }
+  document.getElementById('draftModalHint').textContent = hint;
   body.innerHTML = rows.map((q, i) => renderQuestionCard(q, i, true)).join('');
+  updateDraftModalFooter(payload);
   bootstrap.Modal.getOrCreateInstance(modal).show();
 }
 
@@ -922,6 +953,7 @@ function renderResult(payload) {
 
 let genProgressTimer = 0;
 let staffGenProgressPollTimer = 0;
+let staffGenerationActive = false;
 
 function createStaffGenProgressKey() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -1153,6 +1185,7 @@ async function generate() {
     return;
   }
   setGenerateBusy(true);
+  staffGenerationActive = true;
   const progressKey = createStaffGenProgressKey();
   document.getElementById('practicePanel').innerHTML = '';
   const batchPlan = chunkMixesByTotal(mixes, 10);
@@ -1168,8 +1201,8 @@ async function generate() {
     startGenProgress(requested, true);
     startStaffGenProgressPoll(progressKey);
     showDraftGenerating(course, 0, batchTotal, requested);
-    for (let batchIndex = 0; batchIndex < batchTotal; batchIndex++) {
-      if (batchIndex > 0) {
+    for (let batchIndex = 0; batchIndex < batchTotal; ) {
+      if (batchIndex > 0 && !(lastData?.questions || []).length) {
         showDraftGenerating(course, batchIndex, batchTotal, requested);
       }
       const res = await api('/staff/courses/questions/batch', {
@@ -1190,6 +1223,20 @@ async function generate() {
       lastData = res.data;
       if ((res.data?.questions || []).length) {
         renderPractice(res.data);
+      }
+      if (res.data?.batchComplete) {
+        break;
+      }
+      if (res.data?.phase === 'topup') {
+        break;
+      }
+      const next = Number(res.data?.nextBatchIndex);
+      if (Number.isInteger(next) && next > batchIndex && next < batchTotal) {
+        batchIndex = next;
+      } else if (batchIndex + 1 < batchTotal) {
+        batchIndex += 1;
+      } else {
+        break;
       }
     }
     let topUpGuard = 0;
@@ -1230,8 +1277,22 @@ async function generate() {
   } catch (err) {
     stopGenProgress(true);
     status.textContent = '';
+    if (sessionId) {
+      const cancelRes = await api('/staff/courses/questions/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId }),
+      }).catch(() => null);
+      if (cancelRes?.success && (cancelRes.data?.questions || []).length) {
+        lastData = Object.assign({}, lastData || {}, cancelRes.data, { generating: false, batchComplete: true });
+        renderPractice(lastData);
+      }
+    }
     document.getElementById('practicePanel').innerHTML = `<div class="card-surface p-3 text-danger">${esc(err?.message || 'Could not generate questions.')}</div>`;
   } finally {
+    staffGenerationActive = false;
+    if (lastData?.questions?.length) {
+      renderPractice(Object.assign({}, lastData, { generating: false }));
+    }
     setGenerateBusy(false);
   }
 }
@@ -1241,6 +1302,10 @@ async function saveSelected() {
   const indexes = selectedDraftIndexes();
   const status = document.getElementById('genStatus');
   const button = document.getElementById('btnAddSelected');
+  if (staffGenerationActive || practice?.generating) {
+    status.textContent = 'Still generating questions — wait for all batches to finish, then add to the bank.';
+    return;
+  }
   if (!indexes.length) {
     status.textContent = 'Select the questions you want to add to the syllabus question bank.';
     return;
