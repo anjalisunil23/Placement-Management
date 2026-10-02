@@ -5783,7 +5783,8 @@
     });
 
     if (typeof renderShell === 'function') {
-      renderShell(`${document.body?.dataset?.page || 'aptitude-training.html'}${hash}`);
+      const shellActive = `${document.body?.dataset?.page || 'aptitude-training.html'}${hash}`;
+      requestAnimationFrame(() => renderShell(shellActive));
     }
   }
 
@@ -6805,46 +6806,51 @@
       const view = (location.hash || '').replace(/^#/, '') || defaultView();
       applyView(view).catch(() => {});
     });
-    document.getElementById('aptViewNav')?.addEventListener('click', (e) => {
+    const bindPracticeNav = (id, handler) => {
+      const root = document.getElementById(id);
+      if (!root || root.dataset.phNavBound === '1') return;
+      root.dataset.phNavBound = '1';
+      root.addEventListener('click', handler);
+    };
+    bindPracticeNav('aptViewNav', (e) => {
       const link = e.target.closest('[data-view]');
       if (!link) return;
       e.preventDefault();
       applyView(link.getAttribute('data-view')).catch(() => {});
     });
-
-    document.getElementById('progressViewNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('progressViewNav', (e) => {
       const link = e.target.closest('[data-progress-view]');
       if (!link) return;
       e.preventDefault();
       applyProgressPanel(link.getAttribute('data-progress-view'));
       loadDirectory().catch(() => {});
     });
-    document.getElementById('takeListNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('takeListNav', (e) => {
       const link = e.target.closest('[data-take-list]');
       if (!link) return;
       e.preventDefault();
       applyTakeListPanel(link.getAttribute('data-take-list'));
     });
-    document.getElementById('takeContestTypeNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('takeContestTypeNav', (e) => {
       const link = e.target.closest('[data-take-contest-type]');
       if (!link) return;
       e.preventDefault();
       applyTakeContestType(link.getAttribute('data-take-contest-type'));
     });
-    document.getElementById('myResultsNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('myResultsNav', (e) => {
       const link = e.target.closest('[data-results-view]');
       if (!link) return;
       e.preventDefault();
       applyMyResultsPanel(link.getAttribute('data-results-view'));
       renderHistory(myProgress);
     });
-    document.getElementById('myResultsContestTypeNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('myResultsContestTypeNav', (e) => {
       const link = e.target.closest('[data-results-contest-type]');
       if (!link) return;
       e.preventDefault();
       applyMyResultsContestType(link.getAttribute('data-results-contest-type'));
     });
-    document.getElementById('progressContestTypeNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('progressContestTypeNav', (e) => {
       const link = e.target.closest('[data-progress-contest-type]');
       if (!link) return;
       e.preventDefault();

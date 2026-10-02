@@ -2299,7 +2299,8 @@
       renderManage();
     }
     if (typeof renderShell === 'function') {
-      renderShell(`${document.body?.dataset?.page || 'coding.html'}${hash}`);
+      const shellActive = `${document.body?.dataset?.page || 'coding.html'}${hash}`;
+      requestAnimationFrame(() => renderShell(shellActive));
     }
   }
 
@@ -4727,13 +4728,19 @@
     studentCodModal = document.getElementById('studentCodModal') ? new bootstrap.Modal(document.getElementById('studentCodModal')) : null;
     codAiModal = document.getElementById('codAiBankModal') ? new bootstrap.Modal(document.getElementById('codAiBankModal')) : null;
 
-    document.getElementById('codViewNav')?.addEventListener('click', (e) => {
+    const bindPracticeNav = (id, handler) => {
+      const root = document.getElementById(id);
+      if (!root || root.dataset.phNavBound === '1') return;
+      root.dataset.phNavBound = '1';
+      root.addEventListener('click', handler);
+    };
+    bindPracticeNav('codViewNav', (e) => {
       const link = e.target.closest('[data-view]');
       if (!link) return;
       e.preventDefault();
       applyView(link.getAttribute('data-view'));
     });
-    document.getElementById('manageViewNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('manageViewNav', (e) => {
       const link = e.target.closest('[data-manage-view]');
       if (!link) return;
       e.preventDefault();
@@ -4743,7 +4750,7 @@
     contestResultsModal = document.getElementById('contestResultsModal')
       ? new bootstrap.Modal(document.getElementById('contestResultsModal'))
       : null;
-    document.getElementById('progressViewNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('progressViewNav', (e) => {
       const link = e.target.closest('[data-progress-view]');
       if (!link) return;
       e.preventDefault();
@@ -4753,13 +4760,13 @@
       showDirectoryLoading();
       loadDirectory().catch(() => {});
     });
-    document.getElementById('progressContestTypeNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('progressContestTypeNav', (e) => {
       const link = e.target.closest('[data-progress-contest-type]');
       if (!link) return;
       e.preventDefault();
       applyProgressContestType(link.getAttribute('data-progress-contest-type'));
     });
-    document.getElementById('takeListNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('takeListNav', (e) => {
       const link = e.target.closest('[data-take-list]');
       if (!link) return;
       e.preventDefault();
@@ -4773,7 +4780,7 @@
       managePracticeSearch = e.target.value || '';
       renderPracticeProblemsList('manage');
     });
-    document.getElementById('takeContestTypeNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('takeContestTypeNav', (e) => {
       const link = e.target.closest('[data-take-contest-type]');
       if (!link) return;
       e.preventDefault();
@@ -4783,19 +4790,19 @@
       showStudentJdCompanyGrid();
       renderStudentJdBlock();
     });
-    document.getElementById('studentJdBlockViewNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('studentJdBlockViewNav', (e) => {
       const link = e.target.closest('[data-jd-block-view]');
       if (!link) return;
       e.preventDefault();
       applyStudentJdBlockView(link.getAttribute('data-jd-block-view'));
     });
-    document.getElementById('myResultsNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('myResultsNav', (e) => {
       const link = e.target.closest('[data-results-view]');
       if (!link) return;
       e.preventDefault();
       applyMyResultsPanel(link.getAttribute('data-results-view') || 'tests');
     });
-    document.getElementById('myResultsContestTypeNav')?.addEventListener('click', (e) => {
+    bindPracticeNav('myResultsContestTypeNav', (e) => {
       const link = e.target.closest('[data-results-contest-type]');
       if (!link) return;
       e.preventDefault();

@@ -65,6 +65,7 @@ const NAV = [
     group: "mock",
     icon: "bi-lightning-charge-fill",
     label: "Practice",
+    alwaysOpen: true,
     roles: ['admin', 'placement_officer', 'student', 'staff'],
     children: [
       {
@@ -460,8 +461,12 @@ function isGroupActive(group, active) {
 function renderNavChildren(children, active, role, depth = 1) {
   return visibleGroupChildren({ children }, role).map(c => {
     if (c.group) {
-      const open = isGroupActive(c, active);
       const subKids = visibleGroupChildren(c, role);
+      if (c.href && subKids.length === 0) {
+        const cls = depth > 1 ? 'nav-sub-item nav-sub-item-deep' : 'nav-sub-item';
+        return `<a class="nav-item ${cls} ${isNavActive(c, active) ? 'active' : ''}" href="${c.href}"><span>${c.label}</span></a>`;
+      }
+      const open = isGroupActive(c, active);
       const headActive = c.href ? isNavActive(c, active) : open;
       return `
         <div class="nav-sub-group ${open ? 'open' : ''}" data-nav-group="${c.group}">
@@ -542,12 +547,15 @@ function renderNavEntry(n, active, role) {
       </a>`;
     }
 
+    const alwaysOpen = n.alwaysOpen === true;
+    const groupOpen = open || alwaysOpen;
+
     if (!n.href) {
       return `
-      <div class="nav-group ${open ? 'open' : ''}" data-nav-group="${n.group}">
-        <button type="button" class="nav-item nav-group-toggle ${open ? 'active' : ''}" aria-expanded="${open}">
+      <div class="nav-group ${groupOpen ? 'open' : ''}${alwaysOpen ? ' always-open' : ''}" data-nav-group="${n.group}">
+        <button type="button" class="nav-item nav-group-toggle ${groupOpen ? 'active' : ''}" aria-expanded="${groupOpen}"${alwaysOpen ? ' tabindex="-1" aria-disabled="true"' : ''}>
           <i class="bi ${n.icon}"></i><span>${n.label}</span>
-          <i class="bi bi-chevron-down nav-chevron ms-auto"></i>
+          ${alwaysOpen ? '' : '<i class="bi bi-chevron-down nav-chevron ms-auto"></i>'}
         </button>
         <div class="nav-sub">
           ${renderNavChildren(kids, active, role)}
@@ -556,7 +564,7 @@ function renderNavEntry(n, active, role) {
     }
 
     return `
-      <div class="nav-group ${open ? 'open' : ''}" data-nav-group="${n.group}">
+      <div class="nav-group ${groupOpen ? 'open' : ''}${alwaysOpen ? ' always-open' : ''}" data-nav-group="${n.group}">
         <div class="nav-group-row">
           ${n.href
         ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span>${n.href === 'notifications.html' ? '<span class="badge-soft danger nav-badge ms-auto" style="display:none;font-size:.65rem;padding:.15rem .45rem">0</span>' : ''}</a>`
@@ -713,7 +721,7 @@ function renderShell(active) {
   sidebar?.querySelectorAll('.nav-group-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
       const group = btn.closest('.nav-group');
-      if (!group) return;
+      if (!group || group.classList.contains('always-open')) return;
       const willOpen = !group.classList.contains('open');
       sidebar.querySelectorAll('.nav-group.open').forEach(g => {
         if (g !== group) {

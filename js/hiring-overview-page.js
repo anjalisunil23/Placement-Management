@@ -1375,6 +1375,7 @@
       && this.campusRecruitingData?.scope === 'department'
       && !this.isCampusWideViewer());
     const needsFull = !!(this.campusRecruitingData?.lite && this.campusLive
+      && this._fullHydrate !== false
       && (!deptScopedLite || batch)
       && (dept || batch || !this.isCampusWideViewer()));
     if (needsFull) {
@@ -1558,6 +1559,8 @@
     }
     if (!this.root) return;
     this._els = {};
+    this._backgroundRefresh = opts.backgroundRefresh !== false;
+    this._fullHydrate = opts.fullHydrate !== false;
     this.bindEvents();
 
     try {
@@ -1594,10 +1597,25 @@
         notifyFirstPaint();
       }
 
-      // Revalidate in background — do not block dashboard interactivity.
-      if (this.campusLive) {
-        const staffCampus = this.isCampusWideViewer() && role === 'staff';
-        const dashOpts = staffCampus ? { lite: true, adminView: true } : { lite: true };
+      const staffCampus = this.isCampusWideViewer() && role === 'staff';
+      const dashOpts = staffCampus ? { lite: true, adminView: true } : { lite: true };
+
+      if (this.campusLive && !seed?.recruiting) {
+        const [liteData, liteStats] = await Promise.all([
+          RecruitingStore.fetch({ lite: true }).catch(() => null),
+          dashboardStats(dashOpts).catch(() => null),
+        ]);
+        if (liteData) {
+          this.applyRecruitingData(liteData, liteStats);
+          notifyFirstPaint();
+          try {
+            window.__phWriteDashKpi?.(staffCampus ? 'admin' : role, { recruiting: liteData, stats: liteStats });
+          } catch (_) { /* ignore */ }
+        }
+      }
+
+      // Optional background revalidate (hiring-overview page only — not dashboard).
+      if (this.campusLive && this._backgroundRefresh && seed?.recruiting) {
         Promise.all([
           RecruitingStore.fetch({ lite: true }).catch(() => null),
           dashboardStats(dashOpts).catch(() => null),
@@ -1612,10 +1630,9 @@
         }).catch(() => {});
       }
 
-      // Background: full applicant rows + stats (lite cannot filter by dept/branch).
-      if (this.campusLive) {
+      // Full applicant rows (hiring-overview page — not dashboard auto-reload).
+      if (this.campusLive && this._fullHydrate) {
         const isDashboard = (document.body?.dataset?.page || '') === 'dashboard.html';
-        const staffCampus = this.isCampusWideViewer() && role === 'staff';
         const fullDashOpts = staffCampus ? { adminView: true } : {};
         const hydrateFull = () => {
           Promise.all([
@@ -1639,8 +1656,6 @@
             setTimeout(fn, Math.min(delay, 1500));
           }
         };
-        // Always hydrate full recruiting — staff/officer always have a dept selected;
-        // campus View needs full rows to filter by department/branch.
         schedule(hydrateFull, isDashboard
           ? (this.isCampusWideViewer() ? 800 : 600)
           : (this.isCampusWideViewer() ? 800 : 2500));
