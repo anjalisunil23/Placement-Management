@@ -5731,8 +5731,8 @@ async function apiFetch(path, opts = {}) {
       const timedOut = /request timeout|timed out|gateway timeout|504|522/i.test(plain);
       let message;
       if (timedOut) {
-        message = `Request timed out (${res.status}). The server stopped a long operation (syllabus download or AI generation). `
-          + 'Wait for the PDF to finish loading, then try again with fewer questions, or ask the host to raise PHP/LiteSpeed timeouts.';
+        message = `Request timed out (${res.status}). The server stopped a long step (reading the syllabus for AI or generating a batch). `
+          + 'Click Get and wait for the PDF, then try Generate again with fewer questions. If it keeps failing, ask the host to raise PHP/LiteSpeed timeouts (often 60–120s).';
       } else if (res.status >= 500) {
         message = `Server error (${res.status}). If this persists, redeploy on cPanel and confirm PHP 8.2+ and composer install. ${detail}`;
       } else {

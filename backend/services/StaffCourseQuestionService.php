@@ -18,6 +18,11 @@ final class StaffCourseQuestionService
     private const MAX_TOTAL = 40;
     private const COOLDOWN_SECONDS = 8;
     private const GENERATE_BATCH_SIZE = 10;
+    /** Max OpenAI calls per HTTP top-up request (shared-host proxy limits). */
+    private const BATCH_TOPUP_MAX_API_CALLS = 2;
+    /** Wall clock per batch/top-up HTTP request (stay under typical LiteSpeed ~60s). */
+    private const BATCH_REQUEST_WALL_SECONDS = 52;
+    private const SYLLABUS_PROMPT_MAX_CHARS = 42000;
     /** Enough for one batched pass + shortfall top-ups without exceeding shared-host timeouts. */
     private const GENERATE_MAX_API_CALLS = 18;
     /** Stop OpenAI loops before LiteSpeed/cPanel proxy timeouts (~60–120s). */
@@ -155,6 +160,10 @@ final class StaffCourseQuestionService
 
         if (!$this->openai->isConfigured()) {
             throw new \RuntimeException('AI question generation is not configured. Contact the administrator.');
+        }
+
+        if (!empty($body['topUp'])) {
+            return $this->generateBatchTopUp($user, $body);
         }
 
         $mixes = $this->parseMixes($body);
@@ -318,6 +327,100 @@ final class StaffCourseQuestionService
             ];
         }
 
+        $_SESSION['staff_course_draft']['questions'] = $selected;
+        $_SESSION['staff_course_draft']['genState']['nextBatchIndex'] = $batchTotal;
+        $_SESSION['staff_course_draft']['genState']['phase'] = 'topup';
+        $_SESSION['staff_course_draft']['createdAt'] = time();
+
+        if ($this->mixShortfall($mixes, $selected) === []) {
+            return $this->finalizeGenerationDraft(
+                $sessionId,
+                $course,
+                $mixes,
+                $selected,
+                $progressKey,
+                $total,
+                $batchIndex,
+                $batchTotal,
+                $batchQuestions
+            );
+        }
+
+        $this->touchGenerationProgress(
+            $progressKey,
+            count($selected),
+            $total,
+            'Finishing counts… (' . count($selected) . ' / ' . $total . ')'
+        );
+
+        return [
+            'sessionId' => $sessionId,
+            'courseCode' => $courseCode,
+            'courseTitle' => (string) ($course['title'] ?? ''),
+            'mixes' => $mixes,
+            'requested' => $total,
+            'questions' => $selected,
+            'batchQuestions' => $batchQuestions,
+            'batchIndex' => $batchIndex,
+            'batchTotal' => $batchTotal,
+            'batchComplete' => false,
+            'phase' => 'topup',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    private function generateBatchTopUp(array $user, array $body): array
+    {
+        $sessionId = trim((string) ($body['sessionId'] ?? ''));
+        if ($sessionId === '') {
+            throw new \InvalidArgumentException('Missing session for generation top-up.');
+        }
+        $draft = $this->requireDraft($user, $sessionId);
+        if (empty($draft['generating']) || (string) ($draft['genState']['phase'] ?? '') !== 'topup') {
+            throw new \InvalidArgumentException('No generation top-up is pending for this session.');
+        }
+
+        $mixes = is_array($draft['mixes'] ?? null) ? $draft['mixes'] : $this->parseMixes($body);
+        $total = $this->mixTotal($mixes);
+        $progressKey = self::sanitizeProgressKey((string) ($body['progressKey'] ?? ''));
+        $batchTotal = (int) ($draft['genState']['batchTotal'] ?? 1);
+        $batchIndex = max(0, $batchTotal - 1);
+        $deadline = (float) ($draft['genState']['deadline'] ?? 0);
+        $requestDeadline = microtime(true) + self::BATCH_REQUEST_WALL_SECONDS;
+        if ($deadline <= 0 || $deadline > $requestDeadline) {
+            $deadline = $requestDeadline;
+        }
+
+        $course = [
+            'code' => (string) ($draft['course']['code'] ?? ''),
+            'title' => (string) ($draft['course']['title'] ?? ''),
+            'semsubId' => (string) ($draft['course']['semsubId'] ?? ''),
+            'department' => (string) ($draft['course']['department'] ?? ''),
+            'syllabusText' => (string) ($draft['course']['syllabusText'] ?? ''),
+        ];
+        $syllabus = $this->syllabusText($course);
+        $system = OpenAIService::cleanUtf8(
+            'You write college examination questions. Use only the supplied official syllabus text. Return JSON only.'
+        );
+        $courseCode = (string) ($course['code'] ?? '');
+        /** @var array<string, true> $promptKeys */
+        $promptKeys = (new SyllabusQuestionBankModel())->existingPromptKeys($courseCode);
+        $selected = is_array($draft['questions'] ?? null) ? $draft['questions'] : [];
+        foreach ($selected as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $key = SyllabusQuestionBankModel::normalizePromptKey((string) ($question['question'] ?? ''));
+            if ($key !== '') {
+                $promptKeys[$key] = true;
+            }
+        }
+        $bankAvoid = $this->existingBankQuestionsAvoidBlock($courseCode);
+
         $topUpCalls = 0;
         $selected = $this->fillMixShortfalls(
             $course,
@@ -330,12 +433,73 @@ final class StaffCourseQuestionService
             $topUpCalls,
             $progressKey,
             $total,
-            $deadline
+            $deadline,
+            self::BATCH_TOPUP_MAX_API_CALLS
         );
+        $selected = $this->assignDraftIndexes($selected);
+        $_SESSION['staff_course_draft']['questions'] = $selected;
+        $_SESSION['staff_course_draft']['createdAt'] = time();
+
+        if ($this->mixShortfall($mixes, $selected) !== [] && $topUpCalls >= self::BATCH_TOPUP_MAX_API_CALLS) {
+            $got = count($selected);
+            $this->touchGenerationProgress(
+                $progressKey,
+                $got,
+                $total,
+                'Finishing counts… (' . $got . ' / ' . $total . ')'
+            );
+
+            return [
+                'sessionId' => $sessionId,
+                'courseCode' => $courseCode,
+                'courseTitle' => (string) ($course['title'] ?? ''),
+                'mixes' => $mixes,
+                'requested' => $total,
+                'questions' => $selected,
+                'batchQuestions' => [],
+                'batchIndex' => $batchIndex,
+                'batchTotal' => $batchTotal,
+                'batchComplete' => false,
+                'phase' => 'topup',
+            ];
+        }
+
+        return $this->finalizeGenerationDraft(
+            $sessionId,
+            $course,
+            $mixes,
+            $selected,
+            $progressKey,
+            $total,
+            $batchIndex,
+            $batchTotal,
+            []
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $course
+     * @param list<array{difficulty:string,count:int}> $mixes
+     * @param list<array<string, mixed>> $selected
+     * @param list<array<string, mixed>> $batchQuestions
+     * @return array<string, mixed>
+     */
+    private function finalizeGenerationDraft(
+        string $sessionId,
+        array $course,
+        array $mixes,
+        array $selected,
+        string $progressKey,
+        int $total,
+        int $batchIndex,
+        int $batchTotal,
+        array $batchQuestions
+    ): array {
         $selected = $this->dedupeBatchOnly($selected);
         $selected = $this->capQuestionsToMixes($selected, $mixes);
         $selected = $this->assignDraftIndexes($selected);
         $got = count($selected);
+        $courseCode = (string) ($course['code'] ?? '');
 
         unset($_SESSION['staff_course_draft']['generating'], $_SESSION['staff_course_draft']['genState']);
         $_SESSION['staff_course_draft']['questions'] = $selected;
@@ -1002,12 +1166,18 @@ final class StaffCourseQuestionService
         if ($cached !== null) {
             $text = $cached;
         } else {
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
             try {
                 $pdf = AesSyllabusCipher::fetchPdf($encid);
             } catch (\RuntimeException $e) {
                 throw new \RuntimeException($e->getMessage(), 502);
             }
             $text = AesSyllabusCipher::extractTextForEncid($encid, $pdf);
+            if (session_status() !== PHP_SESSION_ACTIVE) {
+                session_start();
+            }
             self::putSyllabusCache($semsubId, $encid, $text);
         }
 
@@ -1128,6 +1298,20 @@ final class StaffCourseQuestionService
     /**
      * @param array<string, mixed> $course
      */
+    private function trimSyllabusForPrompt(string $syllabus): string
+    {
+        $syllabus = trim($syllabus);
+        if ($syllabus === '') {
+            return '';
+        }
+        if (mb_strlen($syllabus) <= self::SYLLABUS_PROMPT_MAX_CHARS) {
+            return $syllabus;
+        }
+
+        return mb_substr($syllabus, 0, self::SYLLABUS_PROMPT_MAX_CHARS)
+            . "\n\n[… syllabus trimmed for length; use content above …]";
+    }
+
     private function syllabusText(array $course): string
     {
         $fromPdf = trim((string) ($course['syllabusText'] ?? ''));
@@ -1418,7 +1602,7 @@ final class StaffCourseQuestionService
     ): string {
         $code = OpenAIService::cleanUtf8((string) ($course['code'] ?? ''));
         $title = OpenAIService::cleanUtf8((string) ($course['title'] ?? ''));
-        $syllabus = OpenAIService::cleanUtf8($syllabus);
+        $syllabus = OpenAIService::cleanUtf8($this->trimSyllabusForPrompt($syllabus));
         $mixText = OpenAIService::cleanUtf8($mixText);
         $avoidBlock = OpenAIService::cleanUtf8($avoidBlock);
         $avoid = trim($avoidBlock) !== ''
@@ -1540,12 +1724,17 @@ final class StaffCourseQuestionService
         int &$apiCalls,
         string $progressKey = '',
         int $requestedTotal = 0,
-        float $deadline = 0.0
+        float $deadline = 0.0,
+        int $maxNewApiCalls = 0
     ): array {
         $requestedTotal = max($requestedTotal, $this->mixTotal($mixes));
+        $callsAtStart = $apiCalls;
 
         $stalls = 0;
         while ($stalls < 10 && $apiCalls < self::GENERATE_MAX_API_CALLS && !$this->generationDeadlineReached($deadline)) {
+            if ($maxNewApiCalls > 0 && ($apiCalls - $callsAtStart) >= $maxNewApiCalls) {
+                break;
+            }
             $shortfall = $this->mixShortfall($mixes, $selected);
             if ($shortfall === []) {
                 break;
@@ -1555,10 +1744,16 @@ final class StaffCourseQuestionService
                 if ($this->generationDeadlineReached($deadline)) {
                     break 2;
                 }
+                if ($maxNewApiCalls > 0 && ($apiCalls - $callsAtStart) >= $maxNewApiCalls) {
+                    break 2;
+                }
                 $label = (string) ($mix['difficulty'] ?? 'Medium');
                 $need = (int) ($mix['count'] ?? 0);
                 $emptyBatchStreak = 0;
                 while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyBatchStreak < 4 && !$this->generationDeadlineReached($deadline)) {
+                    if ($maxNewApiCalls > 0 && ($apiCalls - $callsAtStart) >= $maxNewApiCalls) {
+                        break 3;
+                    }
                     $chunk = min(6, $need);
                     $slice = [['difficulty' => $label, 'count' => $chunk]];
                     $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
@@ -1602,10 +1797,16 @@ final class StaffCourseQuestionService
             if ($this->generationDeadlineReached($deadline)) {
                 break;
             }
+            if ($maxNewApiCalls > 0 && ($apiCalls - $callsAtStart) >= $maxNewApiCalls) {
+                break;
+            }
             $label = (string) ($mix['difficulty'] ?? 'Medium');
             $need = (int) ($mix['count'] ?? 0);
             $emptyStreak = 0;
             while ($need > 0 && $apiCalls < self::GENERATE_MAX_API_CALLS && $emptyStreak < 6 && !$this->generationDeadlineReached($deadline)) {
+                if ($maxNewApiCalls > 0 && ($apiCalls - $callsAtStart) >= $maxNewApiCalls) {
+                    break 2;
+                }
                 $slice = [['difficulty' => $label, 'count' => 1]];
                 $avoid = $this->generationAvoidBlock($selected, $bankAvoid);
                 $added = $this->fetchQuestionBatch(

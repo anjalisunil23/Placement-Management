@@ -336,6 +336,11 @@ async function getSelectedCourse() {
     clearMcqView();
     renderSyllabus();
     loadBank();
+    if (loaded?.semsubId) {
+      prepareSyllabusForAi(loaded).then((data) => {
+        if (data && loaded) loaded = Object.assign({}, loaded, data);
+      }).catch(() => {});
+    }
   } catch (err) {
     label.textContent = err?.message || 'Could not load that course.';
   } finally {
@@ -1049,6 +1054,24 @@ async function prepareSyllabusForAi(course) {
   return res.data;
 }
 
+async function prepareSyllabusForAiWithRetry(course, attempts = 2) {
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await prepareSyllabusForAi(course);
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err?.message || '');
+      if (i >= attempts - 1 || !/timed out|timeout|500/i.test(msg)) {
+        throw err;
+      }
+      document.getElementById('genProgressLabel').textContent = 'Reading syllabus PDF for AI (retry)…';
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+    }
+  }
+  throw lastErr || new Error('Could not prepare the syllabus for AI.');
+}
+
 function startSyllabusLoadProgress() {
   stopGenProgress(true);
   document.getElementById('genProgressLabel').textContent = 'Opening syllabus PDF…';
@@ -1140,7 +1163,7 @@ async function generate() {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('generateModal')).hide();
     status.textContent = 'Reading syllabus PDF for AI (' + (course.code || 'course') + ')…';
     startAiSyllabusPrepareProgress();
-    await prepareSyllabusForAi(course);
+    await prepareSyllabusForAiWithRetry(course);
     status.textContent = 'Generating questions for ' + (course.code || 'this course') + '…';
     startGenProgress(requested, true);
     startStaffGenProgressPoll(progressKey);
@@ -1169,7 +1192,32 @@ async function generate() {
         renderPractice(res.data);
       }
     }
+    let topUpGuard = 0;
+    while (lastData && !lastData.batchComplete && topUpGuard++ < 24) {
+      document.getElementById('draftModalHint').textContent = 'Finishing question counts…';
+      const res = await api('/staff/courses/questions/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          topUp: true,
+          courseCode: course.code,
+          courseTitle: course.title || '',
+          semsubId: course.semsubId || '',
+          encid: course.encid || '',
+          mixes,
+          sessionId,
+          progressKey,
+        }),
+      });
+      if (!res?.success) throw new Error(res?.message || 'Could not finish generating questions.');
+      lastData = res.data;
+      if ((res.data?.questions || []).length) {
+        renderPractice(res.data);
+      }
+    }
     if (!lastData) throw new Error('Could not generate questions.');
+    if (!lastData.batchComplete) {
+      throw new Error('Generation stopped early. Try again with fewer questions per difficulty.');
+    }
     finishGenProgress();
     const count = (lastData.questions || []).length;
     const gotRequested = Number(lastData.requested || requested);
