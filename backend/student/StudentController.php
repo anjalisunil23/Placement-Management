@@ -362,7 +362,7 @@ final class StudentController
       if ($sessionBatch === '') {
         $aesSession = \PMS\Utils\Security::getSessionAesProfile();
         if (is_array($aesSession)) {
-          $sessionBatch = trim((string) ($aesSession['stud_class'] ?? $aesSession['classBatch'] ?? $aesSession['batch'] ?? ''));
+          $sessionBatch = trim((string) ($aesSession['stud_class'] ?? $aesSession['classBatch'] ?? ''));
         }
       }
       if ($sessionBatch !== '') {

@@ -462,17 +462,15 @@ function resolveStudentBatchYear(u) {
   const aes = u?.aesProfile && typeof u.aesProfile === 'object' ? u.aesProfile : {};
   const reg = u?.placementRegistration && typeof u.placementRegistration === 'object' ? u.placementRegistration : {};
   const candidates = [
+    reg.yop,
     u?.yop,
     u?.batchYear,
-    reg.yop,
     u?.stud_class,
-    aes.stud_class,
     u?.classBatch,
+    aes.stud_class,
     aes.classBatch,
-    academic.classBatch,
     academic.stud_class,
-    academic.batch,
-    u?.batch,
+    academic.classBatch,
   ];
   for (const c of candidates) {
     const label = batchYearFromText(c);

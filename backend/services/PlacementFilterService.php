@@ -202,7 +202,9 @@ final class PlacementFilterService
             }
         }
 
-        $batches = $this->sortLabels(array_values(array_unique($batches)));
+        $batches = $this->dedupeBatchLabelsByCohort(array_values(array_unique($batches)));
+        $batches = $this->sortLabels($batches);
+        $batches = $this->restrictBatchOptionsToStaffAssignment($ctx, $batches, $program, $branch);
         if (!$finalYearOnly) {
             return $batches;
         }
@@ -225,6 +227,66 @@ final class PlacementFilterService
      * @param list<string> $batches
      * @return list<string>
      */
+    /**
+     * One label per cohort (e.g. keep MCA2024-2028-S8 over MCA2024-2028 when both appear).
+     *
+     * @param list<string> $batches
+     * @return list<string>
+     */
+    private function dedupeBatchLabelsByCohort(array $batches): array
+    {
+        $best = [];
+        foreach ($batches as $batch) {
+            $batch = trim((string) $batch);
+            if ($batch === '') {
+                continue;
+            }
+            $cohort = ClassInchargeRegistry::cohortKey($batch);
+            $key = $cohort !== '' ? strtoupper($cohort) : strtoupper($batch);
+            if (!isset($best[$key]) || strlen($batch) > strlen($best[$key])) {
+                $best[$key] = $batch;
+            }
+        }
+
+        return array_values($best);
+    }
+
+    /**
+     * Class teachers / co-class teachers: only their assigned batches, not whole-dept AES lists.
+     *
+     * @param array<string, mixed> $ctx
+     * @param list<string> $batches
+     * @return list<string>
+     */
+    private function restrictBatchOptionsToStaffAssignment(
+        array $ctx,
+        array $batches,
+        string $program,
+        string $branch
+    ): array {
+        if (empty($ctx['staffScope'])) {
+            return $batches;
+        }
+
+        $assigned = StaffContext::assignedClassBatches($ctx);
+        if ($assigned === []) {
+            return $batches;
+        }
+
+        $scoped = array_values(array_filter(
+            $batches,
+            static fn (string $batch): bool => StaffContext::classBatchMatchesAssigned($batch, $assigned)
+        ));
+
+        foreach ($this->assignedBatchLabelsForScope($ctx, $program, $branch) as $label) {
+            if (!in_array($label, $scoped, true)) {
+                $scoped[] = $label;
+            }
+        }
+
+        return $this->sortLabels($this->dedupeBatchLabelsByCohort($scoped));
+    }
+
     private function preferSpecificFinalYearBatches(array $batches): array
     {
         $normalizedBases = [];

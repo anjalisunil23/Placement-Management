@@ -789,10 +789,24 @@ final class StaffPlacementRegistryService
             $programs
         ))));
         if ($program !== '') {
-            $batches = array_values(array_unique(array_filter(array_merge(
-                $filterSvc->fetchBatchOptions($staffCtx, $program, $branch, false),
-                $batches
-            ))));
+            $assigned = StaffContext::assignedClassBatches($staffCtx);
+            if ($assigned === []) {
+                $batches = array_values(array_unique(array_filter(array_merge(
+                    $filterSvc->fetchBatchOptions($staffCtx, $program, $branch, false),
+                    $batches
+                ))));
+            } else {
+                $batches = array_values(array_unique(array_filter(
+                    $batches,
+                    static fn (string $b): bool => StaffContext::classBatchMatchesAssigned($b, $assigned)
+                )));
+                foreach ($assigned as $label) {
+                    $label = trim((string) $label);
+                    if ($label !== '' && !in_array($label, $batches, true)) {
+                        $batches[] = $label;
+                    }
+                }
+            }
         }
 
         sort($programs, SORT_STRING);
