@@ -194,6 +194,7 @@ $routes = [
     ['GET',    '/admin/students/allfinal-year',       [AdminController::class, 'listFinalYearStudents']],
     ['GET',    '/admin/students/final-year',          [AdminController::class, 'listFinalYearStudents']],
     ['GET',    '/admin/students/placed',              [AdminController::class, 'listPlacedStudents']],
+    ['GET',    '/admin/students/alumni',              [AdminController::class, 'listAlumniStudents']],
     ['GET',    '/admin/students/self-placement/pending', [AdminController::class, 'listPendingSelfPlacements']],
     ['GET',    '/admin/students/{id}/profile',       [AdminController::class, 'studentProfile']],
     ['GET',    '/admin/students/{id}/qualifications',[AdminController::class, 'studentQualifications']],

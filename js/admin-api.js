@@ -352,6 +352,15 @@ const AdminApi = {
     return res.data.map(s => this.mapStudentRow(s));
   },
 
+  async fetchAlumniStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/admin/students/alumni' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(s => this.mapStudentRow(s));
+  },
+
   async fetchPendingSelfPlacements(params = {}) {
     const qs = new URLSearchParams();
     if (params.q) qs.set('q', params.q);

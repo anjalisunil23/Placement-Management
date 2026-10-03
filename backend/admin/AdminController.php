@@ -1365,6 +1365,18 @@ final class AdminController
         );
     }
 
+    /** GET /api/admin/students/alumni — campus-wide alumni from AES getAllStudInfo4Placement */
+    public function listAlumniStudents(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        Response::success(
+            DocumentHelper::jsonSafe(
+                (new OfficerDataService())->listCampusAlumniStudents($query !== '' ? $query : null)
+            )
+        );
+    }
+
     /** GET /api/admin/students/placed — all placed students campus-wide */
     public function listPlacedStudents(): void
     {

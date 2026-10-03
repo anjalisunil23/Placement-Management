@@ -2214,6 +2214,111 @@ final class OfficerDataService
     }
 
     /**
+     * Campus-wide alumni rows from AES getAllStudInfo4Placement (admin Students → Alumni tab).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listCampusAlumniStudents(?string $query = null): array
+    {
+        $ctx = [
+            'isAdmin'      => true,
+            'campusWide'   => true,
+            'departmentId' => null,
+            'department'   => null,
+            'profile'      => null,
+        ];
+
+        return $this->filterStudentRows($this->listAlumniFromAesDirectory($ctx), $query);
+    }
+
+    /**
+     * Alumni / passed-out rows from AES getAllStudInfo4Placement.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    private function listAlumniFromAesDirectory(array $ctx): array
+    {
+        $this->boostMemoryForAesDirectoryLoad();
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        if ($records === []) {
+            return [];
+        }
+
+        $localByKey = $this->indexLocalStudentsForAesMerge($ctx);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $rows = [];
+        $seenAdmno = [];
+
+        foreach ($records as $record) {
+            if (!$this->isAesAlumniDirectoryRecord($record)) {
+                continue;
+            }
+
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? ''
+            )));
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            if ($admno === '') {
+                continue;
+            }
+            if (isset($seenAdmno[$admno])) {
+                continue;
+            }
+
+            $local = null;
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            if (!$this->isPlacementStudentListCandidate(
+                is_array($local) ? $local : ['registerNumber' => $admno],
+                null,
+                $row,
+                false
+            )) {
+                continue;
+            }
+            $seenAdmno[$admno] = true;
+            $rows[] = $row;
+        }
+
+        usort(
+            $rows,
+            static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['displayName'] ?? $a['registerNumber'] ?? ''),
+                (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
+            )
+        );
+
+        return $rows;
+    }
+
+    /**
      * Prefer class-scoped AES for staff rosters; full-dept directory blows typical 128MB PHP limits.
      *
      * @param array<string, mixed> $ctx
@@ -2452,6 +2557,44 @@ final class OfficerDataService
             '/\b(alumni|alumnus|passed\s*out|passout|graduated|left|dropout|discontinued|transferred|faculty|staff|employee)\b/',
             $blob
         ) !== 1;
+    }
+
+    /**
+     * Alumni / passed-out rows from getAllStudInfo4Placement (inverse of studying filter).
+     *
+     * @param array<string, mixed> $record
+     */
+    private function isAesAlumniDirectoryRecord(array $record): bool
+    {
+        if ($this->isAesStudyingStudent($record)) {
+            return false;
+        }
+
+        $blob = strtolower(trim(implode(' ', array_filter([
+            (string) ($record['stud_status'] ?? ''),
+            (string) ($record['status'] ?? ''),
+            (string) ($record['student_status'] ?? ''),
+            (string) ($record['stud_type'] ?? ''),
+            (string) ($record['category'] ?? ''),
+            (string) ($record['stud_class'] ?? ''),
+            (string) ($record['classBatch'] ?? ''),
+        ]))));
+
+        if ($blob !== '' && preg_match('/\b(faculty|staff|employee|transferred)\b/', $blob) === 1) {
+            return false;
+        }
+
+        if ($blob !== '' && preg_match('/\b(alumni|alumnus|passed\s*out|passout|graduated)\b/', $blob) === 1) {
+            return true;
+        }
+
+        $batch = strtoupper(trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')));
+        if ($batch !== '' && preg_match('/\b(ALUMNI|PASS\s*OUT|PASSOUT|GRADUATED)\b/', $batch) === 1) {
+            return true;
+        }
+
+        return $blob !== ''
+            && preg_match('/\b(left|dropout|discontinued)\b/', $blob) !== 1;
     }
 
     /**
