@@ -65,7 +65,6 @@ const NAV = [
     group: "mock",
     icon: "bi-lightning-charge-fill",
     label: "Practice",
-    alwaysOpen: true,
     roles: ['admin', 'placement_officer', 'student', 'staff'],
     children: [
       {
@@ -533,6 +532,33 @@ function shellActivePage() {
   return hash ? `${page}#${hash}` : page;
 }
 
+const PRACTICE_NAV_GROUP = 'mock';
+
+function practiceNavPersistedOpen() {
+  try {
+    return sessionStorage.getItem('ph-nav-practice-open') === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+function setPracticeNavPersistedOpen(open) {
+  try {
+    if (open) sessionStorage.setItem('ph-nav-practice-open', '1');
+    else sessionStorage.removeItem('ph-nav-practice-open');
+  } catch (_) { /* ignore */ }
+}
+
+function setNavGroupOpen(groupEl, open) {
+  if (!groupEl) return;
+  groupEl.classList.toggle('open', open);
+  const toggle = groupEl.querySelector('.nav-group-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (groupEl.dataset.navGroup === PRACTICE_NAV_GROUP) {
+    setPracticeNavPersistedOpen(open);
+  }
+}
+
 function renderNavEntry(n, active, role) {
   if (n.section) return `<div class="nav-label">${n.section}</div>`;
   if (n.group) {
@@ -547,15 +573,15 @@ function renderNavEntry(n, active, role) {
       </a>`;
     }
 
-    const alwaysOpen = n.alwaysOpen === true;
-    const groupOpen = open || alwaysOpen;
+    const practiceExpanded = n.group === PRACTICE_NAV_GROUP && practiceNavPersistedOpen();
+    const groupOpen = open || practiceExpanded;
 
     if (!n.href) {
       return `
-      <div class="nav-group ${groupOpen ? 'open' : ''}${alwaysOpen ? ' always-open' : ''}" data-nav-group="${n.group}">
-        <button type="button" class="nav-item nav-group-toggle ${groupOpen ? 'active' : ''}" aria-expanded="${groupOpen}"${alwaysOpen ? ' tabindex="-1" aria-disabled="true"' : ''}>
+      <div class="nav-group ${groupOpen ? 'open' : ''}" data-nav-group="${n.group}">
+        <button type="button" class="nav-item nav-group-toggle ${groupOpen ? 'active' : ''}" aria-expanded="${groupOpen}">
           <i class="bi ${n.icon}"></i><span>${n.label}</span>
-          ${alwaysOpen ? '' : '<i class="bi bi-chevron-down nav-chevron ms-auto"></i>'}
+          <i class="bi bi-chevron-down nav-chevron ms-auto"></i>
         </button>
         <div class="nav-sub">
           ${renderNavChildren(kids, active, role)}
@@ -564,7 +590,7 @@ function renderNavEntry(n, active, role) {
     }
 
     return `
-      <div class="nav-group ${groupOpen ? 'open' : ''}${alwaysOpen ? ' always-open' : ''}" data-nav-group="${n.group}">
+      <div class="nav-group ${groupOpen ? 'open' : ''}" data-nav-group="${n.group}">
         <div class="nav-group-row">
           ${n.href
         ? `<a class="nav-item nav-group-link ${headActive ? 'active' : ''}" href="${n.href}"><i class="bi ${n.icon}"></i><span>${n.label}</span>${n.href === 'notifications.html' ? '<span class="badge-soft danger nav-badge ms-auto" style="display:none;font-size:.65rem;padding:.15rem .45rem">0</span>' : ''}</a>`
@@ -712,25 +738,21 @@ function renderShell(active) {
       e.stopPropagation();
       const group = btn.closest('.nav-group');
       if (!group) return;
-      const willOpen = !group.classList.contains('open');
-      group.classList.toggle('open', willOpen);
-      group.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      setNavGroupOpen(group, !group.classList.contains('open'));
     });
   });
 
   sidebar?.querySelectorAll('.nav-group-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       const group = btn.closest('.nav-group');
-      if (!group || group.classList.contains('always-open')) return;
+      if (!group) return;
       const willOpen = !group.classList.contains('open');
       sidebar.querySelectorAll('.nav-group.open').forEach(g => {
-        if (g !== group) {
-          g.classList.remove('open');
-          g.querySelector('.nav-group-toggle')?.setAttribute('aria-expanded', 'false');
-        }
+        if (g !== group) setNavGroupOpen(g, false);
       });
-      group.classList.toggle('open', willOpen);
-      btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      setNavGroupOpen(group, willOpen);
     });
   });
 

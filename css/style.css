@@ -222,9 +222,6 @@ a{color:inherit;text-decoration:none}
 .sidebar .nav-group.open .nav-chevron{transform:rotate(180deg)}
 .sidebar .nav-sub{display:none;padding:.15rem 0 .35rem}
 .sidebar .nav-group.open .nav-sub{display:block}
-.sidebar .nav-group.always-open .nav-sub{display:block}
-.sidebar .nav-group.always-open > .nav-group-toggle{cursor:default}
-.sidebar .nav-group.always-open > .nav-group-toggle:hover{background:transparent}
 .sidebar .nav-sub-item{
   display:flex;align-items:center;
   padding:.45rem 1.25rem .45rem 2.65rem;
