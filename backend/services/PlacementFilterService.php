@@ -440,7 +440,7 @@ final class PlacementFilterService
         $deptAesId = $this->resolveParentDeptAesId($ctx);
         if ($deptAesId !== '' && !$filterMode) {
             try {
-                foreach ($api->fetchAllStudInfo4Placement(['stud_deptcode' => $deptAesId]) as $record) {
+                foreach ($api->fetchAllStudInfo4Placement(['stud_deptcode' => $deptAesId], true) as $record) {
                     $recordDept = trim((string) ($record['stud_deptcode'] ?? ''));
                     if ($recordDept !== '' && strcasecmp($recordDept, $deptAesId) !== 0) {
                         continue;

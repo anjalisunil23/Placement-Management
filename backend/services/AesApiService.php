@@ -406,12 +406,13 @@ final class AesApiService
      * Normalized student rows from getAllStudInfo4Placement.
      *
      * @param array<string, scalar|null> $params
+     * @param bool $directoryList When true, skip full profile normalization (Students list / filters).
      * @return list<array<string, mixed>>
      */
-    public function fetchAllStudInfo4Placement(array $params = []): array
+    public function fetchAllStudInfo4Placement(array $params = [], bool $directoryList = false): array
     {
         ksort($params);
-        $cacheKey = 'allstud_' . md5((string) json_encode($params));
+        $cacheKey = 'allstud_' . ($directoryList ? 'dir_' : '') . md5((string) json_encode($params));
         $cached = $this->readSharedListCache($cacheKey, 1800);
         if (is_array($cached)) {
             return $cached;
@@ -421,6 +422,16 @@ final class AesApiService
         $records = $this->extractStudInfoRecords($result);
         if ($records === []) {
             return [];
+        }
+
+        if ($directoryList) {
+            $out = $this->dedupeDirectoryRecords(array_map(
+                fn (array $record): array => $this->slimDirectoryRecord($record),
+                $records
+            ));
+            $this->writeSharedListCache($cacheKey, $out);
+
+            return $out;
         }
 
         $departments = $this->loadDepartmentsFromApi();
@@ -485,6 +496,71 @@ final class AesApiService
         }
 
         $this->writeSharedListCache($cacheKey, $out);
+
+        return $out;
+    }
+
+    /**
+     * List/directory views only — avoid full normalizePlacementStudentRecord (deep mark walks).
+     *
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    private function slimDirectoryRecord(array $record): array
+    {
+        $admno = trim((string) ($record['stud_admno'] ?? $record['admno'] ?? ''));
+        $reg = trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? ''));
+        $out = [
+            'admno' => $admno,
+            'stud_admno' => $admno,
+            'registerno' => $reg,
+            'registerNumber' => $reg !== '' ? $reg : $admno,
+            'stud_name' => trim((string) ($record['stud_name'] ?? $record['name'] ?? '')),
+            'stud_class' => trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')),
+            'classBatch' => trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')),
+            'stud_course' => trim((string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? '')),
+            'stud_cource_short' => trim((string) ($record['stud_cource_short'] ?? $record['stud_course'] ?? '')),
+            'stud_branch' => trim((string) ($record['stud_branch'] ?? '')),
+            'stud_deptcode' => trim((string) ($record['stud_deptcode'] ?? $record['dept_code'] ?? '')),
+            'stud_year' => trim((string) ($record['stud_year'] ?? $record['year'] ?? '')),
+            'stud_semester' => trim((string) ($record['stud_semester'] ?? $record['semester'] ?? '')),
+            'stud_photo' => trim((string) ($record['stud_photo'] ?? $record['photoUrl'] ?? '')),
+            'photoUrl' => trim((string) ($record['stud_photo'] ?? $record['photoUrl'] ?? '')),
+        ];
+        foreach (['stud_status', 'status', 'studying', 'is_studying'] as $flag) {
+            if (array_key_exists($flag, $record)) {
+                $out[$flag] = $record[$flag];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     * @return list<array<string, mixed>>
+     */
+    private function dedupeDirectoryRecords(array $records): array
+    {
+        $out = [];
+        $seen = [];
+        foreach ($records as $record) {
+            if ($record === []) {
+                continue;
+            }
+            $key = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? $record['registerNumber']
+                ?? $record['registerno']
+                ?? ''
+            )));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $record;
+        }
 
         return $out;
     }

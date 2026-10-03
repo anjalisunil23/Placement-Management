@@ -706,11 +706,11 @@ final class OfficerDataService
                     return $this->filterStudentRows($merged, $query);
                 }
             }
-        } else {
-            $aesRows = $this->listStudentsFromAesDirectory($ctx);
-            if ($aesRows !== []) {
-                return $this->filterStudentRows($aesRows, $query);
-            }
+        }
+
+        $aesRows = $this->listStudentsFromAesDirectory($ctx);
+        if ($aesRows !== []) {
+            return $this->filterStudentRows($aesRows, $query);
         }
 
         $studentModel = new StudentModel();
@@ -1771,7 +1771,8 @@ final class OfficerDataService
         }
 
         $byAdmno = [];
-        $aesRows = !empty($ctx['staffScope'])
+        $staffAssigned = !empty($ctx['staffScope']) ? StaffContext::assignedClassBatches($ctx) : [];
+        $aesRows = !empty($ctx['staffScope']) && $staffAssigned !== []
             ? $this->listStaffClassRosterRows($ctx)
             : $this->listStudentsFromAesDirectory($ctx);
         foreach ($aesRows as $row) {
@@ -1798,19 +1799,14 @@ final class OfficerDataService
         }
 
         $rows = array_values($byAdmno);
-        if (!empty($ctx['staffScope'])) {
-            $staffBatches = StaffContext::assignedClassBatches($ctx);
-            if ($staffBatches === []) {
-                $rows = [];
-            } else {
-                $rows = array_values(array_filter(
-                    $rows,
-                    static fn (array $row): bool => StaffContext::classBatchMatchesAssigned(
-                        StaffContext::studentClassBatch($row),
-                        $staffBatches
-                    )
-                ));
-            }
+        if (!empty($ctx['staffScope']) && $staffAssigned !== []) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn (array $row): bool => StaffContext::classBatchMatchesAssigned(
+                    StaffContext::studentClassBatch($row),
+                    $staffAssigned
+                )
+            ));
         }
         usort(
             $rows,
@@ -2142,6 +2138,7 @@ final class OfficerDataService
      */
     private function listStudentsFromAesDirectory(array $ctx): array
     {
+        $this->boostMemoryForAesDirectoryLoad();
         $campusWide = !empty($ctx['campusWide']) || (
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
@@ -2156,10 +2153,6 @@ final class OfficerDataService
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
         $staffBatches = !empty($ctx['staffScope']) ? StaffContext::assignedClassBatches($ctx) : [];
-        // Class teachers / co-class teachers with no assignment see no AES directory students.
-        if (!empty($ctx['staffScope']) && $staffBatches === []) {
-            return [];
-        }
         $rows = [];
         $seenAdmno = [];
 
@@ -2264,6 +2257,15 @@ final class OfficerDataService
             : $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
     }
 
+    /** Students page loads full AES directory — raise limit when hosting allows it. */
+    private function boostMemoryForAesDirectoryLoad(): void
+    {
+        $limit = trim((string) ($_ENV['AES_DIRECTORY_MEMORY_LIMIT'] ?? '512M'));
+        if ($limit !== '') {
+            @ini_set('memory_limit', $limit);
+        }
+    }
+
     private function fetchAesDirectoryRecords(string $deptAesId, bool $campusWide): array
     {
         $cacheKey = $campusWide ? 'campus' : ('dept:' . $deptAesId);
@@ -2278,7 +2280,7 @@ final class OfficerDataService
                 $params['stud_deptcode'] = $deptAesId;
             }
             try {
-                $records = $api->fetchAllStudInfo4Placement($params);
+                $records = $api->fetchAllStudInfo4Placement($params, true);
                 // Do not loop stud_course aliases (BCA/INMCA/MCAINT/MCA): AES returns
                 // the same large directory for each, wasting several seconds per load.
 
@@ -2311,7 +2313,7 @@ final class OfficerDataService
         };
 
         try {
-            $append($api->fetchAllStudInfo4Placement([]));
+            $append($api->fetchAllStudInfo4Placement([], true));
         } catch (\Throwable) {
             // Fall through to per-department fetch.
         }
@@ -2322,7 +2324,7 @@ final class OfficerDataService
         if ($merged === []) {
             foreach ($this->campusParentDeptAesIds() as $aesId) {
                 try {
-                    $append($api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId]));
+                    $append($api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId], true));
                 } catch (\Throwable) {
                     continue;
                 }
@@ -2586,12 +2588,19 @@ final class OfficerDataService
                 $model->findAll(PlacementOfficerContext::studentCollectionFilter($ctx), 5000)
             );
         }
-        // Staff-saved placements may lack / mismatch departmentId; still overlay AES shells.
+        // Staff-saved placements may lack departmentId — scope extras to the same dept when known.
         foreach ([
             ['placed' => true],
             ['source' => 'staff_registry'],
         ] as $extraFilter) {
-            foreach ($model->findAll($extraFilter, 2000) as $student) {
+            $scopedExtra = $extraFilter;
+            if ($scopeDeptId !== '') {
+                $deptOid = Security::toObjectId($scopeDeptId);
+                if ($deptOid !== null) {
+                    $scopedExtra['departmentId'] = $deptOid;
+                }
+            }
+            foreach ($model->findAll($scopedExtra, 800) as $student) {
                 $candidates[] = $student;
             }
         }
