@@ -460,6 +460,9 @@
     }
 
     function formatRunError(custom) {
+      if (typeof CodingErrorFormat !== 'undefined' && CodingErrorFormat.errorBlockHtml) {
+        return CodingErrorFormat.errorBlockHtml(custom, esc);
+      }
       const status = String(custom?.status || '');
       const stderr = String(custom?.stderr || '').trim();
       const isError = ['Syntax Error', 'Runtime Error', 'Compilation Error', 'Time Limit Exceeded'].includes(status);
@@ -503,11 +506,9 @@
       }
 
       const custom = run.custom || {};
-      let runStatus = custom.status || run.overall;
-      if (typeof custom.passed === 'boolean') {
-        if (custom.passed) runStatus = 'Passed';
-        else if (!runStatus || runStatus === 'Passed') runStatus = 'Wrong Answer';
-      }
+      const runStatus = (typeof CodingErrorFormat !== 'undefined' && CodingErrorFormat.resolveRunStatus)
+        ? CodingErrorFormat.resolveRunStatus(custom)
+        : (custom.status || run.overall);
       const badge = statusBadge(runStatus);
       if (status) status.innerHTML = `<span class="badge-soft ${badge.cls}">${esc(badge.text)}</span>`;
       if (out) out.textContent = custom.output || '';
@@ -515,7 +516,8 @@
       const detail = formatRunError(custom);
       if (stderr) {
         if (detail) {
-          stderr.textContent = detail;
+          if (detail.includes('<')) stderr.innerHTML = detail;
+          else stderr.textContent = detail;
           stderr.classList.remove('d-none');
         } else {
           stderr.textContent = '';
@@ -544,12 +546,14 @@
             <tbody>
               ${rows.map((tc, i) => {
                 const badge = caseBadge(tc.status);
-                const err = String(tc.stderr || '').trim();
-                const showErr = err && !['Passed', 'Not Run'].includes(String(tc.status || ''));
+                const showErr = tc.status && !['Passed', 'Not Run', 'Accepted'].includes(String(tc.status));
+                const errHtml = showErr && typeof CodingErrorFormat !== 'undefined'
+                  ? CodingErrorFormat.errorBlockHtml(tc, esc)
+                  : '';
                 return `<tr>
                   <td>
                     ${esc(tc.label || `Test Case ${tc.index || i + 1}`)}
-                    ${showErr ? `<div class="small text-danger mt-1" style="white-space:pre-wrap">${esc(err)}</div>` : ''}
+                    ${errHtml || ''}
                   </td>
                   <td><span class="badge-soft ${badge.cls}">${esc(badge.text)}</span></td>
                 </tr>`;

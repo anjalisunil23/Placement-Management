@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Utils\CodingExecutionErrorFormatter;
+
 /**
  * Code execution facade for the PHP API layer.
  *
@@ -19,6 +21,17 @@ final class CodeExecutionService
      * @return array<string, mixed>
      */
     public function run(string $language, string $source, string $stdin = '', int $timeLimitMs = 3000): array
+    {
+        return CodingExecutionErrorFormatter::enrich(
+            $this->runWithoutPresentation($language, $source, $stdin, $timeLimitMs),
+            $language
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runWithoutPresentation(string $language, string $source, string $stdin, int $timeLimitMs): array
     {
         $started = microtime(true);
         $limits = CodingExecutionConfig::limits($timeLimitMs);
@@ -277,6 +290,11 @@ final class CodeExecutionService
         ];
         if (!empty($result['execEngine'])) {
             $out['execEngine'] = (string) $result['execEngine'];
+        }
+        foreach (['errorSummary', 'errorDetail', 'stderrTrace'] as $key) {
+            if (isset($result[$key]) && (string) $result[$key] !== '') {
+                $out[$key] = (string) $result[$key];
+            }
         }
 
         return $out;

@@ -427,14 +427,28 @@
     });
     if (!res?.success) throw new Error(res?.message || 'Execution failed.');
     const data = res.data || {};
-    return {
+    const raw = {
       ok: data.ok !== false && !data.timedOut && (data.status === 'OK' || !data.status),
       status: data.status || (data.timedOut ? 'Time Limit Exceeded' : 'OK'),
       stdout: data.stdout || '',
       stderr: data.stderr || '',
+      stderrTrace: data.stderrTrace || data.stderr || '',
+      errorSummary: data.errorSummary || '',
+      errorDetail: data.errorDetail || '',
       timedOut: !!data.timedOut,
       durationMs: data.durationMs || 0,
     };
+    if (global.CodingErrorFormat && typeof global.CodingErrorFormat.enrichExec === 'function') {
+      return global.CodingErrorFormat.enrichExec(raw, opts.language);
+    }
+    return raw;
+  }
+
+  function presentExec(result, language) {
+    if (global.CodingErrorFormat && typeof global.CodingErrorFormat.enrichExec === 'function') {
+      return global.CodingErrorFormat.enrichExec(result, language);
+    }
+    return result;
   }
 
   global.CodeExecutionService = {
@@ -449,7 +463,7 @@
             return await apiRun(opts);
           } catch (err) {
             if (langKey === 'python' || langKey === 'javascript' || langKey === 'js') {
-              return await mockRun(opts);
+              return presentExec(await mockRun(opts), language);
             }
             throw err;
           }
@@ -457,7 +471,7 @@
         if (API_ENABLED && typeof api === 'function') {
           return await apiRun(opts);
         }
-        return await mockRun(opts);
+        return presentExec(await mockRun(opts), language);
       } catch (err) {
         const msg = String(err?.message || '');
         if (/Failed to fetch|NetworkError|Execution failed/i.test(msg)) {

@@ -1,0 +1,123 @@
+/* PlaceHub — execution error summaries for Run Code / sample tests */
+(function (global) {
+  'use strict';
+
+  const ERROR_STATUSES = new Set([
+    'Runtime Error',
+    'Compilation Error',
+    'Syntax Error',
+    'Time Limit Exceeded',
+    'Memory Limit Exceeded',
+  ]);
+
+  function primaryErrorLine(stderr) {
+    const lines = String(stderr || '').split(/\r?\n/);
+    let last = '';
+    lines.forEach((line) => {
+      const t = line.trim();
+      const m = t.match(/^(\w+(?:Error|Exception)):\s*(.+)$/);
+      if (m) last = `${m[1]}: ${m[2]}`;
+    });
+    return last;
+  }
+
+  function friendlyRuntimeMessage(detail) {
+    let m = detail.match(/ValueError:\s*not enough values to unpack \(expected (\d+), got (\d+)\)/i);
+    if (m) {
+      const exp = Number(m[1]);
+      const got = Number(m[2]);
+      const expWord = exp === 1 ? 'value' : 'values';
+      const gotPhrase = got === 1 ? `only ${got}` : String(got);
+      return `Program expected ${exp} input ${expWord}, but received ${gotPhrase}.`;
+    }
+    if (/ValueError:\s*invalid literal for int\(\)/i.test(detail)) {
+      return 'Program expected a numeric input value, but the input was not valid.';
+    }
+    if (/EOFError:/i.test(detail)) return 'Program tried to read input, but no more input was available.';
+    if (/ZeroDivisionError:/i.test(detail)) return 'Program attempted to divide by zero.';
+    if (/IndexError:/i.test(detail)) return 'Program accessed an invalid index in a list or sequence.';
+    if (/TypeError:/i.test(detail)) return 'Program used a value in an unsupported way (type error).';
+    if (/NameError:/i.test(detail)) return 'Program referenced a variable or name that is not defined.';
+    return '';
+  }
+
+  function buildSummary(status, detail, stderr, language) {
+    const lang = String(language || '').toLowerCase();
+    if (status === 'Time Limit Exceeded') return 'The program exceeded the time limit.';
+    if (status === 'Memory Limit Exceeded') return 'The program exceeded the memory limit.';
+    if (status === 'Compilation Error' || status === 'Syntax Error') {
+      return lang === 'python'
+        ? 'The program could not be compiled or parsed. Fix the syntax error and try again.'
+        : 'The program could not be compiled.';
+    }
+    const friendly = friendlyRuntimeMessage(detail);
+    if (friendly) return friendly;
+    if (stderr && stderr.includes('Traceback')) {
+      return 'The program stopped with a runtime error while processing input.';
+    }
+    if (status === 'Runtime Error') return 'The program stopped with a runtime error.';
+    return detail || status;
+  }
+
+  function isPythonSyntaxFailure(stderr, status) {
+    return status === 'Runtime Error' && /\b(SyntaxError|IndentationError|TabError)\b/.test(stderr);
+  }
+
+  function enrichExec(exec, language) {
+    const base = exec || {};
+    let status = String(base.status || '');
+    let stderr = String(base.stderrTrace || base.stderr || '').trim();
+    if (isPythonSyntaxFailure(stderr, status)) status = 'Compilation Error';
+
+    if (!ERROR_STATUSES.has(status) && !stderr) {
+      return { ...base, status };
+    }
+
+    const errorDetail = String(base.errorDetail || '').trim() || primaryErrorLine(stderr) || stderr.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '';
+    const errorSummary = String(base.errorSummary || '').trim() || buildSummary(status, errorDetail, stderr, language);
+
+    return {
+      ...base,
+      status,
+      stderrTrace: stderr,
+      errorDetail,
+      errorSummary,
+    };
+  }
+
+  function resolveRunStatus(custom) {
+    const explicit = String(custom?.status || '');
+    if (ERROR_STATUSES.has(explicit)) return explicit;
+    if (custom?.passed === true) return 'Passed';
+    if (custom?.passed === false && explicit && explicit !== 'Passed') return explicit;
+    if (custom?.passed === false) return 'Wrong Answer';
+    return explicit || '—';
+  }
+
+  function errorBlockHtml(custom, esc) {
+    const status = resolveRunStatus(custom);
+    if (!ERROR_STATUSES.has(status)) return '';
+    const summary = String(custom?.errorSummary || '').trim();
+    const detail = String(custom?.errorDetail || '').trim();
+    const trace = String(custom?.stderrTrace || custom?.stderr || '').trim();
+    const escFn = typeof esc === 'function' ? esc : (s) => String(s ?? '');
+    const uid = `cod-err-${Math.random().toString(36).slice(2, 9)}`;
+    let html = `<div class="cod-run-error mt-1"><div class="small fw-semibold text-danger">✕ ${escFn(status)}</div>`;
+    if (summary) html += `<div class="small mt-1">${escFn(summary)}</div>`;
+    if (detail && detail !== summary) {
+      html += `<div class="small text-muted-2 mt-2 mb-0">Error Details:</div><div class="small font-monospace">${escFn(detail)}</div>`;
+    }
+    if (trace && trace !== detail) {
+      html += `<details class="small mt-2 mb-0"><summary class="text-muted-2" style="cursor:pointer">View full traceback</summary><pre class="cod-console cod-error mt-1 mb-0" style="font-size:.75rem">${escFn(trace)}</pre></details>`;
+    }
+    html += '</div>';
+    return html;
+  }
+
+  global.CodingErrorFormat = {
+    enrichExec,
+    resolveRunStatus,
+    errorBlockHtml,
+    ERROR_STATUSES,
+  };
+})(window);

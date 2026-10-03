@@ -188,16 +188,22 @@
     } catch (err) {
       throw new Error(isExecUnavailable(err) ? EXEC_UNAVAILABLE : (err?.message || EXEC_UNAVAILABLE));
     }
+    const enriched = (global.CodingErrorFormat && typeof global.CodingErrorFormat.enrichExec === 'function')
+      ? global.CodingErrorFormat.enrichExec(exec, language)
+      : exec;
     const expected = expectedFor(question, stdin);
-    const stdout = normalizeOut(exec.stdout);
-    const error = exec.timedOut || exec.status !== 'OK';
+    const stdout = normalizeOut(enriched.stdout);
+    const error = enriched.timedOut || enriched.status !== 'OK';
     const passed = !error && stdout === expected;
     return {
-      exec,
+      exec: enriched,
       expected,
       stdout,
-      stderr: exec.stderr || '',
-      status: statusFromExec(exec, passed),
+      stderr: enriched.stderrTrace || enriched.stderr || '',
+      stderrTrace: enriched.stderrTrace || enriched.stderr || '',
+      errorSummary: enriched.errorSummary || '',
+      errorDetail: enriched.errorDetail || '',
+      status: statusFromExec(enriched, passed),
       passed,
     };
   }
@@ -736,6 +742,9 @@
           expected: ran.expected,
           output: ran.stdout,
           stderr: ran.stderr,
+          stderrTrace: ran.stderrTrace,
+          errorSummary: ran.errorSummary,
+          errorDetail: ran.errorDetail,
           status: ran.status,
           passed: ran.passed,
         });
@@ -749,6 +758,9 @@
           output: custom.stdout,
           expected: custom.expected,
           stderr: custom.stderr,
+          stderrTrace: custom.stderrTrace,
+          errorSummary: custom.errorSummary,
+          errorDetail: custom.errorDetail,
           status: custom.status,
           passed: custom.passed,
           durationMs: custom.exec?.durationMs,
@@ -965,6 +977,9 @@
           expected: ran.expected,
           output: ran.stdout,
           stderr: ran.stderr,
+          stderrTrace: ran.stderrTrace,
+          errorSummary: ran.errorSummary,
+          errorDetail: ran.errorDetail,
           status: ran.status,
           passed: ran.passed,
         });
@@ -979,6 +994,9 @@
           output: custom.stdout,
           expected: custom.expected,
           stderr: custom.stderr,
+          stderrTrace: custom.stderrTrace,
+          errorSummary: custom.errorSummary,
+          errorDetail: custom.errorDetail,
           status: custom.status,
           passed: custom.passed,
         },

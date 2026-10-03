@@ -132,6 +132,10 @@ final class CodingStarterTemplates
             }
         }
 
+        if (preg_match('/^\d+\s+-?\d+\s+-?\d+\s*$/', $first)) {
+            return "n, x, _ = map(int, input().split())\narr = list(map(int, input().split()))\n\n# Write your logic below\n";
+        }
+
         if (count($lines) >= 2 && preg_match('/^\d+\s+-?\d+$/', $first)) {
             $second = trim($lines[1] ?? '');
             if (preg_match('/^-?\d+(\s+-?\d+)+$/', $second)) {
@@ -144,10 +148,6 @@ final class CodingStarterTemplates
             $n = (int) $first;
             $second = trim($lines[1] ?? '');
             $third = trim($lines[2] ?? '');
-
-            if (preg_match('/^\d+\s+-?\d+\s+-?\d+/', $second)) {
-                return "n, x, _ = map(int, input().split())\narr = list(map(int, input().split()))\n\n# Write your logic below\n";
-            }
 
             $nums = preg_split('/\s+/', $second, -1, PREG_SPLIT_NO_EMPTY) ?: [];
             if (str_contains($fmt, '2n') && $n > 0 && count($nums) === 2 * $n) {
@@ -231,7 +231,7 @@ final class CodingStarterTemplates
                 continue;
             }
             if (preg_match(
-                '/^(?:[a-z_]\w*\s*=\s*)?(?:int\(input\(\)\)|input\(\)(?:\.strip\(\))?|map\(int,\s*input\(\)\.split\(\)\)|list\(map\(int,\s*input\(\)\.split\(\)\)\)|\[list\(map\(int,\s*input\(\)\.split\(\)\)\)\s+for\s+_\s+in\s+range\([a-z_]\w*\)\])$/i',
+                '/^(?:[a-z_,\s]+\s*=\s*)?(?:int\(input\(\)\)|input\(\)(?:\.strip\(\))?|map\(int,\s*input\(\)\.split\(\)\)|list\(map\(int,\s*input\(\)\.split\(\)\)\)|\[list\(map\(int,\s*input\(\)\.split\(\)\)\)\s+for\s+_\s+in\s+range\([a-z_]\w*\)\])$/i',
                 $t
             )) {
                 continue;
