@@ -659,21 +659,35 @@
       if (el('language')) el('language').disabled = locked;
     }
 
+    function defaultCustomInput(q) {
+      if (typeof CodingData !== 'undefined' && CodingData.resolveSampleInput) {
+        return CodingData.resolveSampleInput(q) || '';
+      }
+      const sample = (q?.testCases || []).find((t) => t.sample);
+      return sample?.input ? String(sample.input) : '';
+    }
+
     function renderQuestion() {
       const q = currentQ();
       if (!q) return;
-      const sample = (q.testCases || []).find((t) => t.sample);
+      const defaultIn = defaultCustomInput(q);
       const ans = state.answers[q.id] || {
         language: 'Python',
         code: q.starterCode.Python,
-        customInput: sample ? sample.input : '',
+        customInput: defaultIn,
         lastRun: null,
       };
       state.answers[q.id] = ans;
       el('language').value = ans.language || 'Python';
       editor.setLanguage(ans.language || 'Python');
       editor.setValue(ans.code || q.starterCode[ans.language] || '');
-      if (el('stdin')) el('stdin').value = ans.customInput != null ? ans.customInput : (sample ? sample.input : '');
+      if (el('stdin')) {
+        const stored = ans.customInput;
+        el('stdin').value = stored != null && String(stored).trim() !== '' ? stored : defaultIn;
+        el('stdin').placeholder = defaultIn
+          ? 'Leave empty to run with the sample input above'
+          : 'Optional — leave empty to use sample input when available';
+      }
       renderProblem(q);
       renderRunPanel(ans.lastRun, false);
       updateSubmitVisibility(ans.lastRun);

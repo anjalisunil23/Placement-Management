@@ -33,6 +33,9 @@ try {
     $check('not Runtime Error', ($run['custom']['status'] ?? '') !== 'Runtime Error', 'status=' . ($run['custom']['status'] ?? ''));
     $check('Execution Successful', ($run['custom']['status'] ?? '') === 'Execution Successful', '');
     $check('execution.succeeded', !empty($run['custom']['execution']['succeeded']), '');
+    $emptyIn = (new PMS\Services\CodingPracticeRunService())->run($problem, 'Python', $code, '', 8000);
+    $check('empty custom stdin uses sample', ($emptyIn['custom']['input'] ?? '') === "4\n1 4 3 2", 'input=' . json_encode($emptyIn['custom']['input'] ?? ''));
+    $check('empty custom not Runtime Error', ($emptyIn['custom']['status'] ?? '') !== 'Runtime Error', 'status=' . ($emptyIn['custom']['status'] ?? ''));
 } catch (\Throwable $e) {
     $check('practice run completes', false, $e->getMessage());
 }

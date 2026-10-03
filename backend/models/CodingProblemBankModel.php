@@ -306,6 +306,29 @@ class CodingProblemBankModel extends BaseModel
             ];
         }
 
+        $sampleHasInput = false;
+        foreach ($testCases as $tc) {
+            if (!empty($tc['sample']) && trim((string) ($tc['input'] ?? '')) !== '') {
+                $sampleHasInput = true;
+                break;
+            }
+        }
+        if (!$sampleHasInput) {
+            foreach ((array) ($norm['examples'] ?? []) as $ex) {
+                if (!is_array($ex) || trim((string) ($ex['input'] ?? '')) === '') {
+                    continue;
+                }
+                array_unshift($testCases, [
+                    'id' => 'example-sample',
+                    'sample' => true,
+                    'label' => 'Sample Test Case',
+                    'input' => (string) $ex['input'],
+                    'expected' => (string) ($ex['output'] ?? ''),
+                ]);
+                break;
+            }
+        }
+
         return [
             'id' => $pid,
             'bankId' => $pid,

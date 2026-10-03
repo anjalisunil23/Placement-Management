@@ -164,8 +164,7 @@
   function effectiveRunStdin(problem, customStdin) {
     const custom = String(customStdin ?? '');
     if (custom.trim()) return custom;
-    const sample = (problem?.testCases || []).find((tc) => tc.sample && String(tc.input || '').trim());
-    return sample ? String(sample.input) : custom;
+    return resolveSampleInput(problem) || custom;
   }
 
   function pythonStarterFromProblem(problem) {
@@ -209,12 +208,28 @@
       marks: item.marks,
       difficulty: item.difficulty,
       category: item.category,
-      testCases: (item.testCases || []).map((tc) => {
-        if (tc.sample) return clone(tc);
-        const hidden = { id: tc.id, sample: false, label: tc.label || 'Hidden Test Case' };
-        if (includeHiddenExpected) hidden.expected = tc.expected;
-        return hidden;
-      }),
+      testCases: (() => {
+        const cases = (item.testCases || []).map((tc) => {
+          if (tc.sample) return clone(tc);
+          const hidden = { id: tc.id, sample: false, label: tc.label || 'Hidden Test Case' };
+          if (includeHiddenExpected) hidden.expected = tc.expected;
+          return hidden;
+        });
+        const sampleHasInput = cases.some((tc) => tc.sample && String(tc.input || '').trim());
+        if (!sampleHasInput) {
+          const ex = (item.examples || []).find((e) => String(e?.input || '').trim());
+          if (ex) {
+            cases.unshift({
+              id: 'example-sample',
+              sample: true,
+              label: 'Sample Test Case',
+              input: ex.input,
+              expected: ex.output || '',
+            });
+          }
+        }
+        return cases;
+      })(),
     };
   }
 
@@ -303,6 +318,7 @@
     pythonStarterFromProblem,
     enrichProblemStarters,
     effectiveRunStdin,
+    resolveSampleInput,
     onlyInputBoilerplate,
     publicQuestion,
   };

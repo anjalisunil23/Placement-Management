@@ -131,6 +131,18 @@ final class CodingPracticeRunService
         if (trim($customStdin) !== '') {
             return $customStdin;
         }
+        $fallback = $this->resolveSampleStdin($problem);
+
+        return $fallback !== '' ? $fallback : $customStdin;
+    }
+
+    /**
+     * Sample / example stdin when Custom Input is empty (matches client CodingData.resolveSampleInput).
+     *
+     * @param array<string, mixed> $problem
+     */
+    private function resolveSampleStdin(array $problem): string
+    {
         foreach ((array) ($problem['testCases'] ?? []) as $tc) {
             if (!is_array($tc) || empty($tc['sample'])) {
                 continue;
@@ -140,8 +152,26 @@ final class CodingPracticeRunService
                 return $input;
             }
         }
+        foreach ((array) ($problem['examples'] ?? []) as $ex) {
+            if (!is_array($ex)) {
+                continue;
+            }
+            $input = (string) ($ex['input'] ?? '');
+            if (trim($input) !== '') {
+                return $input;
+            }
+        }
+        foreach ((array) ($problem['testCases'] ?? []) as $tc) {
+            if (!is_array($tc)) {
+                continue;
+            }
+            $input = (string) ($tc['input'] ?? '');
+            if (trim($input) !== '') {
+                return $input;
+            }
+        }
 
-        return $customStdin;
+        return '';
     }
 
     /**

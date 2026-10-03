@@ -750,12 +750,14 @@
       const item = publicProblemView(problem);
       item.id = item.id || bankId;
       const attemptId = 'prac-' + Date.now();
-      const sample = (item.testCases || []).find((tc) => tc.sample);
+      const defaultIn = (typeof CodingData !== 'undefined' && CodingData.resolveSampleInput)
+        ? (CodingData.resolveSampleInput(item) || '')
+        : String((item.testCases || []).find((tc) => tc.sample)?.input || '');
       const answers = {};
       answers[item.id] = {
         language: 'Python',
         code: item.starterCode?.Python || '',
-        customInput: sample ? sample.input : '',
+        customInput: defaultIn,
         lastRun: null,
       };
       const attempt = {
