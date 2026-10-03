@@ -32,7 +32,7 @@ final class CodingStarterTemplates
         $format = trim((string) ($problem['inputFormat'] ?? ''));
 
         $fromFormat = self::pythonFromInputFormat($format, $sample);
-        if ($fromFormat !== null) {
+        if ($fromFormat !== null && self::formatStarterFitsSample($fromFormat, $sample)) {
             return $fromFormat;
         }
 
@@ -61,6 +61,23 @@ final class CodingStarterTemplates
         }
 
         return '';
+    }
+
+    private static function formatStarterFitsSample(string $starter, string $sampleIn): bool
+    {
+        $raw = str_replace("\r\n", "\n", trim($sampleIn));
+        if ($raw === '') {
+            return true;
+        }
+        $first = trim(explode("\n", $raw)[0] ?? '');
+        if (preg_match('/^n,\s*(?:x|t|k)\s*=\s*map/m', $starter)) {
+            return (bool) preg_match('/^\d+\s+-?\d+$/', $first);
+        }
+        if (preg_match('/^n,\s*x,\s*_\s*=\s*map/m', $starter)) {
+            return (bool) preg_match('/^\d+\s+-?\d+\s+-?\d+/', $first);
+        }
+
+        return true;
     }
 
     private static function pythonFromInputFormat(string $format, string $sampleIn): ?string
@@ -130,10 +147,6 @@ final class CodingStarterTemplates
             if (preg_match('/^-?\d+(\s+-?\d+)*$/', $second) && preg_match('/^-?\d+(\s+-?\d+)*$/', $third)) {
                 return "n, m = map(int, input().split())\narr1 = list(map(int, input().split()))\narr2 = list(map(int, input().split()))\n\n# Write your logic below\n";
             }
-        }
-
-        if (preg_match('/^\d+\s+-?\d+\s+-?\d+\s*$/', $first)) {
-            return "n, x, _ = map(int, input().split())\narr = list(map(int, input().split()))\n\n# Write your logic below\n";
         }
 
         if (count($lines) >= 2 && preg_match('/^\d+\s+-?\d+$/', $first)) {

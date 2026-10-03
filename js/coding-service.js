@@ -772,12 +772,15 @@
 
       const bankId = String(attempt.bankProblemId || question.id || '');
       if (liveApi() && bankId && /^[a-f\d]{24}$/i.test(bankId)) {
+        const runStdin = (typeof CodingData !== 'undefined' && CodingData.effectiveRunStdin)
+          ? CodingData.effectiveRunStdin(question, stdin)
+          : String(stdin ?? '');
         const res = await api(`/coding/problems/${encodeURIComponent(bankId)}/run`, {
           method: 'POST',
           body: JSON.stringify({
             language,
             source,
-            stdin: String(stdin ?? ''),
+            stdin: runStdin,
           }),
         });
         if (!res?.success) throw new Error(res?.message || 'Run failed.');
@@ -790,7 +793,9 @@
         ...question,
         testCases: attempt.executionTestCases || question.testCases || [],
       };
-      const customStdin = String(stdin ?? '');
+      const customStdin = (typeof CodingData !== 'undefined' && CodingData.effectiveRunStdin)
+        ? CodingData.effectiveRunStdin(execQuestion, stdin)
+        : String(stdin ?? '');
       const custom = await executeOnce(execQuestion, language, source, customStdin, false);
       const { cases, totalCount } = await buildProgressiveTestCaseResults(execQuestion, language, source);
       const passedCount = cases.filter((c) => c.passed).length;

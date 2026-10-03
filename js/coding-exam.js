@@ -482,6 +482,30 @@
       return parts.join('\n');
     }
 
+    function resolveOutputCustom(run) {
+      const custom = run?.custom || {};
+      const sampleRow = (run?.results || []).find((r) => r.sample) || (run?.results || [])[0];
+      if (!sampleRow) return custom;
+      const failStatuses = new Set(['Runtime Error', 'Compilation Error', 'Syntax Error', 'Time Limit Exceeded']);
+      const customFailed = failStatuses.has(String(custom.status || ''));
+      const sampleRan = !failStatuses.has(String(sampleRow.status || ''));
+      if (customFailed && sampleRan) {
+        return {
+          ...custom,
+          input: sampleRow.input || custom.input,
+          output: sampleRow.output ?? custom.output,
+          expected: sampleRow.expected ?? custom.expected,
+          status: sampleRow.status,
+          passed: sampleRow.passed,
+          stderr: '',
+          stderrTrace: '',
+          errorSummary: '',
+          errorDetail: '',
+        };
+      }
+      return custom;
+    }
+
     function renderRunPanel(run, runningNow) {
       const out = el('output');
       const expected = el('expected');
@@ -514,7 +538,7 @@
         return;
       }
 
-      const custom = run.custom || {};
+      const custom = resolveOutputCustom(run);
       const runStatus = (typeof CodingErrorFormat !== 'undefined' && CodingErrorFormat.resolveRunStatus)
         ? CodingErrorFormat.resolveRunStatus(custom)
         : (custom.status || run.overall);
@@ -703,7 +727,14 @@
       const ans = state.answers[q.id];
       const language = el('language')?.value || ans?.language || 'Python';
       const source = editor ? editor.getValue() : String(ans?.code || '');
-      const stdin = el('stdin') ? el('stdin').value : String(ans?.customInput ?? '');
+      let stdin = el('stdin') ? el('stdin').value : String(ans?.customInput ?? '');
+      if (isPracticeMode() && typeof CodingData !== 'undefined' && CodingData.effectiveRunStdin) {
+        const effective = CodingData.effectiveRunStdin(q, stdin);
+        if (effective !== stdin) {
+          stdin = effective;
+          if (el('stdin')) el('stdin').value = effective;
+        }
+      }
       if (ans) {
         ans.language = language;
         ans.code = source;

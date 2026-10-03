@@ -139,9 +139,39 @@
     return true;
   }
 
+  function formatStarterFitsSample(starter, sampleIn) {
+    const raw = String(sampleIn || '').replace(/\r\n/g, '\n').trim();
+    if (!raw || !starter) return true;
+    const first = (raw.split('\n')[0] || '').trim();
+    if (/^n,\s*(?:x|t|k)\s*=\s*map/m.test(starter)) {
+      return /^\d+\s+-?\d+$/.test(first);
+    }
+    if (/^n,\s*x,\s*_\s*=\s*map/m.test(starter)) {
+      return /^\d+\s+-?\d+\s+-?\d+/.test(first);
+    }
+    return true;
+  }
+
+  function resolveSampleInput(problem) {
+    const ex = (problem?.examples || []).find((e) => String(e?.input || '').trim());
+    if (ex?.input) return ex.input;
+    const sample = (problem?.testCases || []).find((tc) => tc.sample && String(tc.input || '').trim());
+    if (sample?.input) return sample.input;
+    const any = (problem?.testCases || []).find((tc) => String(tc.input || '').trim());
+    return any?.input || '';
+  }
+
+  function effectiveRunStdin(problem, customStdin) {
+    const custom = String(customStdin ?? '');
+    if (custom.trim()) return custom;
+    const sample = (problem?.testCases || []).find((tc) => tc.sample && String(tc.input || '').trim());
+    return sample ? String(sample.input) : custom;
+  }
+
   function pythonStarterFromProblem(problem) {
-    const fromFormat = pythonFromInputFormat(problem?.inputFormat, '');
-    if (fromFormat) return fromFormat;
+    const sampleIn = resolveSampleInput(problem);
+    const fromFormat = pythonFromInputFormat(problem?.inputFormat, sampleIn);
+    if (fromFormat && formatStarterFitsSample(fromFormat, sampleIn)) return fromFormat;
     const ex = (problem?.examples || [])[0];
     if (ex?.input) return pythonStarterFromSampleInput(ex.input, problem?.inputFormat);
     const sample = (problem?.testCases || []).find((tc) => tc.sample);
@@ -272,6 +302,7 @@
     pythonStarterFromSampleInput,
     pythonStarterFromProblem,
     enrichProblemStarters,
+    effectiveRunStdin,
     onlyInputBoilerplate,
     publicQuestion,
   };

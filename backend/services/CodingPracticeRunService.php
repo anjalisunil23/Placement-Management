@@ -28,7 +28,8 @@ final class CodingPracticeRunService
     ): array {
         $source = (string) $source;
         $customStdin = (string) $customStdin;
-        $custom = $this->executeOnce($problem, $language, $source, $customStdin, $timeLimitMs);
+        $stdinForCustom = $this->effectiveCustomStdin($problem, $customStdin);
+        $custom = $this->executeOnce($problem, $language, $source, $stdinForCustom, $timeLimitMs);
 
         $all = array_values(array_filter(
             (array) ($problem['testCases'] ?? []),
@@ -82,7 +83,7 @@ final class CodingPracticeRunService
         return [
             'overall' => $custom['status'],
             'custom' => [
-                'input' => $customStdin,
+                'input' => $stdinForCustom,
                 'output' => $custom['stdout'],
                 'expected' => $custom['expected'],
                 'stderr' => $custom['stderr'],
@@ -103,6 +104,29 @@ final class CodingPracticeRunService
             'visibleCount' => count($cases),
             'at' => (int) round(microtime(true) * 1000),
         ];
+    }
+
+    /**
+     * When Custom Input is empty, run against the first sample case so Run Code matches sample tests.
+     *
+     * @param array<string, mixed> $problem
+     */
+    private function effectiveCustomStdin(array $problem, string $customStdin): string
+    {
+        if (trim($customStdin) !== '') {
+            return $customStdin;
+        }
+        foreach ((array) ($problem['testCases'] ?? []) as $tc) {
+            if (!is_array($tc) || empty($tc['sample'])) {
+                continue;
+            }
+            $input = (string) ($tc['input'] ?? '');
+            if (trim($input) !== '') {
+                return $input;
+            }
+        }
+
+        return $customStdin;
     }
 
     /**
