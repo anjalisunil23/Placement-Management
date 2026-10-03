@@ -135,4 +135,30 @@ final class DocumentHelper
         }
         return null;
     }
+
+    /** "CSE2024-2028" / "2024–28" → "2024-2028" for placement registration. */
+    public static function batchYearRangeLabel(string $raw): string
+    {
+        $s = trim($raw);
+        if ($s === '') {
+            return '';
+        }
+        if (preg_match('/((?:19|20)\d{2})\s*[-–—−\/]\s*((?:19|20)\d{2})/u', $s, $m)) {
+            return $m[1] . '-' . $m[2];
+        }
+        if (preg_match('/((?:19|20)\d{2})\s*[-–—−\/]\s*(\d{2})(?!\d)/u', $s, $m)) {
+            $start = (int) $m[1];
+            $end = (int) (substr($m[1], 0, 2) . $m[2]);
+            if ($end < $start) {
+                $end += 100;
+            }
+
+            return $m[1] . '-' . (string) $end;
+        }
+        if (preg_match('/(20\d{2})/', $s, $m)) {
+            return $m[1];
+        }
+
+        return '';
+    }
 }

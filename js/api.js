@@ -541,8 +541,10 @@ function studentNeedsPlacementRegistration() {
   if (Auth.role() !== 'student') return false;
   if (!Auth.hasRealAuth() || Auth.isDemo()) return false;
   const u = Auth.user() || {};
+  const bothAccepted = u.policyAccepted === true && u.internshipPolicyAccepted === true;
+  if (bothAccepted && u.policyRegistrationRequired !== true) return false;
+  if (u.policyRegistrationRequired === false) return false;
   if (u.policyRegistrationRequired === true) return true;
-  // Strict check: only an explicit true clears the gate (avoids truthy strings / stale merges).
   return u.policyAccepted !== true;
 }
 
@@ -1157,6 +1159,8 @@ const Auth = {
         programme: p.programme || p.branch || prev.programme || '',
         classBatch: String(p.classBatch || p.stud_class || prev.classBatch || '').trim(),
         stud_class: String(p.stud_class || p.classBatch || prev.stud_class || '').trim(),
+        batchYear: String(p.batchYear || p.yop || prev.batchYear || '').trim(),
+        yop: String(p.yop || p.batchYear || prev.yop || '').trim(),
         policyAccepted: Object.prototype.hasOwnProperty.call(p, 'policyAccepted')
           ? (p.policyAccepted === true || p.policyAccepted === 1 || p.policyAccepted === '1')
           : (Object.prototype.hasOwnProperty.call(u, 'policyAccepted')
@@ -5990,9 +5994,13 @@ function toast(msg, kind='info') {
     document.body.appendChild(host);
   }
   const el = document.createElement('div');
-  el.className = `card-surface p-3 d-flex gap-2 align-items-start`;
-  el.style.cssText = 'border-left:3px solid var(--' + ({success:'success',error:'danger',warn:'warning',info:'info'}[kind]||'primary') + ');animation:phSlide .25s ease';
-  el.innerHTML = `<i class="bi bi-${kind==='success'?'check-circle-fill':kind==='error'?'exclamation-octagon-fill':'info-circle-fill'}" style="color:var(--${kind==='success'?'success':kind==='error'?'danger':'info'})"></i><div class="small flex-grow-1">${msg}</div>`;
+  el.className = 'card-surface ph-toast p-3 d-flex gap-2 align-items-start';
+  const accent = ({ success: 'success', error: 'danger', warn: 'warning', info: 'info' }[kind] || 'primary');
+  const iconKind = kind === 'success' ? 'success' : kind === 'error' ? 'danger' : kind === 'warn' ? 'warning' : 'info';
+  const icon = kind === 'success' ? 'check-circle-fill' : kind === 'error' ? 'exclamation-octagon-fill' : kind === 'warn' ? 'exclamation-triangle-fill' : 'info-circle-fill';
+  el.style.cssText = `border-left:3px solid var(--${accent});animation:phSlide .25s ease;color:#0F172A;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.12)`;
+  const safeMsg = String(msg ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  el.innerHTML = `<i class="bi bi-${icon}" style="color:var(--${iconKind})"></i><div class="small flex-grow-1" style="color:#0F172A">${safeMsg}</div>`;
   host.appendChild(el);
   setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),300); }, 3200);
 }

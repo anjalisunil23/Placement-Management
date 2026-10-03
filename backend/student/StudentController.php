@@ -357,6 +357,31 @@ final class StudentController
       $out['stud_class'] = $placementBatch;
     } elseif ($storedBatch !== '') {
       $out['stud_class'] = $storedBatch;
+    } else {
+      $sessionBatch = trim((string) ($merged['classBatch'] ?? ''));
+      if ($sessionBatch === '') {
+        $aesSession = \PMS\Utils\Security::getSessionAesProfile();
+        if (is_array($aesSession)) {
+          $sessionBatch = trim((string) ($aesSession['stud_class'] ?? $aesSession['classBatch'] ?? $aesSession['batch'] ?? ''));
+        }
+      }
+      if ($sessionBatch !== '') {
+        $out['classBatch'] = $sessionBatch;
+        $out['stud_class'] = $sessionBatch;
+      }
+    }
+    $placementReg = is_array($profile['placementRegistration'] ?? null) ? $profile['placementRegistration'] : [];
+    $savedYop = trim((string) ($placementReg['yop'] ?? ''));
+    if ($savedYop !== '') {
+      $out['yop'] = $savedYop;
+      $out['batchYear'] = $savedYop;
+    } else {
+      $batchSource = trim((string) ($out['stud_class'] ?? $out['classBatch'] ?? ''));
+      $batchYear = DocumentHelper::batchYearRangeLabel($batchSource);
+      if ($batchYear !== '') {
+        $out['batchYear'] = $batchYear;
+        $out['yop'] = $batchYear;
+      }
     }
     $out['gender'] = (string) ($merged['gender'] ?? $personal['gender'] ?? '');
     $out['maritalStatus'] = (string) ($personal['maritalStatus'] ?? $merged['maritalStatus'] ?? '');
@@ -713,6 +738,7 @@ final class StudentController
       'internshipPolicyVersion'  => $version,
       'internshipPolicyAcceptedAt' => $now,
       'policyAcceptedAt' => $now,
+      'policyRegistrationRequired' => false,
     ], 'Internship policy accepted. You may now use the placement portal.');
   }
 

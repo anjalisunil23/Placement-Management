@@ -1507,3 +1507,12 @@ input[type="file"].form-control:focus::file-selector-button{
 .cod-topic-javascript .cod-topic-icon{ color:#339af0; }
 .cod-topic-pandas .cod-topic-icon{ color:#1864ab; }
 .cod-topic-all .cod-topic-icon{ color:#495057; }
+
+/* Toasts: always readable (policy page body uses light text on dark bg) */
+#ph-toasts .ph-toast{
+  color:#0F172A!important;
+  background:#fff!important;
+}
+#ph-toasts .ph-toast .small{
+  color:#0F172A!important;
+}
