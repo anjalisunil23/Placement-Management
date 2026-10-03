@@ -15,6 +15,9 @@ use PMS\Utils\Security;
  */
 class StudentPlacementModel extends BaseModel
 {
+    /** Columns BaseModel SELECT/INSERT/ORDER BY require. */
+    private const BASE_TABLE_COLUMNS = ['payload', 'created_at', 'updated_at'];
+
     private static bool $tableReady = false;
 
     private static bool $tableUnavailable = false;
@@ -25,14 +28,14 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
-     * Ensure table exists with JSON payload column (schema.sql / auto-create on cPanel).
+     * Ensure table matches schema.sql (payload + timestamps for BaseModel reads/writes).
      */
     private function bootstrapTable(): bool
     {
         if (self::$tableUnavailable) {
             return false;
         }
-        if (self::$tableReady && $this->hasPayloadColumn()) {
+        if (self::$tableReady && $this->hasValidSchema()) {
             return true;
         }
 
@@ -42,7 +45,7 @@ class StudentPlacementModel extends BaseModel
             // Table may already exist from schema.sql without CREATE privilege.
         }
 
-        if (!$this->hasPayloadColumn() && !$this->repairStudentPlacementsSchema()) {
+        if (!$this->hasValidSchema() && !$this->repairStudentPlacementsSchema()) {
             self::$tableUnavailable = true;
 
             return false;
@@ -88,12 +91,24 @@ class StudentPlacementModel extends BaseModel
         }
     }
 
-    private function hasPayloadColumn(): bool
+    private function hasValidSchema(): bool
+    {
+        foreach (self::BASE_TABLE_COLUMNS as $column) {
+            if (!$this->hasColumn($column)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function hasColumn(string $field): bool
     {
         try {
-            $stmt = $this->db->query(
-                "SHOW COLUMNS FROM `student_placements` WHERE Field = 'payload'"
+            $stmt = $this->db->prepare(
+                'SHOW COLUMNS FROM `student_placements` WHERE Field = ?'
             );
+            $stmt->execute([$field]);
 
             return (bool) $stmt->fetch(\PDO::FETCH_ASSOC);
         } catch (\Throwable) {
@@ -113,10 +128,10 @@ class StudentPlacementModel extends BaseModel
                 return false;
             }
 
-            return $this->hasPayloadColumn();
+            return $this->hasValidSchema();
         }
 
-        if ($this->hasPayloadColumn()) {
+        if ($this->hasValidSchema()) {
             return true;
         }
 
@@ -135,19 +150,86 @@ class StudentPlacementModel extends BaseModel
                 return false;
             }
 
-            return $this->hasPayloadColumn();
+            return $this->hasValidSchema();
         }
 
+        if (!$this->addMissingBaseColumns()) {
+            return false;
+        }
+
+        $this->ensureGeneratedColumnsAndIndexes();
+
+        return $this->hasValidSchema();
+    }
+
+    private function addMissingBaseColumns(): bool
+    {
         try {
-            $this->db->exec(
-                "ALTER TABLE `student_placements`
-                 ADD COLUMN `payload` JSON NOT NULL DEFAULT ('{}') AFTER `id`"
-            );
+            if (!$this->hasColumn('payload')) {
+                $this->db->exec(
+                    "ALTER TABLE `student_placements`
+                     ADD COLUMN `payload` JSON NOT NULL DEFAULT ('{}') AFTER `id`"
+                );
+            }
+            if (!$this->hasColumn('created_at')) {
+                $this->db->exec(
+                    'ALTER TABLE `student_placements`
+                     ADD COLUMN `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)'
+                );
+            }
+            if (!$this->hasColumn('updated_at')) {
+                $this->db->exec(
+                    'ALTER TABLE `student_placements`
+                     ADD COLUMN `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+                     ON UPDATE CURRENT_TIMESTAMP(6)'
+                );
+            }
         } catch (\Throwable) {
             return false;
         }
 
-        return $this->hasPayloadColumn();
+        return true;
+    }
+
+    /** Best-effort; queries use JSON payload paths if generated cols are absent. */
+    private function ensureGeneratedColumnsAndIndexes(): void
+    {
+        try {
+            if (!$this->hasColumn('student_id')) {
+                $this->db->exec(
+                    "ALTER TABLE `student_placements`
+                     ADD COLUMN student_id CHAR(24)
+                       GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.studentId'))) STORED"
+                );
+            }
+            if (!$this->hasColumn('pair_key')) {
+                $this->db->exec(
+                    "ALTER TABLE `student_placements`
+                     ADD COLUMN pair_key VARCHAR(64)
+                       GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.pairKey'))) STORED"
+                );
+            }
+        } catch (\Throwable) {
+            return;
+        }
+
+        try {
+            $this->db->exec(
+                'ALTER TABLE `student_placements`
+                 ADD UNIQUE KEY uniq_student_placement (student_id)'
+            );
+        } catch (\Throwable) {
+            // Index may already exist.
+        }
+
+        try {
+            $this->db->exec(
+                'ALTER TABLE `student_placements`
+                 ADD UNIQUE KEY uniq_student_placement_pair (pair_key)'
+            );
+        } catch (\Throwable) {
+            // Index may already exist.
+        }
     }
 
     public static function pairKey(string $studentId): string
