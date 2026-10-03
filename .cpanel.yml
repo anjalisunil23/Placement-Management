@@ -8,6 +8,8 @@ deployment:
     # Sync app files into the live web root (overwrite stale copies)
     - /bin/rm -rf $DEPLOYPATH/backend
     - /bin/cp -Rf backend $DEPLOYPATH/backend
+    - /bin/git rev-parse HEAD > $DEPLOYPATH/deploy-version.txt
+    - /bin/date -u +"%Y-%m-%dT%H:%M:%SZ" >> $DEPLOYPATH/deploy-version.txt
     # Force-replace CSS (cp -Rf alone can leave stale style.css on some hosts)
     - /bin/rm -rf $DEPLOYPATH/css
     - /bin/mkdir -p $DEPLOYPATH/css

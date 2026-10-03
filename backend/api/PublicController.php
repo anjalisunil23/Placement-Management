@@ -14,6 +14,8 @@ use PMS\Models\PublicPageContentModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Middleware\RBACMiddleware;
 use PMS\Services\AnalyticsService;
+use PMS\Services\CodeExecutionService;
+use PMS\Services\CodingTestCaseChecker;
 use PMS\Services\ObjectStorageService;
 use PMS\Services\OfficerDataService;
 use PMS\Services\PcaOfferLetterService;
@@ -120,8 +122,32 @@ final class PublicController
                 'deployVersion'    => $deployVersion,
                 'eligibilityRules' => $legacyPolicyRules ? 'legacy-policy-required' : 'v2-resume-only',
             ],
-            'codingExec' => $codingExec,
+            'codingExec' => array_merge($codingExec, ['smoke' => self::codingExecSmoke()]),
         ], $db['ok'] ? 'OK' : 'Database unavailable', $db['ok'] ? 200 : 503);
+    }
+
+    /** @return array<string, mixed> */
+    private static function codingExecSmoke(): array
+    {
+        try {
+            if (!class_exists(CodeExecutionService::class)) {
+                return ['ok' => false, 'error' => 'CodeExecutionService not loaded'];
+            }
+            $code = "n = int(input())\narr = list(map(int, input().split()))\n";
+            $stdin = "4\n1 4 3 2";
+            $exec = (new CodeExecutionService())->run('Python', $code, $stdin, 12000);
+
+            return [
+                'ok' => CodingTestCaseChecker::executionSucceeded($exec),
+                'exitCode' => (int) ($exec['exit_code'] ?? -1),
+                'status' => (string) ($exec['status'] ?? ''),
+                'engine' => (string) ($exec['execEngine'] ?? ''),
+                'executorMode' => trim((string) ($_ENV['CODING_EXECUTOR'] ?? getenv('CODING_EXECUTOR') ?: '(default)')),
+                'stderrPreview' => substr(trim((string) ($exec['stderr'] ?? '')), 0, 240),
+            ];
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
     }
 
     /** GET /api/public/placement-stats */

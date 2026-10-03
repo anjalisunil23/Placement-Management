@@ -9,7 +9,7 @@ namespace PMS\Utils;
  */
 final class CodingDeployInfo
 {
-    public const REVISION = '20261003-prod-exec-1';
+    public const REVISION = '20261003-wandbox-prod';
 
     /** @return array<string, mixed> */
     public static function meta(): array

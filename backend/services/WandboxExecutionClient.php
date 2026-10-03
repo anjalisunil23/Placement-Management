@@ -188,7 +188,13 @@ final class WandboxExecutionClient
                 $this->lastError = 'Could not initialize HTTP client (curl).';
                 return null;
             }
-            $sslVerify = filter_var($_ENV['CODING_HTTP_SSL_VERIFY'] ?? 'true', FILTER_VALIDATE_BOOLEAN);
+            $sslRaw = $_ENV['CODING_HTTP_SSL_VERIFY'] ?? getenv('CODING_HTTP_SSL_VERIFY');
+            if ($sslRaw === false || $sslRaw === null || (string) $sslRaw === '') {
+                $appEnv = strtolower(trim((string) ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'production')));
+                $sslVerify = $appEnv !== 'production';
+            } else {
+                $sslVerify = filter_var($sslRaw, FILTER_VALIDATE_BOOLEAN);
+            }
             $caPath = trim((string) ($_ENV['CODING_CACERT_PATH'] ?? ''));
             $opts = [
                 CURLOPT_POST => true,

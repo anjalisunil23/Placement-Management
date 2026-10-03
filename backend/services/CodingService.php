@@ -2487,7 +2487,7 @@ final class CodingService
         }
         $language = trim((string) ($body['language'] ?? 'Python'));
         $stdin = (string) ($body['stdin'] ?? '');
-        $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 3000)));
+        $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 8000)));
 
         $row = $this->bank->findById($id);
         if (!$row) {

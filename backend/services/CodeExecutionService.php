@@ -96,7 +96,7 @@ final class CodeExecutionService
             return $local;
         }
 
-        if ($local !== null && !$this->shouldTryRemote($local)) {
+        if ($local !== null && !$this->shouldTryRemote($local) && !$this->preferRemoteAfterLocalFailure($local)) {
             return $local;
         }
 
@@ -350,6 +350,31 @@ final class CodeExecutionService
     }
 
     /**
+     * Shared hosting often lacks a working local toolchain; still try Wandbox when local sandbox fails.
+     *
+     * @param array<string, mixed> $local
+     */
+    private function preferRemoteAfterLocalFailure(array $local): bool
+    {
+        if (($local['ok'] ?? false) === true || !$this->remoteFallbackEnabled()) {
+            return false;
+        }
+        if ($this->remoteOnly()) {
+            return true;
+        }
+        $appEnv = strtolower(trim((string) ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: '')));
+        if ($appEnv !== 'production') {
+            return false;
+        }
+        $mode = strtolower(trim((string) ($_ENV['CODING_EXECUTOR'] ?? getenv('CODING_EXECUTOR') ?: '')));
+        if ($mode !== '' && !in_array($mode, ['local_then_remote', 'auto', 'local'], true)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @param array<string, mixed> $local
      * @return array<string, mixed>
      */
@@ -446,13 +471,28 @@ final class CodeExecutionService
         return $flag !== 'false' && $flag !== '0' && $flag !== 'off';
     }
 
+    private function executorMode(): string
+    {
+        $mode = strtolower(trim((string) ($_ENV['CODING_EXECUTOR'] ?? getenv('CODING_EXECUTOR') ?: '')));
+        if ($mode !== '') {
+            return $mode;
+        }
+        $appEnv = strtolower(trim((string) ($_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'production')));
+
+        return $appEnv === 'production' ? 'remote_only' : 'local_then_remote';
+    }
+
     private function remoteOnly(): bool
     {
-        $mode = strtolower(trim((string) ($_ENV['CODING_EXECUTOR'] ?? 'local_then_remote')));
+        $mode = $this->executorMode();
         if (in_array($mode, ['remote_only', 'wandbox_only', 'remote', 'wandbox'], true)) {
             return true;
         }
+        if (in_array($mode, ['local', 'local_only'], true)) {
+            return false;
+        }
         $backends = CodingExecutionConfig::limits()['remote_backends'];
+
         return $backends === ['wandbox'] && strtolower(trim((string) ($_ENV['CODING_SKIP_LOCAL'] ?? ''))) === 'true';
     }
 
