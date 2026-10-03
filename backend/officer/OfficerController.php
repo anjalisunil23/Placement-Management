@@ -1234,7 +1234,7 @@ final class OfficerController
     public function placementFilters(): void
     {
         $scope = (new OfficerDataService())->requireScope();
-        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $ctx = array_merge($this->staffLikeFilterCtx($scope['ctx']), ['filterMode' => true]);
         $program = trim((string) ($_GET['program'] ?? ''));
         $branch = trim((string) ($_GET['branch'] ?? ''));
         $svc = new \PMS\Services\PlacementFilterService();

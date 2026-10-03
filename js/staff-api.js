@@ -255,8 +255,24 @@ const StaffApi = {
     if (params.program) qs.set('program', params.program);
     if (params.branch) qs.set('branch', params.branch);
     const q = qs.toString();
+    const cacheKey = 'ph_staff_placement_filters_' + q;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed._at && (Date.now() - parsed._at) < 120000 && parsed.data) {
+          return parsed.data;
+        }
+      }
+    } catch (_) { /* ignore */ }
     const res = await api('/staff/placement-filters' + (q ? `?${q}` : ''));
-    return res.success && res.data ? res.data : null;
+    const data = res.success && res.data ? res.data : null;
+    if (data) {
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
+      } catch (_) { /* ignore */ }
+    }
+    return data;
   },
 
   async fetchPlacementsHigherEducation(params = {}) {

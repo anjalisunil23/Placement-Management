@@ -783,16 +783,17 @@ final class StaffPlacementRegistryService
         }
 
         $filterSvc = new PlacementFilterService();
+        $filterCtx = $this->placementFilterCtx($staffCtx);
         $branch = trim((string) ($filters['branch'] ?? ''));
         $programs = array_values(array_unique(array_filter(array_merge(
-            $filterSvc->fetchProgramOptions($staffCtx),
+            $filterSvc->fetchProgramOptions($filterCtx),
             $programs
         ))));
         if ($program !== '') {
             $assigned = StaffContext::assignedClassBatches($staffCtx);
             if ($assigned === []) {
                 $batches = array_values(array_unique(array_filter(array_merge(
-                    $filterSvc->fetchBatchOptions($staffCtx, $program, $branch, false),
+                    $filterSvc->fetchBatchOptions($filterCtx, $program, $branch, false),
                     $batches
                 ))));
             } else {
@@ -814,7 +815,7 @@ final class StaffPlacementRegistryService
 
         return [
             'programs'    => $programs,
-            'branches'    => $program !== '' ? $filterSvc->fetchBranchOptions($staffCtx, $program) : [],
+            'branches'    => $program !== '' ? $filterSvc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'     => $batches,
             'departments' => $this->loadScopedDepartments($staffCtx),
         ];
@@ -828,13 +829,14 @@ final class StaffPlacementRegistryService
     private function buildFilterOptions(array $staffCtx, array $filters = []): array
     {
         $filterSvc = new PlacementFilterService();
+        $filterCtx = $this->placementFilterCtx($staffCtx);
         $program = trim((string) ($filters['program'] ?? ''));
         $branch = trim((string) ($filters['branch'] ?? ''));
 
-        $programs = $filterSvc->fetchProgramOptions($staffCtx);
-        $branches = $program !== '' ? $filterSvc->fetchBranchOptions($staffCtx, $program) : [];
+        $programs = $filterSvc->fetchProgramOptions($filterCtx);
+        $branches = $program !== '' ? $filterSvc->fetchBranchOptions($filterCtx, $program) : [];
         $batches = $program !== ''
-            ? $filterSvc->fetchBatchOptions($staffCtx, $program, $branch, false)
+            ? $filterSvc->fetchBatchOptions($filterCtx, $program, $branch, false)
             : [];
 
         return [
@@ -843,6 +845,17 @@ final class StaffPlacementRegistryService
             'batches'      => $batches,
             'departments'  => $this->loadScopedDepartments($staffCtx),
         ];
+    }
+
+    /**
+     * Fast AES-free filter context for dropdown endpoints.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    private function placementFilterCtx(array $staffCtx): array
+    {
+        return array_merge(StaffContext::officerCompatible($staffCtx), ['filterMode' => true]);
     }
 
     /**

@@ -370,7 +370,7 @@ final class StaffController
         StaffContext::requireDepartmentScope($ctx);
         $program = trim((string) ($_GET['program'] ?? ''));
         $branch = trim((string) ($_GET['branch'] ?? ''));
-        $filterCtx = StaffContext::officerCompatible($ctx);
+        $filterCtx = array_merge(StaffContext::officerCompatible($ctx), ['filterMode' => true]);
         $svc = new PlacementFilterService();
         Response::success(DocumentHelper::jsonSafe([
             'departments' => $svc->fetchDepartmentOptions($filterCtx),

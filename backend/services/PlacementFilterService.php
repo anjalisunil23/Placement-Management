@@ -77,7 +77,7 @@ final class PlacementFilterService
     {
         $programmes = $this->distinctFieldFromScopedRows($ctx, 'stud_course', '', '');
         $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId !== '') {
+        if ($deptAesId !== '' && empty($ctx['filterMode'])) {
             try {
                 $programmes = array_merge(
                     $programmes,
@@ -144,7 +144,7 @@ final class PlacementFilterService
 
         $branches = $this->distinctFieldFromScopedRows($ctx, 'stud_branch', $program, '');
         $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId !== '') {
+        if ($deptAesId !== '' && empty($ctx['filterMode'])) {
             try {
                 $branches = array_merge(
                     $branches,
@@ -173,6 +173,25 @@ final class PlacementFilterService
     {
         $branch = trim($branch);
         $program = trim($program);
+
+        if (!empty($ctx['staffScope'])) {
+            $assigned = StaffContext::assignedClassBatches($ctx);
+            if ($assigned !== []) {
+                $batches = $this->assignedBatchLabelsForScope($ctx, $program, $branch);
+                $batches = $this->sortLabels($this->dedupeBatchLabelsByCohort(array_values(array_unique($batches))));
+                if (!$finalYearOnly) {
+                    return $batches;
+                }
+                $hint = trim($program . ' ' . $branch);
+                $classifier = new OfficerDataService();
+                $batches = array_values(array_filter(
+                    $batches,
+                    static fn (string $batch): bool => $classifier->isFinalYearClassBatch($batch, $hint)
+                ));
+
+                return $this->preferSpecificFinalYearBatches($batches);
+            }
+        }
 
         $batches = [];
         if ($program === '') {
@@ -399,7 +418,11 @@ final class PlacementFilterService
      */
     private function collectScopedStudInfoRows(array $ctx): array
     {
+        $filterMode = !empty($ctx['filterMode']);
         $cacheKey = (string) ($ctx['departmentId'] ?? '');
+        if ($filterMode) {
+            $cacheKey .= '|filter';
+        }
         if ($cacheKey !== '' && isset(self::$scopedRowsCache[$cacheKey]) && self::$scopedRowsCache[$cacheKey] !== []) {
             return self::$scopedRowsCache[$cacheKey];
         }
@@ -409,9 +432,13 @@ final class PlacementFilterService
 
         $this->appendStudInfoRowsFromAesProfile(Security::getSessionAesProfile(), $rows, $seen);
 
+        if ($filterMode) {
+            $this->appendFilterModeStudInfoRows($ctx, $rows, $seen);
+        }
+
         $api = new AesApiService();
         $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId !== '') {
+        if ($deptAesId !== '' && !$filterMode) {
             try {
                 foreach ($api->fetchAllStudInfo4Placement(['stud_deptcode' => $deptAesId]) as $record) {
                     $recordDept = trim((string) ($record['stud_deptcode'] ?? ''));
@@ -443,7 +470,6 @@ final class PlacementFilterService
             }
         }
 
-        $filterMode = !empty($ctx['filterMode']);
         if (!$filterMode) {
             $aesCalls = 0;
             $maxAesCalls = 800;
@@ -484,6 +510,86 @@ final class PlacementFilterService
         }
 
         return $rows;
+    }
+
+    /**
+     * Filter dropdowns: catalog, assigned classes, and local registry — no AES directory scan.
+     *
+     * @param array<string, mixed> $ctx
+     * @param list<array{stud_course:string,stud_branch:string,stud_class:string}> $rows
+     * @param array<string, true> $seen
+     */
+    private function appendFilterModeStudInfoRows(array $ctx, array &$rows, array &$seen): void
+    {
+        foreach (StaffContext::assignedClassBatches($ctx) as $batchLabel) {
+            $batchLabel = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $batchLabel));
+            if ($batchLabel === '') {
+                continue;
+            }
+            $course = $this->programmeCodeFromBatch($batchLabel);
+            $row = [
+                'stud_course' => $course,
+                'stud_branch' => 'Regular',
+                'stud_class' => $batchLabel,
+            ];
+            $this->pushStudInfoRow($row, $rows, $seen);
+        }
+
+        $deptId = trim((string) ($ctx['departmentId'] ?? ''));
+        if ($deptId !== '') {
+            try {
+                foreach ((new StudentPlacementModel())->findDistinctClassBatches($deptId, '', 500) as $batch) {
+                    $batch = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $batch));
+                    if ($batch === '') {
+                        continue;
+                    }
+                    $course = $this->programmeCodeFromBatch($batch);
+                    $row = [
+                        'stud_course' => $course,
+                        'stud_branch' => 'Regular',
+                        'stud_class' => $batch,
+                    ];
+                    $this->pushStudInfoRow($row, $rows, $seen);
+                }
+            } catch (\Throwable) {
+                // student_placements optional until schema is applied
+            }
+        }
+
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
+            (string) ($dept['code'] ?? ''),
+            (string) ($dept['name'] ?? '')
+        );
+        if ($group !== null) {
+            foreach (DepartmentProgrammeCatalog::programmeCodesForGroup($group) as $code) {
+                $code = trim($code);
+                if ($code === '') {
+                    continue;
+                }
+                $row = [
+                    'stud_course' => $code,
+                    'stud_branch' => 'Regular',
+                    'stud_class' => '',
+                ];
+                $this->pushStudInfoRow($row, $rows, $seen);
+            }
+        }
+    }
+
+    /**
+     * @param array{stud_course:string,stud_branch:string,stud_class:string} $row
+     * @param list<array{stud_course:string,stud_branch:string,stud_class:string}> $rows
+     * @param array<string, true> $seen
+     */
+    private function pushStudInfoRow(array $row, array &$rows, array &$seen): void
+    {
+        $key = strtolower(implode('|', [$row['stud_course'], $row['stud_branch'], $row['stud_class']]));
+        if (isset($seen[$key])) {
+            return;
+        }
+        $seen[$key] = true;
+        $rows[] = $row;
     }
 
     /**

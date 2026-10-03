@@ -393,7 +393,9 @@
       const needsClientScope = this.isCampusWideViewer()
         ? !!(deptCode || batchCode)
         : !!batchCode;
-      if (needsClientScope) {
+      const statsEarly = data.stats || {};
+      const activeCoEarly = (data.activeCompanies || []).length || Number(statsEarly.activeCompanies) || 0;
+      if (needsClientScope && this.isCampusWideViewer()) {
         return {
           totals: { companiesHiring: 0, applicants: 0, shortlisted: 0, offers: 0, hired: 0 },
           pipeline: [
@@ -403,6 +405,36 @@
             { label: 'Hired', value: 0 },
           ],
           companies: [],
+          candidates: [],
+          lite: true,
+          loading: true,
+        };
+      }
+      if (needsClientScope && batchCode) {
+        const companiesEarly = (data.activeCompanies || []).map(c => ({
+          company: c.company,
+          roles: c.openRoles ? [`${c.openRoles} open role${c.openRoles === 1 ? '' : 's'}`] : [],
+          applicants: Number(c.applicants) || 0,
+          shortlisted: 0,
+          selected: 0,
+          status: c.status || 'Active',
+          statusCls: { scheduled: 'info', open: 'success', ongoing: 'info', reviewing: 'warning' }[String(c.status || '').toLowerCase()] || 'success',
+        }));
+        return {
+          totals: {
+            companiesHiring: activeCoEarly,
+            applicants: 0,
+            shortlisted: 0,
+            offers: 0,
+            hired: 0,
+          },
+          pipeline: [
+            { label: 'Applicants', value: 0 },
+            { label: 'Shortlisted', value: 0 },
+            { label: 'Offers', value: 0 },
+            { label: 'Hired', value: 0 },
+          ],
+          companies: companiesEarly,
           candidates: [],
           lite: true,
           loading: true,
@@ -523,10 +555,11 @@
       if (statusOf(a) === 'offered' || statusOf(a) === 'selected') row.selected++;
     });
 
-    const companies = [...companyMap.values()].filter(c => !deptCode || c.applicants > 0);
+    const companies = [...companyMap.values()];
+    const activeHiringCount = (data.activeCompanies || []).length || companies.length;
     return {
       totals: {
-        companiesHiring: companies.length,
+        companiesHiring: activeHiringCount,
         applicants: people.length,
         shortlisted,
         offers,
@@ -686,7 +719,14 @@
     if (!batchCode) return true;
     const raw = String(studentBatch || '').trim();
     if (!raw) return false;
-    return raw.toUpperCase() === String(batchCode).trim().toUpperCase();
+    const want = String(batchCode).trim();
+    if (raw.toUpperCase() === want.toUpperCase()) return true;
+    if (typeof cohortKeyFromClassBatch === 'function') {
+      const a = cohortKeyFromClassBatch(raw);
+      const b = cohortKeyFromClassBatch(want);
+      return a !== '' && b !== '' && a === b;
+    }
+    return false;
   };
 
   HiringOverviewPage.prototype.isYearOnlyBatchLabel = function (batchLabel) {
@@ -1207,9 +1247,7 @@
 
     let html = `<option value="${esc(group.allValue)}">All branches</option>`;
     group.programmes.forEach(p => {
-      const years = this.branchYearsForProgramme(p.code);
-      const yearSuffix = years.length ? ` (${years.join(', ')})` : '';
-      html += `<option value="${esc(p.code)}">${esc(p.label)}${esc(yearSuffix)}</option>`;
+      html += `<option value="${esc(p.code)}">${esc(p.label)}</option>`;
     });
     branchSelect.innerHTML = html;
     branchSelect.disabled = false;
@@ -1286,7 +1324,7 @@
     if (batchSelect) batchSelect.value = '';
     this.populateBatchSelect();
     this.setDeptUI(this.selectedDept());
-    if (this.activeDeptFilter || this.isCampusWideViewer()) {
+    if (this.isCampusWideViewer()) {
       await this.ensureFullRecruiting();
     }
     this.renderForDept(this.selectedDept());
@@ -1648,9 +1686,12 @@
       const dashOpts = staffCampus ? { lite: true, adminView: true } : { lite: true };
 
       if (this.campusLive && !seed?.recruiting) {
+        const statsPromise = seed?.stats
+          ? Promise.resolve(seed.stats)
+          : dashboardStats(dashOpts).catch(() => null);
         const [liteData, liteStats] = await Promise.all([
           RecruitingStore.fetch({ lite: true }).catch(() => null),
-          dashboardStats(dashOpts).catch(() => null),
+          statsPromise,
         ]);
         if (liteData) {
           this.applyRecruitingData(liteData, liteStats);
