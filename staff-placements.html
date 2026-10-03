@@ -83,24 +83,7 @@
           <div class="table-wrap registry-table-wrap">
             <table class="registry-table" id="registryTable">
               <thead>
-                <tr>
-                  <th class="registry-sortable" data-sort="admissionNo" data-label="Sl#">Sl#</th>
-                  <th class="registry-sortable" data-sort="studentName" data-label="Student Name">Student Name</th>
-                  <th class="registry-sortable" data-sort="admissionNo" data-label="Admission No">Admission No</th>
-                  <th class="registry-sortable" data-sort="courseId" data-label="Course ID">Course ID</th>
-                  <th class="registry-sortable" data-sort="branchId" data-label="Branch ID">Branch ID</th>
-                  <th class="registry-sortable" data-sort="contact" data-label="Contact">Contact</th>
-                  <th class="registry-sortable" data-sort="employer" data-label="Name of the Employer">Name of the
-                    Employer</th>
-                  <th class="registry-sortable" data-sort="type" data-label="Type">Type</th>
-                  <th class="registry-sortable" data-sort="employerContact" data-label="Employer Contact">Employer
-                    Contact</th>
-                  <th class="registry-sortable" data-sort="address" data-label="Address">Address</th>
-                  <th class="registry-sortable" data-sort="package" data-label="Package">Package</th>
-                  <th class="registry-sortable" data-sort="fordvv" data-label="fordvv">fordvv</th>
-                  <th class="registry-sortable" data-sort="includedvv" data-label="includedvv">includedvv</th>
-                  <th class="registry-actions-col"></th>
-                </tr>
+                <tr id="registryTableHeadRow"></tr>
               </thead>
               <tbody id="registryRows">
                 <tr>
@@ -466,8 +449,60 @@
     let sortDir = 'asc';
     let canEditSelectedBatch = false;
     let apiAssignedBatches = [];
+    let registryColumns = [];
 
     const SORT_ICON = '<i class="bi bi-chevron-expand registry-sort-icon" aria-hidden="true"></i>';
+
+    function registryColspan() {
+      return (registryColumns.length || 13) + 1;
+    }
+
+    function setRegistryColumns(cols) {
+      if (Array.isArray(cols) && cols.length) {
+        registryColumns = cols;
+      }
+      renderRegistryTableHead();
+    }
+
+    function renderRegistryTableHead() {
+      const tr = document.getElementById('registryTableHeadRow');
+      if (!tr || !registryColumns.length) return;
+      tr.innerHTML = registryColumns.map((col) => {
+        const label = esc(col.label || col.key || '');
+        if (col.sortable === false) {
+          return `<th>${label}</th>`;
+        }
+        const sk = esc(col.sortKey || col.key || '');
+        return `<th class="registry-sortable" data-sort="${sk}" data-label="${label}">${label}</th>`;
+      }).join('') + '<th class="registry-actions-col"></th>';
+      updateSortHeaders();
+    }
+
+    function registryCellValue(col, r, slIndex) {
+      const key = col.key || '';
+      if (key === '_sl') return `${slIndex}.`;
+      if (key === 'studentName') {
+        return esc(String(r.studentName || '—').toUpperCase());
+      }
+      if (key === 'admissionNo') return esc(r.admissionNo || r.registerNumber || '—');
+      if (key === 'contact') return esc(formatContact(r));
+      if (key === 'type') {
+        const hasEmployer = String(r.employer || '').trim() !== '';
+        const typeLabel = hasEmployer
+          ? (r.type === 'Higher Education' || r.type === 'Research' ? r.type : 'Placement')
+          : '';
+        return esc(typeLabel);
+      }
+      return esc(r[key] ?? '');
+    }
+
+    function registryCellClass(col) {
+      const key = col.key || '';
+      if (key === 'contact') return 'registry-cell-contact';
+      if (key === 'employerContact') return 'registry-cell-employer-contact';
+      if (key === 'address') return 'registry-cell-address';
+      return '';
+    }
 
     function esc(s) {
       return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -766,7 +801,9 @@
       const start = (page - 1) * pageSize;
       const slice = filteredRows.slice(start, start + pageSize);
 
-      updateSortHeaders();
+      if (registryColumns.length) {
+        updateSortHeaders();
+      }
 
       document.getElementById('rowCount').textContent = total
         ? `${total} student${total === 1 ? '' : 's'}`
@@ -775,16 +812,18 @@
         ? `Showing ${start + 1}–${Math.min(start + pageSize, total)} of ${total}`
         : 'No entries to show';
 
+      const colSpan = registryColspan();
       if (!slice.length) {
         const needClass = !filterDepartmentId || !filterProgram || !filterBatch;
         tbody.innerHTML = needClass
-          ? '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Select branch and batch to list all students in the class.</td></tr>'
-          : '<tr><td colspan="14" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>';
+          ? `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">Select branch and batch to list all students in the class.</td></tr>`
+          : `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>`;
         return;
       }
 
+      const cols = registryColumns.length ? registryColumns : [];
       tbody.innerHTML = slice.map((r, i) => {
-        const sl = `${start + i + 1}.`;
+        const slIndex = start + i + 1;
         const sid = esc(r.studentId || '');
         const hasDoc = !!(r.hasOfferLetter || r.hasJoiningLetter || r.hasCompanyIdDoc);
         const hasEmployer = String(r.employer || '').trim() !== '';
@@ -794,29 +833,15 @@
           : (hasEmployer
             ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
             : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`);
-        const typeLabel = hasEmployer
-          ? (r.type === 'Higher Education' || r.type === 'Research' ? r.type : 'Placement')
-          : '';
-        const fordvv = r.fordvv ?? '';
-        const includedvv = r.includedvv ?? '';
-        return `<tr>
-      <td>${sl}</td>
-      <td><span class="registry-student-name">${esc(String(r.studentName || '—').toUpperCase())}</span></td>
-      <td>${esc(r.admissionNo || r.registerNumber || '—')}</td>
-      <td>${esc(r.courseId || '—')}</td>
-      <td>${esc(r.branchId || '—')}</td>
-      <td class="registry-cell-contact">${esc(formatContact(r))}</td>
-      <td>${esc(r.employer || '')}</td>
-      <td>${esc(typeLabel)}</td>
-      <td class="registry-cell-employer-contact">${esc(r.employerContact || '')}</td>
-      <td class="registry-cell-address">${esc(r.address || '')}</td>
-      <td>${esc(r.package || '')}</td>
-      <td>${esc(fordvv)}</td>
-      <td>${esc(includedvv)}</td>
-      <td>
-        <div class="registry-actions">${downloadBtn}${detailsBtn}</div>
-      </td>
-    </tr>`;
+        const cells = cols.map((col) => {
+          const cls = registryCellClass(col);
+          const inner = registryCellValue(col, r, slIndex);
+          if (col.key === 'studentName') {
+            return `<td${cls ? ` class="${cls}"` : ''}><span class="registry-student-name">${inner}</span></td>`;
+          }
+          return `<td${cls ? ` class="${cls}"` : ''}>${inner}</td>`;
+        }).join('');
+        return `<tr>${cells}<td><div class="registry-actions">${downloadBtn}${detailsBtn}</div></td></tr>`;
       }).join('');
     }
 
@@ -1121,19 +1146,22 @@
         filteredRows = [];
         document.getElementById('rowCount').textContent = '';
         document.getElementById('pageInfo').textContent = '';
-        tbody.innerHTML = '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Select branch and batch to list all students in the class.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Select branch and batch to list all students in the class.</td></tr>`;
         return;
       }
-      tbody.innerHTML = '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>`;
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
         const detail = (StaffApi._lastPlacementsFetchError || '').trim();
         const msg = detail
           ? esc(detail)
           : 'Could not load registry. Sign in as staff and try again.';
-        tbody.innerHTML = `<tr><td colspan="14" class="text-danger p-4 text-center">${msg}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-danger p-4 text-center">${msg}</td></tr>`;
         if (detail && typeof toast === 'function') toast(detail, 'error');
         return;
+      }
+      if (Array.isArray(data.columns) && data.columns.length) {
+        setRegistryColumns(data.columns);
       }
       allRows = Array.isArray(data.rows) ? data.rows : [];
       if (Array.isArray(data.assignedClassBatches)) {
@@ -1145,19 +1173,10 @@
           }
         } catch (_) { /* ignore */ }
       }
-      // Prefer filter options returned with the class list (avoids a second AES scan).
+      // Department only — branch/batch dropdowns come from loadPlacementFilters()
+      // (registry filters.batches is a lite subset and must not replace the full list).
       if (data.filters && typeof data.filters === 'object') {
         applyDefaultDepartment(data.filters.departments || []);
-        const programs = data.filters.programs || [];
-        const batches = data.filters.batches || [];
-        if (programs.length) {
-          fillSelect('filterProgram', programs, 'All branches', filterProgram, true);
-          filterProgram = document.getElementById('filterProgram')?.value || filterProgram;
-        }
-        if (batches.length) {
-          fillSelect('filterBatch', batches, 'All batches', filterBatch, true);
-          filterBatch = document.getElementById('filterBatch')?.value || filterBatch;
-        }
       }
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
@@ -1165,6 +1184,9 @@
     }
 
     async function onScopeFilterChange(changed) {
+      if (typeof StaffApi.clearPlacementsCache === 'function') {
+        StaffApi.clearPlacementsCache();
+      }
       if (changed === 'filterProgram') {
         filterProgram = document.getElementById('filterProgram')?.value || '';
         filterBatch = '';
@@ -1220,16 +1242,16 @@
     document.getElementById('editPlacementForm')?.addEventListener('submit', saveEditPlacement);
     document.getElementById('editType')?.addEventListener('change', syncEditTypeFields);
     document.getElementById('uploadPlacementForm')?.addEventListener('submit', saveUploadPlacement);
-    document.querySelectorAll('#registryTable .registry-sortable').forEach(th => {
-      th.addEventListener('click', () => {
-        const key = th.dataset.sort || '';
-        if (!key) return;
-        if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-        else { sortKey = key; sortDir = 'asc'; }
-        filteredRows = applySort(filteredRows);
-        page = 1;
-        renderTable();
-      });
+    document.getElementById('registryTable')?.addEventListener('click', (e) => {
+      const th = e.target.closest('.registry-sortable');
+      if (!th) return;
+      const key = th.dataset.sort || '';
+      if (!key) return;
+      if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+      else { sortKey = key; sortDir = 'asc'; }
+      filteredRows = applySort(filteredRows);
+      page = 1;
+      renderTable();
     });
 
     onAppReady(async () => {
@@ -1238,6 +1260,21 @@
         wireFilePickers('#uploadPlacementModal');
       }
       applyDefaultDepartment();
+      setRegistryColumns([
+        { key: '_sl', label: 'Sl#', sortable: true, sortKey: 'admissionNo', source: 'roster' },
+        { key: 'studentName', label: 'Student Name', sortable: true, sortKey: 'studentName', source: 'roster' },
+        { key: 'admissionNo', label: 'Admission No', sortable: true, sortKey: 'admissionNo', source: 'roster' },
+        { key: 'courseId', label: 'Course ID', sortable: true, sortKey: 'courseId', source: 'roster' },
+        { key: 'branchId', label: 'Branch ID', sortable: true, sortKey: 'branchId', source: 'roster' },
+        { key: 'contact', label: 'Contact', sortable: true, sortKey: 'contact', source: 'roster' },
+        { key: 'employer', label: 'Name of the Employer', sortable: true, sortKey: 'employer', source: 'student_placements', payloadField: 'company' },
+        { key: 'type', label: 'Type', sortable: true, sortKey: 'type', source: 'student_placements', payloadField: 'recordType' },
+        { key: 'employerContact', label: 'Employer Contact', sortable: true, sortKey: 'employerContact', source: 'student_placements', payloadField: 'employerContact' },
+        { key: 'address', label: 'Address', sortable: true, sortKey: 'address', source: 'student_placements', payloadField: 'address' },
+        { key: 'package', label: 'Package', sortable: true, sortKey: 'package', source: 'student_placements', payloadField: 'package' },
+        { key: 'fordvv', label: 'fordvv', sortable: true, sortKey: 'fordvv', source: 'student_placements', payloadField: 'fordvv' },
+        { key: 'includedvv', label: 'includedvv', sortable: true, sortKey: 'includedvv', source: 'student_placements', payloadField: 'includedvv' },
+      ]);
       // Prefer assigned class from session so the class list can load in one request.
       if (typeof staffClassInchargeBatches === 'function') {
         apiAssignedBatches = staffClassInchargeBatches();

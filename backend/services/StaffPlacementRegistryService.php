@@ -99,6 +99,7 @@ final class StaffPlacementRegistryService
 
         return [
             'filters' => $filterOptions,
+            'columns' => self::registryTableColumns(),
             'rows'    => $filtered,
             'canEditBatch' => $batch !== '' && StaffContext::canEditClassBatch($staffCtx, $batch),
             'assignedClassBatches' => StaffContext::assignedClassBatches($staffCtx),
@@ -109,6 +110,86 @@ final class StaffPlacementRegistryService
                 'placement'         => $placementCount,
                 'higher_education'  => $higherCount,
                 'research'          => $researchCount,
+            ],
+        ];
+    }
+
+    /**
+     * Registry grid columns — class roster fields plus student_placements payload keys.
+     *
+     * @return list<array{key:string,label:string,sortable:bool,sortKey?:string,source:string,payloadField?:string}>
+     */
+    public static function registryTableColumns(): array
+    {
+        return [
+            ['key' => '_sl', 'label' => 'Sl#', 'sortable' => true, 'sortKey' => 'admissionNo', 'source' => 'roster'],
+            ['key' => 'studentName', 'label' => 'Student Name', 'sortable' => true, 'sortKey' => 'studentName', 'source' => 'roster'],
+            [
+                'key'           => 'admissionNo',
+                'label'         => 'Admission No',
+                'sortable'      => true,
+                'sortKey'       => 'admissionNo',
+                'source'        => 'roster',
+                'payloadField'  => 'registerNumber',
+            ],
+            ['key' => 'courseId', 'label' => 'Course ID', 'sortable' => true, 'sortKey' => 'courseId', 'source' => 'roster'],
+            ['key' => 'branchId', 'label' => 'Branch ID', 'sortable' => true, 'sortKey' => 'branchId', 'source' => 'roster'],
+            ['key' => 'contact', 'label' => 'Contact', 'sortable' => true, 'sortKey' => 'contact', 'source' => 'roster'],
+            [
+                'key'          => 'employer',
+                'label'        => 'Name of the Employer',
+                'sortable'     => true,
+                'sortKey'      => 'employer',
+                'source'       => 'student_placements',
+                'payloadField' => 'company',
+            ],
+            [
+                'key'          => 'type',
+                'label'        => 'Type',
+                'sortable'     => true,
+                'sortKey'      => 'type',
+                'source'       => 'student_placements',
+                'payloadField' => 'recordType',
+            ],
+            [
+                'key'          => 'employerContact',
+                'label'        => 'Employer Contact',
+                'sortable'     => true,
+                'sortKey'      => 'employerContact',
+                'source'       => 'student_placements',
+                'payloadField' => 'employerContact',
+            ],
+            [
+                'key'          => 'address',
+                'label'        => 'Address',
+                'sortable'     => true,
+                'sortKey'      => 'address',
+                'source'       => 'student_placements',
+                'payloadField' => 'address',
+            ],
+            [
+                'key'          => 'package',
+                'label'        => 'Package',
+                'sortable'     => true,
+                'sortKey'      => 'package',
+                'source'       => 'student_placements',
+                'payloadField' => 'package',
+            ],
+            [
+                'key'          => 'fordvv',
+                'label'        => 'fordvv',
+                'sortable'     => true,
+                'sortKey'      => 'fordvv',
+                'source'       => 'student_placements',
+                'payloadField' => 'fordvv',
+            ],
+            [
+                'key'          => 'includedvv',
+                'label'        => 'includedvv',
+                'sortable'     => true,
+                'sortKey'      => 'includedvv',
+                'source'       => 'student_placements',
+                'payloadField' => 'includedvv',
             ],
         ];
     }
@@ -618,14 +699,25 @@ final class StaffPlacementRegistryService
             $batches[] = $batch;
         }
 
-        $programs = array_values(array_unique(array_filter($programs)));
-        $batches = array_values(array_unique(array_filter($batches)));
+        $filterSvc = new PlacementFilterService();
+        $branch = trim((string) ($filters['branch'] ?? ''));
+        $programs = array_values(array_unique(array_filter(array_merge(
+            $filterSvc->fetchProgramOptions($staffCtx),
+            $programs
+        ))));
+        if ($program !== '') {
+            $batches = array_values(array_unique(array_filter(array_merge(
+                $filterSvc->fetchBatchOptions($staffCtx, $program, $branch, false),
+                $batches
+            ))));
+        }
+
         sort($programs, SORT_STRING);
         sort($batches, SORT_STRING);
 
         return [
             'programs'    => $programs,
-            'branches'    => [],
+            'branches'    => $program !== '' ? $filterSvc->fetchBranchOptions($staffCtx, $program) : [],
             'batches'     => $batches,
             'departments' => $this->loadScopedDepartments($staffCtx),
         ];
@@ -645,7 +737,7 @@ final class StaffPlacementRegistryService
         $programs = $filterSvc->fetchProgramOptions($staffCtx);
         $branches = $program !== '' ? $filterSvc->fetchBranchOptions($staffCtx, $program) : [];
         $batches = $program !== ''
-            ? $filterSvc->fetchBatchOptions($staffCtx, $program, $branch, true)
+            ? $filterSvc->fetchBatchOptions($staffCtx, $program, $branch, false)
             : [];
 
         return [
