@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Api;
 
 use PMS\Middleware\AuthMiddleware;
+use PMS\Services\TutorialActivityService;
 use PMS\Services\TutorialAIService;
 use PMS\Services\TutorialAssessmentService;
 use PMS\Services\TutorialService;
@@ -19,10 +20,12 @@ final class TutorialController
         private ?TutorialService $service = null,
         private ?TutorialAIService $ai = null,
         private ?TutorialAssessmentService $assessments = null,
+        private ?TutorialActivityService $activities = null,
     ) {
         $this->service = $service ?? new TutorialService();
         $this->ai = $ai ?? new TutorialAIService(null, $this->service);
         $this->assessments = $assessments ?? new TutorialAssessmentService($this->service, $this->ai);
+        $this->activities = $activities ?? new TutorialActivityService($this->service);
     }
 
     public function listCategories(): void
@@ -265,6 +268,75 @@ final class TutorialController
     {
         $user = AuthMiddleware::authenticate();
         Response::success($this->assessments->listAttemptsForStudent($user, $tutorialId, $moduleId));
+    }
+
+    public function activitiesManageList(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->activities->listManaged($user, $tutorialId, $moduleId));
+    }
+
+    public function activitiesManageCreate(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->create($user, $tutorialId, $moduleId, $this->body()),
+            'Activity created.',
+            201
+        );
+    }
+
+    public function activitiesManageReorder(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = $this->body();
+        $ids = is_array($body['activityIds'] ?? null) ? $body['activityIds'] : [];
+        Response::success(
+            $this->activities->reorder($user, $tutorialId, $moduleId, $ids),
+            'Activities reordered.'
+        );
+    }
+
+    public function activitiesManageGet(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->activities->getManaged($user, $tutorialId, $moduleId, $activityId));
+    }
+
+    public function activitiesManageUpdate(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->update($user, $tutorialId, $moduleId, $activityId, $this->body()),
+            'Activity updated.'
+        );
+    }
+
+    public function activitiesManageDelete(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->archive($user, $tutorialId, $moduleId, $activityId),
+            'Activity archived.'
+        );
+    }
+
+    public function activitiesManagePublish(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->publish($user, $tutorialId, $moduleId, $activityId),
+            'Activity published.'
+        );
+    }
+
+    public function activitiesManageUnpublish(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->unpublish($user, $tutorialId, $moduleId, $activityId),
+            'Activity unpublished.'
+        );
     }
 
     public function createModule(string $tutorialId): void

@@ -73,6 +73,15 @@ class TutorialModuleAssessmentAnswerModel extends BaseModel
             'selectedIndex' => $selectedIndex,
             'isCorrect' => ($data['isCorrect'] ?? false) === true,
             'marksAwarded' => max(0, (int) ($data['marksAwarded'] ?? 0)),
+            'questionSnapshot' => is_array($data['questionSnapshot'] ?? null) ? [
+                'question' => (string) (($data['questionSnapshot']['question'] ?? '')),
+                'options' => array_values((array) ($data['questionSnapshot']['options'] ?? [])),
+                'correctIndex' => (int) ($data['questionSnapshot']['correctIndex'] ?? -1),
+                'explanation' => (string) ($data['questionSnapshot']['explanation'] ?? ''),
+                'difficulty' => (string) ($data['questionSnapshot']['difficulty'] ?? 'beginner'),
+                'marks' => max(1, (int) ($data['questionSnapshot']['marks'] ?? 1)),
+                'sortOrder' => max(1, (int) ($data['questionSnapshot']['sortOrder'] ?? 1)),
+            ] : null,
         ];
         $id = $this->insert($payload);
 

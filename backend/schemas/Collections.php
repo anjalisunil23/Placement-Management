@@ -66,6 +66,9 @@ final class Collections
     public const TUTORIAL_MODULE_QUESTIONS = 'tutorial_module_questions';
     public const TUTORIAL_MODULE_ASSESSMENT_ATTEMPTS = 'tutorial_module_assessment_attempts';
     public const TUTORIAL_MODULE_ASSESSMENT_ANSWERS = 'tutorial_module_assessment_answers';
+    public const TUTORIAL_MODULE_ACTIVITIES = 'tutorial_module_activities';
+    public const TUTORIAL_MODULE_ACTIVITY_SUBMISSIONS = 'tutorial_module_activity_submissions';
+    public const TUTORIAL_MODULE_ACTIVITY_REVIEWS = 'tutorial_module_activity_reviews';
     public const RESUME_CAREER_OBJECTIVES = 'resume_career_objectives';
     public const RESUME_SKILLS = 'resume_skills';
     public const RESUME_PROJECTS = 'resume_projects';
@@ -533,6 +536,7 @@ final class Collections
                 'difficulty' => 'string (beginner|intermediate|advanced)',
                 'marks' => 'int',
                 'sortOrder' => 'int',
+                'archived' => 'bool (soft-retired on assessment edit; kept for historical attempts)',
                 'createdAt' => 'UTCDateTime',
                 'updatedAt' => 'UTCDateTime',
             ],
@@ -549,6 +553,7 @@ final class Collections
                 'percent' => 'int',
                 'passed' => 'bool',
                 'status' => 'string (IN_PROGRESS|SUBMITTED)',
+                'questionSnapshot' => 'array of immutable question copies used for scoring/review (server-only)',
                 'startedAt' => 'UTCDateTime',
                 'submittedAt' => 'UTCDateTime|null',
                 'createdAt' => 'UTCDateTime',
@@ -562,6 +567,56 @@ final class Collections
                 'selectedIndex' => 'int 0-3',
                 'isCorrect' => 'bool',
                 'marksAwarded' => 'int',
+                'questionSnapshot' => 'object|null (immutable question copy at submit)',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_MODULE_ACTIVITIES => [
+                '_id' => 'ObjectId',
+                'tutorialId' => 'ObjectId',
+                'moduleId' => 'ObjectId',
+                'title' => 'string',
+                'instructions' => 'string (sanitized)',
+                'activityType' => 'string (programming_task|sql_query|numerical|short_answer|case_study|analytical_design)',
+                'academicField' => 'string (engineering|computer_applications|business_administration|other)',
+                'difficulty' => 'string (beginner|intermediate|advanced)',
+                'sortOrder' => 'int',
+                'status' => 'string (draft|published)',
+                'evaluationMode' => 'string (none|self_check|tutor_review|auto_compare)',
+                'config' => 'object (type-specific)',
+                'answerKey' => 'object (staff-only; never student-facing)',
+                'archived' => 'bool',
+                'createdBy' => 'ObjectId',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_MODULE_ACTIVITY_SUBMISSIONS => [
+                '_id' => 'ObjectId',
+                'activityId' => 'ObjectId',
+                'tutorialId' => 'ObjectId',
+                'moduleId' => 'ObjectId',
+                'studentId' => 'ObjectId',
+                'attemptNumber' => 'int',
+                'pairKey' => 'string (studentId:activityId:attemptNumber unique)',
+                'status' => 'string (IN_PROGRESS|SUBMITTED|RETURNED)',
+                'payload' => 'object',
+                'autoResult' => 'object|null',
+                'activitySnapshot' => 'object (immutable activity definition)',
+                'submittedAt' => 'UTCDateTime|null',
+                'createdAt' => 'UTCDateTime',
+                'updatedAt' => 'UTCDateTime',
+            ],
+            self::TUTORIAL_MODULE_ACTIVITY_REVIEWS => [
+                '_id' => 'ObjectId',
+                'submissionId' => 'ObjectId (unique current review)',
+                'activityId' => 'ObjectId',
+                'reviewerUserId' => 'ObjectId',
+                'score' => 'float|null',
+                'maxScore' => 'float|null',
+                'passed' => 'bool|null',
+                'feedback' => 'string (student-visible)',
+                'privateNotes' => 'string (staff-only)',
+                'status' => 'string (pending|reviewed)',
                 'createdAt' => 'UTCDateTime',
                 'updatedAt' => 'UTCDateTime',
             ],

@@ -42,6 +42,8 @@
     assessment: null,
     assessmentQuestions: [],
     assessmentPreview: null,
+    activities: [],
+    activityBusy: false,
   };
 
   function role() {
@@ -1031,7 +1033,9 @@
     document.getElementById('moduleSubtitle').value = '';
     document.getElementById('moduleExercisePane').classList.add('d-none');
     document.getElementById('moduleAssessmentPane').classList.add('d-none');
+    document.getElementById('moduleActivityPane').classList.add('d-none');
     document.getElementById('exerciseForm').classList.add('d-none');
+    resetActivityForm();
     openArticleShell();
     mountEditor('');
     document.getElementById('moduleTitle').focus();
@@ -1051,6 +1055,7 @@
     renderModuleExercises();
     mountEditor(module.content || '');
     loadModuleAssessment().catch(fail);
+    loadModuleActivities().catch(fail);
     if (!(module.title || '').trim()) document.getElementById('moduleTitle').focus();
   }
 
@@ -1373,12 +1378,432 @@
     box.classList.remove('d-none');
   }
 
+  const ACTIVITY_TYPE_LABELS = {
+    programming_task: 'Programming',
+    sql_query: 'SQL',
+    numerical: 'Numerical',
+    short_answer: 'Short answer',
+    case_study: 'Case study',
+    analytical_design: 'Analytical / design',
+  };
+
+  function activityEvalModesForType(type) {
+    if (type === 'numerical') return ['none', 'tutor_review', 'auto_compare'];
+    if (type === 'short_answer') return ['none', 'tutor_review', 'self_check'];
+    return ['none', 'tutor_review'];
+  }
+
+  function syncActivityEvalModeOptions(selected) {
+    const type = document.getElementById('activityType').value;
+    const select = document.getElementById('activityEvalMode');
+    const modes = activityEvalModesForType(type);
+    const current = selected || select.value;
+    select.innerHTML = modes.map((mode) => (
+      `<option value="${mode}">${esc(mode.replace(/_/g, ' '))}</option>`
+    )).join('');
+    select.value = modes.includes(current) ? current : modes[modes.length - 1];
+  }
+
+  function renderActivityTypeFields(activity) {
+    const root = document.getElementById('activityTypeFields');
+    const type = document.getElementById('activityType').value;
+    const config = (activity && activity.config) || {};
+    const key = (activity && activity.answerKey) || {};
+    if (type === 'programming_task') {
+      root.innerHTML = `
+        <div class="row g-2">
+          <div class="col-md-4"><label class="form-label" for="actLang">Language</label>
+            <select class="form-select form-select-sm" id="actLang">
+              ${LANGUAGES.map((row) => `<option value="${esc(row.value)}" ${((config.language || 'python') === row.value) ? 'selected' : ''}>${esc(row.label)}</option>`).join('')}
+              <option value="text" ${(config.language || '') === 'text' ? 'selected' : ''}>Plain text</option>
+            </select>
+          </div>
+          <div class="col-12"><label class="form-label" for="actBoilerplate">Starter / boilerplate code</label><textarea class="form-control form-control-sm font-monospace" id="actBoilerplate" rows="6" spellcheck="false">${esc(config.boilerplate || '')}</textarea><div class="form-text">Stored as text only. Not executed.</div></div>
+          <div class="col-12"><label class="form-label" for="actModelAnswer">Optional model solution (staff only)</label><textarea class="form-control form-control-sm font-monospace" id="actModelAnswer" rows="3">${esc(key.modelAnswer || '')}</textarea></div>
+        </div>`;
+      return;
+    }
+    if (type === 'sql_query') {
+      root.innerHTML = `
+        <div class="row g-2">
+          <div class="col-12"><label class="form-label" for="actSchema">Database schema description</label><textarea class="form-control form-control-sm font-monospace" id="actSchema" rows="4">${esc(config.schemaDescription || '')}</textarea></div>
+          <div class="col-12"><label class="form-label" for="actModelAnswer">Optional expected result / model query (staff only)</label><textarea class="form-control form-control-sm font-monospace" id="actModelAnswer" rows="3">${esc(key.modelAnswer || '')}</textarea><div class="form-text">SQL is never executed.</div></div>
+        </div>`;
+      return;
+    }
+    if (type === 'numerical') {
+      root.innerHTML = `
+        <div class="row g-2">
+          <div class="col-md-4"><label class="form-label" for="actExpected">Expected numeric answer</label><input class="form-control form-control-sm" id="actExpected" type="number" step="any" value="${esc(key.expectedValue != null ? key.expectedValue : '')}"/></div>
+          <div class="col-md-4"><label class="form-label" for="actUnit">Units</label><input class="form-control form-control-sm" id="actUnit" maxlength="40" value="${esc(config.unit || '')}"/></div>
+          <div class="col-md-4"><label class="form-label" for="actTolerance">Tolerance</label><input class="form-control form-control-sm" id="actTolerance" type="number" min="0" step="any" value="${esc(config.tolerance != null ? config.tolerance : 0)}"/></div>
+          <div class="col-12"><div class="form-text">Expected answer is staff-only and will not appear in student views.</div></div>
+        </div>`;
+      return;
+    }
+    if (type === 'short_answer') {
+      root.innerHTML = `
+        <div class="row g-2">
+          <div class="col-12"><label class="form-label" for="actModelAnswer">Model answer / evaluation guidance (staff only)</label><textarea class="form-control form-control-sm" id="actModelAnswer" rows="3">${esc(key.modelAnswer || '')}</textarea></div>
+          <div class="col-12"><label class="form-label" for="actKeywords">Keywords (comma-separated, for self-check)</label><input class="form-control form-control-sm" id="actKeywords" value="${esc((key.keywords || []).join(', '))}"/></div>
+          <div class="col-12"><label class="form-label" for="actRubric">Self-check rubric (shown after submit when mode is self-check)</label><textarea class="form-control form-control-sm" id="actRubric" rows="2">${esc(config.selfCheckRubric || '')}</textarea></div>
+        </div>`;
+      return;
+    }
+    if (type === 'case_study') {
+      const parts = (config.parts && config.parts.length) ? config.parts : [{ id: 'part-1', prompt: '' }, { id: 'part-2', prompt: '' }];
+      root.innerHTML = `
+        <div class="fw-semibold mb-2">Response sections</div>
+        <div id="actPartsList" class="d-flex flex-column gap-2 mb-2">
+          ${parts.map((part, index) => `
+            <div class="border rounded p-2" data-part-index="${index}" data-part-id="${esc(part.id || (`part-${index + 1}`))}">
+              <label class="form-label">Part ${index + 1} prompt</label>
+              <textarea class="form-control form-control-sm" data-part-prompt rows="2">${esc(part.prompt || '')}</textarea>
+            </div>`).join('')}
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="actAddPartBtn">+ Add part</button>
+        <label class="form-label" for="actModelAnswer">Optional evaluation rubric (staff only)</label>
+        <textarea class="form-control form-control-sm" id="actModelAnswer" rows="2">${esc(key.modelAnswer || '')}</textarea>`;
+      const addBtn = document.getElementById('actAddPartBtn');
+      if (addBtn) {
+        addBtn.addEventListener('click', () => {
+          const list = document.getElementById('actPartsList');
+          const index = list.children.length;
+          if (index >= 12) {
+            toast('A case study can have at most 12 parts.', 'error');
+            return;
+          }
+          const wrap = document.createElement('div');
+          wrap.className = 'border rounded p-2';
+          wrap.setAttribute('data-part-index', String(index));
+          wrap.setAttribute('data-part-id', `part-${index + 1}`);
+          wrap.innerHTML = `<label class="form-label">Part ${index + 1} prompt</label><textarea class="form-control form-control-sm" data-part-prompt rows="2"></textarea>`;
+          list.appendChild(wrap);
+        });
+      }
+      return;
+    }
+    root.innerHTML = `
+      <div class="row g-2">
+        <div class="col-12"><label class="form-label" for="actDeliverable">Expected deliverable description</label><textarea class="form-control form-control-sm" id="actDeliverable" rows="2">${esc(config.deliverableHint || '')}</textarea></div>
+        <div class="col-12"><label class="form-label" for="actModelAnswer">Optional evaluation rubric (staff only)</label><textarea class="form-control form-control-sm" id="actModelAnswer" rows="3">${esc(key.modelAnswer || '')}</textarea></div>
+      </div>`;
+  }
+
+  function collectActivityPayload(publish) {
+    const type = document.getElementById('activityType').value;
+    const title = document.getElementById('activityTitle').value.trim();
+    const instructions = document.getElementById('activityInstructions').value.trim();
+    if (!title) throw new Error('Activity title is required.');
+    if (!instructions) throw new Error('Activity instructions are required.');
+    const evaluationMode = document.getElementById('activityEvalMode').value;
+    const allowed = activityEvalModesForType(type);
+    if (!allowed.includes(evaluationMode)) throw new Error('Choose a valid evaluation mode for this activity type.');
+    const payload = {
+      title,
+      instructions,
+      activityType: type,
+      academicField: document.getElementById('activityField').value,
+      difficulty: document.getElementById('activityDifficulty').value,
+      evaluationMode,
+      status: publish ? 'published' : 'draft',
+      config: {},
+      answerKey: {},
+    };
+    if (type === 'programming_task') {
+      payload.config = {
+        language: document.getElementById('actLang').value,
+        boilerplate: document.getElementById('actBoilerplate').value,
+      };
+      const model = document.getElementById('actModelAnswer').value.trim();
+      if (model) payload.answerKey = { modelAnswer: model };
+    } else if (type === 'sql_query') {
+      payload.config = { schemaDescription: document.getElementById('actSchema').value };
+      const model = document.getElementById('actModelAnswer').value.trim();
+      if (model) payload.answerKey = { modelAnswer: model };
+    } else if (type === 'numerical') {
+      const expectedRaw = document.getElementById('actExpected').value.trim();
+      const tolerance = Number(document.getElementById('actTolerance').value);
+      if (evaluationMode === 'auto_compare' && expectedRaw === '') {
+        throw new Error('Expected numeric answer is required for auto compare.');
+      }
+      if (expectedRaw !== '' && Number.isNaN(Number(expectedRaw))) {
+        throw new Error('Expected answer must be a number.');
+      }
+      if (Number.isNaN(tolerance) || tolerance < 0) throw new Error('Tolerance must be zero or a positive number.');
+      payload.config = {
+        unit: document.getElementById('actUnit').value.trim(),
+        tolerance: Number.isNaN(tolerance) ? 0 : tolerance,
+      };
+      payload.answerKey = expectedRaw === '' ? {} : { expectedValue: Number(expectedRaw) };
+    } else if (type === 'short_answer') {
+      const model = document.getElementById('actModelAnswer').value.trim();
+      const keywords = document.getElementById('actKeywords').value.split(',').map((item) => item.trim()).filter(Boolean);
+      payload.config = { selfCheckRubric: document.getElementById('actRubric').value.trim() };
+      payload.answerKey = {};
+      if (model) payload.answerKey.modelAnswer = model;
+      if (keywords.length) payload.answerKey.keywords = keywords;
+      if (evaluationMode === 'self_check' && !model && !keywords.length) {
+        throw new Error('Self-check short answers need a model answer or keywords.');
+      }
+    } else if (type === 'case_study') {
+      const parts = [];
+      document.querySelectorAll('#actPartsList [data-part-prompt]').forEach((input, index) => {
+        const prompt = input.value.trim();
+        if (!prompt) return;
+        const wrap = input.closest('[data-part-id]');
+        const id = (wrap && wrap.getAttribute('data-part-id')) || `part-${index + 1}`;
+        parts.push({ id, prompt });
+      });
+      if (!parts.length) throw new Error('Add at least one case-study part prompt.');
+      payload.config = { parts };
+      const model = document.getElementById('actModelAnswer').value.trim();
+      if (model) payload.answerKey = { modelAnswer: model };
+    } else {
+      payload.config = { deliverableHint: document.getElementById('actDeliverable').value.trim() };
+      const model = document.getElementById('actModelAnswer').value.trim();
+      if (model) payload.answerKey = { modelAnswer: model };
+    }
+    return payload;
+  }
+
+  function renderActivityList() {
+    const root = document.getElementById('activityList');
+    const rows = state.activities || [];
+    document.getElementById('activityMeta').textContent = rows.length
+      ? `${rows.length} activit${rows.length === 1 ? 'y' : 'ies'}`
+      : 'No activities yet';
+    if (!rows.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">Add practical activities for this module. Students will use them after you publish.</p>';
+      return;
+    }
+    root.innerHTML = rows.map((row, index) => {
+      const status = row.status === 'published' ? ['success', 'Published'] : ['warning', 'Draft'];
+      return `<div class="border rounded p-2" data-activity-id="${esc(row.id)}">
+        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+          <div>
+            <div class="fw-semibold">${esc(row.title || 'Untitled')}</div>
+            <div class="small text-muted-2">${esc(ACTIVITY_TYPE_LABELS[row.activityType] || row.activityType)} · ${esc(row.difficulty || 'beginner')} · ${esc((row.evaluationMode || '').replace(/_/g, ' '))}</div>
+          </div>
+          <span class="badge text-bg-${status[0]}">${status[1]}</span>
+        </div>
+        <div class="d-flex flex-wrap gap-1 mt-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-up ${index === 0 ? 'disabled' : ''}>↑</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-down ${index === rows.length - 1 ? 'disabled' : ''}>↓</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-act-edit>Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-toggle-publish>${row.status === 'published' ? 'Unpublish' : 'Publish'}</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-act-archive>Archive</button>
+        </div>
+      </div>`;
+    }).join('');
+    root.querySelectorAll('[data-activity-id]').forEach((card) => {
+      const id = card.getAttribute('data-activity-id');
+      const index = state.activities.findIndex((row) => row.id === id);
+      const up = card.querySelector('[data-act-up]');
+      const down = card.querySelector('[data-act-down]');
+      const edit = card.querySelector('[data-act-edit]');
+      const pub = card.querySelector('[data-act-toggle-publish]');
+      const arch = card.querySelector('[data-act-archive]');
+      if (up) up.addEventListener('click', () => moveActivity(index, -1).catch(fail));
+      if (down) down.addEventListener('click', () => moveActivity(index, 1).catch(fail));
+      if (edit) edit.addEventListener('click', () => { openActivityForm(state.activities[index]).catch(fail); });
+      if (pub) pub.addEventListener('click', () => toggleActivityPublish(id).catch(fail));
+      if (arch) arch.addEventListener('click', () => archiveActivity(id).catch(fail));
+    });
+  }
+
+  async function loadModuleActivities() {
+    const pane = document.getElementById('moduleActivityPane');
+    if (!state.active || !state.selectedModuleId) {
+      pane.classList.add('d-none');
+      return;
+    }
+    pane.classList.remove('d-none');
+    document.getElementById('activityForm').classList.add('d-none');
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities`);
+      state.activities = data.activities || [];
+      renderActivityList();
+    } catch (err) {
+      state.activities = [];
+      renderActivityList();
+      fail(err);
+    }
+  }
+
+  function activityFormIsOpen() {
+    return !document.getElementById('activityForm').classList.contains('d-none');
+  }
+
+  async function openActivityForm(activity) {
+    if (activityFormIsOpen()) {
+      const currentId = document.getElementById('activityId').value;
+      const nextId = activity && activity.id ? activity.id : '';
+      if (currentId !== nextId || (!currentId && !nextId && document.getElementById('activityTitle').value.trim())) {
+        const ok = await confirmAction({
+          title: 'Discard activity edits?',
+          message: 'You have an activity form open. Discard those changes and continue?',
+          confirmText: 'Discard',
+          variant: 'danger',
+        });
+        if (!ok) return;
+      }
+    }
+    const form = document.getElementById('activityForm');
+    form.classList.remove('d-none');
+    document.getElementById('activityId').value = activity && activity.id ? activity.id : '';
+    document.getElementById('activityFormTitle').textContent = activity && activity.id ? 'Edit activity' : 'New activity';
+    document.getElementById('activityFormStatus').textContent = activity && activity.status === 'published' ? 'Published' : 'Draft';
+    document.getElementById('activityFormStatus').className = `badge text-bg-${activity && activity.status === 'published' ? 'success' : 'secondary'}`;
+    document.getElementById('activityTitle').value = (activity && activity.title) || '';
+    document.getElementById('activityInstructions').value = (activity && activity.instructions) || '';
+    document.getElementById('activityType').value = (activity && activity.activityType) || 'short_answer';
+    document.getElementById('activityField').value = (activity && activity.academicField) || 'other';
+    document.getElementById('activityDifficulty').value = (activity && activity.difficulty) || 'beginner';
+    syncActivityEvalModeOptions((activity && activity.evaluationMode) || '');
+    renderActivityTypeFields(activity || null);
+    document.getElementById('activityType').disabled = !!(activity && activity.id);
+    document.querySelectorAll('#activityList [data-activity-id]').forEach((card) => {
+      card.classList.toggle('border-primary', !!(activity && activity.id && card.getAttribute('data-activity-id') === activity.id));
+    });
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('activityTitle').focus();
+  }
+
+  function resetActivityForm() {
+    document.getElementById('activityForm').classList.add('d-none');
+    document.getElementById('activityId').value = '';
+    document.getElementById('activityType').disabled = false;
+    document.querySelectorAll('#activityList [data-activity-id]').forEach((card) => {
+      card.classList.remove('border-primary');
+    });
+  }
+
+  async function saveActivity(publish) {
+    if (!state.active || !state.selectedModuleId) {
+      toast('Save the module before adding activities.', 'error');
+      return;
+    }
+    if (state.activityBusy) return;
+    if (publish && state.active.status !== 'published') {
+      toast('Publish the course before publishing an activity, or save as draft.', 'error');
+      return;
+    }
+    let body;
+    try {
+      body = collectActivityPayload(publish);
+    } catch (err) {
+      fail(err);
+      return;
+    }
+    const id = document.getElementById('activityId').value;
+    const draftBtn = document.getElementById('activitySaveDraftBtn');
+    const pubBtn = document.getElementById('activityPublishBtn');
+    state.activityBusy = true;
+    draftBtn.disabled = true;
+    pubBtn.disabled = true;
+    try {
+      if (id) {
+        await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body,
+        });
+      } else {
+        await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities`, {
+          method: 'POST',
+          body,
+        });
+      }
+      toast(publish ? 'Activity published.' : 'Activity saved as draft.', 'success');
+      resetActivityForm();
+      await loadModuleActivities();
+    } catch (err) {
+      fail(err);
+    } finally {
+      state.activityBusy = false;
+      draftBtn.disabled = false;
+      pubBtn.disabled = false;
+    }
+  }
+
+  async function moveActivity(index, direction) {
+    if (state.activityBusy) return;
+    const list = state.activities.slice();
+    const target = index + direction;
+    if (target < 0 || target >= list.length) return;
+    [list[index], list[target]] = [list[target], list[index]];
+    state.activityBusy = true;
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities/reorder`, {
+        method: 'POST',
+        body: { activityIds: list.map((row) => row.id) },
+      });
+      state.activities = data.activities || list;
+      renderActivityList();
+      toast('Order updated.', 'success');
+    } catch (err) {
+      fail(err);
+      await loadModuleActivities();
+    } finally {
+      state.activityBusy = false;
+    }
+  }
+
+  async function toggleActivityPublish(id) {
+    if (state.activityBusy) return;
+    const row = state.activities.find((item) => item.id === id);
+    if (!row) return;
+    if (row.status !== 'published' && state.active.status !== 'published') {
+      toast('Publish the course before publishing an activity.', 'error');
+      return;
+    }
+    state.activityBusy = true;
+    try {
+      const path = row.status === 'published' ? 'unpublish' : 'publish';
+      await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities/${encodeURIComponent(id)}/${path}`, {
+        method: 'POST',
+        body: {},
+      });
+      toast(row.status === 'published' ? 'Activity unpublished.' : 'Activity published.', 'success');
+      await loadModuleActivities();
+    } catch (err) {
+      fail(err);
+    } finally {
+      state.activityBusy = false;
+    }
+  }
+
+  async function archiveActivity(id) {
+    if (state.activityBusy) return;
+    const ok = await confirmAction({
+      title: 'Archive activity',
+      message: 'Archive this activity? Students will no longer see it. Historical submissions are kept.',
+      confirmText: 'Archive',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    state.activityBusy = true;
+    try {
+      await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      toast('Activity archived.', 'success');
+      if (document.getElementById('activityId').value === id) resetActivityForm();
+      await loadModuleActivities();
+    } catch (err) {
+      fail(err);
+    } finally {
+      state.activityBusy = false;
+    }
+  }
+
   function cancelModuleEdit() {
     state.creatingModule = false;
     state.lesson = null;
     state.assessment = null;
     state.assessmentQuestions = [];
     state.assessmentPreview = null;
+    state.activities = [];
     showStaffScreen('builder');
     renderModuleNav();
   }
@@ -1743,6 +2168,21 @@
     });
     document.getElementById('assessmentSaveBtn').addEventListener('click', () => {
       saveAssessmentEditor().catch(fail);
+    });
+    document.getElementById('activityAddBtn').addEventListener('click', () => {
+      openActivityForm(null).catch(fail);
+    });
+    document.getElementById('activityCancelBtn').addEventListener('click', resetActivityForm);
+    document.getElementById('activityType').addEventListener('change', () => {
+      syncActivityEvalModeOptions();
+      renderActivityTypeFields(null);
+    });
+    document.getElementById('activityForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      saveActivity(false).catch(fail);
+    });
+    document.getElementById('activityPublishBtn').addEventListener('click', () => {
+      saveActivity(true).catch(fail);
     });
     document.getElementById('builderEditCourse').addEventListener('click', () => {
       if (state.active) openTutorial(state.active.id);

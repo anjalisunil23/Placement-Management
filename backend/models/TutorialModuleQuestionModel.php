@@ -74,24 +74,61 @@ class TutorialModuleQuestionModel extends BaseModel
     }
 
     /**
+     * Active (non-archived) questions for an assessment, ordered for presentation.
+     *
      * @return array<int, array<string, mixed>>
      */
-    public function listByAssessment(string $assessmentId): array
+    public function listByAssessment(string $assessmentId, bool $includeArchived = false): array
     {
         if (!Security::isValidId($assessmentId)) {
             return [];
         }
-        $rows = $this->findAll(['assessmentId' => $assessmentId], 200, 0, ['sortOrder' => 1]);
+        $rows = $this->findAll(['assessmentId' => $assessmentId], 500, 0, ['sortOrder' => 1]);
+        if (!$includeArchived) {
+            $rows = array_values(array_filter(
+                $rows,
+                static fn (array $row): bool => ($row['archived'] ?? false) !== true
+            ));
+        }
         usort($rows, static fn (array $a, array $b): int => ((int) ($a['sortOrder'] ?? 0)) <=> ((int) ($b['sortOrder'] ?? 0)));
 
         return $rows;
     }
 
-    public function deleteByAssessment(string $assessmentId): void
+    /**
+     * Soft-archive active questions so historical attempt answer IDs remain resolvable.
+     * Does not delete rows.
+     */
+    public function archiveActiveByAssessment(string $assessmentId): void
     {
-        foreach ($this->listByAssessment($assessmentId) as $row) {
+        foreach ($this->listByAssessment($assessmentId, false) as $row) {
+            $id = (string) ($row['_id'] ?? '');
+            if ($id === '' || !Security::isValidId($id)) {
+                continue;
+            }
+            $payload = $row;
+            unset($payload['_id'], $payload['createdAt'], $payload['updatedAt']);
+            $payload['archived'] = true;
+            $this->update($id, $payload);
+        }
+    }
+
+    /**
+     * Permanently remove all questions for an assessment (tests/admin cleanup only).
+     */
+    public function hardDeleteByAssessment(string $assessmentId): void
+    {
+        foreach ($this->listByAssessment($assessmentId, true) as $row) {
             $this->delete((string) ($row['_id'] ?? ''));
         }
+    }
+
+    /**
+     * @deprecated Prefer archiveActiveByAssessment for production edits.
+     */
+    public function deleteByAssessment(string $assessmentId): void
+    {
+        $this->archiveActiveByAssessment($assessmentId);
     }
 
     /**
@@ -148,6 +185,7 @@ class TutorialModuleQuestionModel extends BaseModel
             'difficulty' => $difficulty,
             'marks' => $marks,
             'sortOrder' => $sortOrder,
+            'archived' => ($data['archived'] ?? false) === true,
         ];
     }
 

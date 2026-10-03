@@ -68,6 +68,17 @@ final class FakeAssessmentAIService extends TutorialAIService
     }
 }
 
+final class DuplicateKeyAttemptModel extends TutorialModuleAssessmentAttemptModel
+{
+    public function createAttempt(array $data): array
+    {
+        throw new PDOException(
+            'SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry',
+            23000
+        );
+    }
+}
+
 $sampleMcq = static function (int $count = 2, int $correct = 0): array {
     $questions = [];
     for ($i = 1; $i <= $count; $i++) {
@@ -612,6 +623,288 @@ try {
 
     $managedKeys = $assessments->getManaged($staff, $tutorialId, $moduleId);
     $check(isset($managedKeys['questions'][0]['correctIndex']), 'staff manage API includes answer keys');
+
+    // ——— Phase 3.1 security / integrity ———
+    $moduleP31 = $service->createModule($staff, $tutorialId, [
+        'title' => 'Phase 3.1 Quiz Module',
+        'subtitle' => 'Settings and integrity',
+        'content' => json_encode([
+            'version' => 1,
+            'blocks' => [
+                ['type' => 'paragraph', 'text' => 'Phase 3.1 lesson about HTTP verbs and status codes.'],
+            ],
+        ], JSON_UNESCAPED_UNICODE),
+    ]);
+    $moduleP31Id = (string) ($moduleP31['id'] ?? '');
+    $moduleIds[] = $moduleP31Id;
+    $check($moduleP31Id !== '', 'phase 3.1 module created');
+
+    $baseQuestions = static function (string $q1, string $q2): array {
+        return [
+            [
+                'question' => $q1,
+                'options' => ['Alpha', 'Bravo', 'Charlie', 'Delta'],
+                'correctIndex' => 0,
+                'explanation' => 'Alpha is correct because it is option A.',
+                'difficulty' => 'beginner',
+                'marks' => 1,
+            ],
+            [
+                'question' => $q2,
+                'options' => ['One', 'Two', 'Three', 'Four'],
+                'correctIndex' => 2,
+                'explanation' => 'Three is correct because it is option C.',
+                'difficulty' => 'beginner',
+                'marks' => 1,
+            ],
+        ];
+    };
+
+    $assertNoKeys = static function (array $payload, string $label) use ($check): void {
+        $json = json_encode($payload);
+        $check(is_string($json) && !str_contains($json, 'explanation'), $label . ' has no explanation');
+        // correctIndex may appear in allowReview=true cases; callers assert specifically
+    };
+
+    // Setting matrix: allowReview / showExplanations
+    $matrix = [
+        ['allowReview' => false, 'showExplanations' => false, 'expectReview' => false, 'expectCorrect' => false, 'expectExplain' => false],
+        ['allowReview' => false, 'showExplanations' => true, 'expectReview' => false, 'expectCorrect' => false, 'expectExplain' => false],
+        ['allowReview' => true, 'showExplanations' => false, 'expectReview' => true, 'expectCorrect' => true, 'expectExplain' => false],
+        ['allowReview' => true, 'showExplanations' => true, 'expectReview' => true, 'expectCorrect' => true, 'expectExplain' => true],
+    ];
+    $matrixStudent = $makeUser('student', 'mcq_matrix');
+    $studentIds[] = $students->createProfile((string) $matrixStudent['_id'], [
+        'registerNumber' => 'MX' . $suffix,
+        'departmentId' => $deptId,
+        'classBatch' => 'MCA2025-27-S3',
+    ]);
+
+    foreach ($matrix as $i => $cfg) {
+        $assessments->saveAssessment($staff, $tutorialId, $moduleP31Id, [
+            'title' => 'Matrix quiz ' . $i,
+            'status' => 'published',
+            'passPercent' => 50,
+            'maxAttempts' => 10,
+            'allowReview' => $cfg['allowReview'],
+            'showExplanations' => $cfg['showExplanations'],
+            'questions' => $baseQuestions('Matrix Q1-' . $i, 'Matrix Q2-' . $i),
+        ]);
+        $start = $assessments->startAttempt($matrixStudent, $tutorialId, $moduleP31Id);
+        $managed = $assessments->getManaged($staff, $tutorialId, $moduleP31Id);
+        $answers = [];
+        foreach ($managed['questions'] as $q) {
+            $answers[] = ['questionId' => $q['id'], 'selectedIndex' => (int) $q['correctIndex']];
+        }
+        $result = $assessments->submitAttempt($matrixStudent, $tutorialId, $moduleP31Id, [
+            'attemptId' => (string) ($start['attempt']['id'] ?? ''),
+            'answers' => $answers,
+        ]);
+        $review = is_array($result['review'] ?? null) ? $result['review'] : [];
+        $check(($cfg['expectReview'] ? count($review) > 0 : $review === []), 'settings matrix #' . $i . ' review presence');
+        $json = json_encode($result);
+        $hasExplain = is_string($json) && str_contains($json, 'Alpha is correct');
+        $hasCorrectKey = false;
+        foreach ($review as $row) {
+            if (array_key_exists('correctIndex', $row)) {
+                $hasCorrectKey = true;
+            }
+            if (array_key_exists('explanation', $row)) {
+                $hasExplain = true;
+            }
+        }
+        if (!$cfg['expectExplain']) {
+            foreach ($review as $row) {
+                $check(!array_key_exists('explanation', $row), 'settings matrix #' . $i . ' omits explanation field');
+            }
+            if ($review === []) {
+                $check(!str_contains((string) $json, 'Alpha is correct'), 'settings matrix #' . $i . ' response body omits explanation text');
+            }
+        } else {
+            $check($hasExplain, 'settings matrix #' . $i . ' includes explanation');
+        }
+        if ($cfg['expectCorrect']) {
+            $check($hasCorrectKey, 'settings matrix #' . $i . ' includes correctIndex');
+        } else {
+            $check(!$hasCorrectKey, 'settings matrix #' . $i . ' omits correctIndex');
+        }
+        $history = $assessments->listAttemptsForStudent($matrixStudent, $tutorialId, $moduleP31Id);
+        $histJson = json_encode($history);
+        $latest = $history['attempts'][0] ?? [];
+        $histReview = is_array($latest['review'] ?? null) ? $latest['review'] : [];
+        if (!$cfg['expectReview']) {
+            $check($histReview === [], 'settings matrix #' . $i . ' history review empty');
+        }
+        if (!$cfg['expectExplain']) {
+            foreach ($histReview as $row) {
+                $check(!array_key_exists('explanation', $row), 'settings matrix #' . $i . ' history omits explanation');
+            }
+            $check(!str_contains((string) $histJson, 'questionSnapshot'), 'settings matrix #' . $i . ' history hides raw snapshot');
+        }
+    }
+
+    // Historical review after tutor edits questions
+    $histModule = $service->createModule($staff, $tutorialId, [
+        'title' => 'Historical integrity module',
+        'content' => '<p>History lesson</p>',
+    ]);
+    $histModuleId = (string) ($histModule['id'] ?? '');
+    $moduleIds[] = $histModuleId;
+    $originalText = 'ORIGINAL historical question about GET requests?';
+    $assessments->saveAssessment($staff, $tutorialId, $histModuleId, [
+        'title' => 'History quiz',
+        'status' => 'published',
+        'passPercent' => 50,
+        'maxAttempts' => 5,
+        'allowReview' => true,
+        'showExplanations' => true,
+        'questions' => [[
+            'question' => $originalText,
+            'options' => ['GET', 'POST', 'PUT', 'DELETE'],
+            'correctIndex' => 0,
+            'explanation' => 'GET retrieves a resource.',
+            'difficulty' => 'beginner',
+            'marks' => 1,
+        ]],
+    ]);
+    $histStudent = $makeUser('student', 'mcq_hist');
+    $studentIds[] = $students->createProfile((string) $histStudent['_id'], [
+        'registerNumber' => 'HS' . $suffix,
+        'departmentId' => $deptId,
+        'classBatch' => 'MCA2025-27-S3',
+    ]);
+    $histStart = $assessments->startAttempt($histStudent, $tutorialId, $histModuleId);
+    $histManaged = $assessments->getManaged($staff, $tutorialId, $histModuleId);
+    $origQid = (string) ($histManaged['questions'][0]['id'] ?? '');
+    $histResult = $assessments->submitAttempt($histStudent, $tutorialId, $histModuleId, [
+        'attemptId' => (string) ($histStart['attempt']['id'] ?? ''),
+        'answers' => [['questionId' => $origQid, 'selectedIndex' => 0]],
+    ]);
+    $check(($histResult['score'] ?? -1) === 1, 'historical attempt scored against original question');
+    $check(($histResult['review'][0]['question'] ?? '') === $originalText, 'submit review uses original question text');
+
+    $assessments->saveAssessment($staff, $tutorialId, $histModuleId, [
+        'title' => 'History quiz edited',
+        'status' => 'published',
+        'allowReview' => true,
+        'showExplanations' => true,
+        'questions' => [[
+            'question' => 'EDITED question that must not rewrite history',
+            'options' => ['W', 'X', 'Y', 'Z'],
+            'correctIndex' => 3,
+            'explanation' => 'Edited explanation.',
+            'difficulty' => 'intermediate',
+            'marks' => 2,
+        ]],
+    ]);
+    $afterEdit = $assessments->getManaged($staff, $tutorialId, $histModuleId);
+    $check(($afterEdit['questions'][0]['question'] ?? '') === 'EDITED question that must not rewrite history', 'active questions updated after edit');
+    $check(count($afterEdit['questions']) === 1, 'only active questions listed after archive-replace');
+    $histList = $assessments->listAttemptsForStudent($histStudent, $tutorialId, $histModuleId);
+    $histAttempt = $histList['attempts'][0] ?? [];
+    $check(($histAttempt['score'] ?? -1) === 1 && ($histAttempt['totalMarks'] ?? -1) === 1, 'historical attempt score intact after edit');
+    $check(($histAttempt['review'][0]['question'] ?? '') === $originalText, 'historical review keeps original question after edit');
+    $check((int) ($histAttempt['review'][0]['correctIndex'] ?? -1) === 0, 'historical review keeps original correctIndex after edit');
+    $check(($histAttempt['review'][0]['explanation'] ?? '') === 'GET retrieves a resource.', 'historical review keeps original explanation after edit');
+    $archived = $questionModel->listByAssessment((string) ($afterEdit['assessment']['id'] ?? ''), true);
+    $check(count($archived) >= 2, 'archived original question retained in database');
+
+    // Attempt ID edge cases
+    $throws(static function () use ($assessments, $histStudent, $tutorialId, $histModuleId): void {
+        $assessments->submitAttempt($histStudent, $tutorialId, $histModuleId, [
+            'attemptId' => '',
+            'answers' => [],
+        ]);
+    }, 'missing/empty attempt ID with no in-progress attempt');
+    $throws(static function () use ($assessments, $histStudent, $tutorialId, $histModuleId): void {
+        $assessments->submitAttempt($histStudent, $tutorialId, $histModuleId, [
+            'attemptId' => 'not-a-valid-id',
+            'answers' => [],
+        ]);
+    }, 'invalid attempt ID');
+    $throws(static function () use ($assessments, $student, $tutorialId, $histModuleId, $histStart): void {
+        $assessments->submitAttempt($student, $tutorialId, $histModuleId, [
+            'attemptId' => (string) ($histStart['attempt']['id'] ?? ''),
+            'answers' => [['questionId' => 'aaaaaaaaaaaaaaaaaaaaaaaa', 'selectedIndex' => 0]],
+        ]);
+    }, 'attempt belonging to another student');
+    $throws(static function () use ($assessments, $histStudent, $tutorialId, $histModuleId, $histStart, $origQid): void {
+        $assessments->submitAttempt($histStudent, $tutorialId, $histModuleId, [
+            'attemptId' => (string) ($histStart['attempt']['id'] ?? ''),
+            'answers' => [['questionId' => $origQid, 'selectedIndex' => 0]],
+        ]);
+    }, 'already-submitted attempt');
+
+    // Concurrent attempt creation / unique-key race
+    $raceModule = $service->createModule($staff, $tutorialId, [
+        'title' => 'Race module',
+        'content' => '<p>Race</p>',
+    ]);
+    $raceModuleId = (string) ($raceModule['id'] ?? '');
+    $moduleIds[] = $raceModuleId;
+    $assessments->saveAssessment($staff, $tutorialId, $raceModuleId, [
+        'status' => 'published',
+        'maxAttempts' => 5,
+        'allowReview' => false,
+        'showExplanations' => false,
+        'questions' => $baseQuestions('Race Q1', 'Race Q2'),
+    ]);
+    $raceStudent = $makeUser('student', 'mcq_race');
+    $raceStudentId = $students->createProfile((string) $raceStudent['_id'], [
+        'registerNumber' => 'RC' . $suffix,
+        'departmentId' => $deptId,
+        'classBatch' => 'MCA2025-27-S3',
+    ]);
+    $studentIds[] = $raceStudentId;
+    $raceAssessment = $assessmentModel->findByModule($raceModuleId);
+    $raceAssessmentId = (string) ($raceAssessment['_id'] ?? '');
+    $first = $assessments->startAttempt($raceStudent, $tutorialId, $raceModuleId);
+    $firstId = (string) ($first['attempt']['id'] ?? '');
+    try {
+        $attemptModel->createAttempt([
+            'studentId' => $raceStudentId,
+            'assessmentId' => $raceAssessmentId,
+            'tutorialId' => $tutorialId,
+            'moduleId' => $raceModuleId,
+            'attemptNumber' => 1,
+            'totalMarks' => 2,
+            'questionSnapshot' => [],
+        ]);
+        $check(false, 'duplicate pair_key should fail at model layer');
+    } catch (Throwable $e) {
+        $check(true, 'unique-key race simulated at model layer');
+    }
+    $resumed = $assessments->startAttempt($raceStudent, $tutorialId, $raceModuleId);
+    $check(($resumed['resumed'] ?? false) === true && (string) ($resumed['attempt']['id'] ?? '') === $firstId, 'startAttempt resumes existing in-progress instead of duplicating');
+    $inProgressCount = 0;
+    foreach ($attemptModel->listForStudent($raceStudentId, $raceAssessmentId) as $row) {
+        if ((string) ($row['status'] ?? '') === 'IN_PROGRESS') {
+            $inProgressCount++;
+        }
+    }
+    $check($inProgressCount === 1, 'no duplicate in-progress attempts after race simulation');
+
+    $raceOnlyService = new TutorialAssessmentService($service, $ai, $assessmentModel, $questionModel, new DuplicateKeyAttemptModel(), $answerModel);
+    $raceStudent2 = $makeUser('student', 'mcq_race2');
+    $studentIds[] = $students->createProfile((string) $raceStudent2['_id'], [
+        'registerNumber' => 'R2' . $suffix,
+        'departmentId' => $deptId,
+        'classBatch' => 'MCA2025-27-S3',
+    ]);
+    try {
+        $raceOnlyService->startAttempt($raceStudent2, $tutorialId, $raceModuleId);
+        $check(false, 'forced duplicate-key startAttempt should fail');
+    } catch (Throwable $e) {
+        $check(
+            $e->getMessage() === 'Could not start the assessment. Please try again.'
+            && !str_contains($e->getMessage(), 'SQLSTATE')
+            && !str_contains($e->getMessage(), '1062'),
+            'concurrent startAttempt returns user-friendly error without SQL details'
+        );
+    }
+    $raceStudent2Profile = (new StudentModel())->findByUserId((string) $raceStudent2['_id']);
+    $foreignAttempts = $attemptModel->listForStudent((string) ($raceStudent2Profile['_id'] ?? ''), $raceAssessmentId);
+    $check($foreignAttempts === [], 'no attempt row created after duplicate-key failure');
 } catch (Throwable $e) {
     $failed++;
     echo 'FAIL  fatal → ' . $e->getMessage() . PHP_EOL;
@@ -628,7 +921,7 @@ try {
                 }
                 $attemptModel->delete($attemptId);
             }
-            $questionModel->deleteByAssessment($aid);
+            $questionModel->hardDeleteByAssessment($aid);
             $assessmentModel->delete($aid);
         }
     }

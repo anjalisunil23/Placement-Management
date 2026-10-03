@@ -83,6 +83,7 @@ class TutorialModuleAssessmentAttemptModel extends BaseModel
             'status' => 'IN_PROGRESS',
             'startedAt' => DocumentHelper::now(),
             'submittedAt' => null,
+            'questionSnapshot' => self::normalizeSnapshot(is_array($data['questionSnapshot'] ?? null) ? $data['questionSnapshot'] : []),
         ];
         $id = $this->insert($payload);
 
@@ -99,6 +100,9 @@ class TutorialModuleAssessmentAttemptModel extends BaseModel
         if ($existing === null) {
             return null;
         }
+        $snapshot = is_array($data['questionSnapshot'] ?? null)
+            ? self::normalizeSnapshot($data['questionSnapshot'])
+            : self::normalizeSnapshot(is_array($existing['questionSnapshot'] ?? null) ? $existing['questionSnapshot'] : []);
         $payload = array_merge($existing, [
             'score' => (int) ($data['score'] ?? 0),
             'totalMarks' => (int) ($data['totalMarks'] ?? ($existing['totalMarks'] ?? 0)),
@@ -113,11 +117,46 @@ class TutorialModuleAssessmentAttemptModel extends BaseModel
             'moduleId' => (string) ($existing['moduleId'] ?? ''),
             'attemptNumber' => (int) ($existing['attemptNumber'] ?? 1),
             'startedAt' => (string) ($existing['startedAt'] ?? DocumentHelper::now()),
+            'questionSnapshot' => $snapshot,
         ]);
         unset($payload['_id'], $payload['createdAt'], $payload['updatedAt']);
         $this->update($id, $payload);
 
         return $this->findById($id);
+    }
+
+    /**
+     * @param list<mixed> $rows
+     * @return list<array<string, mixed>>
+     */
+    public static function normalizeSnapshot(array $rows): array
+    {
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $id = trim((string) ($row['id'] ?? $row['_id'] ?? ''));
+            if ($id === '' || !Security::isValidId($id)) {
+                continue;
+            }
+            $options = array_values((array) ($row['options'] ?? []));
+            while (count($options) < 4) {
+                $options[] = '';
+            }
+            $out[] = [
+                'id' => $id,
+                'question' => (string) ($row['question'] ?? ''),
+                'options' => array_slice($options, 0, 4),
+                'correctIndex' => (int) ($row['correctIndex'] ?? $row['correctAnswer'] ?? -1),
+                'explanation' => (string) ($row['explanation'] ?? ''),
+                'difficulty' => (string) ($row['difficulty'] ?? 'beginner'),
+                'marks' => max(1, (int) ($row['marks'] ?? 1)),
+                'sortOrder' => max(1, (int) ($row['sortOrder'] ?? count($out) + 1)),
+            ];
+        }
+
+        return $out;
     }
 
     /**

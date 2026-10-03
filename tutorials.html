@@ -328,6 +328,60 @@
         <button type="button" class="btn btn-sm btn-outline-secondary mt-2" id="assessmentPreviewClose">Close preview</button>
       </div>
     </div>
+    <div id="moduleActivityPane" class="article-column d-none mt-4">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div class="fw-semibold">Practical activities</div>
+        <div class="small text-muted-2" id="activityMeta"></div>
+      </div>
+      <p class="small text-muted-2 mb-3">Discipline-agnostic practice tasks. Responses are stored as text only — nothing is executed.</p>
+      <div id="activityList" class="d-flex flex-column gap-2 mb-3"></div>
+      <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="activityAddBtn">+ Add activity</button>
+      <form id="activityForm" class="border rounded p-3 d-none">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+          <div class="fw-semibold" id="activityFormTitle">New activity</div>
+          <span class="badge text-bg-secondary" id="activityFormStatus">Draft</span>
+        </div>
+        <input type="hidden" id="activityId"/>
+        <div class="row g-2">
+          <div class="col-md-8"><label class="form-label" for="activityTitle">Title</label><input class="form-control form-control-sm" id="activityTitle" maxlength="160" required/></div>
+          <div class="col-md-4"><label class="form-label" for="activityType">Type</label>
+            <select class="form-select form-select-sm" id="activityType">
+              <option value="programming_task">Programming task</option>
+              <option value="sql_query">SQL query</option>
+              <option value="numerical">Numerical problem</option>
+              <option value="short_answer">Short answer</option>
+              <option value="case_study">Case study</option>
+              <option value="analytical_design">Analytical / design</option>
+            </select>
+          </div>
+          <div class="col-12"><label class="form-label" for="activityInstructions">Instructions / problem statement</label><textarea class="form-control form-control-sm" id="activityInstructions" rows="4" required></textarea></div>
+          <div class="col-md-4"><label class="form-label" for="activityField">Academic field</label>
+            <select class="form-select form-select-sm" id="activityField">
+              <option value="computer_applications">Computer Applications</option>
+              <option value="engineering">Engineering</option>
+              <option value="business_administration">Business Administration</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label" for="activityDifficulty">Difficulty</label>
+            <select class="form-select form-select-sm" id="activityDifficulty">
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </div>
+          <div class="col-md-4"><label class="form-label" for="activityEvalMode">Evaluation mode</label>
+            <select class="form-select form-select-sm" id="activityEvalMode"></select>
+          </div>
+        </div>
+        <div id="activityTypeFields" class="mt-3"></div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button type="submit" class="btn btn-sm btn-success" id="activitySaveDraftBtn">Save draft</button>
+          <button type="button" class="btn btn-sm btn-primary" id="activityPublishBtn">Save &amp; publish</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="activityCancelBtn">Cancel</button>
+        </div>
+      </form>
+    </div>
   </div>
   <div id="previewView" class="d-none">
     <div class="alert alert-warning py-2">Preview. Students see this layout only after the course is published and they match its visibility.</div>
@@ -409,5 +463,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261001mcq"></script>
+<script src="js/tutorials-page.js?v=20261002activities"></script>
 </body></html>

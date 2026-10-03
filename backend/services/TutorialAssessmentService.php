@@ -11,6 +11,7 @@ use PMS\Models\TutorialModuleAssessmentAnswerModel;
 use PMS\Models\TutorialModuleAssessmentAttemptModel;
 use PMS\Models\TutorialModuleAssessmentModel;
 use PMS\Models\TutorialModuleQuestionModel;
+use PMS\Utils\Security;
 
 /**
  * Module-wise MCQ assessments for Tutorials.
@@ -210,18 +211,46 @@ final class TutorialAssessmentService
         if ($questions === []) {
             throw new \InvalidArgumentException('This assessment has no questions yet.');
         }
+        $snapshot = [];
         $totalMarks = 0;
         foreach ($questions as $q) {
-            $totalMarks += (int) ($q['marks'] ?? 1);
+            $marks = (int) ($q['marks'] ?? 1);
+            $totalMarks += $marks;
+            $snapshot[] = [
+                'id' => (string) ($q['_id'] ?? ''),
+                'question' => (string) ($q['question'] ?? ''),
+                'options' => array_values((array) ($q['options'] ?? [])),
+                'correctIndex' => (int) ($q['correctIndex'] ?? -1),
+                'explanation' => (string) ($q['explanation'] ?? ''),
+                'difficulty' => (string) ($q['difficulty'] ?? 'beginner'),
+                'marks' => $marks,
+                'sortOrder' => (int) ($q['sortOrder'] ?? 0),
+            ];
         }
-        $attempt = $this->attempts->createAttempt([
-            'studentId' => $studentId,
-            'assessmentId' => $assessmentId,
-            'tutorialId' => $tutorialId,
-            'moduleId' => $moduleId,
-            'attemptNumber' => $submitted + 1,
-            'totalMarks' => $totalMarks,
-        ]);
+        try {
+            $attempt = $this->attempts->createAttempt([
+                'studentId' => $studentId,
+                'assessmentId' => $assessmentId,
+                'tutorialId' => $tutorialId,
+                'moduleId' => $moduleId,
+                'attemptNumber' => $submitted + 1,
+                'totalMarks' => $totalMarks,
+                'questionSnapshot' => $snapshot,
+            ]);
+        } catch (\PDOException $e) {
+            if (!$this->isDuplicateKeyException($e)) {
+                error_log('[PMS TutorialAssessment] startAttempt failed: ' . $e->getMessage());
+                throw new \RuntimeException('Could not start the assessment. Please try again.', 500);
+            }
+            $raceExisting = $this->attempts->findInProgress($studentId, $assessmentId);
+            if ($raceExisting !== null) {
+                return [
+                    'attempt' => $this->publicAttempt($raceExisting),
+                    'resumed' => true,
+                ];
+            }
+            throw new \RuntimeException('Could not start the assessment. Please try again.', 409);
+        }
 
         return [
             'attempt' => $this->publicAttempt($attempt),
@@ -242,6 +271,9 @@ final class TutorialAssessmentService
         $studentId = (string) ($student['_id'] ?? '');
         $assessmentId = (string) ($assessment['_id'] ?? '');
         $attemptId = trim((string) ($input['attemptId'] ?? ''));
+        if ($attemptId !== '' && !Security::isValidId($attemptId)) {
+            throw new \RuntimeException('Assessment attempt not found.', 404);
+        }
         $attempt = $attemptId !== '' ? $this->attempts->findById($attemptId) : $this->attempts->findInProgress($studentId, $assessmentId);
         if (!is_array($attempt) || (string) ($attempt['studentId'] ?? '') !== $studentId) {
             throw new \RuntimeException('Assessment attempt not found.', 404);
@@ -253,10 +285,27 @@ final class TutorialAssessmentService
             throw new \RuntimeException('This attempt was already submitted.', 409);
         }
 
-        $questions = $this->questions->listByAssessment($assessmentId);
+        $snapshot = TutorialModuleAssessmentAttemptModel::normalizeSnapshot(
+            is_array($attempt['questionSnapshot'] ?? null) ? $attempt['questionSnapshot'] : []
+        );
+        if ($snapshot === []) {
+            // Legacy attempts started before snapshots: fall back to active questions only.
+            foreach ($this->questions->listByAssessment($assessmentId) as $q) {
+                $snapshot[] = [
+                    'id' => (string) ($q['_id'] ?? ''),
+                    'question' => (string) ($q['question'] ?? ''),
+                    'options' => array_values((array) ($q['options'] ?? [])),
+                    'correctIndex' => (int) ($q['correctIndex'] ?? -1),
+                    'explanation' => (string) ($q['explanation'] ?? ''),
+                    'difficulty' => (string) ($q['difficulty'] ?? 'beginner'),
+                    'marks' => (int) ($q['marks'] ?? 1),
+                    'sortOrder' => (int) ($q['sortOrder'] ?? 0),
+                ];
+            }
+        }
         $byId = [];
-        foreach ($questions as $q) {
-            $byId[(string) ($q['_id'] ?? '')] = $q;
+        foreach ($snapshot as $q) {
+            $byId[(string) ($q['id'] ?? '')] = $q;
         }
         if ($byId === []) {
             throw new \InvalidArgumentException('This assessment has no questions.');
@@ -295,7 +344,7 @@ final class TutorialAssessmentService
         try {
             $score = 0;
             $totalMarks = 0;
-            $details = [];
+            $rawDetails = [];
             foreach ($byId as $qid => $question) {
                 $marks = (int) ($question['marks'] ?? 1);
                 $totalMarks += $marks;
@@ -310,8 +359,17 @@ final class TutorialAssessmentService
                     'selectedIndex' => $chosen,
                     'isCorrect' => $isCorrect,
                     'marksAwarded' => $awarded,
+                    'questionSnapshot' => [
+                        'question' => (string) ($question['question'] ?? ''),
+                        'options' => array_values((array) ($question['options'] ?? [])),
+                        'correctIndex' => $correctIndex,
+                        'explanation' => (string) ($question['explanation'] ?? ''),
+                        'difficulty' => (string) ($question['difficulty'] ?? 'beginner'),
+                        'marks' => $marks,
+                        'sortOrder' => (int) ($question['sortOrder'] ?? 0),
+                    ],
                 ]);
-                $detail = [
+                $rawDetails[] = [
                     'questionId' => $qid,
                     'question' => (string) ($question['question'] ?? ''),
                     'options' => array_values((array) ($question['options'] ?? [])),
@@ -319,12 +377,9 @@ final class TutorialAssessmentService
                     'isCorrect' => $isCorrect,
                     'marks' => $marks,
                     'marksAwarded' => $awarded,
+                    'correctIndex' => $correctIndex,
+                    'explanation' => (string) ($question['explanation'] ?? ''),
                 ];
-                if (($assessment['showExplanations'] ?? true) === true || ($assessment['allowReview'] ?? true) === true) {
-                    $detail['correctIndex'] = $correctIndex;
-                    $detail['explanation'] = (string) ($question['explanation'] ?? '');
-                }
-                $details[] = $detail;
             }
             $percent = $totalMarks > 0 ? (int) round(($score / $totalMarks) * 100) : 0;
             $passed = $percent >= (int) ($assessment['passPercent'] ?? 60);
@@ -333,10 +388,14 @@ final class TutorialAssessmentService
                 'totalMarks' => $totalMarks,
                 'percent' => $percent,
                 'passed' => $passed,
+                'questionSnapshot' => $snapshot,
             ]);
             if ($startedTx) {
                 $pdo->commit();
             }
+
+            $allowReview = ($assessment['allowReview'] ?? true) === true;
+            $showExplanations = ($assessment['showExplanations'] ?? true) === true;
 
             return [
                 'attempt' => $this->publicAttempt($final ?? $attempt),
@@ -345,9 +404,9 @@ final class TutorialAssessmentService
                 'percent' => $percent,
                 'passed' => $passed,
                 'passPercent' => (int) ($assessment['passPercent'] ?? 60),
-                'showExplanations' => ($assessment['showExplanations'] ?? true) === true,
-                'allowReview' => ($assessment['allowReview'] ?? true) === true,
-                'review' => (($assessment['allowReview'] ?? true) === true) ? $details : [],
+                'showExplanations' => $showExplanations,
+                'allowReview' => $allowReview,
+                'review' => $this->filterReviewForStudent($assessment, $rawDetails),
             ];
         } catch (\Throwable $e) {
             if ($startedTx && $pdo->inTransaction()) {
@@ -369,7 +428,14 @@ final class TutorialAssessmentService
         $rows = $this->attempts->listForStudent((string) ($student['_id'] ?? ''), (string) ($assessment['_id'] ?? ''));
 
         return [
-            'attempts' => array_map(fn (array $row): array => $this->publicAttempt($row), $rows),
+            'attempts' => array_map(function (array $row) use ($assessment): array {
+                $public = $this->publicAttempt($row);
+                if ((string) ($row['status'] ?? '') === 'SUBMITTED') {
+                    $public['review'] = $this->historicalReviewForStudent($assessment, $row);
+                }
+
+                return $public;
+            }, $rows),
         ];
     }
 
@@ -423,7 +489,7 @@ final class TutorialAssessmentService
             }
             $assessmentId = (string) ($assessment['_id'] ?? '');
             if ($replace) {
-                $this->questions->deleteByAssessment($assessmentId);
+                $this->questions->archiveActiveByAssessment($assessmentId);
             }
             $order = $replace ? 1 : (count($this->questions->listByAssessment($assessmentId)) + 1);
             foreach ($questions as $row) {
@@ -599,5 +665,96 @@ final class TutorialAssessmentService
             'startedAt' => $attempt['startedAt'] ?? null,
             'submittedAt' => $attempt['submittedAt'] ?? null,
         ];
+    }
+
+    /**
+     * Apply allowReview / showExplanations rules to student-facing review payloads.
+     *
+     * @param array<string, mixed> $assessment
+     * @param list<array<string, mixed>> $rawDetails
+     * @return list<array<string, mixed>>
+     */
+    private function filterReviewForStudent(array $assessment, array $rawDetails): array
+    {
+        if (($assessment['allowReview'] ?? true) !== true) {
+            return [];
+        }
+        $showExplanations = ($assessment['showExplanations'] ?? true) === true;
+        $out = [];
+        foreach ($rawDetails as $detail) {
+            if (!is_array($detail)) {
+                continue;
+            }
+            $item = [
+                'questionId' => (string) ($detail['questionId'] ?? ''),
+                'question' => (string) ($detail['question'] ?? ''),
+                'options' => array_values((array) ($detail['options'] ?? [])),
+                'selectedIndex' => (int) ($detail['selectedIndex'] ?? -1),
+                'isCorrect' => ($detail['isCorrect'] ?? false) === true,
+                'marks' => (int) ($detail['marks'] ?? 0),
+                'marksAwarded' => (int) ($detail['marksAwarded'] ?? 0),
+                'correctIndex' => (int) ($detail['correctIndex'] ?? -1),
+            ];
+            if ($showExplanations) {
+                $item['explanation'] = (string) ($detail['explanation'] ?? '');
+            }
+            $out[] = $item;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Rebuild a student-safe review from the immutable attempt snapshot + answers.
+     *
+     * @param array<string, mixed> $assessment
+     * @param array<string, mixed> $attempt
+     * @return list<array<string, mixed>>
+     */
+    private function historicalReviewForStudent(array $assessment, array $attempt): array
+    {
+        if (($assessment['allowReview'] ?? true) !== true) {
+            return [];
+        }
+        $snapshot = TutorialModuleAssessmentAttemptModel::normalizeSnapshot(
+            is_array($attempt['questionSnapshot'] ?? null) ? $attempt['questionSnapshot'] : []
+        );
+        $byId = [];
+        foreach ($snapshot as $q) {
+            $byId[(string) ($q['id'] ?? '')] = $q;
+        }
+        $answers = $this->answers->listByAttempt((string) ($attempt['_id'] ?? ''));
+        $raw = [];
+        foreach ($answers as $answer) {
+            $qid = (string) ($answer['questionId'] ?? '');
+            $snap = is_array($answer['questionSnapshot'] ?? null) ? $answer['questionSnapshot'] : ($byId[$qid] ?? null);
+            if (!is_array($snap)) {
+                continue;
+            }
+            $raw[] = [
+                'questionId' => $qid,
+                'question' => (string) ($snap['question'] ?? ''),
+                'options' => array_values((array) ($snap['options'] ?? [])),
+                'selectedIndex' => (int) ($answer['selectedIndex'] ?? -1),
+                'isCorrect' => ($answer['isCorrect'] ?? false) === true,
+                'marks' => (int) ($snap['marks'] ?? $answer['marksAwarded'] ?? 0),
+                'marksAwarded' => (int) ($answer['marksAwarded'] ?? 0),
+                'correctIndex' => (int) ($snap['correctIndex'] ?? -1),
+                'explanation' => (string) ($snap['explanation'] ?? ''),
+            ];
+        }
+
+        return $this->filterReviewForStudent($assessment, $raw);
+    }
+
+    private function isDuplicateKeyException(\PDOException $e): bool
+    {
+        $code = (string) $e->getCode();
+        if ($code === '23000') {
+            return true;
+        }
+        $msg = $e->getMessage();
+
+        return str_contains($msg, '1062') || stripos($msg, 'Duplicate') !== false;
     }
 }
