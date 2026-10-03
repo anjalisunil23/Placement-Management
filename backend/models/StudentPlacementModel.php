@@ -25,47 +25,129 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
-     * Ensure table exists or confirm it is readable (schema.sql on hosts without CREATE privilege).
+     * Ensure table exists with JSON payload column (schema.sql / auto-create on cPanel).
      */
     private function bootstrapTable(): bool
     {
         if (self::$tableUnavailable) {
             return false;
         }
-        if (self::$tableReady) {
+        if (self::$tableReady && $this->hasPayloadColumn()) {
             return true;
         }
 
         try {
-            $this->db->exec(
-                'CREATE TABLE IF NOT EXISTS `student_placements` (
-                  id CHAR(24) NOT NULL PRIMARY KEY,
-                  payload JSON NOT NULL,
-                  student_id CHAR(24)
-                    GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(`payload`, \'$.studentId\'))) STORED,
-                  pair_key VARCHAR(64)
-                    GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(`payload`, \'$.pairKey\'))) STORED,
-                  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-                  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-                  UNIQUE KEY uniq_student_placement (student_id),
-                  UNIQUE KEY uniq_student_placement_pair (pair_key)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-            );
-            self::$tableReady = true;
+            $this->execCreateStudentPlacementsTable();
+        } catch (\Throwable) {
+            // Table may already exist from schema.sql without CREATE privilege.
+        }
+
+        if (!$this->hasPayloadColumn() && !$this->repairStudentPlacementsSchema()) {
+            self::$tableUnavailable = true;
+
+            return false;
+        }
+
+        if (!$this->tableExists()) {
+            self::$tableUnavailable = true;
+
+            return false;
+        }
+
+        self::$tableReady = true;
+
+        return true;
+    }
+
+    private function execCreateStudentPlacementsTable(): void
+    {
+        $this->db->exec(
+            'CREATE TABLE IF NOT EXISTS `student_placements` (
+              id CHAR(24) NOT NULL PRIMARY KEY,
+              payload JSON NOT NULL,
+              student_id CHAR(24)
+                GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(`payload`, \'$.studentId\'))) STORED,
+              pair_key VARCHAR(64)
+                GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(`payload`, \'$.pairKey\'))) STORED,
+              created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+              updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+              UNIQUE KEY uniq_student_placement (student_id),
+              UNIQUE KEY uniq_student_placement_pair (pair_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
+    }
+
+    private function tableExists(): bool
+    {
+        try {
+            $this->db->query('SELECT 1 FROM `student_placements` LIMIT 1');
 
             return true;
         } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function hasPayloadColumn(): bool
+    {
+        try {
+            $stmt = $this->db->query(
+                "SHOW COLUMNS FROM `student_placements` WHERE Field = 'payload'"
+            );
+
+            return (bool) $stmt->fetch(\PDO::FETCH_ASSOC);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Fix partial/wrong student_placements definitions that block BaseModel JSON reads.
+     */
+    private function repairStudentPlacementsSchema(): bool
+    {
+        if (!$this->tableExists()) {
             try {
-                $this->db->query('SELECT 1 FROM `student_placements` LIMIT 1');
-                self::$tableReady = true;
-
-                return true;
+                $this->execCreateStudentPlacementsTable();
             } catch (\Throwable) {
-                self::$tableUnavailable = true;
-
                 return false;
             }
+
+            return $this->hasPayloadColumn();
         }
+
+        if ($this->hasPayloadColumn()) {
+            return true;
+        }
+
+        $rowCount = 0;
+        try {
+            $rowCount = (int) $this->db->query('SELECT COUNT(*) FROM `student_placements`')->fetchColumn();
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if ($rowCount === 0) {
+            try {
+                $this->db->exec('DROP TABLE IF EXISTS `student_placements`');
+                $this->execCreateStudentPlacementsTable();
+            } catch (\Throwable) {
+                return false;
+            }
+
+            return $this->hasPayloadColumn();
+        }
+
+        try {
+            $this->db->exec(
+                "ALTER TABLE `student_placements`
+                 ADD COLUMN `payload` JSON NOT NULL DEFAULT ('{}') AFTER `id`"
+            );
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $this->hasPayloadColumn();
     }
 
     public static function pairKey(string $studentId): string
