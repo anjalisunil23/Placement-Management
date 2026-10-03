@@ -2472,6 +2472,34 @@ final class CodingService
 
     /**
      * @param array<string, mixed> $user
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function runPracticeProblem(array $user, string $id, array $body): array
+    {
+        $this->requirePracticeViewer($user);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid problem id.', 400);
+        }
+        $source = (string) ($body['source'] ?? $body['code'] ?? '');
+        if (trim($source) === '') {
+            Response::error('Source code is required.', 422);
+        }
+        $language = trim((string) ($body['language'] ?? 'Python'));
+        $stdin = (string) ($body['stdin'] ?? '');
+        $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 3000)));
+
+        $row = $this->bank->findById($id);
+        if (!$row) {
+            Response::notFound('Problem not found.');
+        }
+        $problem = CodingProblemBankModel::normalize($row);
+
+        return (new CodingPracticeRunService())->run($problem, $language, $source, $stdin, $timeLimitMs);
+    }
+
+    /**
+     * @param array<string, mixed> $user
      * @return array<int, array<string, mixed>>
      */
     public function listPracticeSubmissions(array $user): array

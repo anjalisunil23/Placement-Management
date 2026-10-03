@@ -88,10 +88,14 @@
   }
 
   function publicProblemView(item) {
+    let row = item;
+    if (typeof CodingData !== 'undefined' && CodingData.enrichProblemStarters) {
+      row = CodingData.enrichProblemStarters(item);
+    }
     const fn = typeof CodingData !== 'undefined' && CodingData.publicQuestion
       ? CodingData.publicQuestion
-      : (row) => row;
-    return fn(item);
+      : (r) => r;
+    return fn(row);
   }
 
   async function gradePracticeSolution(problem, language, code) {
@@ -206,6 +210,55 @@
       status: statusFromExec(enriched, passed),
       passed,
     };
+  }
+
+  function caseResultRow(tc, ran, label) {
+    return {
+      id: tc.id,
+      label,
+      sample: !!tc.sample,
+      hidden: !tc.sample,
+      revealed: true,
+      input: tc.sample ? tc.input : '',
+      expected: tc.sample ? ran.expected : '',
+      output: ran.stdout,
+      stderr: ran.stderr,
+      stderrTrace: ran.stderrTrace,
+      errorSummary: ran.errorSummary,
+      errorDetail: ran.errorDetail,
+      status: ran.status,
+      passed: ran.passed,
+    };
+  }
+
+  /** Run test cases in order; reveal the next only after the previous passes. */
+  async function buildProgressiveTestCaseResults(question, language, code) {
+    const all = Array.isArray(question?.testCases) ? question.testCases : [];
+    const cases = [];
+    let hiddenNum = 0;
+    let chainOpen = false;
+
+    for (let i = 0; i < all.length; i += 1) {
+      if (i > 0 && !chainOpen) break;
+      const tc = all[i];
+      let label = tc.label;
+      if (!label) {
+        if (tc.sample) label = 'Sample Test Case';
+        else {
+          hiddenNum += 1;
+          label = `Hidden Test Case ${hiddenNum}`;
+        }
+      }
+      const ran = await executeOnce(question, language, code, tc.input, true);
+      cases.push(caseResultRow(tc, ran, label));
+      if (i === 0) {
+        chainOpen = ran.passed;
+      } else if (!ran.passed) {
+        chainOpen = false;
+      }
+    }
+
+    return { cases, totalCount: all.length };
   }
 
   function formatDate(iso) {
@@ -675,6 +728,7 @@
 
     startPracticeAttempt(problem) {
       const bankId = String(problem.bankId || problem.id || '');
+      const rawRow = loadBankStore().find((q) => String(q.id) === bankId) || problem;
       const item = publicProblemView(problem);
       item.id = item.id || bankId;
       const attemptId = 'prac-' + Date.now();
@@ -690,6 +744,7 @@
         id: attemptId,
         bankProblemId: bankId,
         problem: item,
+        executionTestCases: Array.isArray(rawRow.testCases) ? rawRow.testCases : (item.testCases || []),
         answers,
         startedAt: Date.now(),
         submitted: false,
@@ -711,46 +766,34 @@
       if (!attempt || attempt.submitted) throw new Error('This practice session has ended.');
       const question = attempt.problem;
       const qid = question.id;
-      this.savePracticeDraft(attemptId, { language, code, customInput: stdin });
+      const source = String(code ?? attempt.answers[qid]?.code ?? '').trim();
+      if (!source) throw new Error('Source code is required.');
+      this.savePracticeDraft(attemptId, { language, code: source, customInput: stdin });
 
-      const customStdin = String(stdin ?? '');
-      const custom = await executeOnce(question, language, code, customStdin, false);
-      const cases = [];
-      for (const tc of (question.testCases || [])) {
-        if (!tc.sample) {
-          cases.push({
-            id: tc.id,
-            label: tc.label || 'Hidden Test Case',
-            sample: false,
-            hidden: true,
-            input: '',
-            expected: '',
-            output: '',
-            stderr: '',
-            status: 'Not Run',
-            passed: false,
-          });
-          continue;
-        }
-        const ran = await executeOnce(question, language, code, tc.input, true);
-        cases.push({
-          id: tc.id,
-          label: tc.label || 'Sample Test Case',
-          sample: true,
-          hidden: false,
-          input: tc.input,
-          expected: ran.expected,
-          output: ran.stdout,
-          stderr: ran.stderr,
-          stderrTrace: ran.stderrTrace,
-          errorSummary: ran.errorSummary,
-          errorDetail: ran.errorDetail,
-          status: ran.status,
-          passed: ran.passed,
+      const bankId = String(attempt.bankProblemId || question.id || '');
+      if (liveApi() && bankId && /^[a-f\d]{24}$/i.test(bankId)) {
+        const res = await api(`/coding/problems/${encodeURIComponent(bankId)}/run`, {
+          method: 'POST',
+          body: JSON.stringify({
+            language,
+            source,
+            stdin: String(stdin ?? ''),
+          }),
         });
+        if (!res?.success) throw new Error(res?.message || 'Run failed.');
+        const lastRun = res.data;
+        if (attempt.answers[qid]) attempt.answers[qid].lastRun = lastRun;
+        return lastRun;
       }
-      const visible = cases.filter((c) => !c.hidden);
-      const passedVisible = visible.filter((c) => c.passed).length;
+
+      const execQuestion = {
+        ...question,
+        testCases: attempt.executionTestCases || question.testCases || [],
+      };
+      const customStdin = String(stdin ?? '');
+      const custom = await executeOnce(execQuestion, language, source, customStdin, false);
+      const { cases, totalCount } = await buildProgressiveTestCaseResults(execQuestion, language, source);
+      const passedCount = cases.filter((c) => c.passed).length;
       const lastRun = {
         overall: custom.status,
         custom: {
@@ -765,10 +808,10 @@
           passed: custom.passed,
           durationMs: custom.exec?.durationMs,
         },
-        results: cases.map((c, i) => ({ ...c, index: i + 1, label: c.label || `Test Case ${i + 1}` })),
-        passedCount: passedVisible,
-        totalCount: cases.length,
-        visibleCount: visible.length,
+        results: cases.map((c, i) => ({ ...c, index: i + 1 })),
+        passedCount,
+        totalCount,
+        visibleCount: cases.length,
         at: Date.now(),
       };
       if (attempt.answers[qid]) attempt.answers[qid].lastRun = lastRun;
@@ -949,44 +992,8 @@
 
       const customStdin = String(stdin ?? '');
       const custom = await executeOnce(question, language, code, customStdin, false);
-
-      const cases = [];
-      for (const tc of (question.testCases || [])) {
-        if (!tc.sample) {
-          cases.push({
-            id: tc.id,
-            label: tc.label || 'Hidden Test Case',
-            sample: false,
-            hidden: true,
-            input: '',
-            expected: '',
-            output: '',
-            stderr: '',
-            status: 'Not Run',
-            passed: false,
-          });
-          continue;
-        }
-        const ran = await executeOnce(question, language, code, tc.input, true);
-        cases.push({
-          id: tc.id,
-          label: tc.label || 'Sample Test Case',
-          sample: true,
-          hidden: false,
-          input: tc.input,
-          expected: ran.expected,
-          output: ran.stdout,
-          stderr: ran.stderr,
-          stderrTrace: ran.stderrTrace,
-          errorSummary: ran.errorSummary,
-          errorDetail: ran.errorDetail,
-          status: ran.status,
-          passed: ran.passed,
-        });
-      }
-
-      const visible = cases.filter((c) => !c.hidden);
-      const passedVisible = visible.filter((c) => c.passed).length;
+      const { cases, totalCount } = await buildProgressiveTestCaseResults(question, language, code);
+      const passedCount = cases.filter((c) => c.passed).length;
       const lastRun = {
         overall: custom.status,
         custom: {
@@ -1000,10 +1007,10 @@
           status: custom.status,
           passed: custom.passed,
         },
-        results: cases.map((c, i) => ({ ...c, index: i + 1, label: `Test Case ${i + 1}` })),
-        passedCount: passedVisible,
-        totalCount: cases.length,
-        visibleCount: visible.length,
+        results: cases.map((c, i) => ({ ...c, index: i + 1 })),
+        passedCount,
+        totalCount,
+        visibleCount: cases.length,
         at: Date.now(),
       };
       if (attempt.answers[questionId]) attempt.answers[questionId].lastRun = lastRun;

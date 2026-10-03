@@ -420,7 +420,7 @@
       method: 'POST',
       body: JSON.stringify({
         language: opts.language,
-        source: opts.source,
+        source: String(opts.source ?? ''),
         stdin: opts.stdin || '',
         timeLimitMs: opts.timeLimitMs || DEFAULT_TIME_LIMIT_MS,
       }),

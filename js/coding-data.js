@@ -132,7 +132,7 @@
     for (const line of lines) {
       const t = line.trim();
       if (!t || t.startsWith('#')) continue;
-      if (/^(?:[a-z_]\w*\s*=\s*)?(?:int\(input\(\)\)|input\(\)(?:\.strip\(\))?|map\(int,\s*input\(\)\.split\(\)\)|list\(map\(int,\s*input\(\)\.split\(\)\)\)|\[list\(map\(int,\s*input\(\)\.split\(\)\)\)\s+for\s+_\s+in\s+range\([a-z_]\w*\)\])$/i.test(t)) continue;
+      if (/^(?:[a-z_,\s]+\s*=\s*)?(?:int\(input\(\)\)|input\(\)(?:\.strip\(\))?|map\(int,\s*input\(\)\.split\(\)\)|list\(map\(int,\s*input\(\)\.split\(\)\)\)|\[list\(map\(int,\s*input\(\)\.split\(\)\)\)\s+for\s+_\s+in\s+range\([a-z_]\w*\)\])$/i.test(t)) continue;
       if (/^[a-z_]\w*\s*=\s*input\(\)\.split\(\)$/i.test(t)) continue;
       return false;
     }

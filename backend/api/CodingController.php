@@ -340,6 +340,16 @@ final class CodingController
         Response::success($this->service()->submitPracticeProblem($user, $id, $this->body()), 'Submitted.');
     }
 
+    /** POST /api/coding/problems/{id}/run — run editor source against sample/hidden tests (server-side inputs) */
+    public function runPracticeProblem(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        if (!AptitudeAccessService::canTake($user) && !AptitudeAccessService::canManageCoding($user)) {
+            Response::forbidden('You cannot run code on this account.');
+        }
+        Response::success($this->service()->runPracticeProblem($user, $id, $this->body()));
+    }
+
     /** POST /api/coding/execute — compile/run student code (C++, Java, etc.) */
     public function execute(): void
     {
@@ -358,7 +368,8 @@ final class CodingController
         $runner = new CodeExecutionService();
         $result = $runner->run($language, $source, $stdin, $timeLimitMs);
         if (is_array($result)) {
-            $result['execBackend'] = 'self-hosted-piston-v1';
+            $engine = (string) ($result['execEngine'] ?? '');
+            $result['execBackend'] = $engine === 'wandbox' ? 'wandbox-v1' : 'local-v1';
         }
         Response::success($result);
     }

@@ -574,6 +574,7 @@ $routes = [
     ['GET',  '/coding/tests/{id}/contest-results', [CodingController::class, 'contestResultsPreview']],
     ['GET',  '/coding/problems',              [CodingController::class, 'listPracticeProblems']],
     ['GET',  '/coding/problems/{id}',         [CodingController::class, 'getPracticeProblem']],
+    ['POST', '/coding/problems/{id}/run',     [CodingController::class, 'runPracticeProblem']],
     ['POST', '/coding/problems/{id}/submit',  [CodingController::class, 'submitPracticeProblem']],
     ['GET',  '/coding/practice/submissions',  [CodingController::class, 'listPracticeSubmissions']],
     ['GET',  '/coding/problem-bank',          [CodingController::class, 'listBank']],

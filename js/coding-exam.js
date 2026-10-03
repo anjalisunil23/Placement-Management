@@ -543,12 +543,17 @@
       if (!table) return;
       const rows = run?.results?.length
         ? run.results
-        : (q?.testCases || []).map((tc, i) => ({
-            index: i + 1,
-            label: `Test Case ${i + 1}`,
-            status: 'Not Run',
-            passed: false,
-          }));
+        : (() => {
+            const all = q?.testCases || [];
+            if (!all.length) return [];
+            const tc = all[0];
+            return [{
+              index: 1,
+              label: tc.label || (tc.sample ? 'Sample Test Case' : 'Test Case 1'),
+              status: 'Not Run',
+              passed: false,
+            }];
+          })();
       table.innerHTML = `
         <div class="table-wrap">
           <table class="table-modern mb-0">
@@ -572,7 +577,8 @@
           </table>
         </div>`;
       const pass = rows.filter((r) => r.passed).length;
-      if (summary) summary.textContent = `${pass} / ${rows.length} Test Cases Passed`;
+      const total = run?.totalCount ?? (q?.testCases || []).length ?? rows.length;
+      if (summary) summary.textContent = `${pass} / ${total} Test Cases Passed`;
     }
 
     function renderNav() {
@@ -695,6 +701,14 @@
       persistCurrent();
       const q = currentQ();
       const ans = state.answers[q.id];
+      const language = el('language')?.value || ans?.language || 'Python';
+      const source = editor ? editor.getValue() : String(ans?.code || '');
+      const stdin = el('stdin') ? el('stdin').value : String(ans?.customInput ?? '');
+      if (ans) {
+        ans.language = language;
+        ans.code = source;
+        ans.customInput = stdin;
+      }
       running = true;
       setBusy(true);
       el('run-state').textContent = 'Running code...';
@@ -703,16 +717,16 @@
         const result = isPracticeMode()
           ? await CodingService.runPracticeCode({
             attemptId: state.attemptId,
-            language: ans.language,
-            code: ans.code,
-            stdin: ans.customInput,
+            language,
+            code: source,
+            stdin,
           })
           : await CodingService.runCode({
             attemptId: state.attemptId,
             questionId: q.id,
-            language: ans.language,
-            code: ans.code,
-            stdin: ans.customInput,
+            language,
+            code: source,
+            stdin,
           });
         ans.lastRun = result;
         el('run-state').textContent = '';
