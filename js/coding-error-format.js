@@ -10,6 +10,12 @@
     'Memory Limit Exceeded',
   ]);
 
+  const GENERIC_LABELS = new Set(ERROR_STATUSES);
+
+  function isGenericLabel(text) {
+    return GENERIC_LABELS.has(String(text || '').trim());
+  }
+
   function primaryErrorLine(stderr) {
     const lines = String(stderr || '').split(/\r?\n/);
     let last = '';
@@ -41,8 +47,9 @@
     return '';
   }
 
-  function buildSummary(status, detail, stderr, language) {
+  function buildSummary(status, detail, stderr, language, stdinTrim) {
     const lang = String(language || '').toLowerCase();
+    const emptyIn = !String(stdinTrim ?? '').trim();
     if (status === 'Time Limit Exceeded') return 'The program exceeded the time limit.';
     if (status === 'Memory Limit Exceeded') return 'The program exceeded the memory limit.';
     if (status === 'Compilation Error' || status === 'Syntax Error') {
@@ -55,7 +62,15 @@
     if (stderr && stderr.includes('Traceback')) {
       return 'The program stopped with a runtime error while processing input.';
     }
-    if (status === 'Runtime Error') return 'The program stopped with a runtime error.';
+    if (status === 'Runtime Error') {
+      if (emptyIn && lang === 'python') {
+        return 'Custom input is empty, but your program tried to read input (stdin). Enter values in the Custom Input box.';
+      }
+      if (isGenericLabel(stderr)) {
+        return 'The program exited with an error. Check your logic and input format.';
+      }
+      return 'The program stopped with a runtime error.';
+    }
     return detail || status;
   }
 
@@ -63,18 +78,29 @@
     return status === 'Runtime Error' && /\b(SyntaxError|IndentationError|TabError)\b/.test(stderr);
   }
 
-  function enrichExec(exec, language) {
+  function enrichExec(exec, language, stdinHint) {
     const base = exec || {};
     let status = String(base.status || '');
     let stderr = String(base.stderrTrace || base.stderr || '').trim();
+    const stdinTrim = String(stdinHint ?? base.stdin ?? '').trim();
     if (isPythonSyntaxFailure(stderr, status)) status = 'Compilation Error';
 
     if (!ERROR_STATUSES.has(status) && !stderr) {
       return { ...base, status };
     }
 
-    const errorDetail = String(base.errorDetail || '').trim() || primaryErrorLine(stderr) || stderr.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '';
-    const errorSummary = String(base.errorSummary || '').trim() || buildSummary(status, errorDetail, stderr, language);
+    let errorDetail = String(base.errorDetail || '').trim() || primaryErrorLine(stderr);
+    if (!errorDetail && stderr) {
+      errorDetail = stderr.split(/\r?\n/).map((l) => l.trim()).find((l) => l && !isGenericLabel(l)) || '';
+    }
+    if (isGenericLabel(errorDetail)) errorDetail = '';
+
+    let errorSummary = String(base.errorSummary || '').trim() || buildSummary(status, errorDetail, stderr, language, stdinTrim);
+
+    if (!errorDetail && isGenericLabel(stderr) && !stdinTrim && String(language || '').toLowerCase() === 'python') {
+      errorSummary = 'Custom input is empty, but your program tried to read input (stdin). Enter values in the Custom Input box.';
+      errorDetail = 'EOFError: EOF when reading a line';
+    }
 
     return {
       ...base,
@@ -104,10 +130,10 @@
     const uid = `cod-err-${Math.random().toString(36).slice(2, 9)}`;
     let html = `<div class="cod-run-error mt-1"><div class="small fw-semibold text-danger">✕ ${escFn(status)}</div>`;
     if (summary) html += `<div class="small mt-1">${escFn(summary)}</div>`;
-    if (detail && detail !== summary) {
+    if (detail && detail !== summary && !isGenericLabel(detail)) {
       html += `<div class="small text-muted-2 mt-2 mb-0">Error Details:</div><div class="small font-monospace">${escFn(detail)}</div>`;
     }
-    if (trace && trace !== detail) {
+    if (trace && trace !== detail && !isGenericLabel(trace)) {
       html += `<details class="small mt-2 mb-0"><summary class="text-muted-2" style="cursor:pointer">View full traceback</summary><pre class="cod-console cod-error mt-1 mb-0" style="font-size:.75rem">${escFn(trace)}</pre></details>`;
     }
     html += '</div>';

@@ -439,14 +439,14 @@
       durationMs: data.durationMs || 0,
     };
     if (global.CodingErrorFormat && typeof global.CodingErrorFormat.enrichExec === 'function') {
-      return global.CodingErrorFormat.enrichExec(raw, opts.language);
+      return global.CodingErrorFormat.enrichExec(raw, opts.language, opts.stdin);
     }
     return raw;
   }
 
-  function presentExec(result, language) {
+  function presentExec(result, language, stdin) {
     if (global.CodingErrorFormat && typeof global.CodingErrorFormat.enrichExec === 'function') {
-      return global.CodingErrorFormat.enrichExec(result, language);
+      return global.CodingErrorFormat.enrichExec(result, language, stdin);
     }
     return result;
   }
@@ -463,7 +463,7 @@
             return await apiRun(opts);
           } catch (err) {
             if (langKey === 'python' || langKey === 'javascript' || langKey === 'js') {
-              return presentExec(await mockRun(opts), language);
+              return presentExec(await mockRun(opts), language, opts.stdin);
             }
             throw err;
           }
@@ -471,7 +471,7 @@
         if (API_ENABLED && typeof api === 'function') {
           return await apiRun(opts);
         }
-        return presentExec(await mockRun(opts), language);
+        return presentExec(await mockRun(opts), language, opts.stdin);
       } catch (err) {
         const msg = String(err?.message || '');
         if (/Failed to fetch|NetworkError|Execution failed/i.test(msg)) {

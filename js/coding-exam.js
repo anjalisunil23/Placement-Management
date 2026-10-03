@@ -404,6 +404,15 @@
       if (el('q-kicker')) el('q-kicker').classList.toggle('d-none', on);
     }
 
+    function updateSubmitVisibility(run) {
+      const passed = run && Number(run.passedCount) > 0
+        ? Number(run.passedCount)
+        : (run?.results || []).filter((r) => r.passed).length;
+      const show = passed >= 1;
+      el('btn-submit')?.classList.toggle('d-none', !show);
+      el('btn-submit-practice')?.classList.toggle('d-none', !show);
+    }
+
     function renderProblem(q) {
       const example = (q.examples && q.examples[0]) || null;
       if (isPracticeMode()) {
@@ -525,6 +534,7 @@
         }
       }
       renderCaseTable(run, currentQ());
+      updateSubmitVisibility(run);
     }
 
     function renderCaseTable(run, q) {
@@ -615,6 +625,7 @@
       if (el('stdin')) el('stdin').value = ans.customInput != null ? ans.customInput : (sample ? sample.input : '');
       renderProblem(q);
       renderRunPanel(ans.lastRun, false);
+      updateSubmitVisibility(ans.lastRun);
       el('run-state').textContent = '';
       renderNav();
       setBusy(false);

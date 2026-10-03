@@ -13,11 +13,12 @@ final class CodingExecutionErrorFormatter
      * @param array<string, mixed> $result
      * @return array<string, mixed>
      */
-    public static function enrich(array $result, string $language = ''): array
+    public static function enrich(array $result, string $language = '', string $stdin = ''): array
     {
         $lang = strtolower(trim($language));
         $stderr = trim((string) ($result['stderr'] ?? ''));
         $status = (string) ($result['status'] ?? '');
+        $stdinTrim = trim($stdin);
 
         if ($lang === 'python' && $status === 'Runtime Error' && self::isPythonSyntaxFailure($stderr)) {
             $result['status'] = 'Compilation Error';
@@ -31,14 +32,35 @@ final class CodingExecutionErrorFormatter
 
         $detail = self::primaryErrorLine($stderr);
         if ($detail === '' && $stderr !== '') {
-            $detail = self::firstNonEmptyLine($stderr);
+            $detail = self::firstMeaningfulLine($stderr);
+        }
+        if (self::isGenericStatusLabel($detail)) {
+            $detail = '';
         }
 
         $result['stderrTrace'] = $stderr;
         $result['errorDetail'] = $detail;
-        $result['errorSummary'] = self::buildSummary($status, $detail, $stderr, $lang);
+        $result['errorSummary'] = self::buildSummary($status, $detail, $stderr, $lang, $stdinTrim);
+
+        if ($detail === '' && self::isGenericStatusLabel($stderr) && $stdinTrim === '' && $lang === 'python') {
+            $result['errorSummary'] = 'Custom input is empty, but your program tried to read input (stdin). Enter values in the Custom Input box.';
+            $result['errorDetail'] = 'EOFError: EOF when reading a line';
+        }
 
         return $result;
+    }
+
+    private static function isGenericStatusLabel(string $text): bool
+    {
+        $t = trim($text);
+
+        return in_array($t, [
+            'Runtime Error',
+            'Compilation Error',
+            'Syntax Error',
+            'Time Limit Exceeded',
+            'Memory Limit Exceeded',
+        ], true);
     }
 
     private static function isErrorStatus(string $status): bool
@@ -81,19 +103,21 @@ final class CodingExecutionErrorFormatter
         return $found;
     }
 
-    private static function firstNonEmptyLine(string $text): string
+    private static function firstMeaningfulLine(string $text): string
     {
         foreach (preg_split('/\r\n|\n|\r/', $text) ?: [] as $line) {
             $t = trim($line);
-            if ($t !== '') {
-                return $t;
+            if ($t === '' || self::isGenericStatusLabel($t)) {
+                continue;
             }
+
+            return $t;
         }
 
         return '';
     }
 
-    private static function buildSummary(string $status, string $detail, string $stderr, string $lang): string
+    private static function buildSummary(string $status, string $detail, string $stderr, string $lang, string $stdinTrim = ''): string
     {
         if ($status === 'Time Limit Exceeded') {
             return 'The program exceeded the time limit.';
@@ -121,6 +145,13 @@ final class CodingExecutionErrorFormatter
         }
 
         if ($status === 'Runtime Error') {
+            if ($stdinTrim === '' && $lang === 'python') {
+                return 'Custom input is empty, but your program tried to read input (stdin). Enter values in the Custom Input box.';
+            }
+            if (self::isGenericStatusLabel($stderr)) {
+                return 'The program exited with an error. Check your logic and input format.';
+            }
+
             return 'The program stopped with a runtime error.';
         }
 

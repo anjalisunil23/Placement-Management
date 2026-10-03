@@ -189,7 +189,7 @@
       throw new Error(isExecUnavailable(err) ? EXEC_UNAVAILABLE : (err?.message || EXEC_UNAVAILABLE));
     }
     const enriched = (global.CodingErrorFormat && typeof global.CodingErrorFormat.enrichExec === 'function')
-      ? global.CodingErrorFormat.enrichExec(exec, language)
+      ? global.CodingErrorFormat.enrichExec(exec, language, stdin)
       : exec;
     const expected = expectedFor(question, stdin);
     const stdout = normalizeOut(enriched.stdout);

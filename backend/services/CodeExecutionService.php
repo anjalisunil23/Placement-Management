@@ -24,7 +24,8 @@ final class CodeExecutionService
     {
         return CodingExecutionErrorFormatter::enrich(
             $this->runWithoutPresentation($language, $source, $stdin, $timeLimitMs),
-            $language
+            $language,
+            $stdin
         );
     }
 
