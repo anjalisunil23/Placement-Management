@@ -31,6 +31,7 @@ final class Collections
     public const INTERNAL_JOB_APPLICATIONS = 'internal_job_applications';
     public const CERTIFICATIONS = 'certifications';
     public const STUDENT_CERTIFICATIONS = 'student_certifications';
+    public const STUDENT_PLACEMENTS = 'student_placements';
     public const PLACEMENT_OFFICERS = 'placement_officers';
     public const STUDENT_VOLUNTEERS = 'student_volunteers';
     public const RESUMES = 'resumes';
@@ -375,6 +376,35 @@ final class Collections
                 'completedAt' => 'UTCDateTime|null',
                 'createdAt' => 'UTCDateTime',
                 'updatedAt' => 'UTCDateTime',
+            ],
+            self::STUDENT_PLACEMENTS => [
+                '_id' => 'ObjectId',
+                'pairKey' => 'string (studentId, unique)',
+                'studentId' => 'ObjectId',
+                'registerNumber' => 'string',
+                'departmentId' => 'ObjectId|null',
+                'company' => 'string',
+                'role' => 'string',
+                'package' => 'string',
+                'address' => 'string',
+                'employerContact' => 'string',
+                'joinDate' => 'string',
+                'endDate' => 'string',
+                'academicDuration' => 'string',
+                'internshipDetails' => 'string',
+                'natureOfJob' => 'string',
+                'monthlySalary' => 'string',
+                'placementStatus' => 'string',
+                'offerLetterVerified' => 'bool',
+                'verificationDate' => 'string',
+                'fordvv' => 'string',
+                'includedvv' => 'string',
+                'recordType' => 'string (Placement|Higher Education|Research)',
+                'offerLetter' => 'string|null',
+                'joiningLetter' => 'string|null',
+                'companyIdDoc' => 'string|null',
+                'updatedAt' => 'UTCDateTime',
+                'createdAt' => 'UTCDateTime',
             ],
             self::TUTORIAL_CATEGORIES => [
                 '_id' => 'ObjectId',

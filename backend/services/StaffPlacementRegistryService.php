@@ -7,6 +7,7 @@ namespace PMS\Services;
 use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
+use PMS\Models\StudentPlacementModel;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
@@ -42,6 +43,7 @@ final class StaffPlacementRegistryService
             $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch, true);
             $localClassRows = $this->officerData->listLocalClassStudentsForBatch($officerCtx, $batch);
             $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
+            $classRows = $this->attachRegistryPlacements($classRows);
             foreach ($classRows as $row) {
                 foreach ($this->extractRegistryRows($row, false) as $entry) {
                     $registry[] = $entry;
@@ -56,6 +58,7 @@ final class StaffPlacementRegistryService
             $filterOptions = $this->buildLiteFilterOptions($staffCtx, $filters, $filtered);
         } else {
             $studentRows = $this->officerData->listStudents($officerCtx);
+            $studentRows = $this->attachRegistryPlacements($studentRows);
             foreach ($studentRows as $row) {
                 foreach ($this->extractRegistryRows($row, false) as $entry) {
                     $registry[] = $entry;
@@ -1156,10 +1159,57 @@ final class StaffPlacementRegistryService
 
         (new StudentModel())->update((string) $student['_id'], $patch);
 
+        (new StudentPlacementModel())->upsertForStudent(
+            (string) $student['_id'],
+            strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
+            $placement,
+            $scopeDeptId !== '' ? $scopeDeptId : null
+        );
+
         return [
             'studentId' => (string) $student['_id'],
             'placement' => DocumentHelper::serialize($placement),
         ];
+    }
+
+    /**
+     * Overlay authoritative registry rows from student_placements onto roster/student lists.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachRegistryPlacements(array $rows): array
+    {
+        $ids = [];
+        foreach ($rows as $row) {
+            $id = trim((string) ($row['id'] ?? $row['_id'] ?? $row['studentId'] ?? ''));
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+        if ($ids === []) {
+            return $rows;
+        }
+
+        $map = (new StudentPlacementModel())->findPlacementMapByStudentIds($ids);
+        if ($map === []) {
+            return $rows;
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            $id = trim((string) ($row['id'] ?? $row['_id'] ?? $row['studentId'] ?? ''));
+            if ($id !== '' && isset($map[$id])) {
+                $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+                $row['placement'] = array_replace($embedded, $map[$id]);
+                if (trim((string) ($row['placement']['company'] ?? '')) !== '') {
+                    $row['placed'] = true;
+                }
+            }
+            $out[] = $row;
+        }
+
+        return $out;
     }
 
     /**
@@ -1486,6 +1536,14 @@ final class StaffPlacementRegistryService
             }
             Response::error('Could not save documents.', 500);
         }
+
+        $scopeDeptId = trim((string) ($staffCtx['departmentId'] ?? ''));
+        (new StudentPlacementModel())->upsertForStudent(
+            (string) $student['_id'],
+            strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
+            $placement,
+            $scopeDeptId !== '' ? $scopeDeptId : null
+        );
 
         return [
             'studentId'        => (string) $student['_id'],

@@ -388,6 +388,18 @@ CREATE TABLE IF NOT EXISTS student_certifications (
   UNIQUE KEY uniq_student_certification (pair_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Class-teacher placement / higher-education registry (staff-placements.html); one row per student.
+CREATE TABLE IF NOT EXISTS student_placements (
+  id CHAR(24) NOT NULL PRIMARY KEY,
+  payload JSON NOT NULL,
+  student_id CHAR(24) GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.studentId'))) STORED,
+  pair_key VARCHAR(64) GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.pairKey'))) STORED,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uniq_student_placement (student_id),
+  UNIQUE KEY uniq_student_placement_pair (pair_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS resume_platform_cert_selections (
   id CHAR(24) NOT NULL PRIMARY KEY,
   student_id CHAR(24) NOT NULL,
