@@ -1024,10 +1024,6 @@ final class OfficerDataService
             if (!$this->isAesStudyingStudent($record)) {
                 continue;
             }
-            // Cohort class lists need every classmate; final-year gate drops S8 peers.
-            if (!$matchCohort && !$this->isAesFinalYearStudent($record)) {
-                continue;
-            }
 
             $admno = strtoupper(trim((string) (
                 $record['admno']
@@ -1125,9 +1121,6 @@ final class OfficerDataService
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
         $staffBatches = !empty($ctx['staffScope']) ? StaffContext::assignedClassBatches($ctx) : [];
-        if (!empty($ctx['staffScope']) && $staffBatches === []) {
-            return [];
-        }
 
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
         $records = $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide);
@@ -1783,7 +1776,7 @@ final class OfficerDataService
             $byAdmno[$key] = $row;
         }
 
-        $localRows = !empty($ctx['staffScope'])
+        $localRows = !empty($ctx['staffScope']) && $staffAssigned !== []
             ? $this->listLocalStaffClassRosterRows($ctx)
             : $this->listFinalYearFromStudentTable($ctx);
         foreach ($localRows as $row) {
@@ -1859,8 +1852,7 @@ final class OfficerDataService
     }
 
     /**
-     * PlaceHub students with admno that look like currently studying final-year.
-     * When $ctx is department-scoped, only that department (and staff class batches if set).
+     * PlaceHub students in scope (department or campus), merged with AES directory lists.
      *
      * @param array<string, mixed>|null $ctx
      * @return array<int, array<string, mixed>>
@@ -1903,10 +1895,6 @@ final class OfficerDataService
             if ($admno === '' || !preg_match('/^[A-Z0-9]{4,20}$/', $admno)) {
                 continue;
             }
-            if (!$this->isLocalFinalYearStudyingStudent($student)) {
-                continue;
-            }
-
             $userId = (string) ($student['userId'] ?? '');
             $user = $userId !== '' ? ($usersById[$userId] ?? null) : null;
             if (is_array($user)) {
@@ -2130,7 +2118,7 @@ final class OfficerDataService
     }
 
     /**
-     * Staff/admin directory from AES getAllStudInfo4Placement (final-year admno rows),
+     * Staff/admin directory from AES getAllStudInfo4Placement (studying students),
      * merged with local PlaceHub student fields.
      *
      * @param array<string, mixed> $ctx
@@ -2181,9 +2169,6 @@ final class OfficerDataService
                 continue;
             }
             if (isset($seenAdmno[$admno])) {
-                continue;
-            }
-            if (!$this->isAesFinalYearStudent($record)) {
                 continue;
             }
 
@@ -4690,7 +4675,7 @@ final class OfficerDataService
         $driveModel = new DriveModel();
         $userModel = new UserModel();
 
-        // Total Students KPI = final-year cohort (AES + local), not PlaceHub login accounts.
+        // Total Students KPI = AES directory + local roster in scope (not login-account count).
         $totalStudents = $this->countFinalYearStudentsForScope($ctx);
         $studentFilter = PlacementOfficerContext::studentCollectionFilter($ctx);
         $placedStudents = $studentModel->count(array_merge($studentFilter, ['placed' => true]));
