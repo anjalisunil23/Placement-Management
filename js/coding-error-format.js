@@ -22,8 +22,8 @@
     if (base.timedOut) return false;
     const status = String(base.status || '');
     if (ERROR_STATUSES.has(status)) return false;
-    if (typeof base.exit_code === 'number') return base.exit_code === 0;
     if (status === 'OK') return true;
+    if (typeof base.exit_code === 'number') return base.exit_code === 0;
     return coerceOkFlag(base.ok);
   }
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Utils\CodingExecutionDebug;
+
 /**
  * Run student source against practice problem test cases (full inputs from DB).
  */
@@ -29,6 +31,11 @@ final class CodingPracticeRunService
         $source = (string) $source;
         $customStdin = (string) $customStdin;
         $stdinForCustom = $this->effectiveCustomStdin($problem, $customStdin);
+        CodingExecutionDebug::log('practice_run', [
+            'language' => $language,
+            'source' => $source,
+            'stdin' => $stdinForCustom,
+        ]);
         $custom = $this->executeOnce($problem, $language, $source, $stdinForCustom, $timeLimitMs);
 
         $all = array_values(array_filter(
@@ -70,6 +77,7 @@ final class CodingPracticeRunService
                 'errorDetail' => $ran['errorDetail'],
                 'status' => $ran['status'],
                 'passed' => $ran['passed'],
+                'execution' => $ran['execution'] ?? null,
             ];
             if ($i === 0) {
                 $chainOpen = $ran['passed'];
@@ -93,6 +101,7 @@ final class CodingPracticeRunService
                 'status' => $custom['status'],
                 'passed' => $custom['passed'],
                 'durationMs' => $custom['durationMs'],
+                'execution' => $custom['execution'] ?? null,
             ],
             'results' => array_map(
                 static fn (array $c, int $idx): array => array_merge($c, ['index' => $idx + 1]),
@@ -103,6 +112,11 @@ final class CodingPracticeRunService
             'totalCount' => count($all),
             'visibleCount' => count($cases),
             'at' => (int) round(microtime(true) * 1000),
+            'trace' => CodingExecutionDebug::traceOrNull([
+                'source' => $source,
+                'stdinCustom' => $stdinForCustom,
+                'customExecution' => $custom['execution'] ?? null,
+            ]),
         ];
     }
 
@@ -146,17 +160,27 @@ final class CodingPracticeRunService
         $expectedNorm = CodingTestCaseChecker::normalize($expected);
         $succeeded = CodingTestCaseChecker::executionSucceeded($exec);
         $passed = $succeeded && $stdout === $expectedNorm;
+        $displayStatus = $this->statusFromExec($exec, $passed, $stdout, $expectedNorm);
+        $stderr = $succeeded ? '' : (string) ($exec['stderrTrace'] ?? $exec['stderr'] ?? '');
 
         return [
             'stdout' => $stdout,
             'expected' => $expected,
-            'stderr' => (string) ($exec['stderrTrace'] ?? $exec['stderr'] ?? ''),
-            'stderrTrace' => (string) ($exec['stderrTrace'] ?? $exec['stderr'] ?? ''),
-            'errorSummary' => (string) ($exec['errorSummary'] ?? ''),
-            'errorDetail' => (string) ($exec['errorDetail'] ?? ''),
-            'status' => $this->statusFromExec($exec, $passed, $stdout, $expectedNorm),
+            'stderr' => $stderr,
+            'stderrTrace' => $stderr,
+            'errorSummary' => $succeeded ? '' : (string) ($exec['errorSummary'] ?? ''),
+            'errorDetail' => $succeeded ? '' : (string) ($exec['errorDetail'] ?? ''),
+            'status' => $displayStatus,
             'passed' => $passed,
             'durationMs' => (int) ($exec['durationMs'] ?? 0),
+            'execution' => [
+                'exitCode' => (int) ($exec['exit_code'] ?? -1),
+                'engineStatus' => (string) ($exec['status'] ?? ''),
+                'stdout' => (string) ($exec['stdout'] ?? ''),
+                'stderr' => (string) ($exec['stderr'] ?? ''),
+                'timedOut' => !empty($exec['timedOut']),
+                'succeeded' => $succeeded,
+            ],
         ];
     }
 

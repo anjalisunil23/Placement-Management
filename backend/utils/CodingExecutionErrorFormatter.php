@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Utils;
 
+use PMS\Services\CodingTestCaseChecker;
+
 /**
  * User-facing execution error summaries (full stderr preserved separately).
  */
@@ -20,6 +22,15 @@ final class CodingExecutionErrorFormatter
         $status = (string) ($result['status'] ?? '');
         $stdinTrim = trim($stdin);
         $sourceText = (string) $source;
+
+        if (CodingTestCaseChecker::executionSucceeded($result)) {
+            unset($result['errorSummary'], $result['errorDetail']);
+            if ($stderr === '') {
+                unset($result['stderrTrace']);
+            }
+
+            return $result;
+        }
 
         if ($lang === 'python' && $status === 'Runtime Error' && self::isPythonSyntaxFailure($stderr)) {
             $result['status'] = 'Compilation Error';

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Utils\CodingExecutionDebug;
 use PMS\Utils\CodingExecutionErrorFormatter;
 
 /**
@@ -22,12 +23,32 @@ final class CodeExecutionService
      */
     public function run(string $language, string $source, string $stdin = '', int $timeLimitMs = 3000): array
     {
-        return CodingExecutionErrorFormatter::enrich(
-            $this->runWithoutPresentation($language, $source, $stdin, $timeLimitMs),
-            $language,
-            $stdin,
-            $source
-        );
+        CodingExecutionDebug::log('pre_run', [
+            'language' => $language,
+            'source' => $source,
+            'stdin' => $stdin,
+            'timeLimitMs' => $timeLimitMs,
+        ]);
+        $raw = $this->runWithoutPresentation($language, $source, $stdin, $timeLimitMs);
+        CodingExecutionDebug::log('post_run_raw', [
+            'exit_code' => $raw['exit_code'] ?? null,
+            'status' => $raw['status'] ?? null,
+            'ok' => $raw['ok'] ?? null,
+            'stdout' => (string) ($raw['stdout'] ?? ''),
+            'stderr' => (string) ($raw['stderr'] ?? ''),
+            'timedOut' => !empty($raw['timedOut']),
+            'execEngine' => $raw['execEngine'] ?? null,
+        ]);
+        $out = CodingExecutionErrorFormatter::enrich($raw, $language, $stdin, $source);
+        if (CodingExecutionDebug::enabled()) {
+            $out['_debug'] = [
+                'source' => $source,
+                'stdin' => $stdin,
+                'raw' => $raw,
+            ];
+        }
+
+        return $out;
     }
 
     /**
@@ -279,14 +300,18 @@ final class CodeExecutionService
      */
     private function normalizeApiShape(array $result): array
     {
+        $status = (string) ($result['status'] ?? 'Runtime Error');
+        $defaultExit = $status === 'OK' ? 0 : 1;
         $out = [
             'ok' => CodingTestCaseChecker::coerceOkFlag($result['ok'] ?? false),
-            'status' => (string) ($result['status'] ?? 'Runtime Error'),
+            'status' => $status,
             'stdout' => (string) ($result['stdout'] ?? ''),
             'stderr' => (string) ($result['stderr'] ?? ''),
             'timedOut' => !empty($result['timedOut']),
             'durationMs' => (int) ($result['durationMs'] ?? 0),
-            'exit_code' => (int) ($result['exit_code'] ?? 0),
+            'exit_code' => array_key_exists('exit_code', $result)
+                ? (int) $result['exit_code']
+                : $defaultExit,
             'memory_used_kb' => (int) ($result['memory_used_kb'] ?? 0),
             'execution_time' => round(((int) ($result['durationMs'] ?? 0)) / 1000, 3),
         ];

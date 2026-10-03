@@ -484,25 +484,51 @@
       return parts.join('\n');
     }
 
+    function reconcileRunCustom(custom) {
+      const row = custom || {};
+      const ex = row.execution;
+      const failStatuses = new Set(['Runtime Error', 'Compilation Error', 'Syntax Error', 'Time Limit Exceeded']);
+      if (ex && ex.succeeded === true && failStatuses.has(String(row.status || ''))) {
+        const emptyOut = String(row.output ?? row.stdout ?? ex.stdout ?? '').trim() === '';
+        const expected = String(row.expected ?? '').trim();
+        const status = emptyOut && expected !== '' ? 'Execution Successful' : (row.passed ? 'Passed' : 'Wrong Answer');
+        return {
+          ...row,
+          status,
+          stderr: '',
+          stderrTrace: '',
+          errorSummary: '',
+          errorDetail: '',
+        };
+      }
+      return row;
+    }
+
     function resolveOutputCustom(run) {
-      const custom = run?.custom || {};
+      const custom = reconcileRunCustom(run?.custom || {});
       const sampleRow = (run?.results || []).find((r) => r.sample) || (run?.results || [])[0];
       if (!sampleRow) return custom;
       const failStatuses = new Set(['Runtime Error', 'Compilation Error', 'Syntax Error', 'Time Limit Exceeded']);
       const customFailed = failStatuses.has(String(custom.status || ''));
-      const sampleRan = !failStatuses.has(String(sampleRow.status || ''));
+      const sampleView = reconcileRunCustom({
+        ...sampleRow,
+        output: sampleRow.output,
+        expected: sampleRow.expected,
+      });
+      const sampleRan = !failStatuses.has(String(sampleView.status || ''));
       if (customFailed && sampleRan) {
         return {
           ...custom,
           input: sampleRow.input || custom.input,
           output: sampleRow.output ?? custom.output,
           expected: sampleRow.expected ?? custom.expected,
-          status: sampleRow.status,
+          status: sampleView.status,
           passed: sampleRow.passed,
           stderr: '',
           stderrTrace: '',
           errorSummary: '',
           errorDetail: '',
+          execution: sampleRow.execution || custom.execution,
         };
       }
       return custom;
@@ -548,7 +574,7 @@
       if (status) status.innerHTML = `<span class="badge-soft ${badge.cls}">${esc(badge.text)}</span>`;
       if (out) {
         const outText = String(custom.output ?? '');
-        out.textContent = outText !== '' ? outText : (custom.status === 'Execution Successful' ? 'No output' : '');
+        out.textContent = outText !== '' ? outText : (runStatus === 'Execution Successful' ? 'No output' : '');
       }
       if (expected) expected.textContent = custom.expected || '';
       const detail = formatRunError(custom);

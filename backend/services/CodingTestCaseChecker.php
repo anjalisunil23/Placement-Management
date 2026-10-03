@@ -41,11 +41,11 @@ final class CodingTestCaseChecker
         ], true)) {
             return false;
         }
-        if (array_key_exists('exit_code', $execResult)) {
-            return (int) $execResult['exit_code'] === 0;
-        }
         if ($status === 'OK') {
             return true;
+        }
+        if (array_key_exists('exit_code', $execResult)) {
+            return (int) $execResult['exit_code'] === 0;
         }
 
         return self::coerceOkFlag($execResult['ok'] ?? false);

@@ -170,8 +170,8 @@
     if (['Runtime Error', 'Compilation Error', 'Syntax Error', 'Time Limit Exceeded', 'Memory Limit Exceeded'].includes(status)) {
       return false;
     }
-    if (typeof exec?.exit_code === 'number') return exec.exit_code === 0;
     if (status === 'OK') return true;
+    if (typeof exec?.exit_code === 'number') return exec.exit_code === 0;
     return exec?.ok !== false;
   }
 
@@ -784,8 +784,8 @@
       if (!attempt || attempt.submitted) throw new Error('This practice session has ended.');
       const question = attempt.problem;
       const qid = question.id;
-      const source = String(code ?? attempt.answers[qid]?.code ?? '').trim();
-      if (!source) throw new Error('Source code is required.');
+      const source = String(code ?? attempt.answers[qid]?.code ?? '');
+      if (!source.trim()) throw new Error('Source code is required.');
       this.savePracticeDraft(attemptId, { language, code: source, customInput: stdin });
 
       const bankId = String(attempt.bankProblemId || question.id || '');
@@ -803,6 +803,11 @@
         });
         if (!res?.success) throw new Error(res?.message || 'Run failed.');
         const lastRun = res.data;
+        try {
+          if (localStorage.getItem('coding_exec_debug') === '1') {
+            console.info('[coding run] POST /coding/problems/.../run response', JSON.stringify(lastRun));
+          }
+        } catch { /* ignore */ }
         if (attempt.answers[qid]) attempt.answers[qid].lastRun = lastRun;
         return lastRun;
       }

@@ -100,6 +100,8 @@ final class WandboxExecutionClient
             $exit = (int) $status;
         } elseif (preg_match('/^\d+$/', trim((string) $status)) === 1) {
             $exit = (int) trim((string) $status);
+        } elseif ($progErr === '' && $progMsg === '') {
+            $exit = 0;
         } else {
             $exit = 1;
         }
