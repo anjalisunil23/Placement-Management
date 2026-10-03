@@ -1159,12 +1159,16 @@ final class StaffPlacementRegistryService
 
         (new StudentModel())->update((string) $student['_id'], $patch);
 
-        (new StudentPlacementModel())->upsertForStudent(
-            (string) $student['_id'],
-            strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
-            $placement,
-            $scopeDeptId !== '' ? $scopeDeptId : null
-        );
+        try {
+            (new StudentPlacementModel())->upsertForStudent(
+                (string) $student['_id'],
+                strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
+                $placement,
+                $scopeDeptId !== '' ? $scopeDeptId : null
+            );
+        } catch (\Throwable) {
+            // students.placement already saved; registry table optional until schema is applied
+        }
 
         return [
             'studentId' => (string) $student['_id'],
@@ -1191,7 +1195,11 @@ final class StaffPlacementRegistryService
             return $rows;
         }
 
-        $map = (new StudentPlacementModel())->findPlacementMapByStudentIds($ids);
+        try {
+            $map = (new StudentPlacementModel())->findPlacementMapByStudentIds($ids);
+        } catch (\Throwable) {
+            return $rows;
+        }
         if ($map === []) {
             return $rows;
         }
@@ -1538,12 +1546,16 @@ final class StaffPlacementRegistryService
         }
 
         $scopeDeptId = trim((string) ($staffCtx['departmentId'] ?? ''));
-        (new StudentPlacementModel())->upsertForStudent(
-            (string) $student['_id'],
-            strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
-            $placement,
-            $scopeDeptId !== '' ? $scopeDeptId : null
-        );
+        try {
+            (new StudentPlacementModel())->upsertForStudent(
+                (string) $student['_id'],
+                strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
+                $placement,
+                $scopeDeptId !== '' ? $scopeDeptId : null
+            );
+        } catch (\Throwable) {
+            // documents already on student profile
+        }
 
         return [
             'studentId'        => (string) $student['_id'],

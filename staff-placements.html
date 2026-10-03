@@ -445,7 +445,7 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20260722courseids"></script>
+  <script src="js/staff-api.js?v=20261003registry"></script>
   <script src="js/api.js?v=20260724viewdept"></script>
   <script src="js/app.js?v=20261001mcqroles"></script>
   <script>
@@ -1127,7 +1127,12 @@
       tbody.innerHTML = '<tr><td colspan="14" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>';
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
-        tbody.innerHTML = '<tr><td colspan="14" class="text-danger p-4 text-center">Could not load registry. Sign in as staff and try again.</td></tr>';
+        const detail = (StaffApi._lastPlacementsFetchError || '').trim();
+        const msg = detail
+          ? esc(detail)
+          : 'Could not load registry. Sign in as staff and try again.';
+        tbody.innerHTML = `<tr><td colspan="14" class="text-danger p-4 text-center">${msg}</td></tr>`;
+        if (detail && typeof toast === 'function') toast(detail, 'error');
         return;
       }
       allRows = Array.isArray(data.rows) ? data.rows : [];

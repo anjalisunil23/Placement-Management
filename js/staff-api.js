@@ -276,6 +276,7 @@ const StaffApi = {
       }
     } catch (_) { /* ignore */ }
 
+    StaffApi._lastPlacementsFetchError = '';
     const res = await api('/staff/placements-higher-education' + (q ? `?${q}` : ''));
     if (res.success && res.data) {
       try {
@@ -283,6 +284,7 @@ const StaffApi = {
       } catch (_) { /* ignore quota */ }
       return res.data;
     }
+    StaffApi._lastPlacementsFetchError = res?.message || 'Request failed';
     return null;
   },
 
