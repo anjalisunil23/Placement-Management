@@ -143,8 +143,9 @@ final class CodingPracticeRunService
         $exec = $this->executor->run($language, $source, $stdin, $timeLimitMs);
         $expected = $this->expectedFor($problem, $stdin);
         $stdout = CodingTestCaseChecker::normalize((string) ($exec['stdout'] ?? ''));
-        $error = !empty($exec['timedOut']) || (string) ($exec['status'] ?? '') !== 'OK' || empty($exec['ok']);
-        $passed = !$error && $stdout === CodingTestCaseChecker::normalize($expected);
+        $expectedNorm = CodingTestCaseChecker::normalize($expected);
+        $succeeded = CodingTestCaseChecker::executionSucceeded($exec);
+        $passed = $succeeded && $stdout === $expectedNorm;
 
         return [
             'stdout' => $stdout,
@@ -153,7 +154,7 @@ final class CodingPracticeRunService
             'stderrTrace' => (string) ($exec['stderrTrace'] ?? $exec['stderr'] ?? ''),
             'errorSummary' => (string) ($exec['errorSummary'] ?? ''),
             'errorDetail' => (string) ($exec['errorDetail'] ?? ''),
-            'status' => $this->statusFromExec($exec, $passed),
+            'status' => $this->statusFromExec($exec, $passed, $stdout, $expectedNorm),
             'passed' => $passed,
             'durationMs' => (int) ($exec['durationMs'] ?? 0),
         ];
@@ -180,22 +181,25 @@ final class CodingPracticeRunService
     /**
      * @param array<string, mixed> $exec
      */
-    private function statusFromExec(array $exec, bool $passed): string
+    private function statusFromExec(array $exec, bool $passed, string $stdout, string $expectedNorm): string
     {
         $status = (string) ($exec['status'] ?? '');
         if (!empty($exec['timedOut']) || $status === 'Time Limit Exceeded') {
             return 'Time Limit Exceeded';
         }
-        if ($status === 'Compilation Error') {
+        if ($status === 'Compilation Error' || $status === 'Syntax Error') {
             return 'Compilation Error';
         }
-        if ($status === 'Syntax Error') {
-            return 'Syntax Error';
-        }
-        if ($status !== 'OK' || empty($exec['ok'])) {
+        if (!CodingTestCaseChecker::executionSucceeded($exec)) {
             return 'Runtime Error';
         }
+        if ($passed) {
+            return 'Passed';
+        }
+        if ($stdout === '' && $expectedNorm !== '') {
+            return 'Execution Successful';
+        }
 
-        return $passed ? 'Passed' : 'Wrong Answer';
+        return 'Wrong Answer';
     }
 }

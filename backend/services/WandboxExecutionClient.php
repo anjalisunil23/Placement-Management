@@ -73,6 +73,7 @@ final class WandboxExecutionClient
                 'stderr' => $compileMsg,
                 'timedOut' => false,
                 'durationMs' => $durationMs,
+                'exit_code' => 1,
             ];
         }
 
@@ -85,17 +86,27 @@ final class WandboxExecutionClient
                 'stderr' => 'Time Limit Exceeded',
                 'timedOut' => true,
                 'durationMs' => $durationMs,
+                'exit_code' => 124,
             ];
         }
 
-        $status = $response['status'] ?? null;
-        $exit = is_numeric($status) ? (int) $status : (int) preg_replace('/\D/', '', (string) $status);
         $stdout = (string) ($response['program_output'] ?? '');
         $progErr = trim((string) ($response['program_error'] ?? ''));
         $progMsg = trim((string) ($response['program_message'] ?? ''));
+        $status = $response['status'] ?? null;
+        if ($status === null || $status === '') {
+            $exit = $progErr !== '' ? 1 : 0;
+        } elseif (is_numeric($status)) {
+            $exit = (int) $status;
+        } elseif (preg_match('/^\d+$/', trim((string) $status)) === 1) {
+            $exit = (int) trim((string) $status);
+        } else {
+            $exit = 1;
+        }
         $stderr = trim(implode("\n", array_filter([$progErr, $progMsg], static fn (string $s): bool => trim($s) !== '')));
         if ($exit !== 0) {
             $err = $stderr !== '' ? $stderr : 'Runtime Error';
+
             return [
                 'ok' => false,
                 'status' => 'Runtime Error',
@@ -103,6 +114,7 @@ final class WandboxExecutionClient
                 'stderr' => $err,
                 'timedOut' => false,
                 'durationMs' => $durationMs,
+                'exit_code' => $exit,
             ];
         }
 
@@ -113,6 +125,7 @@ final class WandboxExecutionClient
             'stderr' => '',
             'timedOut' => false,
             'durationMs' => $durationMs,
+            'exit_code' => 0,
         ];
     }
 

@@ -280,7 +280,7 @@ final class CodeExecutionService
     private function normalizeApiShape(array $result): array
     {
         $out = [
-            'ok' => ($result['ok'] ?? false) === true,
+            'ok' => CodingTestCaseChecker::coerceOkFlag($result['ok'] ?? false),
             'status' => (string) ($result['status'] ?? 'Runtime Error'),
             'stdout' => (string) ($result['stdout'] ?? ''),
             'stderr' => (string) ($result['stderr'] ?? ''),
@@ -290,6 +290,7 @@ final class CodeExecutionService
             'memory_used_kb' => (int) ($result['memory_used_kb'] ?? 0),
             'execution_time' => round(((int) ($result['durationMs'] ?? 0)) / 1000, 3),
         ];
+        $out['ok'] = CodingTestCaseChecker::executionSucceeded($out);
         if (!empty($result['execEngine'])) {
             $out['execEngine'] = (string) $result['execEngine'];
         }

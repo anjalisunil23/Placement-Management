@@ -447,6 +447,7 @@
     function statusBadge(status) {
       const s = String(status || '');
       if (s === 'Passed') return { cls: 'success', text: '✓ Test Case Passed' };
+      if (s === 'Execution Successful') return { cls: 'success', text: '✓ Execution Successful' };
       if (s === 'Wrong Answer') return { cls: 'danger', text: '✕ Wrong Answer' };
       if (s === 'Syntax Error') return { cls: 'danger', text: '✕ Syntax Error' };
       if (s === 'Runtime Error') return { cls: 'danger', text: '✕ Runtime Error' };
@@ -460,6 +461,7 @@
     function caseBadge(status) {
       const s = String(status || '');
       if (s === 'Passed') return { cls: 'success', text: '✓ Passed' };
+      if (s === 'Execution Successful') return { cls: 'success', text: '✓ Executed' };
       if (s === 'Wrong Answer' || s === 'Failed') return { cls: 'danger', text: '✕ Failed' };
       if (s === 'Syntax Error' || s === 'Runtime Error' || s === 'Compilation Error') {
         return { cls: 'danger', text: '✕ ' + s };
@@ -544,11 +546,17 @@
         : (custom.status || run.overall);
       const badge = statusBadge(runStatus);
       if (status) status.innerHTML = `<span class="badge-soft ${badge.cls}">${esc(badge.text)}</span>`;
-      if (out) out.textContent = custom.output || '';
+      if (out) {
+        const outText = String(custom.output ?? '');
+        out.textContent = outText !== '' ? outText : (custom.status === 'Execution Successful' ? 'No output' : '');
+      }
       if (expected) expected.textContent = custom.expected || '';
       const detail = formatRunError(custom);
       if (stderr) {
-        if (detail) {
+        if (runStatus === 'Execution Successful') {
+          stderr.innerHTML = '<div class="small text-muted-2">The program executed successfully but produced no output.</div>';
+          stderr.classList.remove('d-none');
+        } else if (detail) {
           if (detail.includes('<')) stderr.innerHTML = detail;
           else stderr.textContent = detail;
           stderr.classList.remove('d-none');
@@ -585,7 +593,7 @@
             <tbody>
               ${rows.map((tc, i) => {
                 const badge = caseBadge(tc.status);
-                const showErr = tc.status && !['Passed', 'Not Run', 'Accepted'].includes(String(tc.status));
+                const showErr = tc.status && !['Passed', 'Not Run', 'Accepted', 'Execution Successful'].includes(String(tc.status));
                 const errHtml = showErr && typeof CodingErrorFormat !== 'undefined'
                   ? CodingErrorFormat.errorBlockHtml(tc, esc)
                   : '';

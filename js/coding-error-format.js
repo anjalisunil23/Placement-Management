@@ -10,6 +10,23 @@
     'Memory Limit Exceeded',
   ]);
 
+  function coerceOkFlag(ok) {
+    if (ok === true || ok === 1) return true;
+    const t = String(ok ?? '').trim().toLowerCase();
+    return t === 'true' || t === '1';
+  }
+
+  /** Process exit / status — never treat empty stdout as failure. */
+  function executionSucceeded(exec) {
+    const base = exec || {};
+    if (base.timedOut) return false;
+    const status = String(base.status || '');
+    if (ERROR_STATUSES.has(status)) return false;
+    if (typeof base.exit_code === 'number') return base.exit_code === 0;
+    if (status === 'OK') return true;
+    return coerceOkFlag(base.ok);
+  }
+
   const GENERIC_LABELS = new Set(ERROR_STATUSES);
 
   function isGenericLabel(text) {
@@ -150,6 +167,7 @@
   function resolveRunStatus(custom) {
     const explicit = String(custom?.status || '');
     if (ERROR_STATUSES.has(explicit)) return explicit;
+    if (explicit === 'Execution Successful') return 'Execution Successful';
     if (custom?.passed === true) return 'Passed';
     if (custom?.passed === false && explicit && explicit !== 'Passed') return explicit;
     if (custom?.passed === false) return 'Wrong Answer';
@@ -180,6 +198,8 @@
     enrichExec,
     resolveRunStatus,
     errorBlockHtml,
+    executionSucceeded,
+    coerceOkFlag,
     ERROR_STATUSES,
   };
 })(window);

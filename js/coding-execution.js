@@ -427,17 +427,24 @@
     });
     if (!res?.success) throw new Error(res?.message || 'Execution failed.');
     const data = res.data || {};
+    const status = data.status || (data.timedOut ? 'Time Limit Exceeded' : 'OK');
     const raw = {
-      ok: data.ok !== false && !data.timedOut && (data.status === 'OK' || !data.status),
-      status: data.status || (data.timedOut ? 'Time Limit Exceeded' : 'OK'),
-      stdout: data.stdout || '',
+      status,
+      stdout: data.stdout ?? '',
       stderr: data.stderr || '',
       stderrTrace: data.stderrTrace || data.stderr || '',
       errorSummary: data.errorSummary || '',
       errorDetail: data.errorDetail || '',
       timedOut: !!data.timedOut,
       durationMs: data.durationMs || 0,
+      exit_code: typeof data.exit_code === 'number' ? data.exit_code : undefined,
+      ok: data.ok,
     };
+    if (global.CodingErrorFormat && typeof global.CodingErrorFormat.executionSucceeded === 'function') {
+      raw.ok = global.CodingErrorFormat.executionSucceeded(raw);
+    } else {
+      raw.ok = data.ok !== false && !raw.timedOut && (status === 'OK' || !status);
+    }
     if (global.CodingErrorFormat && typeof global.CodingErrorFormat.enrichExec === 'function') {
       return global.CodingErrorFormat.enrichExec(raw, opts.language, opts.stdin, opts.source);
     }

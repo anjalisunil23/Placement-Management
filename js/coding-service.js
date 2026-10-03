@@ -161,12 +161,29 @@
     };
   }
 
-  function statusFromExec(exec, passed) {
+  function executionSucceeded(exec) {
+    if (global.CodingErrorFormat && typeof global.CodingErrorFormat.executionSucceeded === 'function') {
+      return global.CodingErrorFormat.executionSucceeded(exec);
+    }
+    if (exec?.timedOut) return false;
+    const status = String(exec?.status || '');
+    if (['Runtime Error', 'Compilation Error', 'Syntax Error', 'Time Limit Exceeded', 'Memory Limit Exceeded'].includes(status)) {
+      return false;
+    }
+    if (typeof exec?.exit_code === 'number') return exec.exit_code === 0;
+    if (status === 'OK') return true;
+    return exec?.ok !== false;
+  }
+
+  function statusFromExec(exec, passed, stdout, expectedNorm) {
     if (exec.timedOut || exec.status === 'Time Limit Exceeded') return 'Time Limit Exceeded';
-    if (exec.status === 'Syntax Error') return 'Syntax Error';
-    if (exec.status === 'Compilation Error') return 'Compilation Error';
-    if (exec.status === 'Runtime Error') return 'Runtime Error';
-    return passed ? 'Passed' : 'Wrong Answer';
+    if (exec.status === 'Syntax Error' || exec.status === 'Compilation Error') return 'Compilation Error';
+    if (!executionSucceeded(exec)) return 'Runtime Error';
+    if (passed) return 'Passed';
+    const out = stdout != null ? stdout : normalizeOut(exec.stdout);
+    const exp = expectedNorm != null ? expectedNorm : '';
+    if (out === '' && exp !== '') return 'Execution Successful';
+    return 'Wrong Answer';
   }
 
   function isExecUnavailable(err) {
@@ -196,9 +213,10 @@
       ? global.CodingErrorFormat.enrichExec(exec, language, stdin, code)
       : exec;
     const expected = expectedFor(question, stdin);
+    const expectedNorm = normalizeOut(expected);
     const stdout = normalizeOut(enriched.stdout);
-    const error = enriched.timedOut || enriched.status !== 'OK';
-    const passed = !error && stdout === expected;
+    const succeeded = executionSucceeded(enriched);
+    const passed = succeeded && stdout === expectedNorm;
     return {
       exec: enriched,
       expected,
@@ -207,7 +225,7 @@
       stderrTrace: enriched.stderrTrace || enriched.stderr || '',
       errorSummary: enriched.errorSummary || '',
       errorDetail: enriched.errorDetail || '',
-      status: statusFromExec(enriched, passed),
+      status: statusFromExec(enriched, passed, stdout, expectedNorm),
       passed,
     };
   }
