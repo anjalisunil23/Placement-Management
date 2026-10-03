@@ -316,6 +316,9 @@ final class CodeExecutionService
             'execution_time' => round(((int) ($result['durationMs'] ?? 0)) / 1000, 3),
         ];
         $out['ok'] = CodingTestCaseChecker::executionSucceeded($out);
+        if ($out['ok'] && $out['status'] !== 'OK') {
+            $out['status'] = 'OK';
+        }
         if (!empty($result['execEngine'])) {
             $out['execEngine'] = (string) $result['execEngine'];
         }

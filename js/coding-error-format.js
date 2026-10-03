@@ -164,6 +164,57 @@
     };
   }
 
+  /** Map practice /run API `custom.execution` (camelCase) to engine row for executionSucceeded(). */
+  function apiExecutionRow(ex) {
+    if (!ex || typeof ex !== 'object') return {};
+    const exitCode = ex.exitCode ?? ex.exit_code;
+    return {
+      status: ex.engineStatus ?? ex.status ?? '',
+      exit_code: typeof exitCode === 'number' ? exitCode : undefined,
+      timedOut: !!ex.timedOut,
+      ok: ex.succeeded,
+    };
+  }
+
+  /**
+   * When the engine succeeded (exit 0) but display status is still an error label, fix the row.
+   * HTTP 200 practice runs can include both execution.succeeded=true and status=Runtime Error on stale deploys.
+   */
+  function reconcilePracticeRunRow(row) {
+    const r = row && typeof row === 'object' ? { ...row } : {};
+    const ex = r.execution;
+    const failStatuses = ERROR_STATUSES;
+    const procOk = executionSucceeded(apiExecutionRow(ex));
+    if (!procOk || !failStatuses.has(String(r.status || ''))) {
+      return r;
+    }
+    const emptyOut = String(r.output ?? r.stdout ?? ex?.stdout ?? '').trim() === '';
+    const expected = String(r.expected ?? '').trim();
+    const status = emptyOut && expected !== '' ? 'Execution Successful' : (r.passed ? 'Passed' : 'Wrong Answer');
+    return {
+      ...r,
+      status,
+      stderr: '',
+      stderrTrace: '',
+      errorSummary: '',
+      errorDetail: '',
+    };
+  }
+
+  function normalizePracticeRunResponse(run) {
+    if (!run || typeof run !== 'object') return run;
+    const custom = reconcilePracticeRunRow(run.custom || {});
+    const results = Array.isArray(run.results)
+      ? run.results.map((row) => reconcilePracticeRunRow(row))
+      : run.results;
+    return {
+      ...run,
+      custom,
+      results,
+      overall: custom.status || run.overall,
+    };
+  }
+
   function resolveRunStatus(custom) {
     const explicit = String(custom?.status || '');
     if (ERROR_STATUSES.has(explicit)) return explicit;
@@ -199,6 +250,9 @@
     resolveRunStatus,
     errorBlockHtml,
     executionSucceeded,
+    apiExecutionRow,
+    reconcilePracticeRunRow,
+    normalizePracticeRunResponse,
     coerceOkFlag,
     ERROR_STATUSES,
   };

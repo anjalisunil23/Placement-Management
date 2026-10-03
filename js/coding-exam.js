@@ -485,23 +485,10 @@
     }
 
     function reconcileRunCustom(custom) {
-      const row = custom || {};
-      const ex = row.execution;
-      const failStatuses = new Set(['Runtime Error', 'Compilation Error', 'Syntax Error', 'Time Limit Exceeded']);
-      if (ex && ex.succeeded === true && failStatuses.has(String(row.status || ''))) {
-        const emptyOut = String(row.output ?? row.stdout ?? ex.stdout ?? '').trim() === '';
-        const expected = String(row.expected ?? '').trim();
-        const status = emptyOut && expected !== '' ? 'Execution Successful' : (row.passed ? 'Passed' : 'Wrong Answer');
-        return {
-          ...row,
-          status,
-          stderr: '',
-          stderrTrace: '',
-          errorSummary: '',
-          errorDetail: '',
-        };
+      if (typeof CodingErrorFormat !== 'undefined' && CodingErrorFormat.reconcilePracticeRunRow) {
+        return CodingErrorFormat.reconcilePracticeRunRow(custom || {});
       }
-      return row;
+      return custom || {};
     }
 
     function resolveOutputCustom(run) {

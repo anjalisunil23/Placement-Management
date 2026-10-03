@@ -802,10 +802,28 @@
           }),
         });
         if (!res?.success) throw new Error(res?.message || 'Run failed.');
-        const lastRun = res.data;
+        let lastRun = res.data;
+        if (global.CodingErrorFormat && typeof global.CodingErrorFormat.normalizePracticeRunResponse === 'function') {
+          lastRun = global.CodingErrorFormat.normalizePracticeRunResponse(lastRun);
+        }
         try {
           if (localStorage.getItem('coding_exec_debug') === '1') {
-            console.info('[coding run] POST /coding/problems/.../run response', JSON.stringify(lastRun));
+            const c = lastRun?.custom || {};
+            const ex = c.execution || {};
+            console.info('[coding run] POST /coding/problems/{id}/run', {
+              httpStatus: res.status,
+              success: res.success,
+              message: res.message,
+              overall: lastRun?.overall,
+              customStatus: c.status,
+              executionSucceeded: ex.succeeded,
+              exitCode: ex.exitCode,
+              engineStatus: ex.engineStatus,
+              stdout: c.output,
+              stderr: c.stderr,
+              errorSummary: c.errorSummary,
+            });
+            console.info('[coding run] full response JSON', JSON.stringify({ success: res.success, message: res.message, data: lastRun }));
           }
         } catch { /* ignore */ }
         if (attempt.answers[qid]) attempt.answers[qid].lastRun = lastRun;

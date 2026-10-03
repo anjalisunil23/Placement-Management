@@ -181,6 +181,10 @@ final class CodingPracticeRunService
                 'stderr' => (string) ($exec['stderr'] ?? ''),
                 'timedOut' => !empty($exec['timedOut']),
                 'succeeded' => $succeeded,
+                'execEngine' => (string) ($exec['execEngine'] ?? ''),
+                'failureDetail' => $succeeded
+                    ? ''
+                    : trim((string) ($exec['stderrTrace'] ?? $exec['stderr'] ?? $exec['errorSummary'] ?? '')),
             ],
         ];
     }
