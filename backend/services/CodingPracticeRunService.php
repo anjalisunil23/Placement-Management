@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
-use PMS\Utils\CodingExecutionDebug;
-
 /**
  * Run student source against practice problem test cases (full inputs from DB).
  */
@@ -31,7 +29,7 @@ final class CodingPracticeRunService
         $source = (string) $source;
         $customStdin = (string) $customStdin;
         $stdinForCustom = $this->effectiveCustomStdin($problem, $customStdin);
-        CodingExecutionDebug::log('practice_run', [
+        pms_coding_exec_debug_log('practice_run', [
             'language' => $language,
             'source' => $source,
             'stdin' => $stdinForCustom,
@@ -112,7 +110,7 @@ final class CodingPracticeRunService
             'totalCount' => count($all),
             'visibleCount' => count($cases),
             'at' => (int) round(microtime(true) * 1000),
-            'trace' => CodingExecutionDebug::traceOrNull([
+            'trace' => pms_coding_exec_debug_trace([
                 'source' => $source,
                 'stdinCustom' => $stdinForCustom,
                 'customExecution' => $custom['execution'] ?? null,

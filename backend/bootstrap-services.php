@@ -3,10 +3,69 @@
 declare(strict_types=1);
 
 /**
+ * Load backend/utils explicitly (cPanel often misses new PSR-4 files until classmap refresh).
+ */
+function pms_load_backend_utils(string $backendDir): void
+{
+    $utilsDir = rtrim($backendDir, '/\\') . '/utils';
+    if (!is_dir($utilsDir)) {
+        return;
+    }
+
+    foreach ([
+        'Response.php',
+        'DocumentHelper.php',
+        'Security.php',
+        'Validator.php',
+        'JwtHelper.php',
+        'OwnershipHelper.php',
+        'ApiExceptionHandler.php',
+        'CodingStarterTemplates.php',
+        'CodingExecutionDebug.php',
+        'CodingExecutionErrorFormatter.php',
+    ] as $utilFile) {
+        $path = $utilsDir . '/' . $utilFile;
+        if (is_readable($path)) {
+            require_once $path;
+        }
+    }
+
+    foreach (glob($utilsDir . '/*.php') ?: [] as $utilFile) {
+        require_once $utilFile;
+    }
+}
+
+/**
+ * @param array<string, mixed> $context
+ */
+function pms_coding_exec_debug_log(string $phase, array $context): void
+{
+    if (!class_exists(\PMS\Utils\CodingExecutionDebug::class, false)) {
+        return;
+    }
+    \PMS\Utils\CodingExecutionDebug::log($phase, $context);
+}
+
+/**
+ * @param array<string, mixed> $trace
+ * @return array<string, mixed>|null
+ */
+function pms_coding_exec_debug_trace(array $trace): ?array
+{
+    if (!class_exists(\PMS\Utils\CodingExecutionDebug::class, false)) {
+        return null;
+    }
+
+    return \PMS\Utils\CodingExecutionDebug::traceOrNull($trace);
+}
+
+/**
  * Load backend service classes explicitly (Linux/cPanel safe when PSR-4 path case differs).
  */
 function pms_load_backend_services(string $backendDir): void
 {
+    pms_load_backend_utils($backendDir);
+
     $servicesDir = rtrim($backendDir, '/\\') . '/services';
     if (!is_dir($servicesDir)) {
         return;

@@ -41,16 +41,7 @@ if (!is_readable($autoload)) {
 
 require_once $autoload;
 
-// Linux/cPanel: PSR-4 may not resolve backend/utils (lowercase) — load utils explicitly.
-$utilsDir = dirname(__DIR__) . '/utils';
-foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php', 'JwtHelper.php', 'OwnershipHelper.php', 'ApiExceptionHandler.php', 'CodingStarterTemplates.php', 'CodingExecutionDebug.php', 'CodingExecutionErrorFormatter.php'] as $utilFile) {
-    $path = $utilsDir . '/' . $utilFile;
-    if (is_readable($path)) {
-        require_once $path;
-    }
-}
-
-// Linux/cPanel: load all services explicitly when PSR-4 case differs from backend/services/.
+// Linux/cPanel: load utils + services explicitly when PSR-4 case differs from backend/*.
 require_once dirname(__DIR__) . '/bootstrap-services.php';
 $backendDir = dirname(__DIR__);
 pms_load_backend_services($backendDir);

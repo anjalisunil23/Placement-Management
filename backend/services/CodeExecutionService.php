@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
-use PMS\Utils\CodingExecutionDebug;
 use PMS\Utils\CodingExecutionErrorFormatter;
 
 /**
@@ -23,14 +22,14 @@ final class CodeExecutionService
      */
     public function run(string $language, string $source, string $stdin = '', int $timeLimitMs = 3000): array
     {
-        CodingExecutionDebug::log('pre_run', [
+        pms_coding_exec_debug_log('pre_run', [
             'language' => $language,
             'source' => $source,
             'stdin' => $stdin,
             'timeLimitMs' => $timeLimitMs,
         ]);
         $raw = $this->runWithoutPresentation($language, $source, $stdin, $timeLimitMs);
-        CodingExecutionDebug::log('post_run_raw', [
+        pms_coding_exec_debug_log('post_run_raw', [
             'exit_code' => $raw['exit_code'] ?? null,
             'status' => $raw['status'] ?? null,
             'ok' => $raw['ok'] ?? null,
@@ -40,7 +39,8 @@ final class CodeExecutionService
             'execEngine' => $raw['execEngine'] ?? null,
         ]);
         $out = CodingExecutionErrorFormatter::enrich($raw, $language, $stdin, $source);
-        if (CodingExecutionDebug::enabled()) {
+        if (class_exists(\PMS\Utils\CodingExecutionDebug::class, false)
+            && \PMS\Utils\CodingExecutionDebug::enabled()) {
             $out['_debug'] = [
                 'source' => $source,
                 'stdin' => $stdin,
