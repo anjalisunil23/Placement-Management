@@ -373,10 +373,9 @@ class StudentPlacementModel extends BaseModel
             return [];
         }
 
-        $filter = $this->departmentFilter($departmentId);
-        $rows = $this->findAll($filter, max(1, min($limit, 5000)));
+        $filter = $this->registryDepartmentFilter($departmentId);
         $batches = [];
-        foreach ($rows as $doc) {
+        foreach ($this->findAll($filter, max(1, min($limit, 5000))) as $doc) {
             $batch = trim((string) ($doc['classBatch'] ?? ''));
             if ($batch === '') {
                 continue;
@@ -404,7 +403,7 @@ class StudentPlacementModel extends BaseModel
             return [];
         }
 
-        $filter = $this->departmentFilter($departmentId);
+        $filter = $this->registryDepartmentFilter($departmentId);
         $rows = [];
         foreach ($this->findAll($filter, max(1, min($limit, 5000))) as $doc) {
             $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
@@ -502,6 +501,26 @@ class StudentPlacementModel extends BaseModel
         }
 
         return ['departmentId' => $departmentId];
+    }
+
+    /**
+     * Include legacy registry rows saved before departmentId was stamped on the payload.
+     *
+     * @return array<string, mixed>
+     */
+    private function registryDepartmentFilter(string $departmentId): array
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return [];
+        }
+
+        return [
+            '$or' => [
+                ['departmentId' => $departmentId],
+                ['departmentId' => ''],
+            ],
+        ];
     }
 
     private static function batchMatchesSelection(string $rowBatch, string $wantBatch): bool

@@ -43,16 +43,16 @@ final class StaffPlacementRegistryService
             $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch, true);
             $localClassRows = $this->officerData->listLocalClassStudentsForBatch($officerCtx, $batch);
             $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
-            $passedOutRows = (new StudentPlacementModel())->listRosterRowsForClass(
-                (string) ($staffCtx['departmentId'] ?? ''),
-                $program,
-                $batch
-            );
-            if ($passedOutRows !== []) {
-                $classRows = $this->mergeCompleteClassRoster($classRows, $passedOutRows);
-            }
+            $deptId = (string) ($staffCtx['departmentId'] ?? '');
+            // Passed-out / AES-absent cohorts live only in student_placements — merge before sync.
+            $tableRows = (new StudentPlacementModel())->listRosterRowsForClass($deptId, $program, $batch);
+            $classRows = $this->mergeCompleteClassRoster($classRows, $tableRows);
             $classRows = $this->attachRegistryPlacements($classRows);
-            foreach ($classRows as $row) {
+            $this->syncClassRowsToStudentPlacements($classRows, $deptId, $program, $batch);
+
+            $tableRows = (new StudentPlacementModel())->listRosterRowsForClass($deptId, $program, $batch);
+            $rosterSource = $this->mergeTableRosterWithClass($tableRows, $classRows);
+            foreach ($rosterSource as $row) {
                 foreach ($this->extractRegistryRows($row, false, true) as $entry) {
                     $registry[] = $entry;
                 }
@@ -276,8 +276,8 @@ final class StaffPlacementRegistryService
                 continue;
             }
             // Prefer the row that already has placement / HE details filled in.
-            $existingEmployer = trim((string) ($unique[$key]['employer'] ?? ''));
-            $newEmployer = trim((string) ($row['employer'] ?? ''));
+            $existingEmployer = trim((string) ($unique[$key]['employer'] ?? $unique[$key]['company'] ?? ''));
+            $newEmployer = trim((string) ($row['employer'] ?? $row['company'] ?? ''));
             if ($existingEmployer === '' && $newEmployer !== '') {
                 $unique[$key] = $row;
             }
@@ -634,6 +634,100 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * Push fetched class roster (+ placement overlay) into student_placements only.
+     *
+     * @param array<int, array<string, mixed>> $classRows
+     */
+    private function syncClassRowsToStudentPlacements(
+        array $classRows,
+        string $departmentId,
+        string $program,
+        string $batch
+    ): void {
+        $model = new StudentPlacementModel();
+        $deptId = trim($departmentId);
+        $programCode = $program !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
+            : '';
+        $batchLabel = trim($batch);
+
+        foreach ($classRows as $row) {
+            $studentId = $this->registryStudentId($row);
+            $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+            if ($studentId === '' || $register === '') {
+                continue;
+            }
+
+            $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+            $meta = StudentPlacementModel::normalizeRosterMeta(array_merge($row, [
+                'classBatch' => $batchLabel !== '' ? $batchLabel : ($row['classBatch'] ?? $row['stud_class'] ?? ''),
+                'programme'  => $programCode !== '' ? $programCode : ($row['programme'] ?? $row['stud_course'] ?? ''),
+            ]));
+
+            try {
+                $model->upsertForStudent(
+                    $studentId,
+                    $register,
+                    $placement,
+                    $deptId !== '' ? $deptId : null,
+                    $meta
+                );
+            } catch (\Throwable) {
+                // Registry still falls back to in-memory class rows if the table is unavailable.
+            }
+        }
+    }
+
+    /**
+     * Prefer student_placements rows; keep any class member missing from the table (sync failure).
+     *
+     * @param array<int, array<string, mixed>> $tableRows
+     * @param array<int, array<string, mixed>> $classRows
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeTableRosterWithClass(array $tableRows, array $classRows): array
+    {
+        $byKey = [];
+        foreach ($tableRows as $row) {
+            $key = $this->studentRowKey($row);
+            if ($key === '') {
+                continue;
+            }
+            $byKey[$key] = $row;
+        }
+
+        foreach ($classRows as $row) {
+            $key = $this->studentRowKey($row);
+            if ($key === '' || isset($byKey[$key])) {
+                continue;
+            }
+            $byKey[$key] = $row;
+        }
+
+        return array_values($byKey);
+    }
+
+    /**
+     * Stable registry key for student_placements (PlaceHub id or AES register number).
+     *
+     * @param array<string, mixed> $row
+     */
+    private function registryStudentId(array $row): string
+    {
+        $id = trim((string) ($row['id'] ?? $row['_id'] ?? $row['studentId'] ?? ''));
+        if ($id !== '' && Security::isValidId($id)) {
+            return $id;
+        }
+
+        $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+        if ($register !== '') {
+            return $register;
+        }
+
+        return $id;
+    }
+
+    /**
      * Lightweight filter options for a selected class — no second AES directory scan.
      *
      * @param array<string, mixed> $staffCtx
@@ -671,8 +765,8 @@ final class StaffPlacementRegistryService
         }
 
         foreach ($rows as $row) {
-            $p = trim((string) ($row['program'] ?? ''));
-            $b = trim((string) ($row['batch'] ?? ''));
+            $p = trim((string) ($row['program'] ?? $row['programme'] ?? ''));
+            $b = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
             if ($p !== '') {
                 $programs[] = $p;
             }
@@ -853,7 +947,7 @@ final class StaffPlacementRegistryService
 
         return array_values(array_filter($rows, static function (array $row) use ($program, $wantProgram, $branch, $batch, $wantCohort, $type, $q): bool {
             if ($batch !== '') {
-                $rowBatch = trim((string) ($row['batch'] ?? ''));
+                $rowBatch = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
                 $batchOk = strcasecmp($rowBatch, $batch) === 0
                     || strcasecmp(
                         DepartmentProgrammeCatalog::normalizeCode($rowBatch),
@@ -904,9 +998,9 @@ final class StaffPlacementRegistryService
                     'research' => 'Research',
                     default => 'Placement',
                 };
-                $employer = trim((string) ($row['employer'] ?? ''));
+                $employer = trim((string) ($row['employer'] ?? $row['company'] ?? ''));
                 // Keep unfilled class-roster rows visible so staff can add details.
-                if ($employer !== '' && (string) ($row['type'] ?? '') !== $want) {
+                if ($employer !== '' && (string) ($row['type'] ?? $row['recordType'] ?? '') !== $want) {
                     return false;
                 }
             }
@@ -1233,7 +1327,7 @@ final class StaffPlacementRegistryService
             $placement = $fromReg[$register] ?? null;
         }
         if (!is_array($placement)) {
-            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+            $placement = [];
         }
         $placement = array_merge($placement, [
             'company'         => $employer,
@@ -1256,54 +1350,26 @@ final class StaffPlacementRegistryService
             'updatedAt'       => DocumentHelper::now(),
         ]);
 
-        $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : null;
-        if (is_array($self) && in_array((string) ($self['status'] ?? ''), ['approved', 'placed', ''], true)) {
-            $self['companyName'] = $employer;
-            $self['role'] = $role;
-            $self['package'] = $package;
-            $self['companyAddress'] = $address;
-            $self['joinDate'] = $joinDate;
-            $self['endDate'] = $endDate;
-            $self['academicDuration'] = $academicDuration;
-            $self['internshipDetails'] = $internshipDetails;
-            $self['natureOfJob'] = $natureOfJob;
-            $self['monthlySalary'] = $monthlySalary;
-            $self['placementStatus'] = $placementStatus;
-            $self['offerLetterVerified'] = $offerLetterVerified;
-            $self['verificationDate'] = $verificationDate;
-            $self['fordvv'] = $fordvv;
-            $self['includedvv'] = $includedvv;
-            $self['recordType'] = $recordType;
-        }
-
-        $patch = [
-            'placed'    => true,
-            'placement' => $placement,
-        ];
         $scopeDeptId = trim((string) ($staffCtx['departmentId'] ?? ''));
-        if ($scopeDeptId !== '' && Security::isValidId($scopeDeptId)) {
-            $patch['departmentId'] = Security::toObjectId($scopeDeptId);
-        }
-        if (is_array($self)) {
-            $patch['selfPlacement'] = $self;
-        }
-
-        (new StudentModel())->update((string) $student['_id'], $patch);
-
+        $registryId = $this->registryStudentId($student);
         try {
-            (new StudentPlacementModel())->upsertForStudent(
-                (string) $student['_id'],
+            $savedId = (new StudentPlacementModel())->upsertForStudent(
+                $registryId,
                 strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
                 $placement,
                 $scopeDeptId !== '' ? $scopeDeptId : null,
                 $this->rosterMetaForStudentPlacement($student)
             );
-        } catch (\Throwable) {
-            // students.placement already saved; registry table optional until schema is applied
+        } catch (\Throwable $e) {
+            Response::error('Could not save placement registry: ' . $e->getMessage(), 500);
+        }
+
+        if ($savedId === '') {
+            Response::error('Could not save placement registry. Ensure student_placements table exists.', 500);
         }
 
         return [
-            'studentId' => (string) $student['_id'],
+            'studentId' => (string) ($student['_id'] ?? $registryId),
             'placement' => DocumentHelper::serialize($placement),
         ];
     }
@@ -1692,16 +1758,15 @@ final class StaffPlacementRegistryService
             $placement = $fromReg[$registerKey] ?? null;
         }
         if (!is_array($placement)) {
-            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+            $placement = [];
         }
-        $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : [];
-        $company = (string) ($placement['company'] ?? $self['companyName'] ?? 'company');
+        $company = (string) ($placement['company'] ?? '');
         $safeCompany = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $company) ?: 'company';
         $savedPaths = [];
 
-        $offerLetter = (string) ($placement['offerLetter'] ?? $self['offerLetter'] ?? '');
-        $joiningLetter = (string) ($placement['joiningLetter'] ?? $self['joiningLetter'] ?? '');
-        $companyIdDoc = (string) ($placement['companyIdDoc'] ?? $self['companyIdDoc'] ?? '');
+        $offerLetter = (string) ($placement['offerLetter'] ?? '');
+        $joiningLetter = (string) ($placement['joiningLetter'] ?? '');
+        $companyIdDoc = (string) ($placement['companyIdDoc'] ?? '');
 
         if ($hasOffer) {
             $error = Security::validateUploadedFile($_FILES['offerLetter'], $config['uploads']['max_resume'], ['pdf']);
@@ -1731,42 +1796,30 @@ final class StaffPlacementRegistryService
         $placement['companyIdDoc'] = $companyIdDoc;
         $placement['updatedAt'] = DocumentHelper::now();
 
-        if ($self !== []) {
-            if ($offerLetter !== '') {
-                $self['offerLetter'] = $offerLetter;
-            }
-            if ($joiningLetter !== '') {
-                $self['joiningLetter'] = $joiningLetter;
-            }
-            if ($companyIdDoc !== '') {
-                $self['companyIdDoc'] = $companyIdDoc;
-            }
-        }
-
-        $ok = (new StudentModel())->update((string) $student['_id'], [
-            'placement'     => $placement,
-            'selfPlacement' => $self !== [] ? $self : ($student['selfPlacement'] ?? null),
-            'placed'        => true,
-        ]);
-        if (!$ok) {
-            $storage = new ObjectStorageService();
-            foreach ($savedPaths as $p) {
-                $storage->delete((string) $p);
-            }
-            Response::error('Could not save documents.', 500);
-        }
-
         $scopeDeptId = trim((string) ($staffCtx['departmentId'] ?? ''));
+        $registryId = $this->registryStudentId($student);
         try {
-            (new StudentPlacementModel())->upsertForStudent(
-                (string) $student['_id'],
+            $savedId = (new StudentPlacementModel())->upsertForStudent(
+                $registryId,
                 strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
                 $placement,
                 $scopeDeptId !== '' ? $scopeDeptId : null,
                 $this->rosterMetaForStudentPlacement($student)
             );
-        } catch (\Throwable) {
-            // documents already on student profile
+        } catch (\Throwable $e) {
+            $storage = new ObjectStorageService();
+            foreach ($savedPaths as $p) {
+                $storage->delete((string) $p);
+            }
+            Response::error('Could not save documents to placement registry: ' . $e->getMessage(), 500);
+        }
+
+        if ($savedId === '') {
+            $storage = new ObjectStorageService();
+            foreach ($savedPaths as $p) {
+                $storage->delete((string) $p);
+            }
+            Response::error('Could not save documents. Ensure student_placements table exists.', 500);
         }
 
         return [
