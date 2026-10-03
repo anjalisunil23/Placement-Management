@@ -198,4 +198,40 @@ class TutorialModuleActivitySubmissionModel extends BaseModel
 
         return null;
     }
+
+    /**
+     * Submitted attempts for a tutorial (optionally narrowed by module/activity).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listSubmittedForTutorial(
+        string $tutorialId,
+        ?string $moduleId = null,
+        ?string $activityId = null,
+        int $limit = 200,
+        int $skip = 0
+    ): array {
+        if (!Security::isValidId($tutorialId)) {
+            return [];
+        }
+        $filter = [
+            'tutorialId' => $tutorialId,
+            'status' => 'SUBMITTED',
+        ];
+        if ($moduleId !== null && $moduleId !== '' && Security::isValidId($moduleId)) {
+            $filter['moduleId'] = $moduleId;
+        }
+        if ($activityId !== null && $activityId !== '' && Security::isValidId($activityId)) {
+            $filter['activityId'] = $activityId;
+        }
+        $rows = $this->findAll($filter, max(1, min(500, $limit)), max(0, $skip), ['submittedAt' => -1]);
+        usort($rows, static function (array $a, array $b): int {
+            $ta = (string) ($a['submittedAt'] ?? $a['createdAt'] ?? '');
+            $tb = (string) ($b['submittedAt'] ?? $b['createdAt'] ?? '');
+
+            return $tb <=> $ta;
+        });
+
+        return $rows;
+    }
 }

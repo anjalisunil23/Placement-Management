@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Config\Database;
 use PMS\Middleware\AuthMiddleware;
 use PMS\Models\StudentModel;
 use PMS\Models\TutorialModuleActivityModel;
 use PMS\Models\TutorialModuleActivityReviewModel;
 use PMS\Models\TutorialModuleActivitySubmissionModel;
-use PMS\Config\Database;
+use PMS\Models\UserModel;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Security;
 
@@ -24,11 +25,13 @@ final class TutorialActivityService
         private ?TutorialModuleActivityModel $activities = null,
         private ?TutorialModuleActivitySubmissionModel $submissions = null,
         private ?TutorialModuleActivityReviewModel $reviews = null,
+        private ?TutorialAIService $ai = null,
     ) {
         $this->tutorials = $tutorials ?? new TutorialService();
         $this->activities = $activities ?? new TutorialModuleActivityModel();
         $this->submissions = $submissions ?? new TutorialModuleActivitySubmissionModel();
         $this->reviews = $reviews ?? new TutorialModuleActivityReviewModel();
+        $this->ai = $ai ?? new TutorialAIService(null, $this->tutorials);
     }
 
     /**
@@ -254,6 +257,135 @@ final class TutorialActivityService
         }
 
         return $this->managedView($row, true);
+    }
+
+    /**
+     * AI practical-activity preview for a managed module. Does not persist.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function generateForModule(array $user, string $tutorialId, string $moduleId, array $input): array
+    {
+        $ctx = $this->staffModuleContext($user, $tutorialId, $moduleId);
+        if (isset($input['academicField']) && is_string($input['academicField']) && $input['academicField'] !== '') {
+            $ctx['academicField'] = $input['academicField'];
+        }
+
+        return $this->ai->generateActivityPreview($user, $ctx, $input);
+    }
+
+    /**
+     * Persist an approved activity preview as a draft via create().
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function saveGenerated(array $user, string $tutorialId, string $moduleId, array $input): array
+    {
+        $this->requireManagedModule($user, $tutorialId, $moduleId);
+        $raw = is_array($input['activity'] ?? null) ? $input['activity'] : $input;
+        $normalized = $this->ai->normalizeActivityPreview($raw, [
+            'activityType' => (string) ($raw['activityType'] ?? $input['activityType'] ?? ''),
+            'difficulty' => (string) ($raw['difficulty'] ?? $input['difficulty'] ?? 'beginner'),
+            'academicField' => (string) ($raw['academicField'] ?? $input['academicField'] ?? 'other'),
+            'evaluationMode' => (string) ($raw['evaluationMode'] ?? $input['evaluationMode'] ?? ''),
+        ]);
+        $normalized['status'] = 'draft';
+
+        return $this->create($user, $tutorialId, $moduleId, $normalized);
+    }
+
+    /**
+     * Staff queue of submitted practical-activity attempts for a managed course.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    public function listSubmissionsManaged(array $user, string $tutorialId, array $filters = []): array
+    {
+        $course = $this->tutorials->showManaged($user, $tutorialId);
+        $moduleId = trim((string) ($filters['moduleId'] ?? ''));
+        $activityId = trim((string) ($filters['activityId'] ?? ''));
+        $status = strtolower(trim((string) ($filters['status'] ?? 'all')));
+        if (!in_array($status, ['all', 'pending', 'reviewed'], true)) {
+            $status = 'all';
+        }
+        $limit = max(1, min(200, (int) ($filters['limit'] ?? 100)));
+        $rows = $this->submissions->listSubmittedForTutorial(
+            $tutorialId,
+            $moduleId !== '' ? $moduleId : null,
+            $activityId !== '' ? $activityId : null,
+            $limit,
+            0
+        );
+        $moduleTitles = [];
+        foreach ((array) ($course['modules'] ?? []) as $module) {
+            $moduleTitles[(string) ($module['id'] ?? '')] = (string) ($module['title'] ?? 'Module');
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            $item = $this->managedSubmissionSummary($row, $moduleTitles);
+            $reviewStatus = (string) ($item['review']['status'] ?? 'pending');
+            if ($status === 'pending' && $reviewStatus === 'reviewed') {
+                continue;
+            }
+            if ($status === 'reviewed' && $reviewStatus !== 'reviewed') {
+                continue;
+            }
+            $out[] = $item;
+        }
+
+        return [
+            'submissions' => $out,
+            'count' => count($out),
+            'tutorial' => [
+                'id' => (string) ($course['id'] ?? $tutorialId),
+                'title' => (string) ($course['title'] ?? ''),
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function getSubmissionManaged(array $user, string $tutorialId, string $submissionId): array
+    {
+        $this->tutorials->showManaged($user, $tutorialId);
+        $submission = $this->requireManagedSubmission($tutorialId, $submissionId);
+        if ((string) ($submission['status'] ?? '') !== 'SUBMITTED') {
+            throw new \InvalidArgumentException('Only submitted attempts can be reviewed.');
+        }
+
+        return $this->managedSubmissionDetail($submission);
+    }
+
+    /**
+     * Save a draft (pending) tutor review. Does not finalize.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function saveReviewManaged(array $user, string $tutorialId, string $submissionId, array $input): array
+    {
+        return $this->persistReviewManaged($user, $tutorialId, $submissionId, $input, false);
+    }
+
+    /**
+     * Finalize a tutor review (status=reviewed). Idempotent if already reviewed with same payload.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function finalizeReviewManaged(array $user, string $tutorialId, string $submissionId, array $input): array
+    {
+        return $this->persistReviewManaged($user, $tutorialId, $submissionId, $input, true);
     }
 
     /**
@@ -599,6 +731,12 @@ final class TutorialActivityService
             $publicSnapshot['config']['selfCheckRubric'] = (string) (($snapshot['config']['selfCheckRubric'] ?? '') ?: '');
         }
 
+        $reviewRow = $this->reviews->findBySubmission((string) ($attempt['_id'] ?? ''));
+        $autoResult = $this->publicAutoResult(
+            is_array($attempt['autoResult'] ?? null) ? $attempt['autoResult'] : null,
+            $reviewRow
+        );
+
         return [
             'id' => (string) ($attempt['_id'] ?? ''),
             'activityId' => (string) ($attempt['activityId'] ?? ''),
@@ -607,9 +745,8 @@ final class TutorialActivityService
             'attemptNumber' => (int) ($attempt['attemptNumber'] ?? 0),
             'status' => (string) ($attempt['status'] ?? ''),
             'payload' => is_array($attempt['payload'] ?? null) ? $attempt['payload'] : [],
-            'autoResult' => $this->publicAutoResult(
-                is_array($attempt['autoResult'] ?? null) ? $attempt['autoResult'] : null
-            ),
+            'autoResult' => $autoResult,
+            'review' => $this->publicReviewForStudent($reviewRow),
             'activitySnapshot' => $publicSnapshot,
             'startedAt' => $attempt['startedAt'] ?? ($attempt['createdAt'] ?? null),
             'submittedAt' => $attempt['submittedAt'] ?? null,
@@ -618,9 +755,10 @@ final class TutorialActivityService
 
     /**
      * @param array<string, mixed>|null $autoResult
+     * @param array<string, mixed>|null $review
      * @return array<string, mixed>|null
      */
-    private function publicAutoResult(?array $autoResult): ?array
+    private function publicAutoResult(?array $autoResult, ?array $review = null): ?array
     {
         if ($autoResult === null) {
             return null;
@@ -641,10 +779,41 @@ final class TutorialActivityService
             ];
         }
         if ($mode === 'tutor_review') {
-            return ['mode' => 'tutor_review', 'status' => 'pending_review'];
+            $reviewed = is_array($review) && (string) ($review['status'] ?? '') === 'reviewed';
+
+            return [
+                'mode' => 'tutor_review',
+                'status' => $reviewed ? 'reviewed' : 'pending_review',
+            ];
         }
 
         return ['mode' => $mode !== '' ? $mode : 'none'];
+    }
+
+    /**
+     * @param array<string, mixed>|null $review
+     * @return array<string, mixed>|null
+     */
+    private function publicReviewForStudent(?array $review): ?array
+    {
+        if (!is_array($review)) {
+            return null;
+        }
+        $status = (string) ($review['status'] ?? 'pending');
+        if ($status !== 'reviewed') {
+            return ['status' => 'pending'];
+        }
+
+        return [
+            'status' => 'reviewed',
+            'score' => array_key_exists('score', $review) && $review['score'] !== null ? (float) $review['score'] : null,
+            'maxScore' => array_key_exists('maxScore', $review) && $review['maxScore'] !== null ? (float) $review['maxScore'] : null,
+            'passed' => array_key_exists('passed', $review) && $review['passed'] !== null
+                ? (($review['passed'] ?? false) === true)
+                : null,
+            'feedback' => (string) ($review['feedback'] ?? ''),
+            'reviewedAt' => $review['updatedAt'] ?? ($review['createdAt'] ?? null),
+        ];
     }
 
     /**
@@ -1016,6 +1185,318 @@ final class TutorialActivityService
         $msg = $e->getMessage();
 
         return str_contains($msg, '1062') || stripos($msg, 'Duplicate') !== false;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function persistReviewManaged(
+        array $user,
+        string $tutorialId,
+        string $submissionId,
+        array $input,
+        bool $finalize
+    ): array {
+        $this->tutorials->showManaged($user, $tutorialId);
+        $reviewerUserId = (string) ($user['_id'] ?? $user['id'] ?? '');
+        if (!Security::isValidId($reviewerUserId)) {
+            throw new \RuntimeException('You do not have permission to manage tutorials.', 403);
+        }
+        $submission = $this->requireManagedSubmission($tutorialId, $submissionId);
+        if ((string) ($submission['status'] ?? '') !== 'SUBMITTED') {
+            throw new \InvalidArgumentException('Only submitted attempts can be reviewed.');
+        }
+        $snapshot = is_array($submission['activitySnapshot'] ?? null) ? $submission['activitySnapshot'] : [];
+        $mode = (string) ($snapshot['evaluationMode'] ?? '');
+        if ($mode !== 'tutor_review') {
+            throw new \InvalidArgumentException('Manual tutor review is only available for tutor_review activities.');
+        }
+        // Never let staff overwrite automated evaluation payloads.
+        $autoMode = (string) (($submission['autoResult']['mode'] ?? '') ?: '');
+        if (in_array($autoMode, ['auto_compare', 'self_check'], true)) {
+            throw new \InvalidArgumentException('Automated evaluation results cannot be overwritten by tutor review.');
+        }
+
+        $score = $this->nullableScore($input, 'score');
+        $maxScore = $this->nullableScore($input, 'maxScore');
+        if ($score !== null && $maxScore === null) {
+            throw new \InvalidArgumentException('maxScore is required when score is provided.');
+        }
+        if ($maxScore !== null && $maxScore <= 0) {
+            throw new \InvalidArgumentException('maxScore must be greater than zero.');
+        }
+        if ($score !== null && $maxScore !== null && $score > $maxScore) {
+            throw new \InvalidArgumentException('Score cannot exceed maxScore.');
+        }
+        $passed = null;
+        if (array_key_exists('passed', $input) && $input['passed'] !== null && $input['passed'] !== '') {
+            $passed = ($input['passed'] === true || $input['passed'] === 1 || $input['passed'] === '1');
+        }
+        $feedback = (string) ($input['feedback'] ?? '');
+        $privateNotes = (string) ($input['privateNotes'] ?? '');
+        $status = $finalize ? 'reviewed' : 'pending';
+
+        $existing = $this->reviews->findBySubmission((string) ($submission['_id'] ?? ''));
+        $payload = [
+            'submissionId' => (string) ($submission['_id'] ?? ''),
+            'activityId' => (string) ($submission['activityId'] ?? ''),
+            'reviewerUserId' => $reviewerUserId,
+            'status' => $status,
+            'score' => $score,
+            'maxScore' => $maxScore,
+            'passed' => $passed,
+            'feedback' => $feedback,
+            'privateNotes' => $privateNotes,
+        ];
+        if (is_array($existing)) {
+            // Idempotent finalize: already reviewed stays reviewed.
+            if ($finalize && (string) ($existing['status'] ?? '') === 'reviewed' && !$this->reviewInputChanged($existing, $payload)) {
+                return $this->managedSubmissionDetail($submission);
+            }
+            $this->reviews->updateReview((string) ($existing['_id'] ?? ''), $payload);
+        } else {
+            try {
+                $this->reviews->createReview($payload);
+            } catch (\PDOException $e) {
+                if (!$this->isDuplicateKeyException($e)) {
+                    throw $e;
+                }
+                $race = $this->reviews->findBySubmission((string) ($submission['_id'] ?? ''));
+                if (!is_array($race)) {
+                    throw new \RuntimeException('Could not save the review. Please try again.', 409);
+                }
+                $this->reviews->updateReview((string) ($race['_id'] ?? ''), $payload);
+            }
+        }
+
+        return $this->managedSubmissionDetail($submission);
+    }
+
+    /**
+     * @param array<string, mixed> $existing
+     * @param array<string, mixed> $incoming
+     */
+    private function reviewInputChanged(array $existing, array $incoming): bool
+    {
+        $fields = ['score', 'maxScore', 'passed', 'feedback', 'privateNotes'];
+        foreach ($fields as $field) {
+            $left = $existing[$field] ?? null;
+            $right = $incoming[$field] ?? null;
+            if ($field === 'feedback' || $field === 'privateNotes') {
+                if (trim((string) $left) !== trim((string) $right)) {
+                    return true;
+                }
+                continue;
+            }
+            if ($left === null && $right === null) {
+                continue;
+            }
+            if ((string) $left !== (string) $right) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     */
+    private function nullableScore(array $input, string $key): ?float
+    {
+        if (!array_key_exists($key, $input) || $input[$key] === null || $input[$key] === '') {
+            return null;
+        }
+        if (!is_numeric($input[$key])) {
+            throw new \InvalidArgumentException(ucfirst($key) . ' must be numeric.');
+        }
+        $value = (float) $input[$key];
+        if (!is_finite($value) || $value < 0 || $value > 1000) {
+            throw new \InvalidArgumentException(ucfirst($key) . ' is out of range.');
+        }
+
+        return $value;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function requireManagedSubmission(string $tutorialId, string $submissionId): array
+    {
+        if (!Security::isValidId($submissionId)) {
+            throw new \RuntimeException('Submission not found.', 404);
+        }
+        $submission = $this->submissions->findById($submissionId);
+        if (!is_array($submission) || (string) ($submission['tutorialId'] ?? '') !== $tutorialId) {
+            throw new \RuntimeException('Submission not found.', 404);
+        }
+
+        return $submission;
+    }
+
+    /**
+     * @param array<string, mixed> $submission
+     * @param array<string, string> $moduleTitles
+     * @return array<string, mixed>
+     */
+    private function managedSubmissionSummary(array $submission, array $moduleTitles = []): array
+    {
+        $activityId = (string) ($submission['activityId'] ?? '');
+        $activity = Security::isValidId($activityId) ? $this->activities->findById($activityId) : null;
+        $snapshot = is_array($submission['activitySnapshot'] ?? null) ? $submission['activitySnapshot'] : [];
+        $review = $this->reviews->findBySubmission((string) ($submission['_id'] ?? ''));
+        $student = $this->studentSummaryForStaff((string) ($submission['studentId'] ?? ''));
+        $mode = (string) ($snapshot['evaluationMode'] ?? ($activity['evaluationMode'] ?? ''));
+        $reviewStatus = is_array($review)
+            ? (string) ($review['status'] ?? 'pending')
+            : (($mode === 'tutor_review') ? 'pending' : 'n/a');
+
+        return [
+            'id' => (string) ($submission['_id'] ?? ''),
+            'tutorialId' => (string) ($submission['tutorialId'] ?? ''),
+            'moduleId' => (string) ($submission['moduleId'] ?? ''),
+            'moduleTitle' => $moduleTitles[(string) ($submission['moduleId'] ?? '')] ?? '',
+            'activityId' => $activityId,
+            'activityTitle' => (string) ($snapshot['title'] ?? ($activity['title'] ?? 'Activity')),
+            'activityType' => (string) ($snapshot['activityType'] ?? ($activity['activityType'] ?? '')),
+            'evaluationMode' => $mode,
+            'attemptNumber' => (int) ($submission['attemptNumber'] ?? 0),
+            'status' => (string) ($submission['status'] ?? ''),
+            'submittedAt' => $submission['submittedAt'] ?? null,
+            'student' => $student,
+            'review' => [
+                'status' => $reviewStatus,
+                'score' => is_array($review) && $review['score'] !== null ? (float) $review['score'] : null,
+                'maxScore' => is_array($review) && $review['maxScore'] !== null ? (float) $review['maxScore'] : null,
+            ],
+            'autoResult' => $this->publicAutoResult(
+                is_array($submission['autoResult'] ?? null) ? $submission['autoResult'] : null,
+                $review
+            ),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $submission
+     * @return array<string, mixed>
+     */
+    private function managedSubmissionDetail(array $submission): array
+    {
+        $summary = $this->managedSubmissionSummary($submission);
+        $snapshot = is_array($submission['activitySnapshot'] ?? null) ? $submission['activitySnapshot'] : [];
+        $review = $this->reviews->findBySubmission((string) ($submission['_id'] ?? ''));
+        $summary['payload'] = is_array($submission['payload'] ?? null) ? $submission['payload'] : [];
+        $summary['activitySnapshot'] = [
+            'id' => (string) ($snapshot['id'] ?? ''),
+            'title' => (string) ($snapshot['title'] ?? ''),
+            'instructions' => (string) ($snapshot['instructions'] ?? ''),
+            'activityType' => (string) ($snapshot['activityType'] ?? ''),
+            'academicField' => (string) ($snapshot['academicField'] ?? 'other'),
+            'difficulty' => (string) ($snapshot['difficulty'] ?? 'beginner'),
+            'evaluationMode' => (string) ($snapshot['evaluationMode'] ?? ''),
+            'config' => is_array($snapshot['config'] ?? null) ? $snapshot['config'] : [],
+            // Staff may see answerKey for context while grading.
+            'answerKey' => is_array($snapshot['answerKey'] ?? null) ? $snapshot['answerKey'] : [],
+        ];
+        $summary['review'] = is_array($review) ? [
+            'id' => (string) ($review['_id'] ?? ''),
+            'status' => (string) ($review['status'] ?? 'pending'),
+            'score' => $review['score'] !== null ? (float) $review['score'] : null,
+            'maxScore' => $review['maxScore'] !== null ? (float) $review['maxScore'] : null,
+            'passed' => array_key_exists('passed', $review) && $review['passed'] !== null
+                ? (($review['passed'] ?? false) === true)
+                : null,
+            'feedback' => (string) ($review['feedback'] ?? ''),
+            'privateNotes' => (string) ($review['privateNotes'] ?? ''),
+            'reviewerUserId' => (string) ($review['reviewerUserId'] ?? ''),
+            'updatedAt' => $review['updatedAt'] ?? null,
+            'createdAt' => $review['createdAt'] ?? null,
+        ] : [
+            'id' => '',
+            'status' => ((string) ($snapshot['evaluationMode'] ?? '') === 'tutor_review') ? 'pending' : 'n/a',
+            'score' => null,
+            'maxScore' => null,
+            'passed' => null,
+            'feedback' => '',
+            'privateNotes' => '',
+            'reviewerUserId' => '',
+            'updatedAt' => null,
+            'createdAt' => null,
+        ];
+        $summary['reviewable'] = (string) ($snapshot['evaluationMode'] ?? '') === 'tutor_review';
+
+        return $summary;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function studentSummaryForStaff(string $studentId): array
+    {
+        if (!Security::isValidId($studentId)) {
+            return ['id' => '', 'registerNumber' => '', 'name' => ''];
+        }
+        $student = (new StudentModel())->findById($studentId);
+        if (!is_array($student)) {
+            return ['id' => $studentId, 'registerNumber' => '', 'name' => ''];
+        }
+        $name = '';
+        $userId = (string) ($student['userId'] ?? '');
+        if (Security::isValidId($userId)) {
+            $user = (new UserModel())->findById($userId);
+            $name = is_array($user) ? (string) ($user['name'] ?? '') : '';
+        }
+
+        return [
+            'id' => $studentId,
+            'registerNumber' => (string) ($student['registerNumber'] ?? ''),
+            'name' => $name,
+            'classBatch' => (string) ($student['classBatch'] ?? ''),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function staffModuleContext(array $user, string $tutorialId, string $moduleId): array
+    {
+        $pair = $this->requireManagedModule($user, $tutorialId, $moduleId);
+        $course = $pair['course'];
+        $module = $pair['module'];
+        $lessonText = '';
+        $content = (string) ($module['content'] ?? '');
+        if ($content !== '' && str_starts_with(trim($content), '{')) {
+            $decoded = json_decode($content, true);
+            if (is_array($decoded) && is_array($decoded['blocks'] ?? null)) {
+                foreach ($decoded['blocks'] as $block) {
+                    if (!is_array($block)) {
+                        continue;
+                    }
+                    $type = (string) ($block['type'] ?? '');
+                    if (in_array($type, ['paragraph', 'heading', 'quote'], true)) {
+                        $lessonText .= (string) ($block['text'] ?? '') . "\n";
+                    } elseif ($type === 'code') {
+                        $lessonText .= (string) ($block['source'] ?? '') . "\n";
+                    }
+                }
+            }
+        } else {
+            $lessonText = strip_tags($content);
+        }
+
+        return [
+            'tutorialId' => $tutorialId,
+            'moduleId' => $moduleId,
+            'courseTitle' => (string) ($course['title'] ?? ''),
+            'courseDescription' => (string) ($course['description'] ?? ''),
+            'academicField' => 'other',
+            'moduleTitle' => (string) ($module['title'] ?? ''),
+            'moduleDescription' => (string) ($module['subtitle'] ?? ''),
+            'lessonText' => $lessonText,
+        ];
     }
 
     /**

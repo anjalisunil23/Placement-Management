@@ -297,6 +297,25 @@ final class TutorialController
         );
     }
 
+    public function activitiesManageGenerate(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->generateForModule($user, $tutorialId, $moduleId, $this->body()),
+            'AI activity draft generated.'
+        );
+    }
+
+    public function activitiesManageSaveGenerated(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->saveGenerated($user, $tutorialId, $moduleId, $this->body()),
+            'Generated activity saved as draft.',
+            201
+        );
+    }
+
     public function activitiesManageGet(string $tutorialId, string $moduleId, string $activityId): void
     {
         $user = AuthMiddleware::authenticate();
@@ -336,6 +355,41 @@ final class TutorialController
         Response::success(
             $this->activities->unpublish($user, $tutorialId, $moduleId, $activityId),
             'Activity unpublished.'
+        );
+    }
+
+    public function activitiesManageSubmissions(string $tutorialId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->activities->listSubmissionsManaged($user, $tutorialId, [
+            'moduleId' => (string) ($_GET['moduleId'] ?? ''),
+            'activityId' => (string) ($_GET['activityId'] ?? ''),
+            'status' => (string) ($_GET['status'] ?? 'all'),
+            'limit' => (int) ($_GET['limit'] ?? 100),
+        ]));
+    }
+
+    public function activitiesManageSubmissionGet(string $tutorialId, string $submissionId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->activities->getSubmissionManaged($user, $tutorialId, $submissionId));
+    }
+
+    public function activitiesManageReviewSave(string $tutorialId, string $submissionId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->saveReviewManaged($user, $tutorialId, $submissionId, $this->body()),
+            'Review draft saved.'
+        );
+    }
+
+    public function activitiesManageReviewFinalize(string $tutorialId, string $submissionId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->finalizeReviewManaged($user, $tutorialId, $submissionId, $this->body()),
+            'Review finalized.'
         );
     }
 

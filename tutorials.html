@@ -220,6 +220,7 @@
       </div>
       <div class="d-flex flex-wrap gap-2">
         <button type="button" class="btn btn-outline-secondary" id="builderEditCourse">Edit details</button>
+        <button type="button" class="btn btn-outline-secondary" id="builderActivityReviews">Activity reviews</button>
         <button type="button" class="btn btn-outline-secondary" id="builderPreview">Preview</button>
         <button type="button" class="btn btn-primary" id="builderPublish">Publish</button>
       </div>
@@ -361,6 +362,45 @@
         <div class="small text-muted-2" id="activityMeta"></div>
       </div>
       <p class="small text-muted-2 mb-3">Discipline-agnostic practice tasks. Responses are stored as text only — nothing is executed.</p>
+      <div class="border rounded p-3 mb-3 bg-light">
+        <div class="fw-semibold mb-2">Generate activity with AI</div>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-3"><label class="form-label" for="activityAiType">Type</label>
+            <select class="form-select form-select-sm" id="activityAiType">
+              <option value="programming_task">Programming task</option>
+              <option value="sql_query">SQL query</option>
+              <option value="numerical">Numerical problem</option>
+              <option value="short_answer">Short answer</option>
+              <option value="case_study">Case study</option>
+              <option value="analytical_design">Analytical / design</option>
+            </select>
+          </div>
+          <div class="col-md-3"><label class="form-label" for="activityAiTopic">Topic / problem area</label><input class="form-control form-control-sm" id="activityAiTopic" maxlength="200" placeholder="e.g. Ohm's law"/></div>
+          <div class="col-md-2"><label class="form-label" for="activityAiDifficulty">Difficulty</label>
+            <select class="form-select form-select-sm" id="activityAiDifficulty">
+              <option value="beginner">Beginner</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
+            </select>
+          </div>
+          <div class="col-md-2"><label class="form-label" for="activityAiLanguage">Language</label>
+            <select class="form-select form-select-sm" id="activityAiLanguage">
+              <option value="python">Python</option>
+              <option value="javascript">JavaScript</option>
+              <option value="java">Java</option>
+              <option value="c">C</option>
+              <option value="cpp">C++</option>
+              <option value="php">PHP</option>
+              <option value="sql">SQL</option>
+              <option value="text">Text</option>
+            </select>
+          </div>
+          <div class="col-md-2"><button type="button" class="btn btn-sm btn-outline-primary w-100" id="activityAiGenerateBtn">Generate</button></div>
+          <div class="col-12"><label class="form-label" for="activityAiInstructions">Additional instructions</label><input class="form-control form-control-sm" id="activityAiInstructions" maxlength="2000" placeholder="Optional focus for AI"/></div>
+        </div>
+        <div class="form-text">AI returns a preview only. Review and edit in the form, then save as draft. Publishing stays a separate action.</div>
+        <div id="activityAiBanner" class="alert alert-info py-2 small mt-2 mb-0 d-none">AI draft loaded below — not saved until you click Save draft.</div>
+      </div>
       <div id="activityList" class="d-flex flex-column gap-2 mb-3"></div>
       <button type="button" class="btn btn-sm btn-outline-primary mb-3" id="activityAddBtn">+ Add activity</button>
       <form id="activityForm" class="border rounded p-3 d-none">
@@ -410,6 +450,86 @@
       </form>
     </div>
   </div>
+  <div id="activityReviewView" class="d-none">
+    <div class="page-header">
+      <div>
+        <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="activityReviewBack"><i class="bi bi-arrow-left me-1"></i>Back to course</button>
+        <h1 class="page-title mb-1">Practical activity reviews</h1>
+        <p class="page-sub mb-0" id="activityReviewCourseMeta">Review student submissions for this course.</p>
+      </div>
+    </div>
+    <div class="card-surface p-3 mb-3">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label" for="reviewFilterModule">Module</label>
+          <select class="form-select form-select-sm" id="reviewFilterModule"><option value="">All modules</option></select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="reviewFilterActivity">Activity</label>
+          <select class="form-select form-select-sm" id="reviewFilterActivity"><option value="">All activities</option></select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="reviewFilterStatus">Review status</label>
+          <select class="form-select form-select-sm" id="reviewFilterStatus">
+            <option value="pending">Pending</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button type="button" class="btn btn-sm btn-primary" id="reviewFilterApply">Apply filters</button>
+        </div>
+      </div>
+    </div>
+    <div class="row g-3">
+      <div class="col-lg-5">
+        <div class="card-surface p-3">
+          <div class="fw-semibold mb-2">Submission queue</div>
+          <div id="activityReviewQueue" class="d-flex flex-column gap-2"><p class="text-muted-2 mb-0">Loading…</p></div>
+        </div>
+      </div>
+      <div class="col-lg-7">
+        <div class="card-surface p-3">
+          <div id="activityReviewEmpty" class="text-muted-2">Select a submission to review.</div>
+          <div id="activityReviewDetail" class="d-none">
+            <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+              <div>
+                <div class="fw-semibold" id="reviewDetailTitle"></div>
+                <div class="small text-muted-2" id="reviewDetailMeta"></div>
+              </div>
+              <span class="badge text-bg-secondary" id="reviewDetailStatus">Pending</span>
+            </div>
+            <div class="small mb-2" id="reviewDetailStudent"></div>
+            <div class="border rounded p-2 mb-3">
+              <div class="fw-semibold mb-1">Activity instructions</div>
+              <div id="reviewDetailInstructions" class="tutorial-lesson small"></div>
+            </div>
+            <div class="border rounded p-2 mb-3">
+              <div class="fw-semibold mb-1">Student response</div>
+              <div id="reviewDetailResponse" class="small"></div>
+            </div>
+            <div id="reviewAutoResult" class="border rounded p-2 mb-3 d-none"></div>
+            <form id="activityReviewForm" class="border rounded p-3">
+              <div class="fw-semibold mb-2">Tutor review</div>
+              <p class="small text-muted-2" id="reviewFormNote"></p>
+              <div class="row g-2">
+                <div class="col-md-4"><label class="form-label" for="reviewScore">Score</label><input class="form-control form-control-sm" id="reviewScore" type="number" min="0" max="1000" step="any"/></div>
+                <div class="col-md-4"><label class="form-label" for="reviewMaxScore">Max score</label><input class="form-control form-control-sm" id="reviewMaxScore" type="number" min="0" max="1000" step="any" value="10"/></div>
+                <div class="col-md-4 d-flex align-items-end"><div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="reviewPassed"/><label class="form-check-label" for="reviewPassed">Mark as passed</label></div></div>
+                <div class="col-12"><label class="form-label" for="reviewFeedback">Student-visible feedback</label><textarea class="form-control form-control-sm" id="reviewFeedback" rows="3"></textarea></div>
+                <div class="col-12"><label class="form-label" for="reviewPrivateNotes">Private tutor notes</label><textarea class="form-control form-control-sm" id="reviewPrivateNotes" rows="2"></textarea><div class="form-text">Never shown to students.</div></div>
+              </div>
+              <div class="d-flex flex-wrap gap-2 mt-3">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="reviewSaveDraftBtn">Save draft</button>
+                <button type="button" class="btn btn-sm btn-primary" id="reviewFinalizeBtn">Finalize review</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="previewView" class="d-none">
     <div class="alert alert-warning py-2">Preview. Students see this layout only after the course is published and they match its visibility.</div>
     <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="backFromPreview"><i class="bi bi-arrow-left me-1"></i>Courses</button>
@@ -490,5 +610,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261003studentactivities"></script>
+<script src="js/tutorials-page.js?v=20261003activityreviews"></script>
 </body></html>

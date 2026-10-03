@@ -8,9 +8,9 @@ use PMS\Config\Database;
 use PMS\Middleware\AuthMiddleware;
 
 /**
- * AI tutorial course/module generation via existing OpenAIService.
- * Generates lesson JSON only (no MCQ/assessment persistence in this phase).
- * Does not publish courses and does not execute code.
+ * AI tutorial course/module/MCQ/activity generation via existing OpenAIService.
+ * Preview-first: nothing persists until staff explicitly save.
+ * Does not publish courses, execute code/SQL, or grade students.
  */
 class TutorialAIService
 {
@@ -40,6 +40,21 @@ class TutorialAIService
     private const CODE_LANGUAGES = [
         'auto', 'text', 'python', 'javascript', 'typescript', 'java', 'c', 'cpp', 'csharp',
         'php', 'sql', 'html', 'css', 'json', 'bash', 'go',
+    ];
+
+    /** @var list<string> */
+    public const ACTIVITY_TYPES = [
+        'programming_task',
+        'sql_query',
+        'numerical',
+        'short_answer',
+        'case_study',
+        'analytical_design',
+    ];
+
+    /** @var list<string> */
+    private const ACTIVITY_LANGUAGES = [
+        'c', 'cpp', 'java', 'python', 'javascript', 'php', 'sql', 'text',
     ];
 
     /** @var array<string, string> */
@@ -1024,5 +1039,415 @@ PROMPT;
         $value = preg_replace('/<\/?(script|iframe|object|embed)[^>]*>/iu', '', $value) ?? $value;
 
         return $value;
+    }
+
+    /**
+     * Generate one practical activity preview. Does not persist.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $context course/module lesson context
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function generateActivityPreview(array $user, array $context, array $input): array
+    {
+        $this->assertAuthor($user);
+        $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? ''));
+        $this->assertAiConfigured();
+        @set_time_limit(600);
+
+        $type = strtolower(trim((string) ($input['activityType'] ?? '')));
+        if (!in_array($type, self::ACTIVITY_TYPES, true)) {
+            throw new \InvalidArgumentException('Unsupported activity type.');
+        }
+        $topic = trim(strip_tags((string) ($input['topic'] ?? $input['title'] ?? '')));
+        if ($topic === '') {
+            throw new \InvalidArgumentException('Topic is required for activity generation.');
+        }
+        if (mb_strlen($topic) > self::MAX_TOPIC_CHARS) {
+            throw new \InvalidArgumentException('Topic is too long.');
+        }
+        $difficulty = $this->normalizeDifficulty((string) ($input['difficulty'] ?? 'beginner'));
+        $field = $this->normalizeAcademicField((string) (
+            $input['academicField'] ?? $context['academicField'] ?? 'other'
+        ));
+        $instructions = trim(strip_tags((string) ($input['additionalInstructions'] ?? $input['instructions'] ?? '')));
+        if (mb_strlen($instructions) > self::MAX_INSTRUCTIONS_CHARS) {
+            throw new \InvalidArgumentException('Additional instructions are too long.');
+        }
+        $requestedMode = strtolower(trim((string) ($input['evaluationMode'] ?? '')));
+        $defaultMode = $this->defaultEvaluationMode($type);
+        $evaluationMode = $requestedMode !== '' ? $requestedMode : $defaultMode;
+        $this->assertActivityEvaluationMode($type, $evaluationMode);
+        $preferredLanguage = strtolower(trim((string) ($input['language'] ?? 'python')));
+        if (!in_array($preferredLanguage, self::ACTIVITY_LANGUAGES, true)) {
+            $preferredLanguage = 'python';
+        }
+
+        $lessonExcerpt = mb_substr(trim(strip_tags((string) ($context['lessonText'] ?? ''))), 0, 6000);
+        $system = <<<SYSTEM
+You author university tutorial practical activities. Return ONLY valid JSON matching the requested schema.
+Do not execute code or SQL. Do not invent unsupported fields.
+Keep instructions clear and self-contained. Prefer concise, teachable tasks.
+Never wrap JSON in markdown.
+SYSTEM;
+        $schema = $this->activityJsonSchemaHint($type, $evaluationMode);
+        $userPrompt = <<<PROMPT
+Course title: {$context['courseTitle']}
+Course description: {$context['courseDescription']}
+Module title: {$context['moduleTitle']}
+Module description: {$context['moduleDescription']}
+Academic field: {$field}
+Lesson excerpt:
+{$lessonExcerpt}
+
+Create ONE practical activity.
+Activity type: {$type}
+Topic / problem area: {$topic}
+Difficulty: {$difficulty}
+Evaluation mode: {$evaluationMode}
+Preferred programming language (if programming_task): {$preferredLanguage}
+Additional staff instructions: {$instructions}
+
+{$schema}
+PROMPT;
+
+        try {
+            $raw = $this->callGenerateJson($system, $userPrompt);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            error_log('[PMS TutorialAI] generate activity failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI activity generation is temporarily unavailable. Please try again.');
+        }
+
+        $activity = $this->normalizeActivityPreview($raw, [
+            'activityType' => $type,
+            'difficulty' => $difficulty,
+            'academicField' => $field,
+            'evaluationMode' => $evaluationMode,
+            'language' => $preferredLanguage,
+        ]);
+
+        return [
+            'previewId' => 'act-' . bin2hex(random_bytes(6)),
+            'scope' => 'module_activity',
+            'tutorialId' => (string) ($context['tutorialId'] ?? ''),
+            'moduleId' => (string) ($context['moduleId'] ?? ''),
+            'model' => $this->openai->checkStatus()['model'] ?? '',
+            'generatedAt' => gmdate('c'),
+            'activity' => $activity,
+        ];
+    }
+
+    /**
+     * Normalize/validate an AI or client activity preview against the activity schema.
+     *
+     * @param array<string, mixed> $raw
+     * @param array<string, mixed> $defaults
+     * @return array<string, mixed>
+     */
+    public function normalizeActivityPreview(array $raw, array $defaults = []): array
+    {
+        $type = strtolower(trim((string) ($raw['activityType'] ?? $defaults['activityType'] ?? '')));
+        if (!in_array($type, self::ACTIVITY_TYPES, true)) {
+            throw new \InvalidArgumentException('Unsupported activity type.');
+        }
+        $title = trim(strip_tags((string) ($raw['title'] ?? '')));
+        if ($title === '') {
+            throw new \InvalidArgumentException('Generated activity title is required.');
+        }
+        $instructions = (string) ($raw['instructions'] ?? $raw['problemStatement'] ?? $raw['caseDescription'] ?? '');
+        $instructions = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', $instructions) ?? $instructions;
+        $instructions = preg_replace('/<\/?(script|iframe|object|embed)[^>]*>/iu', '', $instructions) ?? $instructions;
+        if (trim(strip_tags($instructions)) === '') {
+            throw new \InvalidArgumentException('Generated activity instructions are required.');
+        }
+        if (mb_strlen($instructions) > 20000) {
+            throw new \InvalidArgumentException('Generated activity instructions are too long.');
+        }
+        $difficulty = strtolower(trim((string) ($raw['difficulty'] ?? $defaults['difficulty'] ?? 'beginner')));
+        if (!in_array($difficulty, self::DIFFICULTIES, true)) {
+            $difficulty = 'beginner';
+        }
+        $field = $this->normalizeAcademicField((string) ($raw['academicField'] ?? $defaults['academicField'] ?? 'other'));
+        $mode = strtolower(trim((string) ($raw['evaluationMode'] ?? $defaults['evaluationMode'] ?? $this->defaultEvaluationMode($type))));
+        $this->assertActivityEvaluationMode($type, $mode);
+
+        $configIn = is_array($raw['config'] ?? null) ? $raw['config'] : [];
+        $answerIn = is_array($raw['answerKey'] ?? null) ? $raw['answerKey'] : [];
+        // Accept common flat AI shapes.
+        foreach (['language', 'boilerplate', 'schemaDescription', 'unit', 'tolerance', 'selfCheckRubric', 'maxLength', 'deliverableHint', 'parts', 'promptHint'] as $key) {
+            if (!array_key_exists($key, $configIn) && array_key_exists($key, $raw)) {
+                $configIn[$key] = $raw[$key];
+            }
+        }
+        foreach (['modelAnswer', 'expectedValue', 'keywords'] as $key) {
+            if (!array_key_exists($key, $answerIn) && array_key_exists($key, $raw)) {
+                $answerIn[$key] = $raw[$key];
+            }
+        }
+        if ($type === 'programming_task' && !isset($configIn['language'])) {
+            $configIn['language'] = (string) ($defaults['language'] ?? 'python');
+        }
+
+        [$config, $answerKey] = $this->normalizeActivityConfigAndKey($type, $mode, $configIn, $answerIn);
+
+        return [
+            'title' => mb_substr($title, 0, 160),
+            'instructions' => $instructions,
+            'activityType' => $type,
+            'academicField' => $field,
+            'difficulty' => $difficulty,
+            'evaluationMode' => $mode,
+            'status' => 'draft',
+            'config' => $config,
+            'answerKey' => $answerKey,
+        ];
+    }
+
+    private function defaultEvaluationMode(string $type): string
+    {
+        return match ($type) {
+            'numerical' => 'auto_compare',
+            'short_answer' => 'self_check',
+            default => 'tutor_review',
+        };
+    }
+
+    private function assertActivityEvaluationMode(string $type, string $mode): void
+    {
+        $allowed = match ($type) {
+            'programming_task', 'sql_query', 'case_study', 'analytical_design' => ['none', 'tutor_review'],
+            'numerical' => ['none', 'tutor_review', 'auto_compare'],
+            'short_answer' => ['none', 'tutor_review', 'self_check'],
+            default => [],
+        };
+        if (!in_array($mode, $allowed, true)) {
+            throw new \InvalidArgumentException('Evaluation mode is not allowed for this activity type.');
+        }
+    }
+
+    private function activityJsonSchemaHint(string $type, string $mode): string
+    {
+        return match ($type) {
+            'programming_task' => <<<'ACT_SCHEMA'
+Schema shape:
+{
+  "title": "string",
+  "instructions": "problem statement",
+  "activityType": "programming_task",
+  "difficulty": "beginner",
+  "evaluationMode": "tutor_review",
+  "config": { "language": "python", "boilerplate": "starter code", "promptHint": "" },
+  "answerKey": { "modelAnswer": "optional solution text" }
+}
+ACT_SCHEMA,
+            'sql_query' => <<<'ACT_SCHEMA'
+Schema shape:
+{
+  "title": "string",
+  "instructions": "problem statement",
+  "activityType": "sql_query",
+  "difficulty": "beginner",
+  "evaluationMode": "tutor_review",
+  "config": { "schemaDescription": "tables and columns", "promptHint": "" },
+  "answerKey": { "modelAnswer": "optional SQL" }
+}
+ACT_SCHEMA,
+            'numerical' => <<<ACT_SCHEMA
+Schema shape:
+{
+  "title": "string",
+  "instructions": "problem statement",
+  "activityType": "numerical",
+  "difficulty": "beginner",
+  "evaluationMode": "{$mode}",
+  "config": { "unit": "ohm", "tolerance": 0.01, "promptHint": "" },
+  "answerKey": { "expectedValue": 5 }
+}
+ACT_SCHEMA,
+            'short_answer' => <<<ACT_SCHEMA
+Schema shape:
+{
+  "title": "string",
+  "instructions": "question",
+  "activityType": "short_answer",
+  "difficulty": "beginner",
+  "evaluationMode": "{$mode}",
+  "config": { "maxLength": 1000, "selfCheckRubric": "guidance after submit" },
+  "answerKey": { "modelAnswer": "optional", "keywords": ["word1", "word2"] }
+}
+ACT_SCHEMA,
+            'case_study' => <<<'ACT_SCHEMA'
+Schema shape:
+{
+  "title": "string",
+  "instructions": "case description",
+  "activityType": "case_study",
+  "difficulty": "beginner",
+  "evaluationMode": "tutor_review",
+  "config": {
+    "parts": [
+      { "id": "part-1", "prompt": "question 1" },
+      { "id": "part-2", "prompt": "question 2" }
+    ]
+  },
+  "answerKey": { "modelAnswer": "optional rubric" }
+}
+ACT_SCHEMA,
+            default => <<<'ACT_SCHEMA'
+Schema shape:
+{
+  "title": "string",
+  "instructions": "problem specification including requirements/constraints",
+  "activityType": "analytical_design",
+  "difficulty": "beginner",
+  "evaluationMode": "tutor_review",
+  "config": { "maxLength": 5000, "deliverableHint": "what to submit" },
+  "answerKey": { "modelAnswer": "optional rubric" }
+}
+ACT_SCHEMA,
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     * @param array<string, mixed> $answerKey
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    private function normalizeActivityConfigAndKey(string $type, string $mode, array $config, array $answerKey): array
+    {
+        $json = json_encode($config);
+        if (is_string($json) && strlen($json) > 32000) {
+            throw new \InvalidArgumentException('Activity configuration is too large.');
+        }
+
+        $normalizedConfig = match ($type) {
+            'programming_task' => [
+                'language' => $this->normalizeActivityLanguage((string) ($config['language'] ?? 'python')),
+                'boilerplate' => mb_substr((string) ($config['boilerplate'] ?? ''), 0, 20000),
+                'promptHint' => mb_substr(trim(strip_tags((string) ($config['promptHint'] ?? ''))), 0, 2000),
+            ],
+            'sql_query' => [
+                'schemaDescription' => mb_substr(trim(strip_tags((string) ($config['schemaDescription'] ?? ''))), 0, 8000),
+                'promptHint' => mb_substr(trim(strip_tags((string) ($config['promptHint'] ?? ''))), 0, 2000),
+            ],
+            'numerical' => [
+                'unit' => mb_substr(trim(strip_tags((string) ($config['unit'] ?? ''))), 0, 40),
+                'tolerance' => max(0.0, (float) ($config['tolerance'] ?? 0)),
+                'promptHint' => mb_substr(trim(strip_tags((string) ($config['promptHint'] ?? ''))), 0, 2000),
+            ],
+            'short_answer' => [
+                'maxLength' => min(5000, max(50, (int) ($config['maxLength'] ?? 1000))),
+                'selfCheckRubric' => mb_substr(trim(strip_tags((string) ($config['selfCheckRubric'] ?? ''))), 0, 4000),
+            ],
+            'case_study' => [
+                'parts' => $this->normalizeActivityParts(is_array($config['parts'] ?? null) ? $config['parts'] : []),
+            ],
+            'analytical_design' => [
+                'maxLength' => min(20000, max(100, (int) ($config['maxLength'] ?? 5000))),
+                'deliverableHint' => mb_substr(trim(strip_tags((string) ($config['deliverableHint'] ?? ''))), 0, 2000),
+            ],
+            default => [],
+        };
+
+        $normalizedKey = [];
+        if ($type === 'numerical') {
+            if ($mode === 'auto_compare' && !array_key_exists('expectedValue', $answerKey)) {
+                throw new \InvalidArgumentException('Numerical auto_compare activities require answerKey.expectedValue.');
+            }
+            if (array_key_exists('expectedValue', $answerKey)) {
+                if (!is_numeric($answerKey['expectedValue'])) {
+                    throw new \InvalidArgumentException('Numerical expectedValue must be numeric.');
+                }
+                $normalizedKey['expectedValue'] = (float) $answerKey['expectedValue'];
+            }
+            if (isset($answerKey['modelAnswer'])) {
+                $normalizedKey['modelAnswer'] = mb_substr(trim(strip_tags((string) $answerKey['modelAnswer'])), 0, 4000);
+            }
+        } elseif ($type === 'short_answer') {
+            if (isset($answerKey['modelAnswer'])) {
+                $normalizedKey['modelAnswer'] = mb_substr(trim(strip_tags((string) $answerKey['modelAnswer'])), 0, 4000);
+            }
+            $keywords = [];
+            foreach (array_values((array) ($answerKey['keywords'] ?? [])) as $word) {
+                $text = trim(strip_tags((string) $word));
+                if ($text !== '') {
+                    $keywords[] = mb_substr($text, 0, 80);
+                }
+            }
+            if ($keywords !== []) {
+                $normalizedKey['keywords'] = array_slice($keywords, 0, 20);
+            }
+            if ($mode === 'self_check' && ($normalizedKey['modelAnswer'] ?? '') === '' && $keywords === []) {
+                throw new \InvalidArgumentException('Self-check short answers need a modelAnswer or keywords.');
+            }
+        } elseif (isset($answerKey['modelAnswer'])) {
+            $normalizedKey['modelAnswer'] = mb_substr(trim(strip_tags((string) $answerKey['modelAnswer'])), 0, 8000);
+        }
+
+        return [$normalizedConfig, $normalizedKey];
+    }
+
+    private function normalizeActivityLanguage(string $language): string
+    {
+        $language = strtolower(trim(strip_tags($language)));
+        $aliases = [
+            'c++' => 'cpp',
+            'cplusplus' => 'cpp',
+            'js' => 'javascript',
+            'node' => 'javascript',
+            'py' => 'python',
+            'plain' => 'text',
+            'plaintext' => 'text',
+        ];
+        $language = $aliases[$language] ?? $language;
+        if (!in_array($language, self::ACTIVITY_LANGUAGES, true)) {
+            return 'text';
+        }
+
+        return $language;
+    }
+
+    /**
+     * @param list<mixed> $parts
+     * @return list<array<string, string>>
+     */
+    private function normalizeActivityParts(array $parts): array
+    {
+        $out = [];
+        foreach (array_slice($parts, 0, 12) as $index => $part) {
+            if (!is_array($part)) {
+                continue;
+            }
+            $prompt = trim(strip_tags((string) ($part['prompt'] ?? $part['question'] ?? '')));
+            if ($prompt === '') {
+                continue;
+            }
+            $id = trim(strip_tags((string) ($part['id'] ?? ('part-' . ($index + 1)))));
+            if ($id === '' || !preg_match('/^[A-Za-z0-9_-]{1,40}$/', $id)) {
+                $id = 'part-' . ($index + 1);
+            }
+            $out[] = [
+                'id' => mb_substr($id, 0, 40),
+                'prompt' => mb_substr($prompt, 0, 2000),
+            ];
+        }
+        if ($out === []) {
+            throw new \InvalidArgumentException('Case study activities need at least one part prompt.');
+        }
+        // Ensure stable unique ids.
+        $seen = [];
+        foreach ($out as $i => $part) {
+            $id = $part['id'];
+            if (isset($seen[$id])) {
+                $id = 'part-' . ($i + 1);
+                $out[$i]['id'] = $id;
+            }
+            $seen[$id] = true;
+        }
+
+        return $out;
     }
 }

@@ -44,6 +44,13 @@
     assessmentPreview: null,
     activities: [],
     activityBusy: false,
+    activityAiPreview: null,
+    reviewTutorialId: '',
+    reviewCourse: null,
+    reviewQueue: [],
+    reviewDetail: null,
+    reviewBusy: false,
+    reviewActivityOptions: [],
   };
 
   function role() {
@@ -176,6 +183,7 @@
         : `<button type="button" class="btn btn-sm btn-outline-primary" data-publish="${esc(row.id)}">Publish</button>`;
       const edit = status === 'published' ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-edit-tutorial="${esc(row.id)}">Edit</button>`;
       const manage = `<button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">${status === 'published' ? 'Manage' : 'Manage Modules'}</button>`;
+      const reviews = `<button type="button" class="btn btn-sm btn-outline-secondary" data-activity-reviews="${esc(row.id)}">Reviews</button>`;
       const remove = status === 'published'
         ? ''
         : `<button type="button" class="btn btn-sm btn-outline-danger" data-delete-tutorial="${esc(row.id)}">Delete</button>`;
@@ -193,6 +201,7 @@
           <div class="d-flex flex-wrap gap-1 justify-content-end">
             ${edit}
             ${manage}
+            ${reviews}
             <button type="button" class="btn btn-sm btn-outline-secondary" data-preview="${esc(row.id)}">Preview</button>
             ${publish}
             ${remove}
@@ -202,6 +211,7 @@
     }).join('');
     body.querySelectorAll('[data-edit-tutorial]').forEach((btn) => btn.addEventListener('click', () => openTutorial(btn.getAttribute('data-edit-tutorial'))));
     body.querySelectorAll('[data-modules]').forEach((btn) => btn.addEventListener('click', () => openModules(btn.getAttribute('data-modules'))));
+    body.querySelectorAll('[data-activity-reviews]').forEach((btn) => btn.addEventListener('click', () => openActivityReviews(btn.getAttribute('data-activity-reviews')).catch(fail)));
     body.querySelectorAll('[data-publish]').forEach((btn) => btn.addEventListener('click', () => publishTutorial(btn.getAttribute('data-publish'), true)));
     body.querySelectorAll('[data-unpublish]').forEach((btn) => btn.addEventListener('click', () => publishTutorial(btn.getAttribute('data-unpublish'), false)));
     body.querySelectorAll('[data-preview]').forEach((btn) => btn.addEventListener('click', () => openPreview(btn.getAttribute('data-preview'))));
@@ -349,6 +359,8 @@
     document.getElementById('moduleView').classList.toggle('d-none', name !== 'builder');
     document.getElementById('articleView').classList.toggle('d-none', name !== 'article');
     document.getElementById('previewView').classList.toggle('d-none', name !== 'preview');
+    const reviewView = document.getElementById('activityReviewView');
+    if (reviewView) reviewView.classList.toggle('d-none', name !== 'reviews');
   }
 
   async function openPreview(id) {
@@ -1612,6 +1624,54 @@
     });
   }
 
+  function setActivityAiBanner(show) {
+    const banner = document.getElementById('activityAiBanner');
+    if (banner) banner.classList.toggle('d-none', !show);
+  }
+
+  async function generateActivityDraft() {
+    if (!state.active || !state.selectedModuleId) {
+      toast('Save the module before generating an activity.', 'error');
+      return;
+    }
+    const topic = document.getElementById('activityAiTopic').value.trim();
+    if (!topic) {
+      toast('Enter a topic or problem area for AI generation.', 'error');
+      return;
+    }
+    const btn = document.getElementById('activityAiGenerateBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generating…';
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities/generate`, {
+        method: 'POST',
+        body: {
+          activityType: document.getElementById('activityAiType').value,
+          topic,
+          difficulty: document.getElementById('activityAiDifficulty').value,
+          language: document.getElementById('activityAiLanguage').value,
+          additionalInstructions: document.getElementById('activityAiInstructions').value.trim(),
+        },
+      });
+      const activity = data.activity || null;
+      if (!activity) throw new Error('AI did not return an activity draft.');
+      state.activityAiPreview = data;
+      await openActivityForm(activity);
+      document.getElementById('activityId').value = '';
+      document.getElementById('activityFormTitle').textContent = 'AI draft (unsaved)';
+      document.getElementById('activityFormStatus').textContent = 'Draft';
+      document.getElementById('activityFormStatus').className = 'badge text-bg-secondary';
+      document.getElementById('activityType').disabled = true;
+      setActivityAiBanner(true);
+      toast('Review the AI draft, edit if needed, then save as draft.', 'success');
+    } catch (err) {
+      fail(err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Generate';
+    }
+  }
+
   async function loadModuleActivities() {
     const pane = document.getElementById('moduleActivityPane');
     if (!state.active || !state.selectedModuleId) {
@@ -1620,6 +1680,8 @@
     }
     pane.classList.remove('d-none');
     document.getElementById('activityForm').classList.add('d-none');
+    state.activityAiPreview = null;
+    setActivityAiBanner(false);
     try {
       const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities`);
       state.activities = data.activities || [];
@@ -1674,6 +1736,8 @@
     document.getElementById('activityForm').classList.add('d-none');
     document.getElementById('activityId').value = '';
     document.getElementById('activityType').disabled = false;
+    state.activityAiPreview = null;
+    setActivityAiBanner(false);
     document.querySelectorAll('#activityList [data-activity-id]').forEach((card) => {
       card.classList.remove('border-primary');
     });
@@ -1697,6 +1761,7 @@
       return;
     }
     const id = document.getElementById('activityId').value;
+    const fromAi = !id && !!state.activityAiPreview && !publish;
     const draftBtn = document.getElementById('activitySaveDraftBtn');
     const pubBtn = document.getElementById('activityPublishBtn');
     state.activityBusy = true;
@@ -1708,6 +1773,11 @@
           method: 'PUT',
           body,
         });
+      } else if (fromAi) {
+        await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities/save-generated`, {
+          method: 'POST',
+          body: { activity: body },
+        });
       } else {
         await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(state.selectedModuleId)}/activities`, {
           method: 'POST',
@@ -1715,6 +1785,8 @@
         });
       }
       toast(publish ? 'Activity published.' : 'Activity saved as draft.', 'success');
+      state.activityAiPreview = null;
+      setActivityAiBanner(false);
       resetActivityForm();
       await loadModuleActivities();
     } catch (err) {
@@ -1804,6 +1876,7 @@
     state.assessmentQuestions = [];
     state.assessmentPreview = null;
     state.activities = [];
+    state.activityAiPreview = null;
     showStaffScreen('builder');
     renderModuleNav();
   }
@@ -2115,6 +2188,278 @@
     }
   }
 
+  async function openActivityReviews(tutorialId) {
+    if (!tutorialId) return;
+    state.reviewTutorialId = tutorialId;
+    state.reviewDetail = null;
+    document.getElementById('activityReviewDetail').classList.add('d-none');
+    document.getElementById('activityReviewEmpty').classList.remove('d-none');
+    showStaffScreen('reviews');
+    document.getElementById('activityReviewQueue').innerHTML = '<p class="text-muted-2 mb-0">Loading…</p>';
+    try {
+      const course = await call(`/tutorials/manage/${encodeURIComponent(tutorialId)}`);
+      state.reviewCourse = course;
+      state.active = course;
+      document.getElementById('activityReviewCourseMeta').textContent = `${course.title || 'Course'} · student practical activity submissions`;
+      const moduleSelect = document.getElementById('reviewFilterModule');
+      moduleSelect.innerHTML = '<option value="">All modules</option>'
+        + ((course.modules || []).map((row) => `<option value="${esc(row.id)}">${esc(row.title || 'Module')}</option>`).join(''));
+      await populateReviewActivityFilter();
+      document.getElementById('reviewFilterStatus').value = 'pending';
+      await loadActivityReviewQueue();
+    } catch (err) {
+      fail(err);
+      showStaffScreen('list');
+    }
+  }
+
+  async function populateReviewActivityFilter() {
+    const moduleId = document.getElementById('reviewFilterModule').value;
+    const select = document.getElementById('reviewFilterActivity');
+    select.innerHTML = '<option value="">All activities</option>';
+    state.reviewActivityOptions = [];
+    if (!state.reviewCourse) return;
+    const modules = (state.reviewCourse.modules || []).filter((row) => !moduleId || row.id === moduleId);
+    for (const module of modules) {
+      try {
+        const data = await call(`/tutorials/manage/${encodeURIComponent(state.reviewTutorialId)}/modules/${encodeURIComponent(module.id)}/activities`);
+        (data.activities || []).forEach((activity) => {
+          state.reviewActivityOptions.push({
+            id: activity.id,
+            title: activity.title || 'Activity',
+            moduleId: module.id,
+          });
+          select.innerHTML += `<option value="${esc(activity.id)}">${esc(activity.title || 'Activity')}</option>`;
+        });
+      } catch { /* skip module without activities access */ }
+    }
+  }
+
+  async function loadActivityReviewQueue() {
+    if (!state.reviewTutorialId) return;
+    const queue = document.getElementById('activityReviewQueue');
+    queue.innerHTML = '<p class="text-muted-2 mb-0">Loading submissions…</p>';
+    const params = new URLSearchParams();
+    const moduleId = document.getElementById('reviewFilterModule').value;
+    const activityId = document.getElementById('reviewFilterActivity').value;
+    const status = document.getElementById('reviewFilterStatus').value || 'all';
+    if (moduleId) params.set('moduleId', moduleId);
+    if (activityId) params.set('activityId', activityId);
+    params.set('status', status);
+    params.set('limit', '100');
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.reviewTutorialId)}/activity-submissions?${params}`);
+      state.reviewQueue = data.submissions || [];
+      renderActivityReviewQueue();
+    } catch (err) {
+      queue.innerHTML = `<p class="text-danger mb-0">${esc(err.message || 'Could not load submissions.')}</p>`;
+    }
+  }
+
+  function renderActivityReviewQueue() {
+    const queue = document.getElementById('activityReviewQueue');
+    const rows = state.reviewQueue || [];
+    if (!rows.length) {
+      queue.innerHTML = '<p class="text-muted-2 mb-0">No submissions match these filters.</p>';
+      return;
+    }
+    queue.innerHTML = rows.map((row) => {
+      const student = row.student || {};
+      const review = row.review || {};
+      const selected = state.reviewDetail && state.reviewDetail.id === row.id;
+      const status = review.status === 'reviewed' ? 'Reviewed' : (review.status === 'n/a' ? 'Auto' : 'Pending');
+      const badge = review.status === 'reviewed' ? 'success' : (review.status === 'n/a' ? 'secondary' : 'warning');
+      return `<button type="button" class="btn ${selected ? 'btn-primary' : 'btn-outline-secondary'} text-start" data-open-review="${esc(row.id)}">
+        <div class="fw-semibold">${esc(row.activityTitle || 'Activity')}</div>
+        <div class="small">${esc(student.registerNumber || student.name || 'Student')} · Attempt #${esc(row.attemptNumber || '')}</div>
+        <div class="small">${esc(row.moduleTitle || '')} · ${esc(row.submittedAt || '')}</div>
+        <span class="badge text-bg-${badge} mt-1">${status}</span>
+      </button>`;
+    }).join('');
+    queue.querySelectorAll('[data-open-review]').forEach((btn) => {
+      btn.addEventListener('click', () => openActivityReviewDetail(btn.getAttribute('data-open-review')).catch(fail));
+    });
+  }
+
+  async function openActivityReviewDetail(submissionId) {
+    if (!state.reviewTutorialId || !submissionId) return;
+    try {
+      const detail = await call(`/tutorials/manage/${encodeURIComponent(state.reviewTutorialId)}/activity-submissions/${encodeURIComponent(submissionId)}`);
+      state.reviewDetail = detail;
+      document.getElementById('activityReviewEmpty').classList.add('d-none');
+      document.getElementById('activityReviewDetail').classList.remove('d-none');
+      paintActivityReviewDetail();
+      renderActivityReviewQueue();
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  function paintActivityReviewDetail() {
+    const detail = state.reviewDetail;
+    if (!detail) return;
+    const snap = detail.activitySnapshot || {};
+    const review = detail.review || {};
+    const student = detail.student || {};
+    document.getElementById('reviewDetailTitle').textContent = detail.activityTitle || snap.title || 'Activity';
+    document.getElementById('reviewDetailMeta').textContent = [
+      STUDENT_ACTIVITY_TYPE_LABELS[detail.activityType || snap.activityType] || detail.activityType || snap.activityType,
+      `Attempt #${detail.attemptNumber || ''}`,
+      detail.submittedAt || '',
+      STUDENT_EVAL_LABELS[detail.evaluationMode || snap.evaluationMode] || detail.evaluationMode || '',
+    ].filter(Boolean).join(' · ');
+    const status = review.status === 'reviewed' ? 'Reviewed' : (review.status === 'n/a' ? 'Automated' : 'Pending');
+    document.getElementById('reviewDetailStatus').textContent = status;
+    document.getElementById('reviewDetailStatus').className = `badge text-bg-${review.status === 'reviewed' ? 'success' : (review.status === 'n/a' ? 'secondary' : 'warning')}`;
+    document.getElementById('reviewDetailStudent').textContent = [
+      student.name,
+      student.registerNumber,
+      student.classBatch,
+    ].filter(Boolean).join(' · ');
+    setLessonHtml(document.getElementById('reviewDetailInstructions'), snap.instructions || '');
+    document.getElementById('reviewDetailResponse').innerHTML = renderStaffActivityResponse(detail);
+    const autoBox = document.getElementById('reviewAutoResult');
+    const auto = detail.autoResult || {};
+    if (auto.mode === 'auto_compare' || auto.mode === 'self_check') {
+      autoBox.classList.remove('d-none');
+      autoBox.innerHTML = auto.mode === 'auto_compare'
+        ? `<div class="fw-semibold mb-1">Automated result</div><div>${auto.matched ? 'Matched' : 'Not matched'} (read-only)</div>`
+        : `<div class="fw-semibold mb-1">Self-check result</div><div>Keywords ${esc(auto.keywordsMatched || 0)}/${esc(auto.keywordsTotal || 0)} (read-only)</div>`;
+    } else {
+      autoBox.classList.add('d-none');
+      autoBox.innerHTML = '';
+    }
+    const form = document.getElementById('activityReviewForm');
+    const reviewable = detail.reviewable === true;
+    form.classList.toggle('d-none', !reviewable);
+    document.getElementById('reviewFormNote').textContent = reviewable
+      ? 'Score fields are optional. Finalize makes feedback visible to the student.'
+      : 'This submission uses automated evaluation and cannot be manually overwritten.';
+    document.getElementById('reviewScore').value = review.score != null ? review.score : '';
+    document.getElementById('reviewMaxScore').value = review.maxScore != null ? review.maxScore : 10;
+    document.getElementById('reviewPassed').checked = review.passed === true;
+    document.getElementById('reviewFeedback').value = review.feedback || '';
+    document.getElementById('reviewPrivateNotes').value = review.privateNotes || '';
+    const disabled = !reviewable;
+    ['reviewScore', 'reviewMaxScore', 'reviewPassed', 'reviewFeedback', 'reviewPrivateNotes', 'reviewSaveDraftBtn', 'reviewFinalizeBtn']
+      .forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = disabled;
+      });
+  }
+
+  function renderStaffActivityResponse(detail) {
+    const type = detail.activityType || ((detail.activitySnapshot || {}).activityType);
+    const payload = detail.payload || {};
+    if (type === 'programming_task') {
+      return `<pre class="mb-0">${esc(payload.source || '')}</pre><div class="form-text">Source is shown as text only. Nothing is executed.</div>`;
+    }
+    if (type === 'sql_query') {
+      return `<pre class="mb-0">${esc(payload.sql || '')}</pre><div class="form-text">SQL is never executed.</div>`;
+    }
+    if (type === 'numerical') {
+      return `<div><strong>Value:</strong> ${esc(payload.value != null ? payload.value : '—')} ${esc(payload.unit || '')}</div>`;
+    }
+    if (type === 'case_study') {
+      const parts = (((detail.activitySnapshot || {}).config || {}).parts) || [];
+      const answers = payload.parts || {};
+      return parts.map((part, index) => (
+        `<div class="mb-2"><div class="fw-semibold">Part ${index + 1}: ${esc(part.prompt || '')}</div><div>${esc(answers[part.id] || '')}</div></div>`
+      )).join('') || '<p class="mb-0 text-muted-2">No parts.</p>';
+    }
+    return `<div style="white-space:pre-wrap">${esc(payload.text || '')}</div>`;
+  }
+
+  function collectReviewFormPayload() {
+    const scoreRaw = document.getElementById('reviewScore').value.trim();
+    const maxRaw = document.getElementById('reviewMaxScore').value.trim();
+    const payload = {
+      feedback: document.getElementById('reviewFeedback').value,
+      privateNotes: document.getElementById('reviewPrivateNotes').value,
+      passed: document.getElementById('reviewPassed').checked ? true : null,
+    };
+    if (scoreRaw !== '') {
+      if (Number.isNaN(Number(scoreRaw))) throw new Error('Score must be numeric.');
+      payload.score = Number(scoreRaw);
+    } else {
+      payload.score = null;
+    }
+    if (maxRaw !== '') {
+      if (Number.isNaN(Number(maxRaw))) throw new Error('Max score must be numeric.');
+      payload.maxScore = Number(maxRaw);
+    } else {
+      payload.maxScore = null;
+    }
+    if (payload.score != null && payload.maxScore == null) {
+      throw new Error('Max score is required when score is provided.');
+    }
+    return payload;
+  }
+
+  async function saveActivityReviewDraft() {
+    if (!state.reviewDetail || state.reviewBusy) return;
+    let body;
+    try {
+      body = collectReviewFormPayload();
+    } catch (err) {
+      fail(err);
+      return;
+    }
+    state.reviewBusy = true;
+    document.getElementById('reviewSaveDraftBtn').disabled = true;
+    try {
+      const saved = await call(`/tutorials/manage/${encodeURIComponent(state.reviewTutorialId)}/activity-submissions/${encodeURIComponent(state.reviewDetail.id)}/review`, {
+        method: 'PUT',
+        body,
+      });
+      state.reviewDetail = saved;
+      paintActivityReviewDetail();
+      await loadActivityReviewQueue();
+      toast('Review draft saved.', 'success');
+    } catch (err) {
+      fail(err);
+    } finally {
+      state.reviewBusy = false;
+      document.getElementById('reviewSaveDraftBtn').disabled = false;
+    }
+  }
+
+  async function finalizeActivityReview() {
+    if (!state.reviewDetail || state.reviewBusy) return;
+    let body;
+    try {
+      body = collectReviewFormPayload();
+    } catch (err) {
+      fail(err);
+      return;
+    }
+    const ok = await confirmAction({
+      title: 'Finalize review',
+      message: 'Finalize this review? Score and feedback become visible to the student.',
+      confirmText: 'Finalize',
+    });
+    if (!ok) return;
+    state.reviewBusy = true;
+    document.getElementById('reviewFinalizeBtn').disabled = true;
+    document.getElementById('reviewSaveDraftBtn').disabled = true;
+    try {
+      const saved = await call(`/tutorials/manage/${encodeURIComponent(state.reviewTutorialId)}/activity-submissions/${encodeURIComponent(state.reviewDetail.id)}/review/finalize`, {
+        method: 'POST',
+        body,
+      });
+      state.reviewDetail = saved;
+      paintActivityReviewDetail();
+      await loadActivityReviewQueue();
+      toast('Review finalized.', 'success');
+    } catch (err) {
+      fail(err);
+    } finally {
+      state.reviewBusy = false;
+      document.getElementById('reviewFinalizeBtn').disabled = false;
+      document.getElementById('reviewSaveDraftBtn').disabled = false;
+    }
+  }
+
   function bind() {
     document.getElementById('createTutorialBtn').addEventListener('click', () => { blankTutorialForm(); modal('tutorialModal').show(); });
     document.getElementById('tutorialForm').addEventListener('submit', saveTutorial);
@@ -2169,7 +2514,12 @@
     document.getElementById('assessmentSaveBtn').addEventListener('click', () => {
       saveAssessmentEditor().catch(fail);
     });
+    document.getElementById('activityAiGenerateBtn').addEventListener('click', () => {
+      generateActivityDraft().catch(fail);
+    });
     document.getElementById('activityAddBtn').addEventListener('click', () => {
+      state.activityAiPreview = null;
+      setActivityAiBanner(false);
       openActivityForm(null).catch(fail);
     });
     document.getElementById('activityCancelBtn').addEventListener('click', resetActivityForm);
@@ -2186,6 +2536,25 @@
     });
     document.getElementById('builderEditCourse').addEventListener('click', () => {
       if (state.active) openTutorial(state.active.id);
+    });
+    document.getElementById('builderActivityReviews').addEventListener('click', () => {
+      if (state.active) openActivityReviews(state.active.id).catch(fail);
+    });
+    document.getElementById('activityReviewBack').addEventListener('click', () => {
+      if (state.reviewTutorialId) openModules(state.reviewTutorialId).catch(fail);
+      else showStaffScreen('list');
+    });
+    document.getElementById('reviewFilterModule').addEventListener('change', () => {
+      populateReviewActivityFilter().catch(fail);
+    });
+    document.getElementById('reviewFilterApply').addEventListener('click', () => {
+      loadActivityReviewQueue().catch(fail);
+    });
+    document.getElementById('reviewSaveDraftBtn').addEventListener('click', () => {
+      saveActivityReviewDraft().catch(fail);
+    });
+    document.getElementById('reviewFinalizeBtn').addEventListener('click', () => {
+      finalizeActivityReview().catch(fail);
     });
     document.getElementById('builderPreview').addEventListener('click', () => {
       if (state.active) openPreview(state.active.id);
@@ -3041,6 +3410,7 @@
       return;
     }
     const result = attempt.autoResult || {};
+    const review = attempt.review || null;
     const mode = result.mode || '';
     let body = '<div class="fw-semibold mb-1">Submission result</div>';
     if (mode === 'auto_compare') {
@@ -3051,7 +3421,18 @@
       body += `<div class="small mb-1">Keywords matched: ${esc(result.keywordsMatched || 0)} / ${esc(result.keywordsTotal || 0)}</div>`;
       if (result.rubric) body += `<div class="small">${esc(result.rubric)}</div>`;
     } else if (mode === 'tutor_review') {
-      body += '<div class="text-muted-2">Pending tutor review.</div>';
+      if (review && review.status === 'reviewed') {
+        const scoreLine = (review.score != null && review.maxScore != null)
+          ? `${esc(review.score)} / ${esc(review.maxScore)}`
+          : (review.score != null ? esc(review.score) : '');
+        body += '<div class="text-success mb-1">Tutor review complete.</div>';
+        if (scoreLine) body += `<div class="mb-1">Score: ${scoreLine}</div>`;
+        if (review.passed === true) body += '<div class="small text-success mb-1">Passed</div>';
+        if (review.passed === false) body += '<div class="small text-danger mb-1">Not passed</div>';
+        if (review.feedback) body += `<div class="small" style="white-space:pre-wrap">${esc(review.feedback)}</div>`;
+      } else {
+        body += '<div class="text-muted-2">Pending tutor review.</div>';
+      }
     } else {
       body += '<div class="text-muted-2">Submitted.</div>';
     }
