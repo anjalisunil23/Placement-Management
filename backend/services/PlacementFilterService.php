@@ -221,13 +221,6 @@ final class PlacementFilterService
     }
 
     /**
-     * When both a plain year-range batch and a semester-specific final-year batch exist,
-     * keep only the more specific semester-labelled option in the filter.
-     *
-     * @param list<string> $batches
-     * @return list<string>
-     */
-    /**
      * One label per cohort (e.g. keep MCA2024-2028-S8 over MCA2024-2028 when both appear).
      *
      * @param list<string> $batches
@@ -287,6 +280,13 @@ final class PlacementFilterService
         return $this->sortLabels($this->dedupeBatchLabelsByCohort($scoped));
     }
 
+    /**
+     * When both a plain year-range batch and a semester-specific final-year batch exist,
+     * keep only the more specific semester-labelled option in the filter.
+     *
+     * @param list<string> $batches
+     * @return list<string>
+     */
     private function preferSpecificFinalYearBatches(array $batches): array
     {
         $normalizedBases = [];

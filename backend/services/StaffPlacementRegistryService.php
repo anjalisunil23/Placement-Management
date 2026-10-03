@@ -743,7 +743,7 @@ final class StaffPlacementRegistryService
         $batches = [];
 
         foreach (StaffContext::assignedClassBatches($staffCtx) as $assigned) {
-            $assigned = trim((string) $assigned);
+            $assigned = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $assigned));
             if ($assigned === '') {
                 continue;
             }
@@ -801,7 +801,7 @@ final class StaffPlacementRegistryService
                     static fn (string $b): bool => StaffContext::classBatchMatchesAssigned($b, $assigned)
                 )));
                 foreach ($assigned as $label) {
-                    $label = trim((string) $label);
+                    $label = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $label));
                     if ($label !== '' && !in_array($label, $batches, true)) {
                         $batches[] = $label;
                     }

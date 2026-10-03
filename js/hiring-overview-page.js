@@ -762,18 +762,65 @@
     return opt ? opt.textContent.trim() : value;
   };
 
-  HiringOverviewPage.prototype.allBatchOptions = function () {
-    if (Array.isArray(this.campusRecruitingData?.batchOptions) && this.campusRecruitingData.batchOptions.length) {
-      return [...this.campusRecruitingData.batchOptions];
-    }
+  HiringOverviewPage.prototype.normalizedAssignedBatches = function () {
     const u = Auth.user() || {};
-    if (Array.isArray(u.assignedClassBatches) && u.assignedClassBatches.length) {
-      return [...u.assignedClassBatches];
+    const raw = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+    const list = [...new Set(raw.map((b) => String(b || '').trim()).filter(Boolean))];
+    return list.length > 12 ? [] : list;
+  };
+
+  HiringOverviewPage.prototype.batchMatchesAssignedList = function (batchLabel, assigned) {
+    const batch = String(batchLabel || '').trim();
+    if (!batch || !assigned?.length) return false;
+    const want = batch.toUpperCase();
+    return assigned.some((a) => {
+      const assignedLabel = String(a || '').trim();
+      if (!assignedLabel) return false;
+      if (assignedLabel.toUpperCase() === want) return true;
+      if (typeof cohortKeyFromClassBatch === 'function') {
+        return cohortKeyFromClassBatch(assignedLabel) === cohortKeyFromClassBatch(batch);
+      }
+      return false;
+    });
+  };
+
+  HiringOverviewPage.prototype.dedupeBatchOptionsByCohort = function (batches) {
+    const best = new Map();
+    batches.forEach((batch) => {
+      const label = String(batch || '').trim();
+      if (!label) return;
+      const key = (typeof cohortKeyFromClassBatch === 'function'
+        ? cohortKeyFromClassBatch(label)
+        : label).toUpperCase();
+      const prev = best.get(key);
+      if (!prev || label.length > prev.length) best.set(key, label);
+    });
+    return [...best.values()];
+  };
+
+  HiringOverviewPage.prototype.allBatchOptions = function () {
+    const role = this.currentRole();
+    const staffScoped = (role === 'staff' || role === 'placement_officer') && !this.isCampusWideViewer();
+    const assigned = this.normalizedAssignedBatches();
+
+    if (staffScoped && assigned.length) {
+      return this.dedupeBatchOptionsByCohort(assigned);
     }
-    if (this.campusRecruitingData) {
-      return this.deriveBatchOptionsFromCampus('');
+
+    let batches = [];
+    if (Array.isArray(this.campusRecruitingData?.batchOptions) && this.campusRecruitingData.batchOptions.length) {
+      batches = [...this.campusRecruitingData.batchOptions];
+    } else if (assigned.length) {
+      batches = [...assigned];
+    } else if (this.campusRecruitingData) {
+      batches = this.deriveBatchOptionsFromCampus('');
     }
-    return [];
+
+    if (staffScoped && assigned.length) {
+      batches = batches.filter((b) => this.batchMatchesAssignedList(b, assigned));
+    }
+
+    return this.dedupeBatchOptionsByCohort(batches);
   };
 
   HiringOverviewPage.prototype.batchOptions = function () {

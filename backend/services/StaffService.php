@@ -593,7 +593,9 @@ final class StaffService
      */
     private function fetchAesClassBatchesForScope(array $ctx, string $branchFilter): array
     {
-        return (new PlacementFilterService())->fetchBatchOptions($ctx, $branchFilter, '');
+        $filterCtx = StaffContext::officerCompatible($ctx);
+
+        return (new PlacementFilterService())->fetchBatchOptions($filterCtx, $branchFilter, '');
     }
 
     /**

@@ -102,7 +102,10 @@ final class RecruitingService
         $applicants = $this->campusApplicants($departmentId);
         $byDept = $this->applicantsByDepartment($applicants);
         // Local classBatch only — AES directory fetch is too slow for dashboard hydrate.
-        $batchOptions = $this->campusBatchOptionsLocal($departmentId);
+        $batchOptions = $this->scopeBatchOptionsForFilterCtx(
+            $this->campusBatchOptionsLocal($departmentId),
+            $filterCtx
+        );
         $placements = $this->listCampusPlacements($departmentId);
 
         $out = [
@@ -307,6 +310,39 @@ final class RecruitingService
      *
      * @return list<string>
      */
+    /**
+     * Class incharge staff: only assigned batches in dashboard View filters.
+     *
+     * @param list<string> $batches
+     * @param array<string, mixed>|null $filterCtx
+     * @return list<string>
+     */
+    private function scopeBatchOptionsForFilterCtx(array $batches, ?array $filterCtx): array
+    {
+        if (!is_array($filterCtx) || empty($filterCtx['staffScope'])) {
+            return $batches;
+        }
+
+        $assigned = StaffContext::assignedClassBatches($filterCtx);
+        if ($assigned === []) {
+            return $batches;
+        }
+
+        $scoped = array_values(array_filter(
+            $batches,
+            static fn (string $batch): bool => StaffContext::classBatchMatchesAssigned($batch, $assigned)
+        ));
+        foreach ($assigned as $label) {
+            $label = trim((string) $label);
+            if ($label !== '' && !in_array($label, $scoped, true)) {
+                $scoped[] = $label;
+            }
+        }
+        sort($scoped, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return $scoped;
+    }
+
     private function campusBatchOptionsLocal(?string $departmentId): array
     {
         $filter = [];

@@ -125,6 +125,27 @@ final class ClassInchargeRegistry
         return $batch;
     }
 
+    /** Display / filter label without semester markers (MCA2024-28-S8 → MCA2024-28). */
+    public static function batchLabelWithoutSemester(string $batch): string
+    {
+        $batch = trim($batch);
+        if ($batch === '') {
+            return '';
+        }
+        if (preg_match('/^(.*)-S(10|[1-9])$/i', $batch, $m) === 1) {
+            return trim($m[1]);
+        }
+        if (preg_match('/(?:^|[^A-Za-z0-9])S(10|[1-9])(?:[^A-Za-z0-9]|$)/', $batch) !== 1
+            && preg_match('/(?:^|[^A-Za-z0-9])SEM(?:ESTER)?[\s\-]*(10|[1-9])(?:[^A-Za-z0-9]|$)/i', $batch) !== 1) {
+            return $batch;
+        }
+        $out = preg_replace('/(?:^|[^A-Za-z0-9])S(10|[1-9])(?:[^A-Za-z0-9]|$)/', '', $batch) ?? $batch;
+        $out = preg_replace('/(?:^|[^A-Za-z0-9])SEM(?:ESTER)?[\s\-]*(10|[1-9])(?:[^A-Za-z0-9]|$)/i', '', $out) ?? $out;
+        $out = preg_replace('/\s{2,}/', ' ', trim($out)) ?? trim($out);
+
+        return trim($out, " \t\n\r\0\x0B-_/");
+    }
+
     /**
      * True when this class label belongs to a CT/CoCT-mapped cohort.
      */

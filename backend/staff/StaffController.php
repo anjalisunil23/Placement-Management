@@ -370,12 +370,13 @@ final class StaffController
         StaffContext::requireDepartmentScope($ctx);
         $program = trim((string) ($_GET['program'] ?? ''));
         $branch = trim((string) ($_GET['branch'] ?? ''));
+        $filterCtx = StaffContext::officerCompatible($ctx);
         $svc = new PlacementFilterService();
         Response::success(DocumentHelper::jsonSafe([
-            'departments' => $svc->fetchDepartmentOptions($ctx),
-            'programs' => $svc->fetchProgramOptions($ctx),
-            'branches' => $program !== '' ? $svc->fetchBranchOptions($ctx, $program) : [],
-            'batches'  => $svc->fetchBatchOptions($ctx, $program, $branch, false),
+            'departments' => $svc->fetchDepartmentOptions($filterCtx),
+            'programs' => $svc->fetchProgramOptions($filterCtx),
+            'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
+            'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
         ]));
     }
 
@@ -440,11 +441,7 @@ final class StaffController
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
         $deptId = trim((string) ($ctx['departmentId'] ?? ''));
-        $filterCtx = [
-            'profile'      => is_array($ctx['profile'] ?? null) ? $ctx['profile'] : [],
-            'departmentId' => $deptId,
-            'department'   => $ctx['department'] ?? null,
-        ];
+        $filterCtx = StaffContext::officerCompatible($ctx);
         $lite = isset($_GET['lite']) && (string) $_GET['lite'] !== '0' && (string) $_GET['lite'] !== '';
         Response::success(DocumentHelper::jsonSafe(
             (new RecruitingService())->getCampusOverview(
