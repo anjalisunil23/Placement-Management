@@ -45,7 +45,7 @@ final class StaffPlacementRegistryService
             $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
             $classRows = $this->attachRegistryPlacements($classRows);
             foreach ($classRows as $row) {
-                foreach ($this->extractRegistryRows($row, false) as $entry) {
+                foreach ($this->extractRegistryRows($row, false, true) as $entry) {
                     $registry[] = $entry;
                 }
             }
@@ -60,7 +60,7 @@ final class StaffPlacementRegistryService
             $studentRows = $this->officerData->listStudents($officerCtx);
             $studentRows = $this->attachRegistryPlacements($studentRows);
             foreach ($studentRows as $row) {
-                foreach ($this->extractRegistryRows($row, false) as $entry) {
+                foreach ($this->extractRegistryRows($row, false, true) as $entry) {
                     $registry[] = $entry;
                 }
             }
@@ -275,7 +275,7 @@ final class StaffPlacementRegistryService
      * @param array<string, mixed> $row
      * @return array<int, array<string, mixed>>
      */
-    private function extractRegistryRows(array $row, bool $includeRecruitmentResults = true): array
+    private function extractRegistryRows(array $row, bool $includeRecruitmentResults = true, bool $studentPlacementsTableOnly = false): array
     {
         $studentId = (string) ($row['id'] ?? $row['studentId'] ?? $row['_id'] ?? '');
         if ($studentId === '') {
@@ -339,15 +339,50 @@ final class StaffPlacementRegistryService
                 'fordvv'           => $this->normalizeVvValue($placement['fordvv'] ?? '1'),
                 'includedvv'       => $this->normalizeVvValue($placement['includedvv'] ?? '1'),
                 'type'             => $this->resolveRecordType($placement),
-                'source'           => (string) ($placement['source'] ?? 'placement'),
+                'source'           => $studentPlacementsTableOnly ? 'student_placements' : (string) ($placement['source'] ?? 'placement'),
                 'hasOfferLetter'   => (string) ($placement['offerLetter'] ?? '') !== ''
-                    || (is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['offerLetter'] ?? '') !== ''),
+                    || (!$studentPlacementsTableOnly && is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['offerLetter'] ?? '') !== ''),
                 'hasJoiningLetter' => (string) ($placement['joiningLetter'] ?? '') !== ''
-                    || (is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['joiningLetter'] ?? '') !== ''),
+                    || (!$studentPlacementsTableOnly && is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['joiningLetter'] ?? '') !== ''),
                 'hasCompanyIdDoc'  => (string) ($placement['companyIdDoc'] ?? '') !== ''
-                    || (is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['companyIdDoc'] ?? '') !== ''),
+                    || (!$studentPlacementsTableOnly && is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['companyIdDoc'] ?? '') !== ''),
                 'canVerify'        => false,
             ], $seen);
+        }
+
+        if ($studentPlacementsTableOnly) {
+            if ($entries === []) {
+                $blank = $this->buildRosterEntry($meta, [
+                    'id'               => $studentId . ':roster',
+                    'employer'         => '',
+                    'role'             => '',
+                    'address'          => '',
+                    'package'          => '',
+                    'employerContact'  => '',
+                    'joinDate'         => '',
+                    'endDate'          => '',
+                    'academicDuration' => '',
+                    'internshipDetails'=> '',
+                    'natureOfJob'      => '',
+                    'monthlySalary'    => '',
+                    'placementStatus'  => '',
+                    'offerLetterVerified' => false,
+                    'verificationDate' => '',
+                    'fordvv'           => $this->normalizeVvValue($placement['fordvv'] ?? '1'),
+                    'includedvv'       => $this->normalizeVvValue($placement['includedvv'] ?? '1'),
+                    'type'             => 'Placement',
+                    'source'           => 'class_roster',
+                    'hasOfferLetter'   => false,
+                    'hasJoiningLetter' => false,
+                    'hasCompanyIdDoc'  => false,
+                    'canVerify'        => false,
+                ]);
+                if ($blank !== null) {
+                    $entries[] = $blank;
+                }
+            }
+
+            return array_values(array_filter($entries, 'is_array'));
         }
 
         $self = is_array($row['selfPlacement'] ?? null) ? $row['selfPlacement'] : null;
@@ -1103,7 +1138,16 @@ final class StaffPlacementRegistryService
             Response::error('Employer / institution name is required.', 422);
         }
 
-        $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? '')));
+        $placementModel = new StudentPlacementModel();
+        $placement = $placementModel->findPlacementByStudent((string) $student['_id']);
+        if ($placement === null && $register !== '') {
+            $fromReg = $placementModel->findPlacementMapByRegisterNumbers([$register]);
+            $placement = $fromReg[$register] ?? null;
+        }
+        if (!is_array($placement)) {
+            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+        }
         $placement = array_merge($placement, [
             'company'         => $employer,
             'role'            => $role,
@@ -1185,39 +1229,78 @@ final class StaffPlacementRegistryService
     private function attachRegistryPlacements(array $rows): array
     {
         $ids = [];
+        $registers = [];
         foreach ($rows as $row) {
             $id = trim((string) ($row['id'] ?? $row['_id'] ?? $row['studentId'] ?? ''));
             if ($id !== '') {
                 $ids[] = $id;
             }
-        }
-        if ($ids === []) {
-            return $rows;
+            $reg = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+            if ($reg !== '') {
+                $registers[] = $reg;
+            }
         }
 
+        $model = new StudentPlacementModel();
         try {
-            $map = (new StudentPlacementModel())->findPlacementMapByStudentIds($ids);
+            $byId = $ids !== [] ? $model->findPlacementMapByStudentIds($ids) : [];
+            $byRegister = $registers !== [] ? $model->findPlacementMapByRegisterNumbers($registers) : [];
         } catch (\Throwable) {
-            return $rows;
-        }
-        if ($map === []) {
-            return $rows;
+            $byId = [];
+            $byRegister = [];
         }
 
         $out = [];
         foreach ($rows as $row) {
             $id = trim((string) ($row['id'] ?? $row['_id'] ?? $row['studentId'] ?? ''));
-            if ($id !== '' && isset($map[$id])) {
-                $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-                $row['placement'] = array_replace($embedded, $map[$id]);
-                if (trim((string) ($row['placement']['company'] ?? '')) !== '') {
-                    $row['placed'] = true;
-                }
+            $reg = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+            $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+
+            $placement = [];
+            if ($id !== '' && isset($byId[$id])) {
+                $placement = $byId[$id];
+            } elseif ($reg !== '' && isset($byRegister[$reg])) {
+                $placement = $byRegister[$reg];
+            } elseif ($embedded !== [] && trim((string) ($embedded['company'] ?? '')) !== '') {
+                $placement = $this->migrateEmbeddedPlacementToTable($model, $row, $embedded, $reg);
             }
+
+            $row['placement'] = $placement;
+            $row['placed'] = trim((string) ($placement['company'] ?? '')) !== '';
             $out[] = $row;
         }
 
         return $out;
+    }
+
+    /**
+     * One-time copy of legacy students.placement into student_placements for this roster row.
+     *
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $embedded
+     * @return array<string, mixed>
+     */
+    private function migrateEmbeddedPlacementToTable(
+        StudentPlacementModel $model,
+        array $row,
+        array $embedded,
+        string $register
+    ): array {
+        $studentId = trim((string) ($row['_id'] ?? $row['id'] ?? ''));
+        if ($studentId === '' || !Security::isValidId($studentId)) {
+            return [];
+        }
+
+        try {
+            $model->upsertForStudent($studentId, $register, $embedded, null);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return StudentPlacementModel::placementFieldsFromDoc(array_merge($embedded, [
+            'studentId' => $studentId,
+            'registerNumber' => $register,
+        ]));
     }
 
     /**
@@ -1482,7 +1565,16 @@ final class StaffPlacementRegistryService
 
         $config = require dirname(__DIR__) . '/config/app.php';
         $registerNo = (string) ($student['registerNumber'] ?? 'student');
-        $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+        $registerKey = strtoupper(trim($registerNo));
+        $placementModel = new StudentPlacementModel();
+        $placement = $placementModel->findPlacementByStudent((string) $student['_id']);
+        if ($placement === null && $registerKey !== '') {
+            $fromReg = $placementModel->findPlacementMapByRegisterNumbers([$registerKey]);
+            $placement = $fromReg[$registerKey] ?? null;
+        }
+        if (!is_array($placement)) {
+            $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+        }
         $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : [];
         $company = (string) ($placement['company'] ?? $self['companyName'] ?? 'company');
         $safeCompany = preg_replace('/[^a-zA-Z0-9_-]+/', '_', $company) ?: 'company';

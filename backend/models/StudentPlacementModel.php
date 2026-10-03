@@ -125,6 +125,43 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
+     * @param array<int, string> $registerNumbers
+     * @return array<string, array<string, mixed>> UPPERCASE register => placement fields
+     */
+    public function findPlacementMapByRegisterNumbers(array $registerNumbers): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $clean = [];
+        foreach ($registerNumbers as $reg) {
+            $reg = strtoupper(trim((string) $reg));
+            if ($reg !== '') {
+                $clean[$reg] = true;
+            }
+        }
+        $regs = array_keys($clean);
+        if ($regs === []) {
+            return [];
+        }
+
+        $map = [];
+        foreach (array_chunk($regs, 300) as $chunk) {
+            $rows = $this->findAll(['registerNumber' => ['$in' => $chunk]], count($chunk));
+            foreach ($rows as $doc) {
+                $reg = strtoupper(trim((string) ($doc['registerNumber'] ?? '')));
+                if ($reg === '') {
+                    continue;
+                }
+                $map[$reg] = self::placementFieldsFromDoc($doc);
+            }
+        }
+
+        return $map;
+    }
+
+    /**
      * @param array<string, mixed> $placement Same shape as students.placement
      */
     public function upsertForStudent(string $studentId, string $registerNumber, array $placement, ?string $departmentId = null): string
