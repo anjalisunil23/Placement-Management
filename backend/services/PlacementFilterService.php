@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Models\StudentModel;
+use PMS\Models\StudentPlacementModel;
 use PMS\Utils\Security;
 
 /**
@@ -187,6 +188,18 @@ final class PlacementFilterService
 
         foreach ($this->assignedBatchLabelsForScope($ctx, $program, $branch) as $batch) {
             $batches[] = $batch;
+        }
+
+        $deptId = trim((string) ($ctx['departmentId'] ?? ''));
+        if ($deptId !== '') {
+            try {
+                $batches = array_merge(
+                    $batches,
+                    (new StudentPlacementModel())->findDistinctClassBatches($deptId, $program)
+                );
+            } catch (\Throwable) {
+                // student_placements optional until schema is applied
+            }
         }
 
         $batches = $this->sortLabels(array_values(array_unique($batches)));

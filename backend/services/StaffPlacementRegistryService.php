@@ -43,6 +43,14 @@ final class StaffPlacementRegistryService
             $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch, true);
             $localClassRows = $this->officerData->listLocalClassStudentsForBatch($officerCtx, $batch);
             $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
+            $passedOutRows = (new StudentPlacementModel())->listRosterRowsForClass(
+                (string) ($staffCtx['departmentId'] ?? ''),
+                $program,
+                $batch
+            );
+            if ($passedOutRows !== []) {
+                $classRows = $this->mergeCompleteClassRoster($classRows, $passedOutRows);
+            }
             $classRows = $this->attachRegistryPlacements($classRows);
             foreach ($classRows as $row) {
                 foreach ($this->extractRegistryRows($row, false, true) as $entry) {
@@ -1300,7 +1308,8 @@ final class StaffPlacementRegistryService
                 (string) $student['_id'],
                 strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
                 $placement,
-                $scopeDeptId !== '' ? $scopeDeptId : null
+                $scopeDeptId !== '' ? $scopeDeptId : null,
+                $this->rosterMetaForStudentPlacement($student)
             );
         } catch (\Throwable) {
             // students.placement already saved; registry table optional until schema is applied
@@ -1310,6 +1319,30 @@ final class StaffPlacementRegistryService
             'studentId' => (string) $student['_id'],
             'placement' => DocumentHelper::serialize($placement),
         ];
+    }
+
+    /**
+     * Snapshot class identity on student_placements for passed-out / AES-missing cohorts.
+     *
+     * @param array<string, mixed> $student
+     * @return array<string, mixed>
+     */
+    private function rosterMetaForStudentPlacement(array $student): array
+    {
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? '')));
+
+        return StudentPlacementModel::normalizeRosterMeta([
+            'classBatch'  => $student['classBatch'] ?? $student['stud_class'] ?? '',
+            'programme'   => $student['programme'] ?? $student['stud_course'] ?? '',
+            'branch'      => $student['branch'] ?? $student['stud_branch'] ?? '',
+            'studentName' => $personal['fullName'] ?? $student['displayName'] ?? $student['stud_name'] ?? '',
+            'courseId'    => $student['courseId'] ?? $student['course_id'] ?? '',
+            'branchId'    => $student['branchId'] ?? $student['branch_id'] ?? '',
+            'phone'       => $personal['phone'] ?? $student['phone'] ?? '',
+            'email'       => $personal['collegeEmail'] ?? $student['collegeEmail'] ?? $student['email'] ?? '',
+            'admissionNo' => $student['admno'] ?? $student['admissionNo'] ?? $register,
+        ]);
     }
 
     /**
@@ -1383,8 +1416,15 @@ final class StaffPlacementRegistryService
             return [];
         }
 
+        $deptId = trim((string) ($row['departmentId'] ?? ''));
         try {
-            $model->upsertForStudent($studentId, $register, $embedded, null);
+            $model->upsertForStudent(
+                $studentId,
+                $register,
+                $embedded,
+                $deptId !== '' ? $deptId : null,
+                StudentPlacementModel::normalizeRosterMeta($row)
+            );
         } catch (\Throwable) {
             return [];
         }
@@ -1735,7 +1775,8 @@ final class StaffPlacementRegistryService
                 (string) $student['_id'],
                 strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
                 $placement,
-                $scopeDeptId !== '' ? $scopeDeptId : null
+                $scopeDeptId !== '' ? $scopeDeptId : null,
+                $this->rosterMetaForStudentPlacement($student)
             );
         } catch (\Throwable) {
             // documents already on student profile

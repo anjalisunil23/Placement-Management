@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace PMS\Models;
 
 use PMS\Schemas\Collections;
+use PMS\Services\ClassInchargeRegistry;
+use PMS\Services\DepartmentProgrammeCatalog;
 use PMS\Utils\DocumentHelper;
+use PMS\Utils\Security;
 
 /**
  * Staff / class-teacher placement & higher-education registry (one row per student).
@@ -163,16 +166,22 @@ class StudentPlacementModel extends BaseModel
 
     /**
      * @param array<string, mixed> $placement Same shape as students.placement
+     * @param array<string, mixed> $rosterMeta classBatch, programme, branch, studentName, …
      */
-    public function upsertForStudent(string $studentId, string $registerNumber, array $placement, ?string $departmentId = null): string
-    {
+    public function upsertForStudent(
+        string $studentId,
+        string $registerNumber,
+        array $placement,
+        ?string $departmentId = null,
+        array $rosterMeta = []
+    ): string {
         if (!$this->bootstrapTable()) {
             return '';
         }
 
         $register = strtoupper(trim($registerNumber));
         $now = DocumentHelper::now();
-        $set = array_merge($placement, [
+        $set = array_merge($placement, self::normalizeRosterMeta($rosterMeta), [
             'pairKey'        => self::pairKey($studentId),
             'studentId'      => $studentId,
             'registerNumber' => $register,
@@ -190,13 +199,218 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
+     * Distinct classBatch labels saved on registry rows (includes passed-out cohorts off AES).
+     *
+     * @return list<string>
+     */
+    public function findDistinctClassBatches(string $departmentId = '', string $program = '', int $limit = 3000): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $filter = $this->departmentFilter($departmentId);
+        $rows = $this->findAll($filter, max(1, min($limit, 5000)));
+        $batches = [];
+        foreach ($rows as $doc) {
+            $batch = trim((string) ($doc['classBatch'] ?? ''));
+            if ($batch === '') {
+                continue;
+            }
+            if ($program !== '' && !self::programmeMatchesBatch($program, $batch, (string) ($doc['programme'] ?? ''))) {
+                continue;
+            }
+            $batches[] = $batch;
+        }
+
+        $batches = array_values(array_unique($batches));
+        sort($batches, SORT_STRING);
+
+        return $batches;
+    }
+
+    /**
+     * Roster-shaped student rows from student_placements for a selected class batch.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listRosterRowsForClass(string $departmentId, string $program, string $batch, int $limit = 500): array
+    {
+        if (!$this->bootstrapTable() || trim($batch) === '') {
+            return [];
+        }
+
+        $filter = $this->departmentFilter($departmentId);
+        $rows = [];
+        foreach ($this->findAll($filter, max(1, min($limit, 5000))) as $doc) {
+            $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
+            if ($rowBatch === '' || !self::batchMatchesSelection($rowBatch, $batch)) {
+                continue;
+            }
+            if ($program !== '' && !self::programmeMatchesBatch($program, $rowBatch, (string) ($doc['programme'] ?? ''))) {
+                continue;
+            }
+            $rows[] = self::rosterRowFromDocument($doc);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function rosterRowFromDocument(array $doc): array
+    {
+        $studentId = trim((string) ($doc['studentId'] ?? $doc['_id'] ?? ''));
+        $register = strtoupper(trim((string) ($doc['registerNumber'] ?? '')));
+        $placement = self::placementFieldsFromDoc($doc);
+        $personal = [
+            'fullName' => trim((string) ($doc['studentName'] ?? '')),
+            'phone'    => trim((string) ($doc['phone'] ?? '')),
+            'collegeEmail' => trim((string) ($doc['email'] ?? '')),
+        ];
+
+        return [
+            '_id'            => $studentId,
+            'id'             => $studentId,
+            'studentId'      => $studentId,
+            'registerNumber' => $register,
+            'admno'          => trim((string) ($doc['admissionNo'] ?? $register)),
+            'displayName'    => $personal['fullName'],
+            'personal'       => $personal,
+            'phone'          => $personal['phone'],
+            'collegeEmail'   => $personal['collegeEmail'],
+            'email'          => $personal['email'] ?? $personal['collegeEmail'],
+            'classBatch'     => trim((string) ($doc['classBatch'] ?? '')),
+            'stud_class'     => trim((string) ($doc['classBatch'] ?? '')),
+            'programme'      => trim((string) ($doc['programme'] ?? '')),
+            'branch'         => trim((string) ($doc['branch'] ?? '')),
+            'courseId'       => trim((string) ($doc['courseId'] ?? '')),
+            'branchId'       => trim((string) ($doc['branchId'] ?? '')),
+            'departmentId'   => trim((string) ($doc['departmentId'] ?? '')),
+            'placement'      => $placement,
+            'placed'         => trim((string) ($placement['company'] ?? '')) !== '',
+            'source'         => 'student_placements',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $meta
+     * @return array<string, mixed>
+     */
+    public static function normalizeRosterMeta(array $meta): array
+    {
+        $out = [];
+        $map = [
+            'classBatch'  => ['classBatch', 'stud_class', 'batch'],
+            'programme'   => ['programme', 'program', 'stud_course'],
+            'branch'      => ['branch', 'stud_branch'],
+            'studentName' => ['studentName', 'displayName', 'name'],
+            'courseId'    => ['courseId', 'course_id'],
+            'branchId'    => ['branchId', 'branch_id'],
+            'phone'       => ['phone'],
+            'email'       => ['email', 'collegeEmail', 'personalEmail'],
+            'admissionNo' => ['admissionNo', 'admno', 'registerNumber'],
+        ];
+        foreach ($map as $target => $keys) {
+            foreach ($keys as $key) {
+                $value = trim((string) ($meta[$key] ?? ''));
+                if ($value !== '') {
+                    $out[$target] = $target === 'admissionNo' && preg_match('/^\d+$/', $value) === 1
+                        ? $value
+                        : ($target === 'admissionNo' ? strtoupper($value) : $value);
+                    break;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function departmentFilter(string $departmentId): array
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return [];
+        }
+
+        return ['departmentId' => $departmentId];
+    }
+
+    private static function batchMatchesSelection(string $rowBatch, string $wantBatch): bool
+    {
+        $rowBatch = trim($rowBatch);
+        $wantBatch = trim($wantBatch);
+        if ($rowBatch === '' || $wantBatch === '') {
+            return false;
+        }
+        if (strcasecmp($rowBatch, $wantBatch) === 0) {
+            return true;
+        }
+        if (strcasecmp(
+            DepartmentProgrammeCatalog::normalizeCode($rowBatch),
+            DepartmentProgrammeCatalog::normalizeCode($wantBatch)
+        ) === 0) {
+            return true;
+        }
+        $wantCohort = ClassInchargeRegistry::cohortKey($wantBatch);
+
+        return $wantCohort !== ''
+            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0;
+    }
+
+    private static function programmeMatchesBatch(string $wantProgram, string $batchLabel, string $rowProgramme): bool
+    {
+        $want = DepartmentProgrammeCatalog::resolveProgrammeCode($wantProgram);
+        if ($want === '') {
+            return true;
+        }
+        $fromRow = DepartmentProgrammeCatalog::resolveProgrammeCode($rowProgramme);
+        if ($fromRow !== '' && strcasecmp($fromRow, $want) === 0) {
+            return true;
+        }
+        $norm = DepartmentProgrammeCatalog::normalizeCode($batchLabel);
+        $fromBatch = '';
+        if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+            $fromBatch = 'INMCA';
+        } elseif (str_starts_with($norm, 'MCA')) {
+            $fromBatch = 'MCA';
+        } elseif (str_contains($norm, 'BCA')) {
+            $fromBatch = 'BCA';
+        } else {
+            $fromBatch = DepartmentProgrammeCatalog::resolveProgrammeCode($batchLabel);
+        }
+
+        return $fromBatch !== '' && strcasecmp($fromBatch, $want) === 0;
+    }
+
+    /**
      * @param array<string, mixed> $doc
      * @return array<string, mixed>
      */
     public static function placementFieldsFromDoc(array $doc): array
     {
-        unset($doc['_id'], $doc['pairKey'], $doc['studentId'], $doc['registerNumber'], $doc['departmentId']);
-        unset($doc['createdAt'], $doc['updatedAt']);
+        unset(
+            $doc['_id'],
+            $doc['pairKey'],
+            $doc['studentId'],
+            $doc['registerNumber'],
+            $doc['departmentId'],
+            $doc['classBatch'],
+            $doc['programme'],
+            $doc['branch'],
+            $doc['studentName'],
+            $doc['courseId'],
+            $doc['branchId'],
+            $doc['phone'],
+            $doc['email'],
+            $doc['admissionNo'],
+            $doc['createdAt'],
+            $doc['updatedAt']
+        );
 
         return $doc;
     }
