@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Utils\CodingDeployInfo;
+
 /**
  * Run student source against practice problem test cases (full inputs from DB).
  */
@@ -115,6 +117,7 @@ final class CodingPracticeRunService
                 'stdinCustom' => $stdinForCustom,
                 'customExecution' => $custom['execution'] ?? null,
             ]),
+            'meta' => CodingDeployInfo::meta(),
         ];
     }
 

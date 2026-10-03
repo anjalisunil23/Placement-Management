@@ -15,6 +15,10 @@ if (file_exists($root . '/.env')) {
 require_once dirname(__DIR__) . '/bootstrap-services.php';
 pms_load_backend_services(dirname(__DIR__));
 
+use PMS\Utils\CodingDeployInfo;
+
+echo 'Coding deploy revision: ' . CodingDeployInfo::REVISION . PHP_EOL;
+
 use PMS\Services\CodeExecutionService;
 
 $fail = 0;

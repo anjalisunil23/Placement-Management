@@ -43,6 +43,11 @@ require_once $autoload;
 
 // Linux/cPanel: load utils + services explicitly when PSR-4 case differs from backend/*.
 require_once dirname(__DIR__) . '/bootstrap-services.php';
+$__pmsFallback = dirname(__DIR__) . '/utils/coding-runtime-fallback.php';
+if (is_readable($__pmsFallback)) {
+    require_once $__pmsFallback;
+}
+unset($__pmsFallback);
 $backendDir = dirname(__DIR__);
 pms_load_backend_services($backendDir);
 pms_load_backend_models($backendDir);
@@ -569,6 +574,7 @@ $routes = [
     ['GET',  '/coding/problems',              [CodingController::class, 'listPracticeProblems']],
     ['GET',  '/coding/problems/{id}',         [CodingController::class, 'getPracticeProblem']],
     ['POST', '/coding/problems/{id}/run',     [CodingController::class, 'runPracticeProblem']],
+    ['GET',  '/coding/exec-health',           [CodingController::class, 'execHealth']],
     ['POST', '/coding/problems/{id}/submit',  [CodingController::class, 'submitPracticeProblem']],
     ['GET',  '/coding/practice/submissions',  [CodingController::class, 'listPracticeSubmissions']],
     ['GET',  '/coding/problem-bank',          [CodingController::class, 'listBank']],

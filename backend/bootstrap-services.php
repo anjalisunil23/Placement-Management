@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+$__pmsBackendRoot = __DIR__;
+$__pmsRuntimeFallback = $__pmsBackendRoot . '/utils/coding-runtime-fallback.php';
+if (is_readable($__pmsRuntimeFallback)) {
+    require_once $__pmsRuntimeFallback;
+}
+unset($__pmsBackendRoot, $__pmsRuntimeFallback);
+
 /**
  * Load backend/utils explicitly (cPanel often misses new PSR-4 files until classmap refresh).
  */
@@ -21,7 +28,9 @@ function pms_load_backend_utils(string $backendDir): void
         'OwnershipHelper.php',
         'ApiExceptionHandler.php',
         'CodingStarterTemplates.php',
+        'coding-runtime-fallback.php',
         'CodingExecutionDebug.php',
+        'CodingDeployInfo.php',
         'CodingExecutionErrorFormatter.php',
     ] as $utilFile) {
         $path = $utilsDir . '/' . $utilFile;

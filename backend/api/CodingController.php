@@ -8,6 +8,7 @@ use PMS\Middleware\AuthMiddleware;
 use PMS\Services\AptitudeAccessService;
 use PMS\Services\CodeExecutionService;
 use PMS\Services\CodingService;
+use PMS\Services\CodingTestCaseChecker;
 use PMS\Utils\Response;
 
 final class CodingController
@@ -347,7 +348,52 @@ final class CodingController
         if (!AptitudeAccessService::canTake($user) && !AptitudeAccessService::canManageCoding($user)) {
             Response::forbidden('You cannot run code on this account.');
         }
-        Response::success($this->service()->runPracticeProblem($user, $id, $this->body()));
+        try {
+            Response::success($this->service()->runPracticeProblem($user, $id, $this->body()));
+        } catch (\Throwable $e) {
+            Response::error(
+                $e->getMessage(),
+                500,
+                [
+                    'stage' => 'coding.practice.run',
+                    'type' => $e::class,
+                    'meta' => class_exists(\PMS\Utils\CodingDeployInfo::class, false)
+                        ? \PMS\Utils\CodingDeployInfo::meta()
+                        : null,
+                ]
+            );
+        }
+    }
+
+    /** GET /api/coding/exec-health — deploy + bootstrap verification (authenticated) */
+    public function execHealth(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        if (!AptitudeAccessService::canTake($user) && !AptitudeAccessService::canManageCoding($user)) {
+            Response::forbidden('You cannot access coding execution health.');
+        }
+        $backendDir = dirname(__DIR__);
+        $report = \PMS\Utils\CodingDeployInfo::healthReport($backendDir);
+        $code = "n = int(input())\narr = list(map(int, input().split()))\n";
+        $stdin = "4\n1 4 3 2";
+        try {
+            $exec = (new CodeExecutionService())->run('Python', $code, $stdin, 8000);
+            $report['smoke'] = [
+                'ok' => CodingTestCaseChecker::executionSucceeded($exec),
+                'exitCode' => (int) ($exec['exit_code'] ?? -1),
+                'status' => (string) ($exec['status'] ?? ''),
+                'stdoutLen' => strlen((string) ($exec['stdout'] ?? '')),
+                'stderrLen' => strlen((string) ($exec['stderr'] ?? '')),
+                'errorSummary' => (string) ($exec['errorSummary'] ?? ''),
+            ];
+        } catch (\Throwable $e) {
+            $report['smoke'] = [
+                'ok' => false,
+                'error' => $e->getMessage(),
+                'type' => $e::class,
+            ];
+        }
+        Response::success($report);
     }
 
     /** POST /api/coding/execute — compile/run student code (C++, Java, etc.) */

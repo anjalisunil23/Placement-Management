@@ -49,6 +49,30 @@ final class PublicController
         $legacyPolicyRules = is_readable($eligibilityFile)
             && strpos((string) file_get_contents($eligibilityFile), 'Placement policy not accepted') !== false;
 
+        $backendDir = $root . '/backend';
+        $bootstrapFile = $backendDir . '/bootstrap-services.php';
+        $bootstrapText = is_readable($bootstrapFile) ? (string) file_get_contents($bootstrapFile) : '';
+        $codingExec = [
+            'revision' => class_exists(\PMS\Utils\CodingDeployInfo::class, false)
+                ? \PMS\Utils\CodingDeployInfo::REVISION
+                : '',
+            'files' => [
+                'utils/CodingExecutionDebug.php' => is_readable($backendDir . '/utils/CodingExecutionDebug.php'),
+                'utils/coding-runtime-fallback.php' => is_readable($backendDir . '/utils/coding-runtime-fallback.php'),
+                'services/CodingPracticeRunService.php' => is_readable($backendDir . '/services/CodingPracticeRunService.php'),
+                'services/CodeExecutionService.php' => is_readable($backendDir . '/services/CodeExecutionService.php'),
+            ],
+            'bootstrap' => [
+                'pms_load_backend_utils' => str_contains($bootstrapText, 'function pms_load_backend_utils'),
+                'pms_coding_exec_debug_log' => str_contains($bootstrapText, 'function pms_coding_exec_debug_log'),
+                'CodingExecutionDebug.php' => str_contains($bootstrapText, 'CodingExecutionDebug.php'),
+            ],
+            'routes' => [
+                'practiceRun' => is_readable($backendDir . '/api/index.php')
+                    && str_contains((string) file_get_contents($backendDir . '/api/index.php'), '/coding/problems/{id}/run'),
+            ],
+        ];
+
         $requiredTables = [
             Collections::USERS,
             Collections::STUDENTS,
@@ -96,6 +120,7 @@ final class PublicController
                 'deployVersion'    => $deployVersion,
                 'eligibilityRules' => $legacyPolicyRules ? 'legacy-policy-required' : 'v2-resume-only',
             ],
+            'codingExec' => $codingExec,
         ], $db['ok'] ? 'OK' : 'Database unavailable', $db['ok'] ? 200 : 503);
     }
 
