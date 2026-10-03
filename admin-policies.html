@@ -1,166 +1,121 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Placement Policies · AJCE Placements</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-<link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
-</head>
-<body data-page="admin-policies.html">
-<div class="app">
-<aside class="sidebar" id="sidebar"></aside>
-<div class="main"><header class="topbar" id="topbar"></header><main class="page">
-
-<div class="page-header">
-  <div>
-    <h1 class="page-title">Placement Policies</h1>
-    <p class="text-muted-2 small mb-0">Upload placement and internship policy PDFs. Students must accept them on first login (registration gate).</p>
-  </div>
-</div>
-
-<div class="row g-3">
-  <div class="col-lg-6">
-    <div class="card-surface p-4">
-      <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-pdf me-2"></i>Placement policy</h5>
-      <form id="placementForm" class="row g-3">
-        <div class="col-12">
-          <label class="form-label small fw-semibold" for="placementTitle">Display title</label>
-          <input class="form-control" id="placementTitle" placeholder="Placement Policy"/>
-        </div>
-        <div class="col-12">
-          <label class="form-label small fw-semibold" for="placementVersion">Version id</label>
-          <input class="form-control" id="placementVersion" placeholder="e.g. placement-2026-04"/>
-          <div class="form-text">Changing the version requires students who already accepted to re-accept.</div>
-        </div>
-        <div class="col-12">
-          <label class="form-label small fw-semibold" for="placementPdf">PDF file</label>
-          <input type="file" class="form-control" id="placementPdf" accept=".pdf,application/pdf"/>
-        </div>
-        <div class="col-12 d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-primary btn-sm" id="btnSavePlacementMeta"><i class="bi bi-check2 me-1"></i>Save title &amp; version</button>
-          <button type="button" class="btn btn-outline-primary btn-sm" id="btnUploadPlacement"><i class="bi bi-upload me-1"></i>Upload PDF</button>
-          <a class="btn btn-outline-secondary btn-sm" id="placementPreview" href="#" target="_blank" rel="noopener">Preview PDF</a>
-        </div>
-      </form>
-    </div>
-  </div>
-  <div class="col-lg-6">
-    <div class="card-surface p-4">
-      <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-pdf me-2"></i>Internship policy</h5>
-      <form id="internshipForm" class="row g-3">
-        <div class="col-12">
-          <label class="form-label small fw-semibold" for="internshipTitle">Display title</label>
-          <input class="form-control" id="internshipTitle" placeholder="Internship Policy"/>
-        </div>
-        <div class="col-12">
-          <label class="form-label small fw-semibold" for="internshipVersion">Version id</label>
-          <input class="form-control" id="internshipVersion" placeholder="e.g. internship-2026-04"/>
-        </div>
-        <div class="col-12">
-          <label class="form-label small fw-semibold" for="internshipPdf">PDF file</label>
-          <input type="file" class="form-control" id="internshipPdf" accept=".pdf,application/pdf"/>
-        </div>
-        <div class="col-12 d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-primary btn-sm" id="btnSaveInternshipMeta"><i class="bi bi-check2 me-1"></i>Save title &amp; version</button>
-          <button type="button" class="btn btn-outline-primary btn-sm" id="btnUploadInternship"><i class="bi bi-upload me-1"></i>Upload PDF</button>
-          <a class="btn btn-outline-secondary btn-sm" id="internshipPreview" href="#" target="_blank" rel="noopener">Preview PDF</a>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-
-</main></div></div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261003policies"></script>
-<script src="js/app.js?v=20261003policies"></script>
-<script>
-  let policyData = { settings: {}, placement: {}, internship: {} };
-
-  function fillForm() {
-    const s = policyData.settings || {};
-    document.getElementById('placementTitle').value = s.placementPolicyTitle || policyData.placement?.title || '';
-    document.getElementById('placementVersion').value = s.placementPolicyVersion || policyData.placement?.version || '';
-    document.getElementById('internshipTitle').value = s.internshipPolicyTitle || policyData.internship?.title || '';
-    document.getElementById('internshipVersion').value = s.internshipPolicyVersion || policyData.internship?.version || '';
-    const pLink = document.getElementById('placementPreview');
-    const iLink = document.getElementById('internshipPreview');
-    if (pLink) pLink.href = policyData.placement?.pdfUrl || '#';
-    if (iLink) iLink.href = policyData.internship?.pdfUrl || '#';
-  }
-
-  async function loadPolicies() {
-    const res = await api('/admin/policies');
-    if (!res?.success) {
-      toast(res?.message || 'Could not load policies.', 'error');
-      return;
-    }
-    policyData = res.data || policyData;
-    fillForm();
-  }
-
-  async function saveMeta() {
-    const payload = {
-      placementPolicyTitle: document.getElementById('placementTitle').value.trim(),
-      placementPolicyVersion: document.getElementById('placementVersion').value.trim(),
-      internshipPolicyTitle: document.getElementById('internshipTitle').value.trim(),
-      internshipPolicyVersion: document.getElementById('internshipVersion').value.trim(),
-    };
-    const res = await api('/admin/policies', { method: 'PUT', body: payload });
-    if (!res?.success) {
-      toast(res?.message || 'Could not save.', 'error');
-      return;
-    }
-    policyData = res.data || policyData;
-    fillForm();
-    toast('Policy metadata saved.', 'success');
-  }
-
-  async function uploadPdf(type) {
-    const input = document.getElementById(type === 'placement' ? 'placementPdf' : 'internshipPdf');
-    const file = input?.files?.[0];
-    if (!file) {
-      toast('Choose a PDF file first.', 'warn');
-      return;
-    }
-    const versionEl = document.getElementById(type === 'placement' ? 'placementVersion' : 'internshipVersion');
-    const fd = new FormData();
-    fd.append('type', type);
-    fd.append('pdf', file, file.name);
-    if (versionEl?.value.trim()) fd.append('version', versionEl.value.trim());
-
-    const token = Auth.token();
-    const headers = {};
-    if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-    const res = await fetch(API_BASE + '/admin/policies/upload', {
-      method: 'POST',
-      headers,
-      credentials: 'include',
-      body: fd,
-    });
-    let json = null;
-    try { json = await res.json(); } catch { /* ignore */ }
-    if (!res.ok || !json?.success) {
-      toast(json?.message || 'Upload failed.', 'error');
-      return;
-    }
-    policyData = json.data || policyData;
-    fillForm();
-    if (input) input.value = '';
-    toast((type === 'placement' ? 'Placement' : 'Internship') + ' PDF uploaded.', 'success');
-  }
-
-  document.getElementById('btnSavePlacementMeta')?.addEventListener('click', saveMeta);
-  document.getElementById('btnSaveInternshipMeta')?.addEventListener('click', saveMeta);
-  document.getElementById('btnUploadPlacement')?.addEventListener('click', () => uploadPdf('placement'));
-  document.getElementById('btnUploadInternship')?.addEventListener('click', () => uploadPdf('internship'));
-
-  onAppReady(() => loadPolicies());
-</script>
-</body>
-</html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Placement Policies · AJCE Placements</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+</head>
+<body data-page="admin-policies.html">
+<div class="app">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="main"><header class="topbar" id="topbar"></header><main class="page">
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Placement Policies</h1>
+    <p class="text-muted-2 small mb-0">Upload placement and internship policy PDFs. Students must accept them on first login (registration gate).</p>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card-surface p-4">
+      <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-pdf me-2"></i>Placement policy</h5>
+      <form id="placementForm" class="row g-3">
+        <div class="col-12">
+          <label class="form-label small fw-semibold" for="placementPdf">PDF file</label>
+          <input type="file" class="form-control" id="placementPdf" accept=".pdf,application/pdf"/>
+        </div>
+        <div class="col-12 d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary btn-sm" id="btnUploadPlacement"><i class="bi bi-upload me-1"></i>Upload PDF</button>
+          <a class="btn btn-outline-secondary btn-sm" id="placementPreview" href="#" target="_blank" rel="noopener">Preview PDF</a>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card-surface p-4">
+      <h5 class="fw-bold mb-3"><i class="bi bi-file-earmark-pdf me-2"></i>Internship policy</h5>
+      <form id="internshipForm" class="row g-3">
+        <div class="col-12">
+          <label class="form-label small fw-semibold" for="internshipPdf">PDF file</label>
+          <input type="file" class="form-control" id="internshipPdf" accept=".pdf,application/pdf"/>
+        </div>
+        <div class="col-12 d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary btn-sm" id="btnUploadInternship"><i class="bi bi-upload me-1"></i>Upload PDF</button>
+          <a class="btn btn-outline-secondary btn-sm" id="internshipPreview" href="#" target="_blank" rel="noopener">Preview PDF</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+</main></div></div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=20261003policies"></script>
+<script src="js/app.js?v=20261003policies"></script>
+<script>
+  let policyData = { settings: {}, placement: {}, internship: {} };
+
+  function fillForm() {
+    const pLink = document.getElementById('placementPreview');
+    const iLink = document.getElementById('internshipPreview');
+    if (pLink) pLink.href = policyData.placement?.pdfUrl || '#';
+    if (iLink) iLink.href = policyData.internship?.pdfUrl || '#';
+  }
+
+  async function loadPolicies() {
+    const res = await api('/admin/policies');
+    if (!res?.success) {
+      toast(res?.message || 'Could not load policies.', 'error');
+      return;
+    }
+    policyData = res.data || policyData;
+    fillForm();
+  }
+
+  async function uploadPdf(type) {
+    const input = document.getElementById(type === 'placement' ? 'placementPdf' : 'internshipPdf');
+    const file = input?.files?.[0];
+    if (!file) {
+      toast('Choose a PDF file first.', 'warn');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('type', type);
+    fd.append('pdf', file, file.name);
+
+    const token = Auth.token();
+    const headers = {};
+    if (token && token !== 'session' && !String(token).startsWith('demo-token')) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const res = await fetch(API_BASE + '/admin/policies/upload', {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: fd,
+    });
+    let json = null;
+    try { json = await res.json(); } catch { /* ignore */ }
+    if (!res.ok || !json?.success) {
+      toast(json?.message || 'Upload failed.', 'error');
+      return;
+    }
+    policyData = json.data || policyData;
+    fillForm();
+    if (input) input.value = '';
+    toast((type === 'placement' ? 'Placement' : 'Internship') + ' PDF uploaded.', 'success');
+  }
+
+  document.getElementById('btnUploadPlacement')?.addEventListener('click', () => uploadPdf('placement'));
+  document.getElementById('btnUploadInternship')?.addEventListener('click', () => uploadPdf('internship'));
+
+  onAppReady(() => loadPolicies());
+</script>
+</body>
+</html>

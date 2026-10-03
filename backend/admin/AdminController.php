@@ -2203,7 +2203,7 @@ final class AdminController
         ]);
     }
 
-    /** PUT /api/admin/policies — titles / version labels (optional bump) */
+    /** PUT /api/admin/policies — legacy metadata (admin UI uses upload only) */
     public function updatePlacementPolicies(): void
     {
         RBACMiddleware::requireAdmin();
@@ -2217,7 +2217,7 @@ final class AdminController
         ], 'Policy settings saved.');
     }
 
-    /** POST /api/admin/policies/upload — multipart: type=placement|internship, pdf=file, version? */
+    /** POST /api/admin/policies/upload — multipart: type=placement|internship, pdf=file */
     public function uploadPlacementPolicyPdf(): void
     {
         RBACMiddleware::requireAdmin();
@@ -2244,8 +2244,7 @@ final class AdminController
             Response::error('Failed to upload policy PDF: ' . $e->getMessage(), 500);
         }
 
-        $version = trim((string) ($_POST['version'] ?? ''));
-        $saved = (new PlacementPolicySettingsModel())->recordUpload($type, $path, $version !== '' ? $version : null);
+        $saved = (new PlacementPolicySettingsModel())->recordUpload($type, $path, null);
         $public = (new PlacementPolicySettingsModel())->publicConfig();
 
         Response::success([
