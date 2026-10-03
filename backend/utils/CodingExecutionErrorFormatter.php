@@ -13,12 +13,13 @@ final class CodingExecutionErrorFormatter
      * @param array<string, mixed> $result
      * @return array<string, mixed>
      */
-    public static function enrich(array $result, string $language = '', string $stdin = ''): array
+    public static function enrich(array $result, string $language = '', string $stdin = '', string $source = ''): array
     {
         $lang = strtolower(trim($language));
         $stderr = trim((string) ($result['stderr'] ?? ''));
         $status = (string) ($result['status'] ?? '');
         $stdinTrim = trim($stdin);
+        $sourceText = (string) $source;
 
         if ($lang === 'python' && $status === 'Runtime Error' && self::isPythonSyntaxFailure($stderr)) {
             $result['status'] = 'Compilation Error';
@@ -42,12 +43,71 @@ final class CodingExecutionErrorFormatter
         $result['errorDetail'] = $detail;
         $result['errorSummary'] = self::buildSummary($status, $detail, $stderr, $lang, $stdinTrim);
 
-        if ($detail === '' && self::isGenericStatusLabel($stderr) && $stdinTrim === '' && $lang === 'python') {
-            $result['errorSummary'] = 'Custom input is empty, but your program tried to read input (stdin). Enter values in the Custom Input box.';
-            $result['errorDetail'] = 'EOFError: EOF when reading a line';
+        if ($status === 'Runtime Error' && $lang === 'python') {
+            $needsInputHelp = $detail === ''
+                || self::isGenericStatusLabel($stderr)
+                || str_contains((string) $result['errorSummary'], 'exited with an error');
+            if ($needsInputHelp || preg_match('/EOFError:/i', $detail)) {
+                $inferred = self::inferPythonInputHelp($sourceText, $stdin);
+                if ($inferred !== null) {
+                    $result['errorSummary'] = $inferred['summary'];
+                    $result['errorDetail'] = $inferred['detail'];
+                }
+            }
         }
 
         return $result;
+    }
+
+    /**
+     * @return array{summary:string,detail:string}|null
+     */
+    private static function inferPythonInputHelp(string $source, string $stdin): ?array
+    {
+        if (!preg_match_all('/\binput\s*\(/', $source, $m)) {
+            return null;
+        }
+        $reads = count($m[0]);
+        if ($reads < 1) {
+            return null;
+        }
+        $lines = self::stdinLineCount($stdin);
+        if ($lines >= $reads) {
+            return null;
+        }
+
+        $detail = 'EOFError: EOF when reading a line';
+        if ($lines === 0) {
+            return [
+                'summary' => sprintf(
+                    'Custom input is empty, but your program reads %d line(s) of input. Enter each line in Custom Input (this is a runtime error while reading stdin).',
+                    $reads
+                ),
+                'detail' => $detail,
+            ];
+        }
+
+        $missing = $reads - $lines;
+
+        return [
+            'summary' => sprintf(
+                'Your program reads %1$d line(s) of input, but Custom Input has only %2$d. Add %3$d more line(s) below (runtime error while reading stdin).',
+                $reads,
+                $lines,
+                $missing
+            ),
+            'detail' => $detail,
+        ];
+    }
+
+    private static function stdinLineCount(string $stdin): int
+    {
+        $norm = str_replace("\r\n", "\n", trim($stdin));
+        if ($norm === '') {
+            return 0;
+        }
+
+        return substr_count($norm, "\n") + 1;
     }
 
     private static function isGenericStatusLabel(string $text): bool

@@ -78,11 +78,41 @@
     return status === 'Runtime Error' && /\b(SyntaxError|IndentationError|TabError)\b/.test(stderr);
   }
 
-  function enrichExec(exec, language, stdinHint) {
+  function stdinLineCount(stdin) {
+    const norm = String(stdin ?? '').replace(/\r\n/g, '\n').trim();
+    if (!norm) return 0;
+    return norm.split('\n').length;
+  }
+
+  function countPythonInputCalls(source) {
+    const m = String(source || '').match(/\binput\s*\(/g);
+    return m ? m.length : 0;
+  }
+
+  function inferPythonInputHelp(source, stdin) {
+    const reads = countPythonInputCalls(source);
+    if (reads < 1) return null;
+    const lines = stdinLineCount(stdin);
+    if (lines >= reads) return null;
+    const detail = 'EOFError: EOF when reading a line';
+    if (lines === 0) {
+      return {
+        summary: `Custom input is empty, but your program reads ${reads} line(s) of input. Enter each line in Custom Input (this is a runtime error while reading stdin).`,
+        detail,
+      };
+    }
+    return {
+      summary: `Your program reads ${reads} line(s) of input, but Custom Input has only ${lines}. Add ${reads - lines} more line(s) below (runtime error while reading stdin).`,
+      detail,
+    };
+  }
+
+  function enrichExec(exec, language, stdinHint, sourceHint) {
     const base = exec || {};
     let status = String(base.status || '');
     let stderr = String(base.stderrTrace || base.stderr || '').trim();
     const stdinTrim = String(stdinHint ?? base.stdin ?? '').trim();
+    const source = String(sourceHint ?? base.source ?? '');
     if (isPythonSyntaxFailure(stderr, status)) status = 'Compilation Error';
 
     if (!ERROR_STATUSES.has(status) && !stderr) {
@@ -97,9 +127,15 @@
 
     let errorSummary = String(base.errorSummary || '').trim() || buildSummary(status, errorDetail, stderr, language, stdinTrim);
 
-    if (!errorDetail && isGenericLabel(stderr) && !stdinTrim && String(language || '').toLowerCase() === 'python') {
-      errorSummary = 'Custom input is empty, but your program tried to read input (stdin). Enter values in the Custom Input box.';
-      errorDetail = 'EOFError: EOF when reading a line';
+    if (status === 'Runtime Error' && String(language || '').toLowerCase() === 'python') {
+      const needsInputHelp = !errorDetail || isGenericLabel(stderr) || errorSummary.includes('exited with an error') || /EOFError:/i.test(errorDetail);
+      if (needsInputHelp) {
+        const inferred = inferPythonInputHelp(source, stdinTrim);
+        if (inferred) {
+          errorSummary = inferred.summary;
+          errorDetail = inferred.detail;
+        }
+      }
     }
 
     return {

@@ -91,14 +91,18 @@ final class WandboxExecutionClient
         $status = $response['status'] ?? null;
         $exit = is_numeric($status) ? (int) $status : (int) preg_replace('/\D/', '', (string) $status);
         $stdout = (string) ($response['program_output'] ?? '');
-        $stderr = trim((string) ($response['program_error'] ?? ''));
+        $stderr = trim(implode("\n", array_filter([
+            (string) ($response['program_error'] ?? ''),
+            (string) ($response['program_output'] ?? ''),
+            (string) ($response['program_message'] ?? ''),
+        ], static fn (string $s): bool => trim($s) !== '')));
         if ($exit !== 0) {
-            $err = $stderr !== '' ? $stderr : trim((string) ($response['program_message'] ?? 'Runtime Error'));
+            $err = $stderr !== '' ? $stderr : 'Runtime Error';
             return [
                 'ok' => false,
                 'status' => 'Runtime Error',
                 'stdout' => $stdout,
-                'stderr' => $err !== '' ? $err : 'Runtime Error',
+                'stderr' => $err,
                 'timedOut' => false,
                 'durationMs' => $durationMs,
             ];
