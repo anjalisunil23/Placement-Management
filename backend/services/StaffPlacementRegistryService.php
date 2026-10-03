@@ -123,82 +123,29 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * Registry grid columns — class roster fields plus student_placements payload keys.
+     * Registry grid — columns mirror student_placements JSON payload (+ Sl#).
      *
-     * @return list<array{key:string,label:string,sortable:bool,sortKey?:string,source:string,payloadField?:string}>
+     * @return list<array{key:string,label:string,sortable:bool,sortKey?:string,source:string,group?:string,payloadField?:string}>
      */
     public static function registryTableColumns(): array
     {
         return [
-            ['key' => '_sl', 'label' => 'Sl#', 'sortable' => true, 'sortKey' => 'admissionNo', 'source' => 'roster'],
-            ['key' => 'studentName', 'label' => 'Student Name', 'sortable' => true, 'sortKey' => 'studentName', 'source' => 'roster'],
-            [
-                'key'           => 'admissionNo',
-                'label'         => 'Admission No',
-                'sortable'      => true,
-                'sortKey'       => 'admissionNo',
-                'source'        => 'roster',
-                'payloadField'  => 'registerNumber',
-            ],
-            ['key' => 'courseId', 'label' => 'Course ID', 'sortable' => true, 'sortKey' => 'courseId', 'source' => 'roster'],
-            ['key' => 'branchId', 'label' => 'Branch ID', 'sortable' => true, 'sortKey' => 'branchId', 'source' => 'roster'],
-            ['key' => 'contact', 'label' => 'Contact', 'sortable' => true, 'sortKey' => 'contact', 'source' => 'roster'],
-            [
-                'key'          => 'employer',
-                'label'        => 'Name of the Employer',
-                'sortable'     => true,
-                'sortKey'      => 'employer',
-                'source'       => 'student_placements',
-                'payloadField' => 'company',
-            ],
-            [
-                'key'          => 'type',
-                'label'        => 'Type',
-                'sortable'     => true,
-                'sortKey'      => 'type',
-                'source'       => 'student_placements',
-                'payloadField' => 'recordType',
-            ],
-            [
-                'key'          => 'employerContact',
-                'label'        => 'Employer Contact',
-                'sortable'     => true,
-                'sortKey'      => 'employerContact',
-                'source'       => 'student_placements',
-                'payloadField' => 'employerContact',
-            ],
-            [
-                'key'          => 'address',
-                'label'        => 'Address',
-                'sortable'     => true,
-                'sortKey'      => 'address',
-                'source'       => 'student_placements',
-                'payloadField' => 'address',
-            ],
-            [
-                'key'          => 'package',
-                'label'        => 'Package',
-                'sortable'     => true,
-                'sortKey'      => 'package',
-                'source'       => 'student_placements',
-                'payloadField' => 'package',
-            ],
-            [
-                'key'          => 'fordvv',
-                'label'        => 'fordvv',
-                'sortable'     => true,
-                'sortKey'      => 'fordvv',
-                'source'       => 'student_placements',
-                'payloadField' => 'fordvv',
-            ],
-            [
-                'key'          => 'includedvv',
-                'label'        => 'includedvv',
-                'sortable'     => true,
-                'sortKey'      => 'includedvv',
-                'source'       => 'student_placements',
-                'payloadField' => 'includedvv',
-            ],
+            ['key' => '_sl', 'label' => 'Sl#', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_placements', 'group' => 'snapshot'],
+            ['key' => 'studentName', 'label' => 'Student name', 'sortable' => true, 'sortKey' => 'studentName', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'studentName'],
+            ['key' => 'registerNumber', 'label' => 'Register no.', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'registerNumber'],
+            ['key' => 'classBatch', 'label' => 'Class batch', 'sortable' => true, 'sortKey' => 'classBatch', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'classBatch'],
+            ['key' => 'programme', 'label' => 'Programme', 'sortable' => true, 'sortKey' => 'programme', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'programme'],
+            ['key' => 'phone', 'label' => 'Phone', 'sortable' => true, 'sortKey' => 'phone', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'phone'],
+            ['key' => 'email', 'label' => 'Email', 'sortable' => true, 'sortKey' => 'email', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'email'],
+            ['key' => 'company', 'label' => 'Company / institution', 'sortable' => true, 'sortKey' => 'company', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'company'],
+            ['key' => 'recordType', 'label' => 'Record type', 'sortable' => true, 'sortKey' => 'recordType', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'recordType'],
+            ['key' => 'role', 'label' => 'Role', 'sortable' => true, 'sortKey' => 'role', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'role'],
+            ['key' => 'employerContact', 'label' => 'Contact', 'sortable' => true, 'sortKey' => 'employerContact', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'employerContact'],
+            ['key' => 'address', 'label' => 'Address', 'sortable' => true, 'sortKey' => 'address', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'address'],
+            ['key' => 'package', 'label' => 'Package', 'sortable' => true, 'sortKey' => 'package', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'package'],
+            ['key' => 'placementStatus', 'label' => 'Status', 'sortable' => true, 'sortKey' => 'placementStatus', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'placementStatus'],
+            ['key' => 'fordvv', 'label' => 'For DVV', 'sortable' => true, 'sortKey' => 'fordvv', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'fordvv'],
+            ['key' => 'includedvv', 'label' => 'Included DVV', 'sortable' => true, 'sortKey' => 'includedvv', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'includedvv'],
         ];
     }
 
@@ -400,8 +347,10 @@ final class StaffPlacementRegistryService
             'departmentCode'  => $deptFields['departmentCode'],
             'departmentName'  => $deptFields['departmentName'],
             'program'         => $program,
+            'programme'       => $program,
             'branch'          => $branch,
             'batch'           => $batch,
+            'classBatch'      => $batch,
         ];
 
         $entries = [];
@@ -630,7 +579,7 @@ final class StaffPlacementRegistryService
         $data['fordvv'] = $this->normalizeVvValue($data['fordvv'] ?? '1');
         $data['includedvv'] = $this->normalizeVvValue($data['includedvv'] ?? '1');
 
-        return array_merge($meta, $data);
+        return $this->presentRegistryRow(array_merge($meta, $data));
     }
 
     /**
@@ -649,7 +598,39 @@ final class StaffPlacementRegistryService
         $data['fordvv'] = $this->normalizeVvValue($data['fordvv'] ?? '1');
         $data['includedvv'] = $this->normalizeVvValue($data['includedvv'] ?? '1');
 
-        return array_merge($meta, $data);
+        return $this->presentRegistryRow(array_merge($meta, $data));
+    }
+
+    /**
+     * Flatten registry row keys to match student_placements payload for the UI grid.
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function presentRegistryRow(array $row): array
+    {
+        $company = trim((string) ($row['company'] ?? $row['employer'] ?? ''));
+        $row['company'] = $company;
+        $row['employer'] = $company;
+
+        $recordType = trim((string) ($row['recordType'] ?? $row['type'] ?? ''));
+        if ($recordType === '' && $company !== '') {
+            $recordType = 'Placement';
+        }
+        $row['recordType'] = $recordType;
+        if ($recordType !== '') {
+            $row['type'] = $recordType;
+        }
+
+        $row['registerNumber'] = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admissionNo'] ?? '')));
+        $row['classBatch'] = trim((string) ($row['classBatch'] ?? $row['batch'] ?? ''));
+        $row['programme'] = trim((string) ($row['programme'] ?? $row['program'] ?? ''));
+        $row['phone'] = trim((string) ($row['phone'] ?? ''));
+        $row['email'] = trim((string) ($row['email'] ?? ''));
+        $row['role'] = trim((string) ($row['role'] ?? ''));
+        $row['placementStatus'] = trim((string) ($row['placementStatus'] ?? ''));
+
+        return $row;
     }
 
     /**
@@ -936,12 +917,18 @@ final class StaffPlacementRegistryService
                 (string) ($row['studentName'] ?? ''),
                 (string) ($row['registerNumber'] ?? ''),
                 (string) ($row['admissionNo'] ?? ''),
-                (string) ($row['courseId'] ?? ''),
-                (string) ($row['branchId'] ?? ''),
+                (string) ($row['classBatch'] ?? ''),
+                (string) ($row['programme'] ?? ''),
+                (string) ($row['phone'] ?? ''),
+                (string) ($row['email'] ?? ''),
+                (string) ($row['company'] ?? ''),
                 (string) ($row['employer'] ?? ''),
+                (string) ($row['recordType'] ?? ''),
+                (string) ($row['role'] ?? ''),
                 (string) ($row['contact'] ?? ''),
                 (string) ($row['address'] ?? ''),
                 (string) ($row['package'] ?? ''),
+                (string) ($row['placementStatus'] ?? ''),
             ]));
 
             return str_contains($hay, $q);

@@ -77,17 +77,15 @@
             <div class="d-flex align-items-center gap-2">
               <label class="small text-muted-2 mb-0" for="tableSearch">Search</label>
               <input type="search" class="form-control form-control-sm" id="tableSearch"
-                placeholder="Name, employer, register…" style="min-width:220px" />
+                placeholder="Name, register no., company…" style="min-width:220px" />
             </div>
           </div>
           <div class="table-wrap registry-table-wrap">
-            <table class="registry-table" id="registryTable">
-              <thead>
-                <tr id="registryTableHeadRow"></tr>
-              </thead>
+            <table class="registry-table registry-table-payload" id="registryTable">
+              <thead id="registryTableHead"></thead>
               <tbody id="registryRows">
                 <tr>
-                  <td colspan="14" class="text-muted-2 p-4 text-center">Loading…</td>
+                  <td colspan="17" class="text-muted-2 p-4 text-center">Loading…</td>
                 </tr>
               </tbody>
             </table>
@@ -286,6 +284,41 @@
             vertical-align: middle;
           }
 
+          .registry-group-head {
+            text-align: center;
+            font-size: .7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            padding: .45rem .5rem;
+            border: 1px solid #dee2e6;
+          }
+
+          .registry-group-snapshot {
+            background: #dbeafe;
+            color: #1e3a8a
+          }
+
+          .registry-group-placement {
+            background: #d1fae5;
+            color: #065f46
+          }
+
+          .registry-table-payload tbody td.registry-col-placement {
+            background: #f8fffb
+          }
+
+          .registry-table-payload tbody tr:hover td.registry-col-placement {
+            background: #ecfdf5
+          }
+
+          .registry-table-payload tbody td.registry-col-email {
+            font-size: .8125rem;
+            max-width: 11rem;
+            overflow: hidden;
+            text-overflow: ellipsis
+          }
+
           .registry-table tbody td {
             padding: .65rem .75rem;
             border: 1px solid #dee2e6;
@@ -454,7 +487,15 @@
     const SORT_ICON = '<i class="bi bi-chevron-expand registry-sort-icon" aria-hidden="true"></i>';
 
     function registryColspan() {
-      return (registryColumns.length || 13) + 1;
+      return (registryColumns.length || 16) + 1;
+    }
+
+    function columnGroup(col) {
+      if (col.group === 'placement' || col.group === 'snapshot') return col.group;
+      return col.source === 'student_placements' && col.key !== '_sl' && col.key !== 'studentName'
+        && !['registerNumber', 'classBatch', 'programme', 'phone', 'email'].includes(col.key)
+        ? 'placement'
+        : 'snapshot';
     }
 
     function setRegistryColumns(cols) {
@@ -465,17 +506,60 @@
     }
 
     function renderRegistryTableHead() {
-      const tr = document.getElementById('registryTableHeadRow');
-      if (!tr || !registryColumns.length) return;
-      tr.innerHTML = registryColumns.map((col) => {
+      const thead = document.getElementById('registryTableHead');
+      if (!thead || !registryColumns.length) return;
+
+      const groups = [];
+      registryColumns.forEach((col) => {
+        const g = columnGroup(col);
+        const label = g === 'placement' ? 'Placement fields (student_placements)' : 'Student snapshot';
+        if (!groups.length || groups[groups.length - 1].id !== g) {
+          groups.push({ id: g, label, count: 1 });
+        } else {
+          groups[groups.length - 1].count += 1;
+        }
+      });
+
+      const groupRow = groups.map((g) =>
+        `<th colspan="${g.count}" class="registry-group-head registry-group-${g.id}">${esc(g.label)}</th>`
+      ).join('') + '<th rowspan="2" class="registry-actions-col text-center">Actions</th>';
+
+      const labelRow = registryColumns.map((col) => {
         const label = esc(col.label || col.key || '');
         if (col.sortable === false) {
           return `<th>${label}</th>`;
         }
         const sk = esc(col.sortKey || col.key || '');
-        return `<th class="registry-sortable" data-sort="${sk}" data-label="${label}">${label}</th>`;
-      }).join('') + '<th class="registry-actions-col"></th>';
+        return `<th class="registry-sortable" data-sort="${sk}" data-label="${label}">${label}${SORT_ICON}</th>`;
+      }).join('');
+
+      thead.innerHTML = `<tr>${groupRow}</tr><tr id="registryTableHeadRow">${labelRow}</tr>`;
       updateSortHeaders();
+    }
+
+    function rowHasPlacement(r) {
+      return String(r.company || r.employer || '').trim() !== '';
+    }
+
+    function registryFieldRaw(r, col) {
+      const field = col.payloadField || col.key || '';
+      switch (field) {
+        case 'registerNumber':
+          return r.registerNumber || r.admissionNo || '';
+        case 'classBatch':
+          return r.classBatch || r.batch || '';
+        case 'programme':
+          return r.programme || r.program || '';
+        case 'company':
+          return r.company || r.employer || '';
+        case 'recordType': {
+          if (!rowHasPlacement(r)) return '';
+          const t = r.recordType || r.type || '';
+          return t || 'Placement';
+        }
+        default:
+          return r[field] ?? r[col.key] ?? '';
+      }
     }
 
     function registryCellValue(col, r, slIndex) {
@@ -484,24 +568,21 @@
       if (key === 'studentName') {
         return esc(String(r.studentName || '—').toUpperCase());
       }
-      if (key === 'admissionNo') return esc(r.admissionNo || r.registerNumber || '—');
-      if (key === 'contact') return esc(formatContact(r));
-      if (key === 'type') {
-        const hasEmployer = String(r.employer || '').trim() !== '';
-        const typeLabel = hasEmployer
-          ? (r.type === 'Higher Education' || r.type === 'Research' ? r.type : 'Placement')
-          : '';
-        return esc(typeLabel);
-      }
-      return esc(r[key] ?? '');
+      const raw = registryFieldRaw(r, col);
+      const text = String(raw ?? '').trim();
+      return esc(text || '—');
     }
 
     function registryCellClass(col) {
       const key = col.key || '';
-      if (key === 'contact') return 'registry-cell-contact';
-      if (key === 'employerContact') return 'registry-cell-employer-contact';
-      if (key === 'address') return 'registry-cell-address';
-      return '';
+      const group = columnGroup(col);
+      const parts = [];
+      if (group === 'placement') parts.push('registry-col-placement');
+      if (key === 'email') parts.push('registry-col-email');
+      if (key === 'employerContact') parts.push('registry-cell-employer-contact');
+      if (key === 'address') parts.push('registry-cell-address');
+      if (key === 'phone') parts.push('registry-cell-contact');
+      return parts.join(' ');
     }
 
     function esc(s) {
@@ -519,10 +600,22 @@
 
     function rowSortValue(row, key) {
       switch (key) {
-        case 'admissionNo': return String(row.admissionNo || row.registerNumber || '');
-        case 'studentName': return String(row.studentName || '');
-        case 'contact': return formatContact(row);
-        default: return String(row[key] ?? '');
+        case 'registerNumber':
+          return String(row.registerNumber || row.admissionNo || '');
+        case 'studentName':
+          return String(row.studentName || '');
+        case 'classBatch':
+          return String(row.classBatch || row.batch || '');
+        case 'programme':
+          return String(row.programme || row.program || '');
+        case 'company':
+          return String(row.company || row.employer || '');
+        case 'recordType':
+          return String(row.recordType || row.type || '');
+        case 'contact':
+          return formatContact(row);
+        default:
+          return String(row[key] ?? '');
       }
     }
 
@@ -780,10 +873,10 @@
       const q = (document.getElementById('tableSearch')?.value || '').trim().toLowerCase();
       filteredRows = !q ? allRows.slice() : allRows.filter(r => {
         const hay = [
-          r.studentName, r.registerNumber, r.admissionNo, r.employer,
-          r.courseId, r.branchId,
-          r.departmentName, r.departmentCode, r.program, r.branch, r.batch,
-          r.contact, r.address, r.package, r.type, r.phone, r.email,
+          r.studentName, r.registerNumber, r.admissionNo, r.classBatch, r.batch,
+          r.programme, r.program, r.phone, r.email,
+          r.company, r.employer, r.recordType, r.type, r.role,
+          r.employerContact, r.address, r.package, r.placementStatus,
           r.fordvv, r.includedvv,
         ].join(' ').toLowerCase();
         return hay.includes(q);
@@ -826,11 +919,11 @@
         const slIndex = start + i + 1;
         const sid = esc(r.studentId || '');
         const hasDoc = !!(r.hasOfferLetter || r.hasJoiningLetter || r.hasCompanyIdDoc);
-        const hasEmployer = String(r.employer || '').trim() !== '';
+        const hasPlacement = rowHasPlacement(r);
         const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
         const detailsBtn = !canEditSelectedBatch
           ? `<button type="button" class="registry-action-btn add" title="Only class incharge can add or edit" disabled><i class="bi bi-lock-fill"></i></button>`
-          : (hasEmployer
+          : (hasPlacement
             ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
             : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`);
         const cells = cols.map((col) => {
@@ -1261,19 +1354,22 @@
       }
       applyDefaultDepartment();
       setRegistryColumns([
-        { key: '_sl', label: 'Sl#', sortable: true, sortKey: 'admissionNo', source: 'roster' },
-        { key: 'studentName', label: 'Student Name', sortable: true, sortKey: 'studentName', source: 'roster' },
-        { key: 'admissionNo', label: 'Admission No', sortable: true, sortKey: 'admissionNo', source: 'roster' },
-        { key: 'courseId', label: 'Course ID', sortable: true, sortKey: 'courseId', source: 'roster' },
-        { key: 'branchId', label: 'Branch ID', sortable: true, sortKey: 'branchId', source: 'roster' },
-        { key: 'contact', label: 'Contact', sortable: true, sortKey: 'contact', source: 'roster' },
-        { key: 'employer', label: 'Name of the Employer', sortable: true, sortKey: 'employer', source: 'student_placements', payloadField: 'company' },
-        { key: 'type', label: 'Type', sortable: true, sortKey: 'type', source: 'student_placements', payloadField: 'recordType' },
-        { key: 'employerContact', label: 'Employer Contact', sortable: true, sortKey: 'employerContact', source: 'student_placements', payloadField: 'employerContact' },
-        { key: 'address', label: 'Address', sortable: true, sortKey: 'address', source: 'student_placements', payloadField: 'address' },
-        { key: 'package', label: 'Package', sortable: true, sortKey: 'package', source: 'student_placements', payloadField: 'package' },
-        { key: 'fordvv', label: 'fordvv', sortable: true, sortKey: 'fordvv', source: 'student_placements', payloadField: 'fordvv' },
-        { key: 'includedvv', label: 'includedvv', sortable: true, sortKey: 'includedvv', source: 'student_placements', payloadField: 'includedvv' },
+        { key: '_sl', label: 'Sl#', sortable: true, sortKey: 'registerNumber', source: 'student_placements', group: 'snapshot' },
+        { key: 'studentName', label: 'Student name', sortable: true, sortKey: 'studentName', source: 'student_placements', group: 'snapshot', payloadField: 'studentName' },
+        { key: 'registerNumber', label: 'Register no.', sortable: true, sortKey: 'registerNumber', source: 'student_placements', group: 'snapshot', payloadField: 'registerNumber' },
+        { key: 'classBatch', label: 'Class batch', sortable: true, sortKey: 'classBatch', source: 'student_placements', group: 'snapshot', payloadField: 'classBatch' },
+        { key: 'programme', label: 'Programme', sortable: true, sortKey: 'programme', source: 'student_placements', group: 'snapshot', payloadField: 'programme' },
+        { key: 'phone', label: 'Phone', sortable: true, sortKey: 'phone', source: 'student_placements', group: 'snapshot', payloadField: 'phone' },
+        { key: 'email', label: 'Email', sortable: true, sortKey: 'email', source: 'student_placements', group: 'snapshot', payloadField: 'email' },
+        { key: 'company', label: 'Company / institution', sortable: true, sortKey: 'company', source: 'student_placements', group: 'placement', payloadField: 'company' },
+        { key: 'recordType', label: 'Record type', sortable: true, sortKey: 'recordType', source: 'student_placements', group: 'placement', payloadField: 'recordType' },
+        { key: 'role', label: 'Role', sortable: true, sortKey: 'role', source: 'student_placements', group: 'placement', payloadField: 'role' },
+        { key: 'employerContact', label: 'Contact', sortable: true, sortKey: 'employerContact', source: 'student_placements', group: 'placement', payloadField: 'employerContact' },
+        { key: 'address', label: 'Address', sortable: true, sortKey: 'address', source: 'student_placements', group: 'placement', payloadField: 'address' },
+        { key: 'package', label: 'Package', sortable: true, sortKey: 'package', source: 'student_placements', group: 'placement', payloadField: 'package' },
+        { key: 'placementStatus', label: 'Status', sortable: true, sortKey: 'placementStatus', source: 'student_placements', group: 'placement', payloadField: 'placementStatus' },
+        { key: 'fordvv', label: 'For DVV', sortable: true, sortKey: 'fordvv', source: 'student_placements', group: 'placement', payloadField: 'fordvv' },
+        { key: 'includedvv', label: 'Included DVV', sortable: true, sortKey: 'includedvv', source: 'student_placements', group: 'placement', payloadField: 'includedvv' },
       ]);
       // Prefer assigned class from session so the class list can load in one request.
       if (typeof staffClassInchargeBatches === 'function') {
