@@ -43,7 +43,7 @@ require_once $autoload;
 
 // Linux/cPanel: PSR-4 may not resolve backend/utils (lowercase) — load utils explicitly.
 $utilsDir = dirname(__DIR__) . '/utils';
-foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php', 'JwtHelper.php', 'OwnershipHelper.php', 'ApiExceptionHandler.php', 'CodingStarterTemplates.php', 'CodingExecutionErrorFormatter.php'] as $utilFile) {
+foreach (['Response.php', 'DocumentHelper.php', 'Security.php', 'Validator.php', 'JwtHelper.php', 'OwnershipHelper.php', 'ApiExceptionHandler.php', 'CodingStarterTemplates.php', 'CodingExecutionDebug.php', 'CodingExecutionErrorFormatter.php'] as $utilFile) {
     $path = $utilsDir . '/' . $utilFile;
     if (is_readable($path)) {
         require_once $path;
