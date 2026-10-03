@@ -77,6 +77,33 @@
             <div id="studentAssessmentAttempt" class="border rounded p-3 mt-3 d-none"></div>
             <div id="studentAssessmentResults" class="border rounded p-3 mt-3 d-none"></div>
           </div>
+          <div id="studentActivitySection" class="mt-4 d-none">
+            <div class="fw-semibold mb-2">Practical activities</div>
+            <p class="small text-muted-2 mb-2">Practice tasks for this module. Responses are stored as text only — nothing is executed.</p>
+            <div id="studentActivityList" class="d-flex flex-column gap-2"></div>
+            <div id="studentActivityPanel" class="border rounded p-3 mt-3 d-none">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                <div>
+                  <h3 class="h6 fw-bold mb-1" id="studentActivityTitle"></h3>
+                  <div class="small text-muted-2" id="studentActivityMeta"></div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="studentActivityCloseBtn">Close</button>
+              </div>
+              <div id="studentActivityInstructions" class="tutorial-lesson small mb-3"></div>
+              <div id="studentActivityConfig" class="small mb-3"></div>
+              <div id="studentActivityStatus" class="mb-3"></div>
+              <div id="studentActivityEditor" class="mb-3"></div>
+              <div id="studentActivityResult" class="mb-3 d-none"></div>
+              <div class="d-flex flex-wrap gap-2" id="studentActivityActions">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="studentActivityStartBtn">Start attempt</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="studentActivitySaveBtn">Save</button>
+                <button type="button" class="btn btn-sm btn-primary d-none" id="studentActivitySubmitBtn">Submit</button>
+              </div>
+              <p class="small text-muted-2 mt-2 mb-0" id="studentActivitySaveNote"></p>
+              <div class="fw-semibold mt-3 mb-2">Your attempts</div>
+              <div id="studentActivityHistory" class="d-flex flex-column gap-2"></div>
+            </div>
+          </div>
           <div id="studentExercisePanel" class="border rounded p-3 mt-3 d-none">
             <h3 class="h6 fw-bold" id="studentExerciseTitle"></h3>
             <div id="studentExerciseInstructions" class="tutorial-lesson small mb-3"></div>
@@ -463,5 +490,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261002activities"></script>
+<script src="js/tutorials-page.js?v=20261003studentactivities"></script>
 </body></html>

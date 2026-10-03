@@ -2259,6 +2259,30 @@
     assessmentAnswers: {},
     assessmentQuestionIndex: 0,
     assessmentResult: null,
+    activities: [],
+    activityStatuses: {},
+    activity: null,
+    activityAttempts: [],
+    activityAttempt: null,
+    activityBusy: false,
+    activityDirty: false,
+    activityViewingSubmitted: false,
+  };
+
+  const STUDENT_ACTIVITY_TYPE_LABELS = {
+    programming_task: 'Programming task',
+    sql_query: 'SQL query',
+    numerical: 'Numerical problem',
+    short_answer: 'Short answer',
+    case_study: 'Case study',
+    analytical_design: 'Analytical / design',
+  };
+
+  const STUDENT_EVAL_LABELS = {
+    none: 'No submission',
+    self_check: 'Self-check after submit',
+    tutor_review: 'Tutor review',
+    auto_compare: 'Automatic check',
   };
 
   function highlightLessonCode(source, language) {
@@ -2491,19 +2515,46 @@
     }).join('') || '<p class="text-muted-2 mb-0">This tutorial has no modules yet.</p>';
     document.querySelectorAll('[data-student-module]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        learn.moduleIndex = Number(btn.getAttribute('data-student-module'));
-        showStudentModule().catch(fail);
+        showStudentModule(Number(btn.getAttribute('data-student-module'))).catch(fail);
       });
     });
   }
 
-  async function showStudentModule() {
+  async function showStudentModule(nextIndex) {
+    if (typeof nextIndex === 'number' && nextIndex !== learn.moduleIndex) {
+      if (learn.activityDirty) {
+        const ok = await confirmAction({
+          title: 'Leave unsaved activity?',
+          message: 'You have unsaved activity responses. Leave this module without saving?',
+          confirmText: 'Leave',
+          variant: 'danger',
+        });
+        if (!ok) {
+          renderStudentModuleNav();
+          const select = document.getElementById('studentModuleSelect');
+          if (select) select.value = String(learn.moduleIndex);
+          return;
+        }
+        learn.activityDirty = false;
+      }
+      learn.moduleIndex = nextIndex;
+    } else if (learn.activityDirty && typeof nextIndex !== 'number') {
+      const ok = await confirmAction({
+        title: 'Leave unsaved activity?',
+        message: 'You have unsaved activity responses. Reload this module without saving?',
+        confirmText: 'Leave',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      learn.activityDirty = false;
+    }
     const modules = (learn.detail && learn.detail.modules) || [];
     renderStudentModuleNav();
     document.getElementById('studentExercisePanel').classList.add('d-none');
     document.getElementById('studentAssessmentSection').classList.add('d-none');
     document.getElementById('studentAssessmentAttempt').classList.add('d-none');
     document.getElementById('studentAssessmentResults').classList.add('d-none');
+    resetStudentActivityUi();
     document.getElementById('studentPrevModule').disabled = learn.moduleIndex <= 0;
     document.getElementById('studentNextModule').disabled = learn.moduleIndex >= modules.length - 1;
     if (!modules.length) {
@@ -2537,6 +2588,7 @@
       btn.addEventListener('click', () => openStudentExercise(btn.getAttribute('data-student-exercise')));
     });
     await loadStudentAssessment();
+    await loadStudentActivities();
   }
 
   function resetStudentAssessmentUi() {
@@ -2701,6 +2753,569 @@
     `;
   }
 
+  function resetStudentActivityUi() {
+    learn.activities = [];
+    learn.activityStatuses = {};
+    learn.activity = null;
+    learn.activityAttempts = [];
+    learn.activityAttempt = null;
+    learn.activityBusy = false;
+    learn.activityDirty = false;
+    learn.activityViewingSubmitted = false;
+    const section = document.getElementById('studentActivitySection');
+    const panel = document.getElementById('studentActivityPanel');
+    const list = document.getElementById('studentActivityList');
+    if (section) section.classList.add('d-none');
+    if (panel) panel.classList.add('d-none');
+    if (list) list.innerHTML = '';
+  }
+
+  function studentActivityBasePath(activityId) {
+    return `/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/activities/${encodeURIComponent(activityId)}`;
+  }
+
+  function studentAttemptStatusLabel(attempt) {
+    if (!attempt) return 'Not started';
+    const status = String(attempt.status || '');
+    if (status === 'IN_PROGRESS') return 'In progress';
+    if (status === 'SUBMITTED') return 'Submitted';
+    if (status === 'RETURNED') return 'Returned';
+    return status || 'Unknown';
+  }
+
+  function studentAttemptStatusBadge(attempt) {
+    if (!attempt) return '<span class="badge text-bg-secondary">Not started</span>';
+    const status = String(attempt.status || '');
+    if (status === 'IN_PROGRESS') return '<span class="badge text-bg-warning">In progress</span>';
+    if (status === 'SUBMITTED') return '<span class="badge text-bg-success">Submitted</span>';
+    if (status === 'RETURNED') return '<span class="badge text-bg-info">Returned</span>';
+    return `<span class="badge text-bg-secondary">${esc(status)}</span>`;
+  }
+
+  async function loadStudentActivities() {
+    resetStudentActivityUi();
+    if (!learn.detail || !learn.module) return;
+    const section = document.getElementById('studentActivitySection');
+    const list = document.getElementById('studentActivityList');
+    section.classList.remove('d-none');
+    list.innerHTML = '<p class="text-muted-2 mb-0">Loading activities…</p>';
+    try {
+      const data = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/activities`);
+      learn.activities = data.activities || [];
+      if (!learn.activities.length) {
+        section.classList.add('d-none');
+        list.innerHTML = '';
+        return;
+      }
+      const statuses = {};
+      await Promise.all(learn.activities.map(async (row) => {
+        try {
+          const attemptsData = await call(studentActivityBasePath(row.id) + '/attempts');
+          const attempts = attemptsData.attempts || [];
+          statuses[row.id] = attempts[0] || null;
+        } catch {
+          statuses[row.id] = null;
+        }
+      }));
+      learn.activityStatuses = statuses;
+      renderStudentActivityList();
+    } catch (err) {
+      if (err && err.status === 404) {
+        section.classList.add('d-none');
+        return;
+      }
+      list.innerHTML = `<p class="text-danger mb-0">${esc(err.message || 'Could not load activities.')}</p>`;
+    }
+  }
+
+  function renderStudentActivityList() {
+    const list = document.getElementById('studentActivityList');
+    const rows = learn.activities || [];
+    if (!rows.length) {
+      list.innerHTML = '<p class="text-muted-2 mb-0">No practical activities for this module.</p>';
+      return;
+    }
+    list.innerHTML = rows.map((row) => {
+      const latest = learn.activityStatuses[row.id];
+      const preview = String(row.instructions || '').replace(/<[^>]+>/g, ' ').trim();
+      const short = preview.length > 140 ? `${preview.slice(0, 140)}…` : preview;
+      const evalLabel = STUDENT_EVAL_LABELS[row.evaluationMode] || row.evaluationMode || '';
+      const actionLabel = latest && latest.status === 'IN_PROGRESS'
+        ? 'Continue'
+        : (latest && latest.status === 'SUBMITTED' ? 'View' : 'Open');
+      return `<div class="border rounded p-3" data-student-activity-card="${esc(row.id)}">
+        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+          <div class="flex-grow-1">
+            <div class="fw-semibold">${esc(row.title || 'Activity')}</div>
+            <div class="small text-muted-2 mb-1">${esc(STUDENT_ACTIVITY_TYPE_LABELS[row.activityType] || row.activityType)} · ${esc(row.difficulty || 'beginner')} · ${esc(evalLabel)}</div>
+            <div class="small mb-2">${esc(short || 'No instructions preview.')}</div>
+            <div>${studentAttemptStatusBadge(latest)}</div>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-open-student-activity="${esc(row.id)}">${actionLabel}</button>
+        </div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-open-student-activity]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        openStudentActivity(btn.getAttribute('data-open-student-activity')).catch(fail);
+      });
+    });
+  }
+
+  async function openStudentActivity(activityId) {
+    if (!learn.detail || !learn.module || !activityId) return;
+    if (learn.activityDirty) {
+      const ok = await confirmAction({
+        title: 'Discard unsaved response?',
+        message: 'You have unsaved changes in the current activity. Discard them?',
+        confirmText: 'Discard',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
+    const panel = document.getElementById('studentActivityPanel');
+    panel.classList.remove('d-none');
+    document.getElementById('studentActivityTitle').textContent = 'Loading…';
+    document.getElementById('studentActivityMeta').textContent = '';
+    document.getElementById('studentActivityInstructions').textContent = '';
+    document.getElementById('studentActivityConfig').innerHTML = '';
+    document.getElementById('studentActivityEditor').innerHTML = '';
+    document.getElementById('studentActivityResult').classList.add('d-none');
+    document.getElementById('studentActivityHistory').innerHTML = '<p class="text-muted-2 mb-0">Loading attempts…</p>';
+    try {
+      const [activity, attemptsData] = await Promise.all([
+        call(studentActivityBasePath(activityId)),
+        call(studentActivityBasePath(activityId) + '/attempts'),
+      ]);
+      learn.activity = activity;
+      learn.activityAttempts = attemptsData.attempts || [];
+      learn.activityDirty = false;
+      learn.activityViewingSubmitted = false;
+      const inProgress = learn.activityAttempts.find((row) => row.status === 'IN_PROGRESS') || null;
+      learn.activityAttempt = inProgress;
+      paintStudentActivityPanel();
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      fail(err);
+      panel.classList.add('d-none');
+    }
+  }
+
+  function paintStudentActivityPanel() {
+    const activity = learn.activity;
+    if (!activity) return;
+    const attempt = learn.activityAttempt;
+    const locked = !!(attempt && attempt.status === 'SUBMITTED') || learn.activityViewingSubmitted;
+    const display = (attempt && attempt.activitySnapshot)
+      ? {
+        ...activity,
+        title: attempt.activitySnapshot.title || activity.title,
+        instructions: attempt.activitySnapshot.instructions || activity.instructions,
+        activityType: attempt.activitySnapshot.activityType || activity.activityType,
+        difficulty: attempt.activitySnapshot.difficulty || activity.difficulty,
+        evaluationMode: attempt.activitySnapshot.evaluationMode || activity.evaluationMode,
+        config: attempt.activitySnapshot.config || activity.config,
+      }
+      : activity;
+    document.getElementById('studentActivityTitle').textContent = display.title || 'Activity';
+    document.getElementById('studentActivityMeta').textContent = [
+      STUDENT_ACTIVITY_TYPE_LABELS[display.activityType] || display.activityType,
+      display.difficulty || 'beginner',
+      STUDENT_EVAL_LABELS[display.evaluationMode] || display.evaluationMode,
+    ].filter(Boolean).join(' · ');
+    setLessonHtml(document.getElementById('studentActivityInstructions'), display.instructions || '');
+    document.getElementById('studentActivityConfig').innerHTML = renderStudentActivityConfig(display);
+    document.getElementById('studentActivityStatus').innerHTML = attempt
+      ? `${studentAttemptStatusBadge(attempt)} <span class="small text-muted-2 ms-1">Attempt #${esc(attempt.attemptNumber || '')}</span>`
+      : '<span class="badge text-bg-secondary">Not started</span>';
+    renderStudentActivityEditor(display, attempt, locked);
+    renderStudentActivityResult(attempt);
+    renderStudentActivityActions(activity, attempt, locked);
+    renderStudentActivityHistory();
+  }
+
+  function renderStudentActivityConfig(activity) {
+    const config = (activity && activity.config) || {};
+    const type = activity.activityType;
+    const bits = [];
+    if (type === 'programming_task') {
+      bits.push(`<div><strong>Language:</strong> ${esc(languageLabel(config.language || 'text'))}</div>`);
+      if (config.boilerplate) {
+        bits.push(`<div class="mt-2"><div class="fw-semibold mb-1">Starter code</div><pre class="mb-0 small">${esc(config.boilerplate)}</pre></div>`);
+      }
+    } else if (type === 'sql_query') {
+      if (config.schemaDescription) {
+        bits.push(`<div><div class="fw-semibold mb-1">Database schema</div><pre class="mb-0 small">${esc(config.schemaDescription)}</pre></div>`);
+      }
+    } else if (type === 'numerical') {
+      if (config.unit) bits.push(`<div><strong>Unit:</strong> ${esc(config.unit)}</div>`);
+      if (config.tolerance != null && config.tolerance !== '') {
+        bits.push(`<div><strong>Tolerance:</strong> ${esc(config.tolerance)}</div>`);
+      }
+    } else if (type === 'short_answer' && config.maxLength) {
+      bits.push(`<div><strong>Max length:</strong> ${esc(config.maxLength)} characters</div>`);
+    } else if (type === 'analytical_design') {
+      if (config.deliverableHint) {
+        bits.push(`<div><strong>Expected deliverable:</strong> ${esc(config.deliverableHint)}</div>`);
+      }
+    } else if (type === 'case_study' && Array.isArray(config.parts) && config.parts.length) {
+      bits.push(`<div><strong>Response sections:</strong> ${esc(config.parts.length)}</div>`);
+    }
+    if (config.promptHint) bits.push(`<div class="mt-1 text-muted-2">${esc(config.promptHint)}</div>`);
+    return bits.length ? bits.join('') : '';
+  }
+
+  function renderStudentActivityEditor(activity, attempt, locked) {
+    const root = document.getElementById('studentActivityEditor');
+    const type = activity.activityType;
+    const config = activity.config || {};
+    const payload = (attempt && attempt.payload) || {};
+    const disabled = locked ? 'disabled' : '';
+    if ((activity.evaluationMode || '') === 'none') {
+      root.innerHTML = '<p class="small text-muted-2 mb-0">This activity does not accept submissions.</p>';
+      return;
+    }
+    if (!attempt) {
+      root.innerHTML = '<p class="small text-muted-2 mb-0">Start an attempt to enter your response.</p>';
+      return;
+    }
+    if (type === 'programming_task') {
+      const source = Object.prototype.hasOwnProperty.call(payload, 'source')
+        ? payload.source
+        : (config.boilerplate || '');
+      root.innerHTML = `
+        <label class="form-label" for="studentActSource">Your code <span class="text-muted-2">(${esc(languageLabel(config.language || 'text'))})</span></label>
+        <textarea class="form-control font-monospace" id="studentActSource" rows="12" spellcheck="false" ${disabled}>${esc(source)}</textarea>
+        <div class="form-text">Stored as text only. There is no Run or Execute button.</div>`;
+    } else if (type === 'sql_query') {
+      root.innerHTML = `
+        <label class="form-label" for="studentActSql">Your SQL</label>
+        <textarea class="form-control font-monospace" id="studentActSql" rows="10" spellcheck="false" ${disabled}>${esc(payload.sql || '')}</textarea>
+        <div class="form-text">SQL is never executed.</div>`;
+    } else if (type === 'numerical') {
+      root.innerHTML = `
+        <div class="row g-2">
+          <div class="col-md-6"><label class="form-label" for="studentActValue">Numeric answer</label>
+            <input class="form-control" id="studentActValue" type="number" step="any" value="${esc(payload.value != null ? payload.value : '')}" ${disabled}/>
+          </div>
+          <div class="col-md-6"><label class="form-label" for="studentActUnit">Unit</label>
+            <input class="form-control" id="studentActUnit" maxlength="40" value="${esc(payload.unit != null ? payload.unit : (config.unit || ''))}" ${disabled}/>
+          </div>
+        </div>`;
+    } else if (type === 'short_answer') {
+      const max = Number(config.maxLength) || 1000;
+      root.innerHTML = `
+        <label class="form-label" for="studentActText">Your answer</label>
+        <textarea class="form-control" id="studentActText" rows="6" maxlength="${esc(max)}" ${disabled}>${esc(payload.text || '')}</textarea>`;
+    } else if (type === 'case_study') {
+      const parts = Array.isArray(config.parts) ? config.parts : [];
+      const answers = payload.parts || {};
+      root.innerHTML = parts.length
+        ? parts.map((part, index) => `
+          <div class="mb-3">
+            <label class="form-label" for="studentActPart${index}">Part ${index + 1}: ${esc(part.prompt || '')}</label>
+            <textarea class="form-control" id="studentActPart${index}" data-part-id="${esc(part.id || '')}" rows="3" ${disabled}>${esc(answers[part.id] || '')}</textarea>
+          </div>`).join('')
+        : '<p class="text-danger mb-0">This case study has no response sections.</p>';
+    } else {
+      root.innerHTML = `
+        <label class="form-label" for="studentActText">Your response</label>
+        <textarea class="form-control" id="studentActText" rows="8" ${disabled}>${esc(payload.text || '')}</textarea>
+        ${config.deliverableHint ? `<div class="form-text">${esc(config.deliverableHint)}</div>` : ''}`;
+    }
+    if (!locked) {
+      root.querySelectorAll('textarea, input').forEach((input) => {
+        input.addEventListener('input', () => {
+          learn.activityDirty = true;
+          document.getElementById('studentActivitySaveNote').textContent = 'Unsaved changes.';
+        });
+      });
+    }
+  }
+
+  function renderStudentActivityResult(attempt) {
+    const box = document.getElementById('studentActivityResult');
+    if (!attempt || attempt.status !== 'SUBMITTED') {
+      box.classList.add('d-none');
+      box.innerHTML = '';
+      return;
+    }
+    const result = attempt.autoResult || {};
+    const mode = result.mode || '';
+    let body = '<div class="fw-semibold mb-1">Submission result</div>';
+    if (mode === 'auto_compare') {
+      body += result.matched
+        ? '<div class="text-success">Matched within the allowed tolerance.</div>'
+        : '<div class="text-danger">Did not match within the allowed tolerance.</div>';
+    } else if (mode === 'self_check') {
+      body += `<div class="small mb-1">Keywords matched: ${esc(result.keywordsMatched || 0)} / ${esc(result.keywordsTotal || 0)}</div>`;
+      if (result.rubric) body += `<div class="small">${esc(result.rubric)}</div>`;
+    } else if (mode === 'tutor_review') {
+      body += '<div class="text-muted-2">Pending tutor review.</div>';
+    } else {
+      body += '<div class="text-muted-2">Submitted.</div>';
+    }
+    box.innerHTML = body;
+    box.classList.remove('d-none');
+  }
+
+  function renderStudentActivityActions(activity, attempt, locked) {
+    const startBtn = document.getElementById('studentActivityStartBtn');
+    const saveBtn = document.getElementById('studentActivitySaveBtn');
+    const submitBtn = document.getElementById('studentActivitySubmitBtn');
+    const note = document.getElementById('studentActivitySaveNote');
+    const noSubmit = (activity.evaluationMode || '') === 'none';
+    const inProgress = (learn.activityAttempts || []).find((row) => row.status === 'IN_PROGRESS') || null;
+    startBtn.classList.remove('d-none');
+    startBtn.dataset.action = 'start';
+    if (noSubmit) {
+      startBtn.classList.add('d-none');
+    } else if (learn.activityViewingSubmitted) {
+      startBtn.textContent = inProgress ? 'Back to in-progress' : 'Start new attempt';
+      startBtn.dataset.action = inProgress ? 'back' : 'start';
+    } else if (attempt && attempt.status === 'IN_PROGRESS') {
+      startBtn.classList.add('d-none');
+    } else if (attempt && attempt.status === 'SUBMITTED') {
+      startBtn.textContent = 'Start new attempt';
+      startBtn.dataset.action = 'start';
+    } else {
+      startBtn.textContent = 'Start attempt';
+      startBtn.dataset.action = 'start';
+    }
+    const editable = !!(attempt && attempt.status === 'IN_PROGRESS') && !locked && !learn.activityViewingSubmitted;
+    saveBtn.classList.toggle('d-none', !editable);
+    submitBtn.classList.toggle('d-none', !editable);
+    if (locked || learn.activityViewingSubmitted) {
+      note.textContent = 'This attempt is locked after submission.';
+    } else if (learn.activityDirty) {
+      note.textContent = 'Unsaved changes.';
+    } else {
+      note.textContent = '';
+    }
+  }
+
+  function renderStudentActivityHistory() {
+    const root = document.getElementById('studentActivityHistory');
+    const rows = learn.activityAttempts || [];
+    if (!rows.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">No attempts yet.</p>';
+      return;
+    }
+    root.innerHTML = rows.map((row) => `
+      <div class="border rounded p-2 d-flex flex-wrap justify-content-between gap-2 align-items-center">
+        <div>
+          <div class="fw-semibold">Attempt #${esc(row.attemptNumber || '')}</div>
+          <div class="small text-muted-2">${esc(studentAttemptStatusLabel(row))}${row.submittedAt ? ` · ${esc(row.submittedAt)}` : ''}</div>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-view-activity-attempt="${esc(row.id)}">Open</button>
+      </div>`).join('');
+    root.querySelectorAll('[data-view-activity-attempt]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        viewStudentActivityAttempt(btn.getAttribute('data-view-activity-attempt')).catch(fail);
+      });
+    });
+  }
+
+  async function viewStudentActivityAttempt(attemptId) {
+    if (learn.activityDirty) {
+      const ok = await confirmAction({
+        title: 'Discard unsaved response?',
+        message: 'Open another attempt and discard unsaved changes?',
+        confirmText: 'Discard',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
+    const attempt = (learn.activityAttempts || []).find((row) => row.id === attemptId);
+    if (!attempt) return;
+    learn.activityAttempt = attempt;
+    learn.activityDirty = false;
+    learn.activityViewingSubmitted = attempt.status === 'SUBMITTED';
+    paintStudentActivityPanel();
+  }
+
+  function collectStudentActivityResponse() {
+    const activity = learn.activity;
+    if (!activity) throw new Error('Open an activity first.');
+    const type = activity.activityType;
+    if (type === 'programming_task') {
+      return { source: document.getElementById('studentActSource').value };
+    }
+    if (type === 'sql_query') {
+      return { sql: document.getElementById('studentActSql').value };
+    }
+    if (type === 'numerical') {
+      const raw = document.getElementById('studentActValue').value.trim();
+      if (raw === '') throw new Error('Enter a numeric answer.');
+      if (Number.isNaN(Number(raw))) throw new Error('Numeric answer must be a number.');
+      return {
+        value: Number(raw),
+        unit: document.getElementById('studentActUnit').value.trim(),
+      };
+    }
+    if (type === 'case_study') {
+      const parts = {};
+      document.querySelectorAll('#studentActivityEditor [data-part-id]').forEach((input) => {
+        const id = input.getAttribute('data-part-id');
+        if (id) parts[id] = input.value;
+      });
+      return { parts };
+    }
+    return { text: document.getElementById('studentActText').value };
+  }
+
+  async function startStudentActivityAttempt() {
+    if (!learn.activity || learn.activityBusy) return;
+    const startBtn = document.getElementById('studentActivityStartBtn');
+    const action = startBtn.dataset.action || 'start';
+    if (action === 'back') {
+      const inProgress = (learn.activityAttempts || []).find((row) => row.status === 'IN_PROGRESS') || null;
+      learn.activityAttempt = inProgress;
+      learn.activityViewingSubmitted = false;
+      learn.activityDirty = false;
+      paintStudentActivityPanel();
+      return;
+    }
+    if ((learn.activity.evaluationMode || '') === 'none') {
+      toast('This activity does not accept submissions.', 'error');
+      return;
+    }
+    learn.activityBusy = true;
+    startBtn.disabled = true;
+    try {
+      const started = await call(studentActivityBasePath(learn.activity.id) + '/start', {
+        method: 'POST',
+        body: {},
+      });
+      learn.activityAttempt = started.attempt || null;
+      learn.activityViewingSubmitted = false;
+      learn.activityDirty = false;
+      const attemptsData = await call(studentActivityBasePath(learn.activity.id) + '/attempts');
+      learn.activityAttempts = attemptsData.attempts || [];
+      learn.activityStatuses[learn.activity.id] = learn.activityAttempts[0] || learn.activityAttempt;
+      paintStudentActivityPanel();
+      renderStudentActivityList();
+      toast(started.resumed ? 'Resumed your in-progress attempt.' : 'Attempt started.', 'success');
+    } catch (err) {
+      fail(err);
+      try {
+        await openStudentActivity(learn.activity.id);
+      } catch { /* keep current panel */ }
+    } finally {
+      learn.activityBusy = false;
+      startBtn.disabled = false;
+    }
+  }
+
+  async function saveStudentActivityResponse() {
+    if (!learn.activity || !learn.activityAttempt || learn.activityBusy) return;
+    if (learn.activityAttempt.status !== 'IN_PROGRESS') {
+      toast('Submitted attempts cannot be edited.', 'error');
+      return;
+    }
+    let response;
+    try {
+      response = collectStudentActivityResponse();
+    } catch (err) {
+      fail(err);
+      return;
+    }
+    learn.activityBusy = true;
+    const saveBtn = document.getElementById('studentActivitySaveBtn');
+    const note = document.getElementById('studentActivitySaveNote');
+    saveBtn.disabled = true;
+    note.textContent = 'Saving…';
+    try {
+      const saved = await call(studentActivityBasePath(learn.activity.id) + '/save', {
+        method: 'PUT',
+        body: {
+          attemptId: learn.activityAttempt.id,
+          response,
+        },
+      });
+      learn.activityAttempt = saved.attempt || learn.activityAttempt;
+      learn.activityDirty = false;
+      note.textContent = 'Saved.';
+      toast('Response saved.', 'success');
+      const attemptsData = await call(studentActivityBasePath(learn.activity.id) + '/attempts');
+      learn.activityAttempts = attemptsData.attempts || [];
+      learn.activityStatuses[learn.activity.id] = learn.activityAttempts[0] || learn.activityAttempt;
+      renderStudentActivityHistory();
+      renderStudentActivityList();
+    } catch (err) {
+      note.textContent = 'Save failed. Your local edits are still in the editor.';
+      fail(err);
+    } finally {
+      learn.activityBusy = false;
+      saveBtn.disabled = false;
+    }
+  }
+
+  async function submitStudentActivityResponse() {
+    if (!learn.activity || !learn.activityAttempt || learn.activityBusy) return;
+    if (learn.activityAttempt.status !== 'IN_PROGRESS') {
+      toast('This attempt was already submitted.', 'error');
+      return;
+    }
+    let response;
+    try {
+      response = collectStudentActivityResponse();
+      if (learn.activity.activityType === 'case_study') {
+        const parts = (learn.activity.config && learn.activity.config.parts) || [];
+        const missing = parts.some((part) => !String((response.parts || {})[part.id] || '').trim());
+        if (missing) throw new Error('Answer every case-study part before submitting.');
+      }
+      if (learn.activity.activityType === 'programming_task' && !String(response.source || '').trim()) {
+        throw new Error('Source code is required.');
+      }
+      if (learn.activity.activityType === 'sql_query' && !String(response.sql || '').trim()) {
+        throw new Error('SQL is required.');
+      }
+      if ((learn.activity.activityType === 'short_answer' || learn.activity.activityType === 'analytical_design')
+        && !String(response.text || '').trim()) {
+        throw new Error('A response is required.');
+      }
+    } catch (err) {
+      fail(err);
+      return;
+    }
+    const ok = await confirmAction({
+      title: 'Submit activity',
+      message: 'Submit this response? You cannot edit this attempt afterward.',
+      confirmText: 'Submit',
+    });
+    if (!ok) return;
+    learn.activityBusy = true;
+    const submitBtn = document.getElementById('studentActivitySubmitBtn');
+    const saveBtn = document.getElementById('studentActivitySaveBtn');
+    submitBtn.disabled = true;
+    saveBtn.disabled = true;
+    try {
+      const result = await call(studentActivityBasePath(learn.activity.id) + '/submit', {
+        method: 'POST',
+        body: {
+          attemptId: learn.activityAttempt.id,
+          response,
+        },
+      });
+      learn.activityAttempt = result.attempt || learn.activityAttempt;
+      learn.activityDirty = false;
+      learn.activityViewingSubmitted = true;
+      const attemptsData = await call(studentActivityBasePath(learn.activity.id) + '/attempts');
+      learn.activityAttempts = attemptsData.attempts || [];
+      learn.activityStatuses[learn.activity.id] = learn.activityAttempts[0] || learn.activityAttempt;
+      paintStudentActivityPanel();
+      renderStudentActivityList();
+      toast(result.idempotent ? 'Already submitted.' : 'Activity submitted.', 'success');
+    } catch (err) {
+      fail(err);
+    } finally {
+      learn.activityBusy = false;
+      submitBtn.disabled = false;
+      saveBtn.disabled = false;
+    }
+  }
+
   async function openStudentExercise(id) {
     try {
       const exercise = await call(`/tutorials/exercises/${encodeURIComponent(id)}`);
@@ -2797,20 +3412,17 @@
     const moduleSelect = document.getElementById('studentModuleSelect');
     if (moduleSelect) {
       moduleSelect.addEventListener('change', () => {
-        learn.moduleIndex = Number(moduleSelect.value);
-        showStudentModule().catch(fail);
+        showStudentModule(Number(moduleSelect.value)).catch(fail);
       });
     }
     document.getElementById('studentPrevModule').addEventListener('click', () => {
       if (learn.moduleIndex <= 0) return;
-      learn.moduleIndex -= 1;
-      showStudentModule().catch(fail);
+      showStudentModule(learn.moduleIndex - 1).catch(fail);
     });
     document.getElementById('studentNextModule').addEventListener('click', () => {
       const total = ((learn.detail && learn.detail.modules) || []).length;
       if (learn.moduleIndex >= total - 1) return;
-      learn.moduleIndex += 1;
-      showStudentModule().catch(fail);
+      showStudentModule(learn.moduleIndex + 1).catch(fail);
     });
     document.getElementById('studentMarkModule').addEventListener('click', async () => {
       const current = ((learn.detail && learn.detail.modules) || [])[learn.moduleIndex];
@@ -2852,6 +3464,36 @@
       } catch (err) {
         fail(err);
       }
+    });
+    document.getElementById('studentActivityCloseBtn').addEventListener('click', async () => {
+      if (learn.activityDirty) {
+        const ok = await confirmAction({
+          title: 'Close activity?',
+          message: 'You have unsaved changes. Close without saving?',
+          confirmText: 'Close',
+          variant: 'danger',
+        });
+        if (!ok) return;
+      }
+      learn.activityDirty = false;
+      learn.activity = null;
+      learn.activityAttempt = null;
+      learn.activityViewingSubmitted = false;
+      document.getElementById('studentActivityPanel').classList.add('d-none');
+    });
+    document.getElementById('studentActivityStartBtn').addEventListener('click', () => {
+      startStudentActivityAttempt().catch(fail);
+    });
+    document.getElementById('studentActivitySaveBtn').addEventListener('click', () => {
+      saveStudentActivityResponse().catch(fail);
+    });
+    document.getElementById('studentActivitySubmitBtn').addEventListener('click', () => {
+      submitStudentActivityResponse().catch(fail);
+    });
+    window.addEventListener('beforeunload', (event) => {
+      if (!learn.activityDirty) return;
+      event.preventDefault();
+      event.returnValue = '';
     });
   }
 

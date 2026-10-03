@@ -339,6 +339,51 @@ final class TutorialController
         );
     }
 
+    public function activitiesStudentList(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->activities->listForStudent($user, $tutorialId, $moduleId));
+    }
+
+    public function activitiesStudentGet(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->activities->getForStudent($user, $tutorialId, $moduleId, $activityId));
+    }
+
+    public function activitiesStudentAttempts(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->activities->listAttemptsForStudent($user, $tutorialId, $moduleId, $activityId));
+    }
+
+    public function activitiesStudentStart(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->startAttempt($user, $tutorialId, $moduleId, $activityId),
+            'Activity attempt started.'
+        );
+    }
+
+    public function activitiesStudentSave(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->saveResponse($user, $tutorialId, $moduleId, $activityId, $this->body()),
+            'Response saved.'
+        );
+    }
+
+    public function activitiesStudentSubmit(string $tutorialId, string $moduleId, string $activityId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->activities->submitResponse($user, $tutorialId, $moduleId, $activityId, $this->body()),
+            'Activity submitted.'
+        );
+    }
+
     public function createModule(string $tutorialId): void
     {
         $user = AuthMiddleware::authenticate();
