@@ -505,7 +505,7 @@ final class PlacementFilterService
             }
         }
 
-        if ($cacheKey !== '' && $rows !== []) {
+        if ($cacheKey !== '' && $rows !== [] && count($rows) <= 1500) {
             self::$scopedRowsCache[$cacheKey] = $rows;
         }
 

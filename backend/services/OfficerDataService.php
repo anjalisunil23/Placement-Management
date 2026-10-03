@@ -680,6 +680,33 @@ final class OfficerDataService
     public function listStudents(array $ctx, ?string $query = null): array
     {
         if (!empty($ctx['staffScope'])) {
+            $assigned = StaffContext::assignedClassBatches($ctx);
+            if ($assigned !== []) {
+                $merged = [];
+                $seen = [];
+                foreach ($assigned as $batchLabel) {
+                    $batchLabel = trim((string) $batchLabel);
+                    if ($batchLabel === '') {
+                        continue;
+                    }
+                    $programme = $this->placementProgrammeCode($batchLabel);
+                    if ($programme === '') {
+                        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($batchLabel);
+                    }
+                    foreach ($this->listAesClassStudents($ctx, $programme, $batchLabel, true) as $row) {
+                        $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+                        if ($key === '' || isset($seen[$key])) {
+                            continue;
+                        }
+                        $seen[$key] = true;
+                        $merged[] = $row;
+                    }
+                }
+                if ($merged !== []) {
+                    return $this->filterStudentRows($merged, $query);
+                }
+            }
+        } else {
             $aesRows = $this->listStudentsFromAesDirectory($ctx);
             if ($aesRows !== []) {
                 return $this->filterStudentRows($aesRows, $query);
@@ -969,10 +996,14 @@ final class OfficerDataService
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
-        // Class lists know the programme — fetch that course only (avoids 5 AES directory calls).
-        $records = $matchCohort
-            ? $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide)
-            : $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        $records = $this->resolveAesRecordsForClassList(
+            $ctx,
+            $programme,
+            $batch,
+            $matchCohort,
+            $campusWide,
+            $deptAesId
+        );
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
@@ -2205,8 +2236,34 @@ final class OfficerDataService
     }
 
     /**
+     * Prefer class-scoped AES for staff rosters; full-dept directory blows typical 128MB PHP limits.
+     *
+     * @param array<string, mixed> $ctx
      * @return list<array<string, mixed>>
      */
+    private function resolveAesRecordsForClassList(
+        array $ctx,
+        string $programme,
+        string $batch,
+        bool $matchCohort,
+        bool $campusWide,
+        string $deptAesId
+    ): array {
+        if ($matchCohort && !$campusWide && $deptAesId !== '' && trim($batch) !== '') {
+            $classRows = (new AesApiService())->fetchClassStudInfo4Placement($deptAesId, $programme, $batch);
+            if ($classRows !== []) {
+                return $classRows;
+            }
+            if (!empty($ctx['staffScope'])) {
+                return [];
+            }
+        }
+
+        return $matchCohort
+            ? $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide)
+            : $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+    }
+
     private function fetchAesDirectoryRecords(string $deptAesId, bool $campusWide): array
     {
         $cacheKey = $campusWide ? 'campus' : ('dept:' . $deptAesId);

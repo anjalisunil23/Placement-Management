@@ -65,24 +65,9 @@ final class StaffPlacementRegistryService
             $filtered = $this->applyFilters($registry, $filters);
             $filterOptions = $this->buildLiteFilterOptions($staffCtx, $filters, $filtered);
         } else {
-            $studentRows = $this->officerData->listStudents($officerCtx);
-            $studentRows = $this->attachRegistryPlacements($studentRows);
-            foreach ($studentRows as $row) {
-                foreach ($this->extractRegistryRows($row, false, true) as $entry) {
-                    $registry[] = $entry;
-                }
-            }
-            $registry = $this->deduplicateStudentRows($registry);
-            usort($registry, static function (array $a, array $b): int {
-                $name = strcasecmp((string) ($a['studentName'] ?? ''), (string) ($b['studentName'] ?? ''));
-                if ($name !== 0) {
-                    return $name;
-                }
-
-                return strcasecmp((string) ($a['employer'] ?? ''), (string) ($b['employer'] ?? ''));
-            });
+            // Do not scan the whole department (AES directory) until branch + batch are chosen.
             $filterOptions = $this->buildFilterOptions($staffCtx, $filters);
-            $filtered = $this->applyFilters($registry, $filters);
+            $filtered = [];
         }
 
         $placementCount = 0;

@@ -2770,6 +2770,75 @@ final class AesApiService
     }
 
     /**
+     * One class cohort via getStudInfo4Placement — avoids loading the full department directory.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function fetchClassStudInfo4Placement(string $deptAesId, string $programmeCode, string $studClass): array
+    {
+        $deptAesId = trim($deptAesId);
+        $studClass = trim($studClass);
+        $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($programmeCode));
+        if ($deptAesId === '' || $studClass === '') {
+            return [];
+        }
+
+        $cacheKey = 'classstud_' . md5($deptAesId . '|' . $programmeCode . '|' . strtoupper($studClass));
+        $cached = $this->readSharedListCache($cacheKey, 900);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $classVariants = array_values(array_unique(array_filter([
+            $studClass,
+            ClassInchargeRegistry::batchLabelWithoutSemester($studClass),
+        ], static fn (string $v): bool => $v !== '')));
+
+        $merged = [];
+        $seen = [];
+        $courseVariants = $programmeCode !== ''
+            ? $this->placementCourseParamVariants($programmeCode)
+            : [[]];
+
+        foreach ($courseVariants as $courseParams) {
+            foreach ($classVariants as $classLabel) {
+                $params = array_merge(
+                    ['stud_deptcode' => $deptAesId, 'stud_class' => $classLabel],
+                    $courseParams
+                );
+                try {
+                    $result = $this->callPlacementFilterApi('getStudInfo4Placement', $params);
+                } catch (\Throwable) {
+                    continue;
+                }
+                foreach ($this->extractStudInfoRecords($result) as $record) {
+                    if (!is_array($record)) {
+                        continue;
+                    }
+                    $key = strtoupper(trim((string) (
+                        $record['admno']
+                        ?? $record['stud_admno']
+                        ?? $record['registerNumber']
+                        ?? $record['registerno']
+                        ?? ''
+                    )));
+                    if ($key === '' || isset($seen[$key])) {
+                        continue;
+                    }
+                    $seen[$key] = true;
+                    $merged[] = $record;
+                }
+            }
+        }
+
+        if ($merged !== []) {
+            $this->writeSharedListCache($cacheKey, $merged);
+        }
+
+        return $merged;
+    }
+
+    /**
      * @param array<string, scalar|null> $params
      * @return list<string>
      */
