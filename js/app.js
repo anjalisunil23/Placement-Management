@@ -111,6 +111,7 @@ const NAV = [
   { href: "job-posts.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['admin', 'placement_officer'] },
   { href: "admin-companies.html", icon: "bi-building-check", label: "Companies & Referrals", roles: ['admin', 'placement_officer'] },
   { href: "reports.html", icon: "bi-file-earmark-bar-graph", label: "Reports", roles: ['admin', 'placement_officer'] },
+  { href: "admin-policies.html", icon: "bi-file-earmark-pdf-fill", label: "Placement Policies", roles: ['admin'] },
   { href: "admin-settings.html", icon: "bi-gear-wide-connected", label: "System Settings", roles: ['admin'] },
 
   { section: "Alumni", roles: ['alumni'], alumniEmployed: true },
@@ -174,6 +175,7 @@ const PAGE_LABELS = {
   'applications.html': 'Student · Management · Application',
   'blacklist.html': 'Student · Management · Blacklist',
   'results.html': 'Recruitment Results',
+  'admin-policies.html': 'Placement Policies',
   'admin-settings.html': 'System Settings',
   'aptitude-training.html': 'Practice · Aptitude Training',
   'aptitude-training.html#take': 'Practice · Aptitude Training · Take test',

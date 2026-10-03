@@ -36,6 +36,7 @@ final class ObjectStorageService
     public const FOLDER_JOB_POSTERS = 'job-posters';
     public const FOLDER_APTITUDE_IMAGES = 'aptitude-images';
     public const FOLDER_TUTORIAL_IMAGES = 'tutorial-images';
+    public const FOLDER_POLICIES = 'policies';
 
     /** @var array<string, mixed> */
     private array $config;

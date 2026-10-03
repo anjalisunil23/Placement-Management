@@ -12,6 +12,7 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
 use PMS\Models\NotificationModel;
+use PMS\Models\PlacementPolicySettingsModel;
 use PMS\Models\PolicyAcceptanceLogModel;
 use PMS\Models\ResumeModel;
 use PMS\Models\RecruitmentResultModel;
@@ -491,6 +492,11 @@ final class StudentController
       }
     }
 
+    $policyState = (new PlacementPolicySettingsModel())->registrationState($profile);
+    foreach ($policyState as $key => $value) {
+      $out[$key] = $value;
+    }
+
     Response::success(DocumentHelper::jsonSafe($out));
   }
 
@@ -572,7 +578,7 @@ final class StudentController
       Response::error('Validation failed.', 422, $errors);
     }
 
-    $version = 'ajce-placement-2026-09';
+    $version = (new PlacementPolicySettingsModel())->currentPlacementVersion();
     $now = gmdate('c');
     $studentName = trim((string) $input['name']);
     $signedName = trim((string) ($input['signedName'] ?? ''));
@@ -666,7 +672,7 @@ final class StudentController
       ]);
     }
 
-    $version = 'ajce-internship-2026-09';
+    $version = (new PlacementPolicySettingsModel())->currentInternshipVersion();
     $now = gmdate('c');
     $registration = is_array($profile['placementRegistration'] ?? null)
       ? $profile['placementRegistration']

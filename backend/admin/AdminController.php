@@ -25,6 +25,7 @@ use PMS\Models\RecruitmentResultModel;
 use PMS\Models\RuleModel;
 use PMS\Models\StudentModel;
 use PMS\Models\SuccessStoryModel;
+use PMS\Models\PlacementPolicySettingsModel;
 use PMS\Models\SystemSettingsModel;
 use PMS\Models\UserModel;
 use PMS\Services\ApplicationWorkflowService;
@@ -2184,6 +2185,74 @@ final class AdminController
         }
 
         Response::notFound('Report file not found.');
+    }
+
+    // --- Placement / internship policy PDFs (student registration) ---
+
+    /** GET /api/admin/policies */
+    public function getPlacementPolicies(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $model = new PlacementPolicySettingsModel();
+        $cfg = $model->get();
+        $public = $model->publicConfig();
+        Response::success([
+            'settings' => $cfg,
+            'placement' => $public['placement'] ?? [],
+            'internship' => $public['internship'] ?? [],
+        ]);
+    }
+
+    /** PUT /api/admin/policies — titles / version labels (optional bump) */
+    public function updatePlacementPolicies(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $saved = (new PlacementPolicySettingsModel())->save($input);
+        $public = (new PlacementPolicySettingsModel())->publicConfig();
+        Response::success([
+            'settings' => $saved,
+            'placement' => $public['placement'] ?? [],
+            'internship' => $public['internship'] ?? [],
+        ], 'Policy settings saved.');
+    }
+
+    /** POST /api/admin/policies/upload — multipart: type=placement|internship, pdf=file, version? */
+    public function uploadPlacementPolicyPdf(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $type = strtolower(trim((string) ($_POST['type'] ?? '')));
+        if ($type !== 'placement' && $type !== 'internship') {
+            Response::error('Invalid policy type. Use placement or internship.', 422);
+        }
+        if (!isset($_FILES['pdf'])) {
+            Response::error('PDF file is required.', 400);
+        }
+        $file = $_FILES['pdf'];
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $maxMb = max(1, (int) (($config['uploads']['max_resume'] ?? 10485760) / 1048576));
+        $error = Security::validateUploadedFile($file, $maxMb * 1024 * 1024, ['pdf']);
+        if ($error) {
+            Response::error($error, 400);
+        }
+
+        $hint = $type . '-policy-' . gmdate('Ymd-His') . '.pdf';
+        $storage = new ObjectStorageService($config);
+        try {
+            $path = $storage->putUploadedFile(ObjectStorageService::FOLDER_POLICIES, $hint, $file, 'application/pdf');
+        } catch (\Throwable $e) {
+            Response::error('Failed to upload policy PDF: ' . $e->getMessage(), 500);
+        }
+
+        $version = trim((string) ($_POST['version'] ?? ''));
+        $saved = (new PlacementPolicySettingsModel())->recordUpload($type, $path, $version !== '' ? $version : null);
+        $public = (new PlacementPolicySettingsModel())->publicConfig();
+
+        Response::success([
+            'settings' => $saved,
+            'placement' => $public['placement'] ?? [],
+            'internship' => $public['internship'] ?? [],
+        ], ucfirst($type) . ' policy PDF uploaded.');
     }
 
     // --- System settings, public page content, placement news ---

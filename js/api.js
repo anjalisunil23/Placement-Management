@@ -516,6 +516,7 @@ const PAGE_PERMS = {
   'blacklist.html':         ['admin'],
   'results.html':           ['admin','placement_officer'],
   'admin-settings.html':    ['admin'],
+  'admin-policies.html':      ['admin'],
   'aptitude-training.html': ['admin','placement_officer','student','staff'],
   'coding.html':            ['admin','placement_officer','student','staff'],
   'certifications.html':    ['admin','placement_officer','student'],
@@ -539,8 +540,10 @@ const INTERNSHIP_POLICY_PDF = 'assets/policies/ajce-student-internship-policy-20
 function studentNeedsPlacementRegistration() {
   if (Auth.role() !== 'student') return false;
   if (!Auth.hasRealAuth() || Auth.isDemo()) return false;
+  const u = Auth.user() || {};
+  if (u.policyRegistrationRequired === true) return true;
   // Strict check: only an explicit true clears the gate (avoids truthy strings / stale merges).
-  return Auth.user()?.policyAccepted !== true;
+  return u.policyAccepted !== true;
 }
 
 /** Class teacher / co-class teacher batches from session (empty if not incharge). */
@@ -570,7 +573,7 @@ const ROLE_HOME = {
 };
 
 const ADMIN_ONLY_PAGES = [
-  'users.html', 'rules.html', 'blacklist.html', 'admin-settings.html',
+  'users.html', 'rules.html', 'blacklist.html', 'admin-settings.html', 'admin-policies.html',
 ];
 
 const RESUME_PROFILES = ['General', 'SDE / Full Stack', 'Data / ML', 'Product / Business', 'Core Engineering'];
@@ -868,6 +871,11 @@ const Auth = {
           : (prev.internshipPolicyAccepted === true),
         internshipPolicyVersion: merged.internshipPolicyVersion || prev.internshipPolicyVersion || '',
         internshipPolicyAcceptedAt: merged.internshipPolicyAcceptedAt || prev.internshipPolicyAcceptedAt || '',
+        policyRegistrationRequired: Object.prototype.hasOwnProperty.call(merged, 'policyRegistrationRequired')
+          ? merged.policyRegistrationRequired === true || merged.policyRegistrationRequired === 1 || merged.policyRegistrationRequired === '1'
+          : (prev.policyRegistrationRequired === true),
+        currentPlacementPolicyVersion: merged.currentPlacementPolicyVersion || prev.currentPlacementPolicyVersion || '',
+        currentInternshipPolicyVersion: merged.currentInternshipPolicyVersion || prev.currentInternshipPolicyVersion || '',
         title: merged.title ?? prev.title ?? '',
         package: merged.package ?? prev.package ?? '',
         experience: merged.experience ?? prev.experience,
@@ -1170,6 +1178,11 @@ const Auth = {
             : (prev.internshipPolicyAccepted === true)),
         internshipPolicyVersion: p.internshipPolicyVersion || u.internshipPolicyVersion || prev.internshipPolicyVersion || '',
         internshipPolicyAcceptedAt: p.internshipPolicyAcceptedAt || u.internshipPolicyAcceptedAt || prev.internshipPolicyAcceptedAt || '',
+        policyRegistrationRequired: Object.prototype.hasOwnProperty.call(p, 'policyRegistrationRequired')
+          ? (p.policyRegistrationRequired === true || p.policyRegistrationRequired === 1 || p.policyRegistrationRequired === '1')
+          : (prev.policyRegistrationRequired === true),
+        currentPlacementPolicyVersion: p.currentPlacementPolicyVersion || prev.currentPlacementPolicyVersion || '',
+        currentInternshipPolicyVersion: p.currentInternshipPolicyVersion || prev.currentInternshipPolicyVersion || '',
         photoUrl: p.photoUrl || p.photo?.url || u.photoUrl || prev.photoUrl || '',
         photoProxyUrl: p.photoProxyUrl || u.photoProxyUrl || prev.photoProxyUrl || '',
         photo: p.photo || prev.photo || null,

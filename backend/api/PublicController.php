@@ -8,6 +8,7 @@ use PMS\Config\Database;
 use PMS\Models\DepartmentModel;
 use PMS\Schemas\Collections;
 use PMS\Models\PlacementNewsModel;
+use PMS\Models\PlacementPolicySettingsModel;
 use PMS\Models\PlacementOfficerModel;
 use PMS\Models\PublicPageContentModel;
 use PMS\Models\SystemSettingsModel;
@@ -144,6 +145,12 @@ final class PublicController
         ]));
     }
 
+    /** GET /api/public/placement-policies — PDF URLs for student registration (no auth) */
+    public function placementPolicies(): void
+    {
+        Response::success((new PlacementPolicySettingsModel())->publicConfig());
+    }
+
     /** GET /api/public/departments — for registration and forms (no auth) */
     public function listDepartments(): void
     {
@@ -249,6 +256,7 @@ final class PublicController
             ObjectStorageService::FOLDER_APTITUDE_IMAGES,
             ObjectStorageService::FOLDER_TUTORIAL_IMAGES,
             ObjectStorageService::FOLDER_JD,
+            ObjectStorageService::FOLDER_POLICIES,
         ];
         if (!in_array($folder, $allowed, true)) {
             Response::notFound('Media not found.');
