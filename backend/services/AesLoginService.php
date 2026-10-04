@@ -1232,7 +1232,7 @@ final class AesLoginService
     }
 
     /**
-     * Merge POST getStudInfo4Placement + getDepartments data into AES login/session fields.
+     * Merge POST getStudInfo4Placement + getAcademicDepartments data into AES login/session fields.
      *
      * @param array{name:string,email:string,registerNumber:string,role:string,departmentCode:string} $profile
      * @param array<string, mixed> $aesDetails
@@ -1321,7 +1321,7 @@ final class AesLoginService
     }
 
     /**
-     * Resolve department via POST getStudInfo4Placement + getDepartments.
+     * Resolve department via POST getStudInfo4Placement + getAcademicDepartments.
      *
      * @return array{code:string,name:string}
      */

@@ -293,9 +293,20 @@ final class AesApiService
      * @param array<string, scalar|null> $params
      * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
      */
+    public function getAcademicDepartments(array $params = []): array
+    {
+        return $this->callAESApi('getAcademicDepartments', $params);
+    }
+
+    /**
+     * @deprecated AES renamed this to getAcademicDepartments; kept for scripts/tests.
+     *
+     * @param array<string, scalar|null> $params
+     * @return array{success:bool,status:int,data?:mixed,raw?:string,error?:string,note?:string}
+     */
     public function getDepartments(array $params = []): array
     {
-        return $this->callAESApi('getDepartments', $params);
+        return $this->getAcademicDepartments($params);
     }
 
     /**
@@ -460,7 +471,7 @@ final class AesApiService
                 $normalized['parentDepartmentCode'] = $deptAesId;
                 $normalized['parentDepartmentName'] = (string) ($parent['name'] ?? '');
                 $normalized['parentDepartmentShort'] = (string) ($parent['short'] ?? $parent['code'] ?? '');
-                // Prefer parent department name (getDepartments) over stud_branch.
+                // Prefer parent department name (getAcademicDepartments) over stud_branch.
                 $parentName = trim((string) ($parent['name'] ?? ''));
                 if ($parentName !== '') {
                     $normalized['departmentName'] = $parentName;
@@ -928,7 +939,7 @@ final class AesApiService
     }
 
     /**
-     * POST getDepartments and return parsed rows (cached).
+     * POST getAcademicDepartments and return parsed rows (cached).
      *
      * @param array<string, scalar|null> $params
      * @return list<array{code:string,name:string,short:string}>
@@ -939,7 +950,7 @@ final class AesApiService
             return self::$departmentCache;
         }
 
-        $rows = $this->normalizeDepartmentRows($this->getDepartments($params));
+        $rows = $this->normalizeDepartmentRows($this->getAcademicDepartments($params));
         if ($params === []) {
             self::$departmentCache = $rows;
         }
@@ -1080,7 +1091,7 @@ final class AesApiService
     /**
      * Fetch student department using AES POST APIs:
      * 1) getStudInfo4Placement — student record (deptCode / deptshort)
-     * 2) getDepartments — master list to resolve department name
+     * 2) getAcademicDepartments — master list to resolve department name
      *
      * @param array<string, scalar|null> $params
      * @return array{code:string,name:string}
@@ -1093,7 +1104,7 @@ final class AesApiService
         $placementPost = $this->postStudInfo4Placement($params, $registerNumber);
         $profile = $this->normalizePlacementStudentRecord($this->extractRecord($placementPost));
 
-        // POST method=getDepartments
+        // POST method=getAcademicDepartments
         $departments = $this->loadDepartmentsFromApi();
 
         if ($profile !== []) {
