@@ -42,24 +42,30 @@
   </div>
   <div id="studentLearnView" class="d-none">
     <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="studentBackToList"><i class="bi bi-arrow-left me-1"></i>Course overview</button>
-    <select class="form-select mb-3 d-lg-none" id="studentModuleSelect" aria-label="Modules"></select>
-    <select class="form-select mb-3 d-lg-none" id="studentLessonSelect" aria-label="Lessons"></select>
-    <div class="row g-3 student-workspace">
-      <div class="col-lg-3 d-none d-lg-block">
-        <div class="card-surface p-3 student-workspace-nav">
-          <div class="small text-muted-2" id="studentTutorialMeta"></div>
-          <h2 class="h5 fw-bold mt-1" id="studentTutorialHeading"></h2>
-          <p class="small mb-2" id="studentTutorialSummary"></p>
-          <div class="small mb-1" id="studentProgressLabel">Not started</div>
-          <div class="progress mb-2" style="height:.5rem"><div class="progress-bar" id="studentProgressBar" style="width:0%"></div></div>
-          <button type="button" class="btn btn-sm btn-outline-primary mb-3 d-none" id="studentCompleteTutorial">Mark tutorial complete</button>
-          <div class="fw-semibold mb-2">Modules</div>
-          <div id="studentModuleNav" class="d-flex flex-column gap-1 mb-3"></div>
-          <div class="fw-semibold mb-2">Lessons</div>
-          <div id="studentLessonNav" class="d-flex flex-column gap-1"></div>
-        </div>
+    <div class="card-surface p-3 mb-3" id="studentCourseProgress">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div class="fw-semibold">Course progress</div>
+        <div class="small text-muted-2" id="studentProgressLabel">Not started</div>
       </div>
-      <div class="col-lg-5">
+      <div class="progress mb-2" style="height:.65rem" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" id="studentProgressBar" style="width:0%"></div></div>
+      <div class="d-flex flex-wrap gap-3 small" id="studentProgressStats"></div>
+      <button type="button" class="btn btn-sm btn-outline-primary mt-2 d-none" id="studentCompleteTutorial">Mark tutorial complete</button>
+    </div>
+    <div class="student-workspace" id="studentWorkspace">
+      <button type="button" class="btn btn-sm btn-outline-secondary student-nav-reopen" id="studentNavReopen"><i class="bi bi-layout-sidebar me-1"></i>Contents</button>
+      <div class="student-nav-backdrop" id="studentNavBackdrop"></div>
+      <aside class="card-surface student-course-nav" id="studentCourseNav">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <div class="small text-muted-2" id="studentTutorialMeta"></div>
+            <h2 class="h6 fw-bold mt-1 mb-0" id="studentTutorialHeading"></h2>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="studentNavCollapse" aria-label="Hide course contents">Hide</button>
+        </div>
+        <p class="small mb-2" id="studentTutorialSummary"></p>
+        <div id="studentModuleNav" class="student-course-tree"></div>
+      </aside>
+      <div class="student-learn-column">
         <div class="card-surface p-3 p-md-4 student-learn-panel h-100">
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-1">
             <div>
@@ -73,12 +79,12 @@
           <div id="studentModuleContent" class="tutorial-lesson mt-3"></div>
           <div class="d-flex flex-wrap justify-content-between gap-2 mt-4">
             <button type="button" class="btn btn-outline-secondary" id="studentPrevModule">Previous lesson</button>
-            <button type="button" class="btn btn-outline-primary" id="studentMarkModule">Mark module complete</button>
+            <button type="button" class="btn btn-outline-secondary" id="studentMarkLesson">Mark lesson complete</button>
             <button type="button" class="btn btn-outline-primary" id="studentNextModule">Next lesson</button>
           </div>
         </div>
       </div>
-      <div class="col-lg-4">
+      <div class="student-practice-column">
         <div class="card-surface p-3 student-practice-panel h-100">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <div class="fw-semibold mb-0">Practice</div>
@@ -88,18 +94,38 @@
           <div class="fw-semibold small mb-2">Programming exercises</div>
           <div id="studentExerciseList" class="d-flex flex-column gap-2 mb-3"></div>
           <div id="studentExercisePanel" class="border rounded p-3 mb-3 d-none">
-            <h3 class="h6 fw-bold" id="studentExerciseTitle"></h3>
-            <div id="studentExerciseInstructions" class="tutorial-lesson small mb-3"></div>
-            <label class="form-label" for="studentCode">Your code</label>
-            <textarea class="form-control font-monospace" id="studentCode" rows="10" spellcheck="false"></textarea>
-            <div class="d-flex flex-wrap gap-2 mt-3">
-              <button type="button" class="btn btn-outline-primary" id="studentSaveAttemptBtn">Save Attempt</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" id="studentExerciseCloseBtn">Close</button>
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+              <div>
+                <h3 class="h6 fw-bold mb-1" id="studentExerciseTitle"></h3>
+                <div class="small text-muted-2" id="studentExerciseMeta"></div>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="studentEditorFullBtn">Full screen</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="studentExerciseCloseBtn">Close</button>
+              </div>
             </div>
-            <p class="small text-muted-2 mt-2 mb-0">Save Attempt stores your code for this lesson. It does not run or grade it.</p>
-            <p class="small text-muted-2 mb-0" id="studentAttemptNote"></p>
+            <div id="studentExerciseInstructions" class="tutorial-lesson small my-3"></div>
+            <div class="d-flex justify-content-between align-items-center gap-2">
+              <label class="form-label mb-1" for="studentCode">Your code</label>
+              <span class="small text-muted-2" id="studentDraftState">Saved</span>
+            </div>
+            <textarea class="form-control font-monospace" id="studentCode" rows="12" spellcheck="false"></textarea>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button type="button" class="btn btn-outline-primary" id="studentRunBtn">Run</button>
+              <button type="button" class="btn btn-primary" id="studentSubmitBtn">Submit</button>
+              <button type="button" class="btn btn-outline-secondary" id="studentResetCodeBtn">Reset code</button>
+            </div>
+            <p class="small text-muted-2 mt-2 mb-0" id="studentAttemptNote"></p>
+            <div class="mt-3">
+              <div class="fw-semibold small mb-1">Run output</div>
+              <pre class="student-output mb-0" id="studentRunOutput">Run your code to see the actual output.</pre>
+            </div>
             <div id="studentExamples" class="mt-3"></div>
-            <div class="fw-semibold mt-3 mb-2">Previous attempts</div>
+            <div class="mt-3">
+              <div class="fw-semibold small mb-1">Submission results</div>
+              <div id="studentSubmitResults" class="small text-muted-2">Submit to grade this solution against the test cases.</div>
+            </div>
+            <div class="fw-semibold mt-3 mb-2">Previous submissions</div>
             <div id="studentAttemptHistory" class="d-flex flex-column gap-2"></div>
           </div>
           <div id="studentActivitySection" class="d-none">
@@ -146,11 +172,35 @@
   .tutorial-lesson pre{background:#0f172a;color:#f8fafc;padding:.75rem;border-radius:.5rem;overflow:auto}
   .tutorial-lesson code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   #studentModuleNav .btn,#studentLessonNav .btn{white-space:normal}
-  #studentCode{min-height:12rem}
-  .student-workspace-nav,.student-learn-panel,.student-practice-panel{min-height:28rem}
+  #studentCode{min-height:14rem;font-size:.92rem;line-height:1.55}
+  .student-output{background:#0f172a;color:#e2e8f0;border-radius:.5rem;padding:.75rem;min-height:6rem;max-height:16rem;overflow:auto;white-space:pre-wrap}
+  .student-workspace{display:flex;gap:1rem;align-items:stretch;position:relative}
+  .student-course-nav{width:18rem;flex:0 0 18rem;padding:1rem;max-height:calc(100vh - 12rem);overflow:auto;position:sticky;top:1rem}
+  .student-learn-column,.student-practice-column{flex:1 1 0;min-width:0}
+  .student-learn-panel,.student-practice-panel{min-height:28rem}
+  .student-nav-reopen{display:none;margin-bottom:.75rem}
+  .student-nav-backdrop{display:none}
+  .student-course-tree .student-module{border:1px solid #e4e7ec;border-radius:.7rem;margin-bottom:.5rem;background:#fff}
+  .student-course-tree .student-module.is-active{border-color:#1f7a3a}
+  .student-course-tree .student-module-toggle{width:100%;text-align:left;background:transparent;border:0;padding:.55rem .7rem;font-weight:650}
+  .student-course-tree .student-lessons{display:flex;flex-direction:column;gap:.25rem;padding:0 .55rem .55rem}
+  .student-course-tree .student-lesson{text-align:left;border-radius:.5rem}
+  .student-course-tree .student-lesson.is-active{background:#1f7a3a;color:#fff;border-color:#1f7a3a}
+  .student-workspace.is-nav-collapsed .student-course-nav{display:none}
+  .student-workspace.is-nav-collapsed .student-nav-reopen{display:inline-flex}
+  #studentExercisePanel.is-fullscreen{position:fixed;inset:.75rem;z-index:1050;background:#fff;overflow:auto;box-shadow:0 16px 48px rgba(16,24,40,.2)}
   @media (min-width:992px){
-    .student-learn-panel,.student-practice-panel{max-height:calc(100vh - 8rem);overflow:auto}
-    .student-workspace-nav{max-height:calc(100vh - 8rem);overflow:auto;position:sticky;top:1rem}
+    .student-learn-panel,.student-practice-panel{max-height:calc(100vh - 12rem);overflow:auto}
+  }
+  @media (max-width:991.98px){
+    .student-workspace{display:block}
+    .student-nav-reopen{display:inline-flex}
+    .student-course-nav{display:block;position:fixed;z-index:1045;top:0;left:0;bottom:0;width:min(20rem,88vw);max-height:none;transform:translateX(-105%);transition:transform .2s ease;border-radius:0}
+    .student-course-nav.is-open{transform:translateX(0)}
+    .student-nav-backdrop{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1040}
+    .student-course-nav.is-open + .student-learn-column .student-nav-backdrop,
+    .student-nav-backdrop.is-open{display:block}
+    .student-workspace.is-nav-collapsed .student-course-nav{display:block}
   }
   #moduleNav .btn{white-space:normal;text-align:left}
   #articleView{background:#fff;min-height:70vh}
@@ -731,5 +781,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261004lessonexercises"></script>
+<script src="js/tutorials-page.js?v=20261004learnworkspace"></script>
 </body></html>

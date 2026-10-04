@@ -3134,6 +3134,8 @@
     lessons: [],
     lessonIndex: 0,
     drafts: {},
+    draftSaved: {},
+    expandedModules: {},
     progressById: {},
     continueIds: {},
     progress: null,
@@ -3386,21 +3388,70 @@
     }
   }
 
+  function lessonOutlineFor(module, index) {
+    if (index === learn.moduleIndex && Array.isArray(learn.lessons) && learn.lessons.length) {
+      return learn.lessons.map((lesson) => ({ id: lesson.id, title: lesson.title }));
+    }
+    if (Array.isArray(module.lessonOutline) && module.lessonOutline.length) return module.lessonOutline;
+    if (Array.isArray(module.lessons) && module.lessons.length) {
+      return module.lessons.map((lesson) => ({ id: lesson.id, title: lesson.title }));
+    }
+    return [{ id: 'module', title: module.title || 'Lesson' }];
+  }
+
+  function lessonIsComplete(moduleId, lessonId) {
+    const flags = (learn.progress && learn.progress.workspace && learn.progress.workspace.lessons) || {};
+    return flags[`${moduleId}:${lessonId}`] === true;
+  }
+
   function renderStudentModuleNav() {
     const modules = (learn.detail && learn.detail.modules) || [];
-    const doneIds = new Set((learn.progress && learn.progress.completedModuleIds) || []);
-    const select = document.getElementById('studentModuleSelect');
-    if (select) {
-      select.innerHTML = modules.map((module, index) => `<option value="${index}">${esc(module.title)}</option>`).join('');
-      select.value = String(learn.moduleIndex);
+    const root = document.getElementById('studentModuleNav');
+    if (!root) return;
+    if (!modules.length) {
+      root.innerHTML = '<p class="text-muted-2 mb-0">This course has no modules yet.</p>';
+      return;
     }
-    document.getElementById('studentModuleNav').innerHTML = modules.map((module, index) => {
-      const mark = doneIds.has(module.id) ? '✓' : (index === learn.moduleIndex ? '●' : '○');
-      return `<button type="button" class="btn btn-sm text-start ${index === learn.moduleIndex ? 'btn-primary' : 'btn-outline-secondary'}" data-student-module="${index}"><span class="me-1" aria-hidden="true">${mark}</span>${esc(module.title)}</button>`;
-    }).join('') || '<p class="text-muted-2 mb-0">This tutorial has no modules yet.</p>';
-    document.querySelectorAll('[data-student-module]').forEach((btn) => {
+    root.innerHTML = modules.map((module, index) => {
+      const expanded = learn.expandedModules[module.id] !== false && (learn.expandedModules[module.id] === true || index === learn.moduleIndex);
+      const lessons = lessonOutlineFor(module, index);
+      const moduleReady = ((learn.progress && learn.progress.workspace && learn.progress.workspace.readyModuleIds) || []).includes(module.id);
+      const lessonButtons = expanded ? `<div class="student-lessons">${lessons.map((lesson, lessonIndex) => {
+        const active = index === learn.moduleIndex && lessonIndex === learn.lessonIndex;
+        const done = lessonIsComplete(module.id, lesson.id);
+        return `<button type="button" class="btn btn-sm student-lesson ${active ? 'btn-primary is-active' : 'btn-outline-secondary'}" data-student-lesson-jump="${index}:${lessonIndex}"><span class="me-1" aria-hidden="true">${done ? '✓' : '○'}</span>${esc(lesson.title || ('Lesson ' + (lessonIndex + 1)))}</button>`;
+      }).join('')}</div>` : '';
+      return `<div class="student-module ${index === learn.moduleIndex ? 'is-active' : ''}">
+        <button type="button" class="student-module-toggle" data-student-module="${index}" aria-expanded="${expanded ? 'true' : 'false'}">
+          <span class="me-1" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
+          <span class="me-1" aria-hidden="true">${moduleReady ? '✓' : '○'}</span>
+          Module ${index + 1}: ${esc(module.title || 'Module')}
+        </button>
+        ${lessonButtons}
+      </div>`;
+    }).join('');
+    root.querySelectorAll('[data-student-module]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        showStudentModule(Number(btn.getAttribute('data-student-module'))).catch(fail);
+        const index = Number(btn.getAttribute('data-student-module'));
+        const module = modules[index];
+        if (!module) return;
+        const wasExpanded = learn.expandedModules[module.id] === true || (learn.expandedModules[module.id] !== false && index === learn.moduleIndex);
+        learn.expandedModules[module.id] = !wasExpanded;
+        if (index !== learn.moduleIndex) {
+          learn.expandedModules[module.id] = true;
+          showStudentModule(index).catch(fail);
+          return;
+        }
+        renderStudentModuleNav();
+      });
+    });
+    root.querySelectorAll('[data-student-lesson-jump]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const parts = String(btn.getAttribute('data-student-lesson-jump') || '').split(':');
+        const moduleIndex = Number(parts[0]);
+        const lessonIndex = Number(parts[1]);
+        if (moduleIndex !== learn.moduleIndex) showStudentModule(moduleIndex, lessonIndex).catch(fail);
+        else showStudentLesson(lessonIndex).catch(fail);
       });
     });
   }
@@ -3417,24 +3468,7 @@
   }
 
   function renderStudentLessonNav() {
-    const lessons = learn.lessons || [];
-    const select = document.getElementById('studentLessonSelect');
-    if (select) {
-      select.innerHTML = lessons.map((lesson, index) => `<option value="${index}">${esc(lesson.title || ('Lesson ' + (index + 1)))}</option>`).join('');
-      select.value = String(learn.lessonIndex);
-      select.classList.toggle('d-none', lessons.length <= 1);
-      select.classList.toggle('d-lg-none', lessons.length > 1);
-    }
-    const root = document.getElementById('studentLessonNav');
-    if (!root) return;
-    root.innerHTML = lessons.map((lesson, index) => (
-      `<button type="button" class="btn btn-sm text-start ${index === learn.lessonIndex ? 'btn-primary' : 'btn-outline-secondary'}" data-student-lesson="${index}">${esc(lesson.title || ('Lesson ' + (index + 1)))}</button>`
-    )).join('') || '<p class="text-muted-2 mb-0">No lessons in this module.</p>';
-    root.querySelectorAll('[data-student-lesson]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        showStudentLesson(Number(btn.getAttribute('data-student-lesson'))).catch(fail);
-      });
-    });
+    renderStudentModuleNav();
   }
 
   function updateLessonNavButtons() {
@@ -3444,12 +3478,31 @@
     const next = document.getElementById('studentNextModule');
     if (!prev || !next) return;
     const atFirst = learn.moduleIndex <= 0 && learn.lessonIndex <= 0;
-    const atLast = learn.moduleIndex >= modules.length - 1 && learn.lessonIndex >= Math.max(lessons.length - 1, 0);
+    const lastLesson = learn.lessonIndex >= Math.max(lessons.length - 1, 0);
+    const atLast = learn.moduleIndex >= modules.length - 1 && lastLesson;
     prev.disabled = atFirst || !modules.length;
     next.disabled = atLast || !modules.length;
+    prev.textContent = 'Previous lesson';
+    next.textContent = !atLast && lastLesson && learn.moduleIndex < modules.length - 1 ? 'Continue to next module' : 'Next lesson';
+    const markLesson = document.getElementById('studentMarkLesson');
+    if (markLesson) {
+      const module = modules[learn.moduleIndex];
+      const lesson = lessons[learn.lessonIndex];
+      const linked = ((learn.module && learn.module.exercises) || []).some((row) => String(row.lessonBlockId || '') === (lesson ? String(lesson.id || '') : ''));
+      const done = module && lesson ? lessonIsComplete(module.id, lesson.id) : false;
+      markLesson.disabled = !module || !lesson || linked || done;
+      markLesson.textContent = done ? 'Lesson complete' : (linked ? 'Finish the exercises' : 'Mark lesson complete');
+    }
   }
 
   async function showStudentLesson(nextLessonIndex) {
+    const openId = currentExerciseId();
+    const codeBox = document.getElementById('studentCode');
+    if (openId && codeBox) rememberExerciseDraft(openId, codeBox.value, true);
+    const courseNav = document.getElementById('studentCourseNav');
+    const backdrop = document.getElementById('studentNavBackdrop');
+    if (courseNav) courseNav.classList.remove('is-open');
+    if (backdrop) backdrop.classList.remove('is-open');
     const lessons = learn.lessons || [];
     if (!lessons.length) {
       document.getElementById('studentLessonHeading').textContent = '';
@@ -3529,7 +3582,7 @@
     }
   }
 
-  async function showStudentModule(nextIndex) {
+  async function showStudentModule(nextIndex, lessonIndex) {
     if (typeof nextIndex === 'number' && nextIndex !== learn.moduleIndex) {
       if (learn.activityDirty) {
         const ok = await confirmAction({
@@ -3547,7 +3600,9 @@
         learn.activityDirty = false;
       }
       learn.moduleIndex = nextIndex;
-      learn.lessonIndex = 0;
+      learn.lessonIndex = typeof lessonIndex === 'number' ? lessonIndex : 0;
+      const opened = ((learn.detail && learn.detail.modules) || [])[nextIndex];
+      if (opened) learn.expandedModules[opened.id] = true;
     } else if (learn.activityDirty && typeof nextIndex !== 'number') {
       const ok = await confirmAction({
         title: 'Leave unsaved activity?',
@@ -3573,7 +3628,8 @@
       document.getElementById('studentLessonHeading').textContent = '';
       document.getElementById('studentModuleContent').textContent = 'This tutorial does not have any lessons yet.';
       document.getElementById('studentExerciseList').innerHTML = '<p class="text-muted-2 mb-0">There are no exercises until a module is added.</p>';
-      document.getElementById('studentMarkModule').disabled = true;
+      const markLesson = document.getElementById('studentMarkLesson');
+      if (markLesson) markLesson.disabled = true;
       renderStudentLessonNav();
       updateLessonNavButtons();
       return;
@@ -4384,44 +4440,107 @@
     }
   }
 
+  function draftStorageKey(exerciseId) {
+    return `pmsTutorialDraft:${exerciseId}`;
+  }
+
+  function readStoredDraft(exerciseId) {
+    try {
+      return localStorage.getItem(draftStorageKey(exerciseId));
+    } catch {
+      return null;
+    }
+  }
+
+  function writeStoredDraft(exerciseId, value) {
+    try {
+      localStorage.setItem(draftStorageKey(exerciseId), value);
+    } catch { /* private mode */ }
+  }
+
+  function setDraftState(saved) {
+    const label = document.getElementById('studentDraftState');
+    if (!label) return;
+    label.textContent = saved ? 'Saved' : 'Unsaved';
+  }
+
+  function rememberExerciseDraft(exerciseId, value, saved) {
+    learn.drafts[exerciseId] = value;
+    if (saved) {
+      writeStoredDraft(exerciseId, value);
+      learn.draftSaved[exerciseId] = value;
+      setDraftState(true);
+    } else {
+      setDraftState(value === learn.draftSaved[exerciseId]);
+    }
+  }
+
+  function scheduleExerciseDraft(exerciseId) {
+    clearTimeout(learn.draftTimer);
+    learn.draftTimer = setTimeout(() => {
+      if (learn.drafts[exerciseId] != null) rememberExerciseDraft(exerciseId, learn.drafts[exerciseId], true);
+    }, 400);
+  }
+
+  function currentExerciseId() {
+    const title = document.getElementById('studentExerciseTitle');
+    return title ? (title.dataset.exerciseId || '') : '';
+  }
+
   async function openStudentExercise(id) {
     try {
       const exercise = await call(`/tutorials/exercises/${encodeURIComponent(id)}`);
-      document.getElementById('studentExercisePanel').classList.remove('d-none');
-      document.getElementById('studentExerciseTitle').textContent = exercise.title || '';
-      document.getElementById('studentExerciseTitle').dataset.exerciseId = exercise.id || '';
-      document.getElementById('studentExerciseTitle').dataset.language = exercise.language || '';
+      const panel = document.getElementById('studentExercisePanel');
+      panel.classList.remove('d-none');
+      const title = document.getElementById('studentExerciseTitle');
+      title.textContent = exercise.title || '';
+      title.dataset.exerciseId = exercise.id || '';
+      title.dataset.language = exercise.language || '';
+      title.dataset.boilerplate = exercise.boilerplate || '';
+      const meta = document.getElementById('studentExerciseMeta');
+      if (meta) meta.textContent = `${languageLabel(exercise.language)} · Lesson practice`;
       setLessonHtml(document.getElementById('studentExerciseInstructions'), exercise.instructions || '');
       const code = document.getElementById('studentCode');
       const examples = (exercise.testCases || []).filter((item) => item.sample !== false);
       document.getElementById('studentExamples').innerHTML = examples.length
-        ? `<div class="fw-semibold mb-2">Sample test cases</div>${examples.map((item, index) => (
-          `<div class="border rounded p-2 mb-2"><div class="small fw-semibold">Test case ${index + 1}</div><div class="small text-muted-2">Input</div><pre class="mb-2">${esc(item.stdin) || '-'}</pre><div class="small text-muted-2">Expected output</div><pre class="mb-0">${esc(item.expectedOutput)}</pre></div>`
+        ? `<div class="fw-semibold mb-2">Sample output</div><p class="small text-muted-2">This is the tutor’s sample. It is not the output of your program.</p>${examples.map((item, index) => (
+          `<div class="border rounded p-2 mb-2"><div class="small fw-semibold">Sample ${index + 1}</div><div class="small text-muted-2">Input</div><pre class="mb-2">${esc(item.stdin) || '-'}</pre><div class="small text-muted-2">Sample output</div><pre class="mb-0">${esc(item.expectedOutput)}</pre></div>`
         )).join('')}`
-        : '<p class="small text-muted-2 mb-0">No public sample tests.</p>';
+        : '<p class="small text-muted-2 mb-0">No public sample output.</p>';
+      document.getElementById('studentRunOutput').textContent = 'Run your code to see the actual output.';
+      document.getElementById('studentSubmitResults').textContent = 'Submit to grade this solution against the test cases.';
       let history = [];
       try {
         history = await call(`/tutorials/exercises/${encodeURIComponent(exercise.id)}/attempts`) || [];
       } catch { history = []; }
       learn.attemptHistory = history;
-      if (learn.drafts[exercise.id] == null) {
-        learn.drafts[exercise.id] = history[0] && history[0].sourceCode ? history[0].sourceCode : (exercise.boilerplate || '');
+      const stored = readStoredDraft(exercise.id);
+      if (!Object.prototype.hasOwnProperty.call(learn.drafts, exercise.id)) {
+        learn.drafts[exercise.id] = stored != null ? stored : ((history[0] && history[0].sourceCode) || exercise.boilerplate || '');
       }
+      learn.draftSaved[exercise.id] = learn.drafts[exercise.id];
       code.value = learn.drafts[exercise.id];
-      code.oninput = () => { learn.drafts[exercise.id] = code.value; };
+      setDraftState(true);
+      code.oninput = () => {
+        learn.drafts[exercise.id] = code.value;
+        setDraftState(false);
+        scheduleExerciseDraft(exercise.id);
+      };
       const note = document.getElementById('studentAttemptNote');
-      if (note) note.textContent = history.length ? '' : 'No saved attempts yet.';
+      if (note) note.textContent = '';
       const historyRoot = document.getElementById('studentAttemptHistory');
-      historyRoot.innerHTML = history.length ? history.map((item, index) => (
-        `<div class="border rounded p-2 d-flex justify-content-between gap-2"><div><div class="fw-semibold">Attempt #${history.length - index}</div><div class="small text-muted-2">${esc(item.submittedAt || '')} · ${esc(languageLabel(item.language))} · Attempted</div></div><button type="button" class="btn btn-sm btn-outline-secondary" data-open-attempt="${index}">Open</button></div>`
-      )).join('') : '<p class="text-muted-2 mb-0">No saved attempts yet.</p>';
+      historyRoot.innerHTML = history.length ? history.map((item, index) => {
+        const verdict = item.status === 'PASSED' ? 'Passed' : (item.status === 'FAILED' ? 'Failed' : 'Saved');
+        const counts = item.testsTotal != null ? ` · ${item.testsPassed || 0}/${item.testsTotal} tests` : '';
+        return `<div class="border rounded p-2 d-flex justify-content-between gap-2"><div><div class="fw-semibold">Submission #${history.length - index}</div><div class="small text-muted-2">${esc(item.submittedAt || '')} · ${esc(languageLabel(item.language))} · ${esc(verdict)}${esc(counts)}</div></div><button type="button" class="btn btn-sm btn-outline-secondary" data-open-attempt="${index}">Open</button></div>`;
+      }).join('') : '<p class="text-muted-2 mb-0">No submissions yet.</p>';
       historyRoot.querySelectorAll('[data-open-attempt]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const item = learn.attemptHistory[Number(btn.getAttribute('data-open-attempt'))];
           if (!item) return;
           code.value = item.sourceCode || '';
-          learn.drafts[exercise.id] = code.value;
-          toast('Opened in the editor. Save Attempt stores a new copy.', 'success');
+          rememberExerciseDraft(exercise.id, code.value, true);
+          toast('Opened in the editor. Your draft was updated.', 'success');
         });
       });
     } catch (err) {
@@ -4429,32 +4548,61 @@
     }
   }
 
+  function renderRunOutput(result) {
+    const box = document.getElementById('studentRunOutput');
+    if (!box) return;
+    if (!result) {
+      box.textContent = 'Run your code to see the actual output.';
+      return;
+    }
+    const parts = [`Status: ${result.status || (result.ok ? 'OK' : 'Error')}`];
+    if (result.durationMs != null) parts.push(`Time: ${result.durationMs} ms`);
+    parts.push('', 'stdout:', result.stdout || '(empty)');
+    if (result.stderr) parts.push('', 'stderr:', result.stderr);
+    if (result.timedOut) parts.push('', 'Execution exceeded the time limit.');
+    box.textContent = parts.join('\n');
+  }
+
+  function renderSubmitResults(result) {
+    const box = document.getElementById('studentSubmitResults');
+    if (!box || !result) return;
+    const rows = (result.results || []).map((item) => {
+      if (item.sample) {
+        return `<div class="border rounded p-2 mb-2"><div class="fw-semibold">${item.passed ? 'Passed' : 'Failed'} · Public test ${item.index}</div><div class="text-muted-2">Actual stdout</div><pre class="mb-1">${esc(item.stdout || '')}</pre>${item.stderr ? `<div class="text-muted-2">stderr</div><pre class="mb-0">${esc(item.stderr)}</pre>` : ''}</div>`;
+      }
+      return `<div class="border rounded p-2 mb-2"><div class="fw-semibold">${item.passed ? 'Passed' : 'Failed'} · Hidden test ${item.index}</div><div class="text-muted-2">${esc(item.status || 'Hidden test')}</div></div>`;
+    }).join('');
+    box.innerHTML = `<div class="mb-2">${result.passed ? 'Passed' : 'Not passed'} · ${result.testsPassed || 0} passed, ${result.testsFailed || 0} failed, ${result.testsTotal || 0} total${result.durationMs != null ? ` · ${result.durationMs} ms` : ''}</div>${rows}`;
+  }
+
   function paintProgress() {
     const progress = learn.progress || { status: 'NOT_STARTED', progressPercent: 0, completedModules: 0, totalModules: 0, completed: false, completedModuleIds: [] };
+    const workspace = progress.workspace || {};
+    const percent = workspace.percent != null ? workspace.percent : (progress.progressPercent || 0);
     const label = document.getElementById('studentProgressLabel');
     const bar = document.getElementById('studentProgressBar');
+    const stats = document.getElementById('studentProgressStats');
     const completeBtn = document.getElementById('studentCompleteTutorial');
-    const markBtn = document.getElementById('studentMarkModule');
-      if (label) {
-        const resume = progress.lastVisitedModuleId ? ' Continuing from your last module.' : '';
-        label.textContent = progress.completed
-          ? `Tutorial complete. ${progress.completedModules || 0} of ${progress.totalModules || 0} modules.`
-          : `${progress.completedModules || 0} of ${progress.totalModules || 0} modules complete · ${progress.progressPercent || 0}%.${resume}`;
-      }
-    if (bar) bar.style.width = `${progress.progressPercent || 0}%`;
+    if (label) label.textContent = `${percent}% complete`;
+    if (bar) {
+      bar.style.width = `${percent}%`;
+      bar.parentElement.setAttribute('aria-valuenow', String(percent));
+    }
+    if (stats) {
+      stats.innerHTML = [
+        `<span><strong>${workspace.completedModules || 0}</strong> / ${workspace.totalModules || progress.totalModules || 0} modules</span>`,
+        `<span><strong>${workspace.completedLessons || 0}</strong> / ${workspace.totalLessons || 0} lessons</span>`,
+        `<span><strong>${workspace.completedExercises || 0}</strong> / ${workspace.totalExercises || 0} exercises</span>`,
+      ].join('');
+    }
     if (completeBtn) {
       const ready = (progress.totalModules || 0) > 0 && (progress.completedModules || 0) === progress.totalModules && !progress.completed;
       completeBtn.classList.toggle('d-none', !ready && !progress.completed);
       completeBtn.disabled = !!progress.completed;
       completeBtn.textContent = progress.completed ? 'Tutorial complete' : 'Mark tutorial complete';
     }
-    const current = ((learn.detail && learn.detail.modules) || [])[learn.moduleIndex];
-    if (markBtn && current) {
-      const done = (progress.completedModuleIds || []).includes(current.id);
-      markBtn.disabled = done;
-      markBtn.textContent = done ? 'Module complete' : 'Mark module complete';
-    }
     renderStudentModuleNav();
+    updateLessonNavButtons();
   }
 
   function bindStudent() {
@@ -4477,18 +4625,41 @@
       if (learn.detail) openStudentTutorial(learn.detail.id);
     });
     document.getElementById('studentBackToList').addEventListener('click', () => showStudentScreen('overview'));
-    const moduleSelect = document.getElementById('studentModuleSelect');
-    if (moduleSelect) {
-      moduleSelect.addEventListener('change', () => {
-        showStudentModule(Number(moduleSelect.value)).catch(fail);
+    const nav = document.getElementById('studentWorkspace');
+    const courseNav = document.getElementById('studentCourseNav');
+    const backdrop = document.getElementById('studentNavBackdrop');
+    const mobileNav = () => window.matchMedia('(max-width: 991.98px)').matches;
+    const closeNav = () => {
+      if (courseNav) courseNav.classList.remove('is-open');
+      if (backdrop) backdrop.classList.remove('is-open');
+    };
+    try {
+      if (sessionStorage.getItem('pmsTutorialNavCollapsed') === '1' && nav && !mobileNav()) nav.classList.add('is-nav-collapsed');
+    } catch { /* ignore */ }
+    const collapseBtn = document.getElementById('studentNavCollapse');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', () => {
+        if (mobileNav()) {
+          closeNav();
+          return;
+        }
+        if (nav) nav.classList.add('is-nav-collapsed');
+        try { sessionStorage.setItem('pmsTutorialNavCollapsed', '1'); } catch { /* ignore */ }
       });
     }
-    const lessonSelect = document.getElementById('studentLessonSelect');
-    if (lessonSelect) {
-      lessonSelect.addEventListener('change', () => {
-        showStudentLesson(Number(lessonSelect.value)).catch(fail);
+    const reopenBtn = document.getElementById('studentNavReopen');
+    if (reopenBtn) {
+      reopenBtn.addEventListener('click', () => {
+        if (mobileNav()) {
+          if (courseNav) courseNav.classList.add('is-open');
+          if (backdrop) backdrop.classList.add('is-open');
+          return;
+        }
+        if (nav) nav.classList.remove('is-nav-collapsed');
+        try { sessionStorage.setItem('pmsTutorialNavCollapsed', '0'); } catch { /* ignore */ }
       });
     }
+    if (backdrop) backdrop.addEventListener('click', closeNav);
     document.getElementById('studentPrevModule').addEventListener('click', () => {
       goStudentLessonDelta(-1).catch(fail);
     });
@@ -4501,13 +4672,14 @@
         document.getElementById('studentExercisePanel').classList.add('d-none');
       });
     }
-    document.getElementById('studentMarkModule').addEventListener('click', async () => {
+    document.getElementById('studentMarkLesson').addEventListener('click', async () => {
       const current = ((learn.detail && learn.detail.modules) || [])[learn.moduleIndex];
-      if (!current || !learn.detail) return;
+      const lesson = (learn.lessons || [])[learn.lessonIndex];
+      if (!current || !lesson || !learn.detail) return;
       try {
-        learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(current.id)}/progress`, { method: 'POST', body: {} });
+        learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(current.id)}/lessons/${encodeURIComponent(lesson.id)}/complete`, { method: 'POST', body: {} });
         paintProgress();
-        toast('Module marked complete.', 'success');
+        toast('Lesson marked complete.', 'success');
       } catch (err) {
         fail(err);
       }
@@ -4522,7 +4694,79 @@
         fail(err);
       }
     });
-    document.getElementById('studentSaveAttemptBtn').addEventListener('click', async () => {
+    document.getElementById('studentRunBtn').addEventListener('click', async () => {
+      const exerciseId = currentExerciseId();
+      if (!exerciseId) {
+        toast('Open an exercise before running code.', 'error');
+        return;
+      }
+      const button = document.getElementById('studentRunBtn');
+      button.disabled = true;
+      try {
+        const result = await call(`/tutorials/exercises/${encodeURIComponent(exerciseId)}/run`, {
+          method: 'POST',
+          body: {
+            sourceCode: document.getElementById('studentCode').value,
+            language: document.getElementById('studentExerciseTitle').dataset.language,
+          },
+        });
+        renderRunOutput(result);
+      } catch (err) {
+        renderRunOutput({ ok: false, status: 'Error', stdout: '', stderr: err && err.message ? err.message : 'The code could not be run.', timedOut: false });
+      } finally {
+        button.disabled = false;
+      }
+    });
+    document.getElementById('studentSubmitBtn').addEventListener('click', async () => {
+      const exerciseId = currentExerciseId();
+      if (!exerciseId) {
+        toast('Open an exercise before submitting.', 'error');
+        return;
+      }
+      const button = document.getElementById('studentSubmitBtn');
+      button.disabled = true;
+      try {
+        const result = await call(`/tutorials/exercises/${encodeURIComponent(exerciseId)}/submit`, {
+          method: 'POST',
+          body: {
+            sourceCode: document.getElementById('studentCode').value,
+            language: document.getElementById('studentExerciseTitle').dataset.language,
+          },
+        });
+        renderSubmitResults(result);
+        if (learn.detail) {
+          learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/progress`);
+          paintProgress();
+        }
+        await openStudentExercise(exerciseId);
+        toast(result && result.passed ? 'Submission passed.' : 'Submission did not pass every test.', result && result.passed ? 'success' : 'error');
+      } catch (err) {
+        const box = document.getElementById('studentSubmitResults');
+        if (box) box.textContent = err && err.message ? err.message : 'The submission could not be graded.';
+      } finally {
+        button.disabled = false;
+      }
+    });
+    document.getElementById('studentResetCodeBtn').addEventListener('click', async () => {
+      const exerciseId = currentExerciseId();
+      if (!exerciseId) return;
+      const ok = await confirmAction({
+        title: 'Reset code?',
+        message: 'Replace your draft with the starter code?',
+        confirmText: 'Reset',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      const starter = document.getElementById('studentExerciseTitle').dataset.boilerplate || '';
+      document.getElementById('studentCode').value = starter;
+      rememberExerciseDraft(exerciseId, starter, true);
+    });
+    document.getElementById('studentEditorFullBtn').addEventListener('click', () => {
+      const panel = document.getElementById('studentExercisePanel');
+      panel.classList.toggle('is-fullscreen');
+      document.getElementById('studentEditorFullBtn').textContent = panel.classList.contains('is-fullscreen') ? 'Exit full screen' : 'Full screen';
+    });
+    document.getElementById('studentSaveAttemptBtn') && document.getElementById('studentSaveAttemptBtn').addEventListener('click', async () => {
       const title = document.getElementById('studentExerciseTitle').dataset.exerciseId;
       if (!title) {
         toast('Open an exercise before saving an attempt.', 'error');

@@ -58,6 +58,26 @@ class StudentExerciseAttemptModel extends BaseModel
     }
 
     /**
+     * Store a server-graded submission. Caller-supplied pass flags are ignored.
+     *
+     * @param array<string, mixed> $data
+     * @return array<string, mixed>
+     */
+    public function recordGraded(array $data, bool $passed, int $testsPassed, int $testsTotal): array
+    {
+        unset($data['passed'], $data['testsPassed'], $data['testsTotal'], $data['testsFailed'], $data['results'], $data['status']);
+        $data['submittedAt'] = DocumentHelper::now();
+        $data['passed'] = $passed;
+        $data['status'] = $passed ? 'PASSED' : 'FAILED';
+        $data['testsPassed'] = max(0, $testsPassed);
+        $data['testsTotal'] = max(0, $testsTotal);
+        $data['testsFailed'] = max(0, $data['testsTotal'] - $data['testsPassed']);
+        $id = $this->insert($data);
+
+        return $this->findById($id) ?? $data;
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function listForStudentExercise(string $studentId, string $exerciseId, int $limit = 20): array

@@ -13,12 +13,15 @@ use PMS\Models\StudentTutorialProgressModel;
 use PMS\Models\TutorialCategoryModel;
 use PMS\Models\TutorialExerciseModel;
 use PMS\Models\TutorialModel;
+use PMS\Models\TutorialModuleActivityModel;
+use PMS\Models\TutorialModuleActivitySubmissionModel;
 use PMS\Models\TutorialModuleModel;
 use PMS\Models\TutorialTestCaseModel;
 
 /**
  * Tutorial catalog, authoring, and student visibility.
- * Does not run student code.
+ * Programming practice is graded by TutorialsCodeExecutionService, which sends
+ * source to an isolated runner. This class does not execute student code in PHP.
  */
 final class TutorialService
 {
@@ -48,6 +51,7 @@ final class TutorialService
         private ?StudentTutorialProgressModel $progress = null,
         private ?StudentTutorialModuleProgressModel $moduleProgress = null,
         private ?StudentExerciseAttemptModel $attempts = null,
+        private ?TutorialsCodeExecutionService $executor = null,
     ) {
         $this->categories = $categories ?? new TutorialCategoryModel();
         $this->tutorials = $tutorials ?? new TutorialModel();
@@ -59,6 +63,12 @@ final class TutorialService
         $this->progress = $progress ?? new StudentTutorialProgressModel();
         $this->moduleProgress = $moduleProgress ?? new StudentTutorialModuleProgressModel();
         $this->attempts = $attempts ?? new StudentExerciseAttemptModel();
+        $this->executor = $executor ?? new TutorialsCodeExecutionService();
+    }
+
+    public function useCodeExecution(TutorialsCodeExecutionService $executor): void
+    {
+        $this->executor = $executor;
     }
 
     /**
@@ -422,16 +432,149 @@ final class TutorialService
             if ((string) ($row['studentId'] ?? '') !== $studentId) {
                 continue;
             }
+            $status = (string) ($row['status'] ?? 'ATTEMPTED');
+            if (!in_array($status, ['ATTEMPTED', 'PASSED', 'FAILED'], true)) {
+                $status = 'ATTEMPTED';
+            }
             $out[] = [
                 'id' => (string) ($row['_id'] ?? ''),
                 'language' => (string) ($row['language'] ?? ''),
                 'sourceCode' => (string) ($row['sourceCode'] ?? ''),
-                'status' => 'ATTEMPTED',
+                'status' => $status,
+                'passed' => ($row['passed'] ?? false) === true,
+                'testsPassed' => isset($row['testsPassed']) ? (int) $row['testsPassed'] : null,
+                'testsFailed' => isset($row['testsFailed']) ? (int) $row['testsFailed'] : null,
+                'testsTotal' => isset($row['testsTotal']) ? (int) $row['testsTotal'] : null,
                 'submittedAt' => (string) ($row['submittedAt'] ?? ''),
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * Execute the student's source once and return the runner's stdout and stderr.
+     * Does not grade and does not persist a score.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function runExercise(array $user, string $exerciseId, array $input): array
+    {
+        [$exercise, $language, $source] = $this->practiceSource($user, $exerciseId, $input);
+        if (array_key_exists('stdin', $input)) {
+            $stdin = (string) $input['stdin'];
+        } else {
+            $stdin = '';
+            foreach ($this->testCases->listByExercise($exerciseId) as $case) {
+                if (($case['sample'] ?? false) === true) {
+                    $stdin = (string) ($case['stdin'] ?? '');
+                    break;
+                }
+            }
+        }
+        if (strlen($stdin) > 8000) {
+            throw new \InvalidArgumentException('Input is too long.');
+        }
+        $ran = $this->executor->run($language, $source, $stdin, (int) ($exercise['timeLimitMs'] ?? 5000));
+
+        return [
+            'ok' => ($ran['ok'] ?? false) === true,
+            'status' => (string) ($ran['status'] ?? ''),
+            'stdout' => (string) ($ran['stdout'] ?? ''),
+            'stderr' => (string) ($ran['stderr'] ?? ''),
+            'timedOut' => ($ran['timedOut'] ?? false) === true,
+            'durationMs' => (int) ($ran['durationMs'] ?? 0),
+        ];
+    }
+
+    /**
+     * Grade the source against stored test cases. Scores are computed here.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function submitExercise(array $user, string $exerciseId, array $input): array
+    {
+        unset($input['passed'], $input['testsPassed'], $input['testsTotal'], $input['testsFailed'], $input['results'], $input['status'], $input['score']);
+        [$exercise, $language, $source, $module, $tutorialId] = $this->practiceSource($user, $exerciseId, $input);
+        $cases = $this->testCases->listByExercise($exerciseId);
+        $graded = $this->executor->grade($language, $source, $cases, (int) ($exercise['timeLimitMs'] ?? 5000));
+        $studentId = $this->studentProfileId($user);
+        $row = $this->attempts->recordGraded([
+            'studentId' => $studentId,
+            'tutorialId' => $tutorialId,
+            'moduleId' => (string) ($module['_id'] ?? ''),
+            'exerciseId' => $exerciseId,
+            'language' => $language,
+            'sourceCode' => $source,
+            'durationMs' => (int) ($graded['durationMs'] ?? 0),
+        ], ($graded['passed'] ?? false) === true, (int) ($graded['testsPassed'] ?? 0), (int) ($graded['testsTotal'] ?? 0));
+        $this->maybeCompleteReadyModules($user, $tutorialId);
+
+        return [
+            'attemptId' => (string) ($row['_id'] ?? ''),
+            'status' => (string) ($row['status'] ?? 'FAILED'),
+            'passed' => ($row['passed'] ?? false) === true,
+            'testsTotal' => (int) ($row['testsTotal'] ?? 0),
+            'testsPassed' => (int) ($row['testsPassed'] ?? 0),
+            'testsFailed' => (int) ($row['testsFailed'] ?? 0),
+            'durationMs' => (int) ($graded['durationMs'] ?? 0),
+            'results' => $graded['results'] ?? [],
+            'submittedAt' => (string) ($row['submittedAt'] ?? ''),
+        ];
+    }
+
+    /**
+     * Explicitly complete a lesson that has no required programming exercises.
+     * Opening a lesson does not call this.
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function markLessonReviewed(array $user, string $tutorialId, string $moduleId, string $lessonId): array
+    {
+        $lessonId = trim($lessonId);
+        if (preg_match('/^[A-Za-z0-9_-]{1,64}$/', $lessonId) !== 1) {
+            throw new \InvalidArgumentException('Lesson not found.');
+        }
+        $this->publishedTutorialForStudent($user, $tutorialId);
+        $module = $this->moduleOnTutorial($tutorialId, $moduleId);
+        $lessons = $this->buildStudentLessons($this->lessonContentString($module['content'] ?? ''), (string) ($module['title'] ?? 'Lesson'));
+        $known = false;
+        foreach ($lessons as $lesson) {
+            if ((string) ($lesson['id'] ?? '') === $lessonId) {
+                $known = true;
+                break;
+            }
+        }
+        if (!$known) {
+            throw new \InvalidArgumentException('Lesson not found.');
+        }
+        foreach ($this->exercises->listByModule($moduleId) as $exercise) {
+            if ((string) ($exercise['lessonBlockId'] ?? '') === $lessonId) {
+                throw new \InvalidArgumentException('Complete the exercises for this lesson.');
+            }
+        }
+        $studentId = $this->studentProfileId($user);
+        $this->ensureStarted($studentId, $tutorialId, $moduleId);
+        $stored = $this->progress->findFor($studentId, $tutorialId);
+        $ids = [];
+        foreach ((array) ($stored['completedLessonIds'] ?? []) as $existing) {
+            $existing = (string) $existing;
+            if ($existing !== '') {
+                $ids[$existing] = $existing;
+            }
+        }
+        $ids[$moduleId . ':' . $lessonId] = $moduleId . ':' . $lessonId;
+        if (is_array($stored) && ($stored['_id'] ?? '') !== '') {
+            $this->progress->update((string) $stored['_id'], ['completedLessonIds' => array_values($ids)]);
+        }
+        $this->maybeCompleteReadyModules($user, $tutorialId);
+
+        return $this->progressForStudent($user, $tutorialId);
     }
 
     /**
@@ -1096,6 +1239,7 @@ final class TutorialService
             'lastVisitedModuleId' => is_array($stored) ? ($stored['lastVisitedModuleId'] ?? null) : null,
             'completedModuleIds' => $done,
             'completed' => $status === 'COMPLETED',
+            'workspace' => $this->workspaceProgress($studentId, $tutorialId, $modules, is_array($stored) ? $stored : null),
         ];
     }
 
@@ -1128,6 +1272,192 @@ final class TutorialService
         }
 
         return (int) round((count($this->completedModuleIds($studentId, $tutorialId, $modules)) / count($modules)) * 100);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array{0: array<string, mixed>, 1: string, 2: string, 3: array<string, mixed>, 4: string}
+     */
+    private function practiceSource(array $user, string $exerciseId, array $input): array
+    {
+        unset($input['studentId'], $input['departmentId'], $input['passingYear']);
+        $exercise = $this->requireExercise($exerciseId);
+        $module = $this->requireModule((string) ($exercise['moduleId'] ?? ''));
+        $tutorialId = (string) ($module['tutorialId'] ?? '');
+        $this->publishedTutorialForStudent($user, $tutorialId);
+        $source = (string) ($input['sourceCode'] ?? '');
+        if (trim($source) === '') {
+            throw new \InvalidArgumentException('Source code is required.');
+        }
+        if (strlen($source) > self::MAX_SOURCE_CHARS) {
+            throw new \InvalidArgumentException('Source code is too long.');
+        }
+        $language = TutorialExerciseModel::normalizeLanguage((string) ($input['language'] ?? ''));
+        if ($language === '' || $language !== (string) ($exercise['language'] ?? '')) {
+            throw new \InvalidArgumentException('Use the language configured for this exercise.');
+        }
+        if (!in_array($language, TutorialsCodeExecutionService::LANGUAGES, true)) {
+            throw new \InvalidArgumentException('This exercise language cannot be executed.');
+        }
+
+        return [$exercise, $language, $source, $module, $tutorialId];
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function maybeCompleteReadyModules(array $user, string $tutorialId): void
+    {
+        $studentId = $this->studentProfileId($user);
+        $modules = $this->modules->listByTutorial($tutorialId);
+        $workspace = $this->workspaceProgress($studentId, $tutorialId, $modules, $this->progress->findFor($studentId, $tutorialId));
+        foreach ($workspace['readyModuleIds'] as $moduleId) {
+            $this->moduleProgress->markComplete($studentId, $tutorialId, $moduleId);
+        }
+    }
+
+    /**
+     * Lesson, exercise, and activity completion for the learning workspace.
+     * Opening a lesson is not completion. Existing module marks are left unchanged.
+     *
+     * @param array<int, array<string, mixed>> $modules
+     * @param array<string, mixed>|null $stored
+     * @return array<string, mixed>
+     */
+    private function workspaceProgress(string $studentId, string $tutorialId, array $modules, ?array $stored): array
+    {
+        $reviewed = [];
+        foreach ((array) ($stored['completedLessonIds'] ?? []) as $key) {
+            $key = (string) $key;
+            if ($key !== '') {
+                $reviewed[$key] = true;
+            }
+        }
+        $passedExercises = [];
+        foreach ($this->attempts->findAll(['studentId' => $studentId], 2000) as $attempt) {
+            if ((string) ($attempt['tutorialId'] ?? '') !== $tutorialId) {
+                continue;
+            }
+            if (($attempt['passed'] ?? false) === true) {
+                $passedExercises[(string) ($attempt['exerciseId'] ?? '')] = true;
+            }
+        }
+        $activities = new TutorialModuleActivityModel();
+        $submissions = new TutorialModuleActivitySubmissionModel();
+        $lessonDone = 0;
+        $lessonTotal = 0;
+        $exerciseDone = 0;
+        $exerciseTotal = 0;
+        $activityDone = 0;
+        $activityTotal = 0;
+        $unlinkedDone = 0;
+        $unlinkedTotal = 0;
+        $readyModules = [];
+        $lessonFlags = [];
+        foreach ($modules as $module) {
+            $moduleId = (string) ($module['_id'] ?? '');
+            if ($moduleId === '') {
+                continue;
+            }
+            $lessons = $this->buildStudentLessons($this->lessonContentString($module['content'] ?? ''), (string) ($module['title'] ?? 'Lesson'));
+            $linked = [];
+            $unlinked = [];
+            foreach ($this->exercises->listByModule($moduleId) as $exercise) {
+                $exerciseId = (string) ($exercise['_id'] ?? '');
+                if ($exerciseId === '') {
+                    continue;
+                }
+                $exerciseTotal++;
+                $isPassed = isset($passedExercises[$exerciseId]);
+                if ($isPassed) {
+                    $exerciseDone++;
+                }
+                $lessonBlockId = trim((string) ($exercise['lessonBlockId'] ?? ''));
+                if ($lessonBlockId === '') {
+                    $unlinked[] = $isPassed;
+                    $unlinkedTotal++;
+                    if ($isPassed) {
+                        $unlinkedDone++;
+                    }
+                } else {
+                    $linked[$lessonBlockId][] = $isPassed;
+                }
+            }
+            $moduleLessonsReady = true;
+            if ($lessons === []) {
+                $moduleLessonsReady = false;
+            }
+            foreach ($lessons as $lesson) {
+                $lessonTotal++;
+                $lessonId = (string) ($lesson['id'] ?? '');
+                $required = $linked[$lessonId] ?? [];
+                $complete = $required !== []
+                    ? !in_array(false, $required, true)
+                    : isset($reviewed[$moduleId . ':' . $lessonId]);
+                if ($complete) {
+                    $lessonDone++;
+                } else {
+                    $moduleLessonsReady = false;
+                }
+                $lessonFlags[$moduleId . ':' . $lessonId] = $complete;
+            }
+            $unlinkedReady = !in_array(false, $unlinked, true);
+            [$requiredActivities, $doneActivities] = $this->activityCounts($activities, $submissions, $studentId, $moduleId);
+            $activityTotal += $requiredActivities;
+            $activityDone += $doneActivities;
+            if ($moduleLessonsReady && $unlinkedReady && $doneActivities === $requiredActivities && $lessons !== []) {
+                $readyModules[] = $moduleId;
+            }
+        }
+        $units = $lessonTotal + $unlinkedTotal + $activityTotal;
+        $doneUnits = $lessonDone + $unlinkedDone + $activityDone;
+        $percent = $units === 0 ? 0 : (int) round(($doneUnits / $units) * 100);
+
+        return [
+            'percent' => $percent,
+            'completedModules' => count($readyModules),
+            'totalModules' => count($modules),
+            'completedLessons' => $lessonDone,
+            'totalLessons' => $lessonTotal,
+            'completedExercises' => $exerciseDone,
+            'totalExercises' => $exerciseTotal,
+            'completedActivities' => $activityDone,
+            'totalActivities' => $activityTotal,
+            'lessons' => $lessonFlags,
+            'readyModuleIds' => $readyModules,
+        ];
+    }
+
+    /**
+     * @return array{0: int, 1: int}
+     */
+    private function activityCounts(
+        TutorialModuleActivityModel $activities,
+        TutorialModuleActivitySubmissionModel $submissions,
+        string $studentId,
+        string $moduleId
+    ): array {
+        $required = 0;
+        $done = 0;
+        foreach ($activities->listByModule($moduleId, false) as $activity) {
+            if ((string) ($activity['status'] ?? '') !== 'published' || ($activity['archived'] ?? false) === true) {
+                continue;
+            }
+            if ((string) ($activity['evaluationMode'] ?? '') === 'none') {
+                continue;
+            }
+            $required++;
+            $activityId = (string) ($activity['_id'] ?? '');
+            foreach ($submissions->listForStudent($studentId, $activityId) as $attempt) {
+                if ((string) ($attempt['status'] ?? '') === 'SUBMITTED') {
+                    $done++;
+                    break;
+                }
+            }
+        }
+
+        return [$required, $done];
     }
 
     private function ensureStarted(string $studentId, string $tutorialId, ?string $moduleId): void
@@ -1443,11 +1773,20 @@ final class TutorialService
      */
     private function studentModule(array $module, bool $includeContent): array
     {
+        $rawForOutline = $this->lessonContentString($module['content'] ?? '');
+        $outline = $this->buildStudentLessons($rawForOutline, (string) ($module['title'] ?? 'Lesson'));
         $view = [
             'id' => (string) ($module['_id'] ?? ''),
             'title' => (string) ($module['title'] ?? ''),
             'subtitle' => (string) ($module['subtitle'] ?? ''),
             'sortOrder' => (int) ($module['sortOrder'] ?? 0),
+            'lessonOutline' => array_map(
+                static fn (array $lesson): array => [
+                    'id' => (string) ($lesson['id'] ?? ''),
+                    'title' => (string) ($lesson['title'] ?? 'Lesson'),
+                ],
+                $outline
+            ),
         ];
         if ($includeContent) {
             $rawContent = $this->lessonContentString($module['content'] ?? '');

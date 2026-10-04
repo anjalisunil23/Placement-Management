@@ -108,6 +108,24 @@ final class TutorialController
         Response::success($this->service->saveAttempt($user, $id, $this->body()), 'Attempt saved.', 201);
     }
 
+    public function runExercise(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->runExercise($user, $id, $this->body()));
+    }
+
+    public function submitExercise(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->submitExercise($user, $id, $this->body()), 'Submission graded.', 201);
+    }
+
+    public function markLessonReviewed(string $id, string $moduleId, string $lessonId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->markLessonReviewed($user, $id, $moduleId, $lessonId));
+    }
+
     public function listAttempts(string $id): void
     {
         $user = AuthMiddleware::authenticate();
