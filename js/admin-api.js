@@ -334,6 +334,16 @@ const AdminApi = {
     return res.data.map(s => this.mapStudentRow(s));
   },
 
+  /** User Management → Students tab (login + placement policy registration complete). */
+  async fetchRegisteredStudents(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    const q = qs.toString();
+    const res = await api('/admin/students/registered' + (q ? `?${q}` : ''));
+    if (!res.success || !Array.isArray(res.data)) return null;
+    return res.data.map(s => this.mapStudentRow(s));
+  },
+
   async fetchFinalYearStudents(params = {}) {
     const qs = new URLSearchParams();
     if (params.q) qs.set('q', params.q);

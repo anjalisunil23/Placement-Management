@@ -4029,7 +4029,7 @@ const UserRegistry = {
     }
     const [users, students, companies] = await Promise.all([
       AdminApi.fetchUsers(),
-      AdminApi.fetchStudents(),
+      AdminApi.fetchRegisteredStudents(),
       AdminApi.fetchCompanies(),
     ]);
     if (!users && !students && !companies) {

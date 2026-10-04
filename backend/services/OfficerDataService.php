@@ -12,6 +12,7 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\DriveModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\ResumeModel;
+use PMS\Models\PlacementPolicySettingsModel;
 use PMS\Models\StudentModel;
 use PMS\Models\UserModel;
 use PMS\Services\AesApiService;
@@ -759,6 +760,75 @@ final class OfficerDataService
             }
             $rows[] = $row;
         }
+
+        return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * Admin User Management — students with a login who finished placement policy registration.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listRegisteredStudentsForUserManagement(?string $query = null): array
+    {
+        $studentModel = new StudentModel();
+        $deptModel = new DepartmentModel();
+        $userModel = new UserModel();
+        $policyModel = new PlacementPolicySettingsModel();
+
+        $departments = [];
+        foreach ($deptModel->findAll([], 400) as $d) {
+            $departments[(string) $d['_id']] = $d;
+        }
+
+        $students = $studentModel->findAll([], 15000);
+        $userIds = [];
+        foreach ($students as $s) {
+            $uid = trim((string) ($s['userId'] ?? ''));
+            if ($uid !== '') {
+                $userIds[$uid] = true;
+            }
+        }
+        $usersById = $userModel->findByIds(array_keys($userIds));
+
+        $rows = [];
+        foreach ($students as $s) {
+            $userId = trim((string) ($s['userId'] ?? ''));
+            if ($userId === '' || !isset($usersById[$userId])) {
+                continue;
+            }
+            $user = $usersById[$userId];
+            if ((string) ($user['role'] ?? '') !== 'student') {
+                continue;
+            }
+
+            $registration = $policyModel->registrationState($s);
+            if (!empty($registration['policyRegistrationRequired'])) {
+                continue;
+            }
+
+            $deptId = (string) ($s['departmentId'] ?? '');
+            $dept = $departments[$deptId] ?? null;
+            $row = DocumentHelper::serialize($s) ?? [];
+            $row = $this->enrichStudentListRow($row, $s, $user, false);
+            $row['department'] = $dept ? [
+                'id'   => (string) $dept['_id'],
+                'name' => $dept['name'] ?? '',
+                'code' => $dept['code'] ?? '',
+            ] : null;
+            if (!$this->isPlacementStudentListCandidate($s, $user, $row, false)) {
+                continue;
+            }
+            $rows[] = $row;
+        }
+
+        usort(
+            $rows,
+            static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['displayName'] ?? $a['registerNumber'] ?? ''),
+                (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
+            )
+        );
 
         return $this->filterStudentRows($rows, $query);
     }
@@ -1556,7 +1626,7 @@ final class OfficerDataService
 
             $semesterBatch = $this->resolvePrimaryClassBatchForCohort($ctx, $cohort);
             if ($semesterBatch === '') {
-                continue;
+                $semesterBatch = $cohort;
             }
 
             foreach ($this->listAesClassStudents($ctx, $programme, $semesterBatch, true) as $row) {
@@ -2335,9 +2405,6 @@ final class OfficerDataService
             $classRows = (new AesApiService())->fetchClassStudInfo4Placement($deptAesId, $programme, $batch);
             if ($classRows !== []) {
                 return $classRows;
-            }
-            if (!empty($ctx['staffScope'])) {
-                return [];
             }
         }
 

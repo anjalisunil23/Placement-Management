@@ -1179,8 +1179,8 @@ function studentInStaffScope(s) {
   const assigned = staffAssignedClassBatches();
   // Dept-wide staff (no CT/CoCT): API already scopes by department — do not hide every row.
   if (!assigned.length) return deptOk;
-  const batch = String(s.classBatch || s.batch || '').trim().toUpperCase();
-  if (!batch) return false;
+  const batch = String(s.classBatch || s.batch || s.stud_class || '').trim().toUpperCase();
+  if (!batch) return true;
   const cohort = batch.replace(/-S\d+$/i, '');
   return assigned.some((a) => {
     const A = String(a || '').trim().toUpperCase();
@@ -2237,7 +2237,7 @@ function filteredFinalYearStudents(kind) {
   const inputId = kind === 'registered' ? 'searchFinalYearRegistered' : 'searchFinalYearPending';
   const q = document.getElementById(inputId)?.value.trim() || '';
   return finalYearStudentsAll.filter(s => {
-    if (role === 'staff' && !studentInStaffScope(s)) return false;
+    if (role === 'staff' && staffAssignedClassBatches().length && !studentInStaffScope(s)) return false;
     const registered = isFinalYearPolicyRegistered(s);
     if (kind === 'registered' ? !registered : registered) return false;
     return finalYearMatchesQuery(s, q);
@@ -2549,8 +2549,12 @@ function renderFinalYearList(kind) {
     const emptyMsg = q
       ? 'No students match your search.'
       : (isRegistered
-        ? 'No final-year students have registered the placement policy yet.'
-        : 'All listed final-year students have registered the placement policy.');
+        ? (role === 'staff'
+          ? 'No students in your class have registered the placement policy yet.'
+          : 'No final-year students have registered the placement policy yet.')
+        : (role === 'staff'
+          ? 'All students in your class have registered the placement policy.'
+          : 'All listed final-year students have registered the placement policy.'));
     tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
     return;
   }
@@ -2578,7 +2582,7 @@ async function loadFinalYearStudents(force = false) {
   } else if ((role === 'placement_officer' || isHodRole) && typeof OfficerApi !== 'undefined') {
     rows = await OfficerApi.fetchFinalYearStudents();
   } else if (role === 'staff' && typeof StaffApi !== 'undefined') {
-    rows = await StaffApi.fetchFinalYearStudents();
+    rows = await StaffApi.fetchStudents();
   }
   if (!rows) {
     finalYearStudentsAll = [];

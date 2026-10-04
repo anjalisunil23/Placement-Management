@@ -1355,6 +1355,16 @@ final class AdminController
         Response::success((new OfficerDataService())->listStudents($scope['ctx'], $query !== '' ? $query : null));
     }
 
+    /** GET /api/admin/students/registered — User Management tab (login + policy registration complete) */
+    public function listRegisteredStudentsForUserManagement(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $query = trim((string) ($_GET['q'] ?? $_GET['search'] ?? ''));
+        Response::success(DocumentHelper::jsonSafe(
+            (new OfficerDataService())->listRegisteredStudentsForUserManagement($query !== '' ? $query : null)
+        ));
+    }
+
     /** GET /api/admin/students/allfinal-year — campus-wide AES getAllStudInfo4Placement + student table */
     public function listFinalYearStudents(): void
     {

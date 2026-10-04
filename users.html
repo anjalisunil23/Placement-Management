@@ -253,7 +253,7 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/admin-api.js?v=20260924bulkdel"></script>
+<script src="js/admin-api.js?v=20261004registered"></script>
 <script src="js/api.js?v=20260924bulkdel"></script>
 <script src="js/app.js?v=20261001mcqroles"></script>
 <script>
@@ -1322,7 +1322,7 @@ function renderStudents(list) {
       <td><span class="small">${u.chancesUsed ?? 0} / ${u.chancesMax ?? 5}</span></td>
       <td>${userStatusBadge(u.status, u.blocked)}</td>
       <td>${actionBtns(u)}</td>
-    </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No students found.</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="9" class="text-muted-2 p-4">No students with completed placement registration.</td></tr>';
 }
 
 function renderOfficers(list) {
