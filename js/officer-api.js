@@ -481,7 +481,7 @@ const OfficerApi = {
 
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
-    ['program', 'branch', 'batch', 'type', 'q'].forEach(k => {
+    ['program', 'branch', 'batch', 'studRole', 'type', 'q'].forEach(k => {
       if (params[k]) qs.set(k, params[k]);
     });
     const q = qs.toString();

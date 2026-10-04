@@ -414,6 +414,29 @@ final class StaffController
         ));
     }
 
+    /** POST /api/staff/placements-higher-education/sync-from-aes */
+    public function syncPlacementsFromAes(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $filters = [
+            'departmentId' => (string) ($_GET['departmentId'] ?? $_POST['departmentId'] ?? ''),
+            'program'      => (string) ($_GET['program'] ?? $_POST['program'] ?? ''),
+            'branch'       => (string) ($_GET['branch'] ?? $_POST['branch'] ?? ''),
+            'batch'        => (string) ($_GET['batch'] ?? $_POST['batch'] ?? ''),
+            'studRole'     => (string) ($_GET['studRole'] ?? $_POST['studRole'] ?? 'student'),
+        ];
+        $result = (new StaffPlacementRegistryService())->syncFromAes($ctx, $filters);
+        $count = (int) ($result['studentsSynced'] ?? 0);
+        Response::success(
+            DocumentHelper::jsonSafe($result),
+            $count > 0
+                ? "Synced {$count} student placement record(s) from AES."
+                : 'AES sync completed (no new rows in the current scope).'
+        );
+    }
+
     /** GET /api/staff/students/{id}/self-placement/offer-letter */
     public function downloadSelfPlacementOfferLetter(string $studentId): void
     {

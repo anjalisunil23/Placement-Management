@@ -1250,12 +1250,14 @@ final class OfficerController
     {
         $scope = (new OfficerDataService())->requireScope();
         $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'student')));
         $filters = [
-            'program' => (string) ($_GET['program'] ?? ''),
-            'branch'  => (string) ($_GET['branch'] ?? ''),
-            'batch'   => (string) ($_GET['batch'] ?? ''),
-            'type'    => (string) ($_GET['type'] ?? ''),
-            'q'       => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+            'program'  => (string) ($_GET['program'] ?? ''),
+            'branch'   => (string) ($_GET['branch'] ?? ''),
+            'batch'    => (string) ($_GET['batch'] ?? ''),
+            'studRole' => $studRole === 'alumni' ? 'alumni' : 'student',
+            'type'     => (string) ($_GET['type'] ?? ''),
+            'q'        => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
         ];
         Response::success(DocumentHelper::jsonSafe(
             (new \PMS\Services\StaffPlacementRegistryService())->list($ctx, $filters)

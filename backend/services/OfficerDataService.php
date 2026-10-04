@@ -1197,16 +1197,22 @@ final class OfficerDataService
             return [];
         }
 
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
-        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
         $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
         $wantCohort = ClassInchargeRegistry::cohortKey($batch);
         $rows = [];
         $seen = [];
 
         foreach ($this->listAlumniDirectoryRecordsForScope($ctx) as $record) {
+            if (!$this->recordQualifiesForAlumniTab($record)) {
+                continue;
+            }
             $recordDept = strtoupper(trim((string) (
                 $record['stud_deptcode']
                 ?? $record['parentDepartmentCode']
@@ -1358,6 +1364,96 @@ final class OfficerDataService
             $seen[$key] = true;
             $rows[] = $row;
         }
+
+        return $rows;
+    }
+
+    /**
+     * AES alumni roster for one programme (stud_role = Alumni), for Placements &amp; Higher Ed.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAlumniProgrammeStudents(array $ctx, string $programme): array
+    {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        if ($programme === '') {
+            return [];
+        }
+
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
+        $rows = [];
+        $seen = [];
+
+        foreach ($this->fetchAesAlumniDirectoryRecords($deptAesId, $campusWide, $ctx) as $record) {
+            if (!$this->recordQualifiesForAlumniTab($record)) {
+                continue;
+            }
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+            if (!$this->aesDirectoryRecordMatchesProgramme($record, $programme)) {
+                continue;
+            }
+
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? ''
+            )));
+            if ($admno === '') {
+                continue;
+            }
+
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            $local = null;
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            if (!$this->isPlacementStudentListCandidate(
+                is_array($local) ? $local : ['registerNumber' => $admno],
+                null,
+                $row,
+                false
+            )) {
+                continue;
+            }
+
+            $key = $this->normalizeStudentAdmnoKey((string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = $row;
+        }
+
+        usort(
+            $rows,
+            static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['displayName'] ?? $a['registerNumber'] ?? ''),
+                (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
+            )
+        );
 
         return $rows;
     }

@@ -276,6 +276,18 @@ const StaffApi = {
     return data;
   },
 
+  async syncPlacementsFromAes(params = {}) {
+    const qs = new URLSearchParams();
+    ['departmentId', 'program', 'branch', 'batch', 'studRole'].forEach(k => {
+      if (params[k]) qs.set(k, params[k]);
+    });
+    const q = qs.toString();
+    const res = await api('/staff/placements-higher-education/sync-from-aes' + (q ? `?${q}` : ''), {
+      method: 'POST',
+    });
+    return res;
+  },
+
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
     ['departmentId', 'program', 'branch', 'batch', 'studRole', 'type', 'q'].forEach(k => {

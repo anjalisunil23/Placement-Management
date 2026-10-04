@@ -224,19 +224,22 @@ final class PlacementFilterService
             }
         }
 
-        foreach ($this->assignedBatchLabelsForScope($ctx, $program, $branch) as $batch) {
-            $batches[] = $batch;
-        }
+        $staffRegistryFilters = !empty($ctx['placementStaffRegistryFilters']);
+        if (!$staffRegistryFilters) {
+            foreach ($this->assignedBatchLabelsForScope($ctx, $program, $branch) as $batch) {
+                $batches[] = $batch;
+            }
 
-        $deptId = trim((string) ($ctx['departmentId'] ?? ''));
-        if ($deptId !== '') {
-            try {
-                $batches = array_merge(
-                    $batches,
-                    (new StudentPlacementModel())->findDistinctClassBatches($deptId, $program)
-                );
-            } catch (\Throwable) {
-                // student_placements optional until schema is applied
+            $deptId = trim((string) ($ctx['departmentId'] ?? ''));
+            if ($deptId !== '') {
+                try {
+                    $batches = array_merge(
+                        $batches,
+                        (new StudentPlacementModel())->findDistinctClassBatches($deptId, $program)
+                    );
+                } catch (\Throwable) {
+                    // student_placements optional until schema is applied
+                }
             }
         }
 
@@ -244,6 +247,10 @@ final class PlacementFilterService
             $batches,
             $this->mergeAesStudyingClassBatchesForFilterDropdown($ctx, $program, $branch)
         );
+
+        if ($staffRegistryFilters) {
+            $batches = $this->refineStaffRegistryBatchOptions($batches, $ctx, $program, $branch);
+        }
 
         $batches = $this->normalizeBatchLabelsForFilters($batches, $ctx);
         if (empty($ctx['filterMode'])) {
@@ -289,6 +296,101 @@ final class PlacementFilterService
     }
 
     /**
+     * Staff Placements registry batch dropdown: drop junk, enforce programme / branch scope.
+     *
+     * @param list<string> $batches
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function refineStaffRegistryBatchOptions(
+        array $batches,
+        array $ctx,
+        string $program,
+        string $branch
+    ): array {
+        $refined = [];
+        foreach ($batches as $batch) {
+            $batch = trim((string) $batch);
+            if ($batch === '' || !$this->isPlausibleStudClassBatchLabel($batch)) {
+                continue;
+            }
+            if ($program !== '' && !$this->batchMatchesProgramme($batch, $program)) {
+                continue;
+            }
+            if ($branch !== '' && !$this->batchMatchesBranch($ctx, $batch, $program, $branch)) {
+                continue;
+            }
+            $course = $this->programmeCodeFromBatch($batch);
+            if ($course !== '' && !$this->programmeMatchesDepartmentFilterScope($course, $ctx)) {
+                continue;
+            }
+            $refined[] = $batch;
+        }
+
+        return $this->preferSemesterSpecificBatchLabels($refined);
+    }
+
+    private function isPlausibleStudClassBatchLabel(string $batch): bool
+    {
+        $batch = trim($batch);
+        if ($batch === '' || strlen($batch) < 8) {
+            return false;
+        }
+        if (strcasecmp($batch, 'Regular') === 0) {
+            return false;
+        }
+        if (preg_match('/\d{4}/', $batch) !== 1) {
+            return false;
+        }
+
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9.\-]*$/', $batch) === 1;
+    }
+
+    /**
+     * When AES returns both MCA2024-2028 and MCA2024-2028-S8, keep the semester-specific label.
+     *
+     * @param list<string> $batches
+     * @return list<string>
+     */
+    private function preferSemesterSpecificBatchLabels(array $batches): array
+    {
+        $byNorm = [];
+        foreach ($batches as $batch) {
+            $batch = trim((string) $batch);
+            if ($batch === '') {
+                continue;
+            }
+            $byNorm[strtoupper($batch)] = $batch;
+        }
+
+        $drop = [];
+        foreach ($byNorm as $norm => $label) {
+            if (preg_match('/-S(10|[1-9])$/i', $label) === 1) {
+                continue;
+            }
+            $cohort = ClassInchargeRegistry::cohortKey($label);
+            foreach ($byNorm as $other) {
+                if (preg_match('/-S(10|[1-9])$/i', $other) !== 1) {
+                    continue;
+                }
+                if (strcasecmp(ClassInchargeRegistry::cohortKey($other), $cohort) === 0) {
+                    $drop[$norm] = true;
+                    break;
+                }
+            }
+        }
+
+        $out = [];
+        foreach ($byNorm as $norm => $label) {
+            if (!isset($drop[$norm])) {
+                $out[] = $label;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * Filter dropdowns: keep every distinct stud_class (S4, S6, S8, …). Roster views still cohort-dedupe.
      *
      * @param list<string> $batches
@@ -301,6 +403,14 @@ final class PlacementFilterService
             static fn ($b) => trim((string) $b),
             $batches
         ), static fn (string $b): bool => $b !== '')));
+
+        if (!empty($ctx['placementStaffRegistryFilters'])) {
+            $batches = array_values(array_filter(
+                $batches,
+                fn (string $b): bool => $this->isPlausibleStudClassBatchLabel($b)
+            ));
+            $batches = $this->preferSemesterSpecificBatchLabels($batches);
+        }
 
         if (!empty($ctx['filterMode'])) {
             return $this->sortLabels($batches);
@@ -321,9 +431,16 @@ final class PlacementFilterService
             return [];
         }
 
-        $programmes = $program === ''
-            ? $this->fetchProgramOptions($ctx)
-            : $this->resolveProgrammeList($program);
+        if ($program === '' && !empty($ctx['placementStaffRegistryFilters'])) {
+            if (!empty($ctx['campusWide'])) {
+                return [];
+            }
+            $programmes = $this->departmentProgrammeCodesForFilterScope($ctx) ?? [];
+        } elseif ($program === '') {
+            $programmes = $this->fetchProgramOptions($ctx);
+        } else {
+            $programmes = $this->resolveProgrammeList($program);
+        }
         if ($programmes === []) {
             return [];
         }
@@ -332,7 +449,7 @@ final class PlacementFilterService
         $deptAesId = $this->resolveParentDeptAesId($ctx);
         if ($deptAesId !== '') {
             $deptAesIds = [$deptAesId];
-        } elseif (!empty($ctx['campusWide']) && !empty($ctx['placementStaffRegistryFilters'])) {
+        } elseif (!empty($ctx['campusWide']) && !empty($ctx['placementStaffRegistryFilters']) && $program !== '') {
             $deptAesIds = $this->academicDepartmentAesIds();
         }
         if ($deptAesIds === []) {
@@ -745,10 +862,14 @@ final class PlacementFilterService
      */
     private function appendFilterModeStudInfoRows(array $ctx, array &$rows, array &$seen): void
     {
+        $staffRegistry = !empty($ctx['placementStaffRegistryFilters']);
         $assigned = StaffContext::assignedClassBatches($ctx);
         foreach ($assigned as $batchLabel) {
-            $batchLabel = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $batchLabel));
+            $batchLabel = trim((string) $batchLabel);
             if ($batchLabel === '') {
+                continue;
+            }
+            if ($staffRegistry && !$this->isPlausibleStudClassBatchLabel($batchLabel)) {
                 continue;
             }
             $course = $this->programmeCodeFromBatch($batchLabel);
@@ -767,11 +888,17 @@ final class PlacementFilterService
         if ($deptId !== '') {
             try {
                 foreach ((new StudentPlacementModel())->findDistinctClassBatches($deptId, '', 500) as $batch) {
-                    $batch = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $batch));
+                    $batch = trim((string) $batch);
                     if ($batch === '') {
                         continue;
                     }
+                    if ($staffRegistry && !$this->isPlausibleStudClassBatchLabel($batch)) {
+                        continue;
+                    }
                     $course = $this->programmeCodeFromBatch($batch);
+                    if ($staffRegistry && !$this->programmeMatchesDepartmentFilterScope($course, $ctx)) {
+                        continue;
+                    }
                     $row = [
                         'stud_course' => $course,
                         'stud_branch' => 'Regular',

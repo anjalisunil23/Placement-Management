@@ -18,11 +18,14 @@
       <header class="topbar" id="topbar"></header>
       <main class="page">
 
-        <div class="page-header">
-          <div>
+        <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
+          <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">Placement / higher-education details in <code>student_placements</code>. Filter by department, branch, and batch, or leave them on <strong>All</strong> to browse the full roster. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">This page reads from <code>student_placements</code> only (no live AES load). Use <strong>Sync from AES</strong> when you need to refresh roster shells and placement / higher-education fields from AES for the current filters. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
+          <button type="button" class="btn btn-outline-primary btn-sm flex-shrink-0" id="btnSyncPlacementsFromAes" title="Fetch placement and higher-education data from AES into student_placements">
+            <i class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></i>Sync from AES
+          </button>
         </div>
 
         <div id="classTeacherBanner" class="alert alert-warning py-2 px-3 mb-3 d-none" role="status"></div>
@@ -1226,10 +1229,54 @@
       await loadRegistry();
     }
 
+    async function syncPlacementsFromAes() {
+      const roleLabel = filterStudRole === 'alumni' ? 'Alumni' : 'Student';
+      const lines = [
+        'Sync placement and higher-education data from AES into student_placements for the current filters?',
+        '',
+        'Only placement / higher-education registry fields are updated from AES (not a full student profile sync).',
+        'Large scopes can take several minutes.',
+        '',
+        `Role: ${roleLabel}`,
+        filterDepartmentId ? 'Department: selected' : 'Department: all departments',
+        filterProgram ? `Branch: ${filterProgram}` : 'Branch: all branches',
+        filterBatch ? `Batch: ${filterBatch}` : 'Batch: all batches',
+      ];
+      if (!window.confirm(lines.join('\n'))) {
+        return;
+      }
+      const btn = document.getElementById('btnSyncPlacementsFromAes');
+      const label = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Syncing…';
+      }
+      try {
+        if (typeof StaffApi.clearPlacementsCache === 'function') {
+          StaffApi.clearPlacementsCache();
+        }
+        const res = await StaffApi.syncPlacementsFromAes(currentFilters());
+        if (!res?.success) {
+          toast(res?.message || 'AES sync failed.', 'error');
+          return;
+        }
+        const n = res?.data?.studentsSynced;
+        toast(res.message || (typeof n === 'number' ? `Synced ${n} record(s).` : 'Sync complete.'), 'success');
+        await loadRegistry();
+      } catch (_) {
+        toast('AES sync failed.', 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = label;
+        }
+      }
+    }
+
     async function loadRegistry() {
       const tbody = document.getElementById('registryRows');
       syncDepartmentFilter();
-      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading roster…</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading from student_placements…</td></tr>`;
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
         const detail = (StaffApi._lastPlacementsFetchError || '').trim();
@@ -1314,6 +1361,10 @@
         toast('Could not download offer letter.', 'warn');
       }
     }
+
+    document.getElementById('btnSyncPlacementsFromAes')?.addEventListener('click', () => {
+      syncPlacementsFromAes().catch(() => toast('AES sync failed.', 'error'));
+    });
 
     ['filterDepartment', 'filterStudRole', 'filterProgram', 'filterBatch'].forEach(id => {
       document.getElementById(id)?.addEventListener('change', () => {

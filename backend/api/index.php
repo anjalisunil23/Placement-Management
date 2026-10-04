@@ -409,6 +409,7 @@ $routes = [
     ['GET',  '/staff/students/{id}/pipeline',     [StaffController::class, 'studentPipeline']],
     ['GET',  '/staff/placement-filters',           [StaffController::class, 'placementFilters']],
     ['GET',  '/staff/placements-higher-education', [StaffController::class, 'placementsHigherEducation']],
+    ['POST', '/staff/placements-higher-education/sync-from-aes', [StaffController::class, 'syncPlacementsFromAes']],
     ['GET',  '/staff/students/{id}/self-placement/offer-letter', [StaffController::class, 'downloadSelfPlacementOfferLetter']],
     ['PUT',  '/staff/students/{id}/placement', [StaffController::class, 'updateStudentPlacement']],
     ['POST', '/staff/students/{id}/placement/documents', [StaffController::class, 'uploadStudentPlacementDocuments']],
