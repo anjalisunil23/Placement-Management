@@ -35,13 +35,19 @@ final class StaffPlacementRegistryService
         $officerCtx = StaffContext::officerCompatible($staffCtx);
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
+        $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'student')));
+        $isAlumni = $studRole === 'alumni';
 
         $registry = [];
         // Fast path for a selected class: one AES directory pass for that cohort,
         // merged with local PlaceHub classmates (covers S8/S9 and AES gaps).
         if ($program !== '' && $batch !== '') {
-            $aesClassRows = $this->officerData->listAesClassStudents($officerCtx, $program, $batch, true);
-            $localClassRows = $this->officerData->listLocalClassStudentsForBatch($officerCtx, $batch);
+            $aesClassRows = $isAlumni
+                ? $this->officerData->listAesAlumniClassStudents($officerCtx, $program, $batch, true)
+                : $this->officerData->listAesClassStudents($officerCtx, $program, $batch, true);
+            $localClassRows = $isAlumni
+                ? []
+                : $this->officerData->listLocalClassStudentsForBatch($officerCtx, $batch);
             $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
             $deptId = (string) ($staffCtx['departmentId'] ?? '');
             // Passed-out / AES-absent cohorts live only in student_placements — merge before sync.
@@ -768,31 +774,17 @@ final class StaffPlacementRegistryService
         }
 
         $filterSvc = new PlacementFilterService();
-        $filterCtx = $this->placementFilterCtx($staffCtx);
+        $filterCtx = $this->placementFilterCtx($staffCtx, $filters);
         $branch = trim((string) ($filters['branch'] ?? ''));
         $programs = array_values(array_unique(array_filter(array_merge(
             $filterSvc->fetchProgramOptions($filterCtx),
             $programs
         ))));
         if ($program !== '') {
-            $assigned = StaffContext::assignedClassBatches($staffCtx);
-            if ($assigned === []) {
-                $batches = array_values(array_unique(array_filter(array_merge(
-                    $filterSvc->fetchBatchOptions($filterCtx, $program, $branch, false),
-                    $batches
-                ))));
-            } else {
-                $batches = array_values(array_unique(array_filter(
-                    $batches,
-                    static fn (string $b): bool => StaffContext::classBatchMatchesAssigned($b, $assigned)
-                )));
-                foreach ($assigned as $label) {
-                    $label = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $label));
-                    if ($label !== '' && !in_array($label, $batches, true)) {
-                        $batches[] = $label;
-                    }
-                }
-            }
+            $batches = array_values(array_unique(array_filter(array_merge(
+                $filterSvc->fetchBatchOptions($filterCtx, $program, $branch, false),
+                $batches
+            ))));
         }
 
         sort($programs, SORT_STRING);
@@ -814,7 +806,7 @@ final class StaffPlacementRegistryService
     private function buildFilterOptions(array $staffCtx, array $filters = []): array
     {
         $filterSvc = new PlacementFilterService();
-        $filterCtx = $this->placementFilterCtx($staffCtx);
+        $filterCtx = $this->placementFilterCtx($staffCtx, $filters);
         $program = trim((string) ($filters['program'] ?? ''));
         $branch = trim((string) ($filters['branch'] ?? ''));
 
@@ -838,9 +830,19 @@ final class StaffPlacementRegistryService
      * @param array<string, mixed> $staffCtx
      * @return array<string, mixed>
      */
-    private function placementFilterCtx(array $staffCtx): array
+    /**
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
+     * @return array<string, mixed>
+     */
+    private function placementFilterCtx(array $staffCtx, array $filters = []): array
     {
-        return array_merge(StaffContext::officerCompatible($staffCtx), ['filterMode' => true]);
+        $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'student')));
+
+        return array_merge(StaffContext::officerCompatible($staffCtx), [
+            'filterMode' => true,
+            'placementStudRole' => $studRole === 'alumni' ? 'alumni' : 'student',
+        ]);
     }
 
     /**

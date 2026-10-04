@@ -1176,6 +1176,114 @@ final class OfficerDataService
     }
 
     /**
+     * Alumni directory rows for a staff/officer department scope (AES stud_role).
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<array<string, mixed>>
+     */
+    public function listAlumniDirectoryRecordsForScope(array $ctx): array
+    {
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+
+        return $this->fetchAesAlumniDirectoryRecords($deptAesId, $campusWide);
+    }
+
+    /**
+     * Alumni class roster for Placements &amp; Higher Ed (passed-out AES rows).
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAesAlumniClassStudents(
+        array $ctx,
+        string $programme,
+        string $batch,
+        bool $matchCohort = false
+    ): array {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        $batch = trim($batch);
+        if ($programme === '' || $batch === '') {
+            return [];
+        }
+
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
+        $wantCohort = ClassInchargeRegistry::cohortKey($batch);
+        $rows = [];
+        $seen = [];
+
+        foreach ($this->listAlumniDirectoryRecordsForScope($ctx) as $record) {
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? ''
+            )));
+            if ($admno === '') {
+                continue;
+            }
+
+            $local = null;
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            $rowBatch = trim((string) ($row['classBatch'] ?? $record['stud_class'] ?? ''));
+            if (!$this->classBatchMatchesSelection($rowBatch, $batch, $matchCohort, $wantCohort)) {
+                continue;
+            }
+            if (!$matchCohort) {
+                $rowProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+                    $row['stud_course'] ?? $row['programme'] ?? ''
+                ));
+                $wantProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+                if ($wantProgramme !== '' && $rowProgramme !== '' && strcasecmp($rowProgramme, $wantProgramme) !== 0) {
+                    continue;
+                }
+            }
+
+            $key = $this->normalizeStudentAdmnoKey((string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = $row;
+        }
+
+        usort(
+            $rows,
+            static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['displayName'] ?? $a['registerNumber'] ?? ''),
+                (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
+            )
+        );
+
+        return $rows;
+    }
+
+    /**
      * Complete AES roster for one programme / branch (MCA, INMCA, CS, …),
      * without requiring a class/batch selection. Includes every studying
      * student in that programme, not only final-year rows.

@@ -254,6 +254,7 @@ const StaffApi = {
     if (params.departmentId) qs.set('departmentId', params.departmentId);
     if (params.program) qs.set('program', params.program);
     if (params.branch) qs.set('branch', params.branch);
+    if (params.studRole) qs.set('studRole', params.studRole);
     const q = qs.toString();
     const cacheKey = 'ph_staff_placement_filters_' + q;
     try {
@@ -277,7 +278,7 @@ const StaffApi = {
 
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
-    ['departmentId', 'program', 'branch', 'batch', 'type', 'q'].forEach(k => {
+    ['departmentId', 'program', 'branch', 'batch', 'studRole', 'type', 'q'].forEach(k => {
       if (params[k]) qs.set(k, params[k]);
     });
     const q = qs.toString();

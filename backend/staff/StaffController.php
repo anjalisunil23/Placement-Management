@@ -370,7 +370,11 @@ final class StaffController
         StaffContext::requireDepartmentScope($ctx);
         $program = trim((string) ($_GET['program'] ?? ''));
         $branch = trim((string) ($_GET['branch'] ?? ''));
-        $filterCtx = array_merge(StaffContext::officerCompatible($ctx), ['filterMode' => true]);
+        $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'student')));
+        $filterCtx = array_merge(StaffContext::officerCompatible($ctx), [
+            'filterMode' => true,
+            'placementStudRole' => $studRole === 'alumni' ? 'alumni' : 'student',
+        ]);
         $svc = new PlacementFilterService();
         $assigned = StaffContext::assignedClassBatches($filterCtx);
         if ($assigned === []) {
@@ -392,11 +396,12 @@ final class StaffController
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
         $filters = [
-            'program' => (string) ($_GET['program'] ?? ''),
-            'branch'  => (string) ($_GET['branch'] ?? ''),
-            'batch'   => (string) ($_GET['batch'] ?? ''),
-            'type'    => (string) ($_GET['type'] ?? ''),
-            'q'       => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+            'program'  => (string) ($_GET['program'] ?? ''),
+            'branch'   => (string) ($_GET['branch'] ?? ''),
+            'batch'    => (string) ($_GET['batch'] ?? ''),
+            'studRole' => (string) ($_GET['studRole'] ?? 'student'),
+            'type'     => (string) ($_GET['type'] ?? ''),
+            'q'        => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
         ];
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->list($ctx, $filters)

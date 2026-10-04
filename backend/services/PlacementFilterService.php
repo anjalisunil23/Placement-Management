@@ -77,7 +77,9 @@ final class PlacementFilterService
     {
         $programmes = $this->distinctFieldFromScopedRows($ctx, 'stud_course', '', '');
         $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId !== '' && empty($ctx['filterMode'])) {
+        $enrichFromAes = $deptAesId !== ''
+            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']));
+        if ($enrichFromAes) {
             try {
                 $programmes = array_merge(
                     $programmes,
@@ -144,7 +146,9 @@ final class PlacementFilterService
 
         $branches = $this->distinctFieldFromScopedRows($ctx, 'stud_branch', $program, '');
         $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId !== '' && empty($ctx['filterMode'])) {
+        $enrichFromAes = $deptAesId !== ''
+            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']));
+        if ($enrichFromAes) {
             try {
                 $branches = array_merge(
                     $branches,
@@ -173,6 +177,16 @@ final class PlacementFilterService
     {
         $branch = trim($branch);
         $program = trim($program);
+
+        if ($this->placementStudRole($ctx) === 'alumni') {
+            $batches = $this->distinctAlumniClassBatches($ctx, $program, $branch);
+            $batches = $this->dedupeBatchLabelsByCohort(array_values(array_unique($batches)));
+            $batches = $this->sortLabels($batches);
+
+            return $finalYearOnly
+                ? $this->preferSpecificFinalYearBatches($batches)
+                : $batches;
+        }
 
         $batches = [];
         if ($program === '') {
@@ -204,7 +218,9 @@ final class PlacementFilterService
 
         $batches = $this->dedupeBatchLabelsByCohort(array_values(array_unique($batches)));
         $batches = $this->sortLabels($batches);
-        $batches = $this->restrictBatchOptionsToStaffAssignment($ctx, $batches, $program, $branch);
+        if (empty($ctx['filterMode'])) {
+            $batches = $this->restrictBatchOptionsToStaffAssignment($ctx, $batches, $program, $branch);
+        }
         if (!$finalYearOnly) {
             return $batches;
         }
@@ -245,6 +261,87 @@ final class PlacementFilterService
     }
 
     /**
+     * @param array<string, mixed> $ctx
+     */
+    private function placementStudRole(array $ctx): string
+    {
+        $role = strtolower(trim((string) ($ctx['placementStudRole'] ?? 'student')));
+
+        return $role === 'alumni' ? 'alumni' : 'student';
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function distinctAlumniClassBatches(array $ctx, string $program, string $branch): array
+    {
+        $batches = [];
+        foreach ((new OfficerDataService())->listAlumniDirectoryRecordsForScope($ctx) as $record) {
+            $batch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+            if ($batch === '') {
+                continue;
+            }
+            $course = $this->normalizeProgrammeForClass(
+                (string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? ''),
+                $batch
+            );
+            $row = [
+                'stud_course' => $course,
+                'stud_branch' => trim((string) ($record['stud_branch'] ?? '')) ?: 'Regular',
+                'stud_class' => $batch,
+            ];
+            if (!$this->rowMatchesProgramme($row, $program)) {
+                continue;
+            }
+            if ($branch !== '' && strcasecmp($row['stud_branch'], $branch) !== 0) {
+                continue;
+            }
+            $batches[] = $batch;
+        }
+
+        $deptId = trim((string) ($ctx['departmentId'] ?? ''));
+        if ($deptId !== '') {
+            try {
+                $batches = array_merge(
+                    $batches,
+                    (new StudentPlacementModel())->findDistinctClassBatches($deptId, $program)
+                );
+            } catch (\Throwable) {
+                // optional table
+            }
+        }
+
+        return $batches;
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @param list<array{stud_course:string,stud_branch:string,stud_class:string}> $rows
+     * @param array<string, true> $seen
+     */
+    private function appendAlumniDirectoryFilterRows(array $ctx, array &$rows, array &$seen): void
+    {
+        foreach ((new OfficerDataService())->listAlumniDirectoryRecordsForScope($ctx) as $record) {
+            $batch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+            $course = $this->normalizeProgrammeForClass(
+                (string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? ''),
+                $batch
+            );
+            if ($course === '' && $batch === '') {
+                continue;
+            }
+            $branch = trim((string) ($record['stud_branch'] ?? ''));
+            $row = [
+                'stud_course' => $course,
+                'stud_branch' => $branch !== '' ? $branch : 'Regular',
+                'stud_class' => $batch,
+            ];
+            $this->pushStudInfoRow($row, $rows, $seen);
+        }
+    }
+
+    /**
      * Class teachers / co-class teachers: only their assigned batches, not whole-dept AES lists.
      *
      * @param array<string, mixed> $ctx
@@ -257,7 +354,7 @@ final class PlacementFilterService
         string $program,
         string $branch
     ): array {
-        if (empty($ctx['staffScope'])) {
+        if (!empty($ctx['filterMode']) || empty($ctx['staffScope'])) {
             return $batches;
         }
 
@@ -402,7 +499,7 @@ final class PlacementFilterService
         $filterMode = !empty($ctx['filterMode']);
         $cacheKey = (string) ($ctx['departmentId'] ?? '');
         if ($filterMode) {
-            $cacheKey .= '|filter';
+            $cacheKey .= '|filter|' . $this->placementStudRole($ctx);
         }
         if ($cacheKey !== '' && isset(self::$scopedRowsCache[$cacheKey]) && self::$scopedRowsCache[$cacheKey] !== []) {
             return self::$scopedRowsCache[$cacheKey];
@@ -415,11 +512,14 @@ final class PlacementFilterService
 
         if ($filterMode) {
             $this->appendFilterModeStudInfoRows($ctx, $rows, $seen);
+            if ($this->placementStudRole($ctx) === 'alumni') {
+                $this->appendAlumniDirectoryFilterRows($ctx, $rows, $seen);
+            }
         }
 
         $api = new AesApiService();
         $deptAesId = $this->resolveParentDeptAesId($ctx);
-        if ($deptAesId !== '' && !$filterMode) {
+        if ($deptAesId !== '' && !$filterMode && $this->placementStudRole($ctx) !== 'alumni') {
             try {
                 foreach ($api->fetchAllStudInfo4Placement(['stud_deptcode' => $deptAesId], true) as $record) {
                     $recordDept = trim((string) ($record['stud_deptcode'] ?? ''));
