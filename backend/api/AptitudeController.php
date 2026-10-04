@@ -274,8 +274,17 @@ final class AptitudeController
         if (isset($_FILES['manual']) && is_array($_FILES['manual']) && ($_FILES['manual']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
             $file = $_FILES['manual'];
         }
+        $saveTarget = trim((string) ($_POST['saveTarget'] ?? 'bank'));
         Response::success(
-            $this->service->uploadJdQuestionManual($user, $companyId, $jdTitle, $manualText, $file, $companyName),
+            $this->service->uploadJdQuestionManual(
+                $user,
+                $companyId,
+                $jdTitle,
+                $manualText,
+                $file,
+                $companyName,
+                $saveTarget
+            ),
             'Question manual saved.'
         );
     }

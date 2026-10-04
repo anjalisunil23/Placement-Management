@@ -1683,6 +1683,12 @@
     }
   }
 
+  function getManualJdSaveTarget() {
+    const picked = document.querySelector('input[name="aptManualSaveTarget"]:checked');
+    const value = String(picked?.value || 'bank').toLowerCase();
+    return ['bank', 'problem', 'both'].includes(value) ? value : 'bank';
+  }
+
   function resetManualJdUploadForm() {
     document.getElementById('aptManualJdTitle').value = '';
     document.getElementById('aptManualJdText').value = '';
@@ -1691,6 +1697,8 @@
     const dateEl = document.getElementById('aptManualJdTitleDate');
     if (addDateEl) addDateEl.checked = false;
     if (dateEl) dateEl.value = todayIsoDate();
+    const bankRadio = document.getElementById('aptManualTargetBank');
+    if (bankRadio) bankRadio.checked = true;
     updateManualJdTitleDateUi();
   }
 
@@ -1713,6 +1721,7 @@
     const companyId = String(sel?.value || '').trim();
     const companyName = sel?.selectedOptions?.[0]?.textContent?.trim() || '';
     const titleState = getManualJdTitleFormState();
+    const saveTarget = getManualJdSaveTarget();
     const manualText = (document.getElementById('aptManualJdText')?.value || '').trim();
     const file = document.getElementById('aptManualJdFile')?.files?.[0] || null;
     if (!companyId) {
@@ -1768,7 +1777,7 @@
           questions: [],
         });
         saveDemoJdStore(store);
-        toast(`Saved manual to Company Block: ${companyName} · ${titleState.jdTitle}`, 'success');
+        toast(`Saved manual (demo): ${companyName} · ${titleState.jdTitle}`, 'success');
         aptJdManualModal?.hide();
         await loadJdLibrary();
         if (jdSelectedCompanyId) {
@@ -1781,22 +1790,36 @@
       fd.append('companyId', companyId);
       fd.append('companyName', companyName);
       fd.append('jdTitle', titleState.jdTitle);
+      fd.append('saveTarget', saveTarget);
       if (manualText) fd.append('manualText', manualText);
       if (file) fd.append('manual', file);
       const res = await api('/aptitude/jd-sets/upload-manual', { method: 'POST', body: fd });
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
       const count = res.data?.questionCount ?? 0;
-      toast(
-        count > 0
-          ? `Saved ${count} parsed question(s) and manual to ${titleState.jdTitle}.`
-          : `Saved manual to company card: ${titleState.jdTitle}.`,
-        'success'
-      );
+      const testId = String(res.data?.testId || '');
+      let msg = `Saved manual to ${titleState.jdTitle}.`;
+      if (saveTarget === 'bank' || saveTarget === 'both') {
+        msg = count > 0
+          ? `Saved ${count} question(s) to company question bank.`
+          : `Saved manual to company question bank (no MCQs parsed).`;
+      }
+      if (saveTarget === 'problem' || saveTarget === 'both') {
+        msg = testId
+          ? `${msg} Created unpublished company test.`
+          : `${msg} Could not create company test.`;
+      }
+      toast(msg.trim(), 'success');
       delete jdSetDetailsCache[String(res.data?.id || '')];
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();
       await loadJdLibrary();
+      if (testId) {
+        await loadTests().catch(() => {});
+      }
       if (jdSelectedCompanyId) {
+        if (saveTarget === 'problem' || saveTarget === 'both') {
+          applyAdminJdBlockView('tests');
+        }
         showJdCompanyDetail(jdSelectedCompanyId);
       }
     } catch (err) {

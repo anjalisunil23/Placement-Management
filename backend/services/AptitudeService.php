@@ -660,7 +660,8 @@ final class AptitudeService
         string $jdTitle,
         string $manualText = '',
         ?array $file = null,
-        ?string $companyName = null
+        ?string $companyName = null,
+        string $saveTarget = 'bank'
     ): array {
         AptitudeAccessService::requireManager($admin);
         $jdTitle = trim($jdTitle);
@@ -703,8 +704,22 @@ final class AptitudeService
 
         $parsed = (new AptitudeManualQuestionParser())->parse($extracted);
 
+        $saveTarget = strtolower(trim($saveTarget));
+        if (!in_array($saveTarget, ['bank', 'problem', 'both'], true)) {
+            $saveTarget = 'bank';
+        }
+        $toProblem = $saveTarget === 'problem' || $saveTarget === 'both';
+
+        if ($toProblem && $parsed === []) {
+            Response::error(
+                'Problems need at least one parseable MCQ (numbered question with A–D options). '
+                . 'Choose Question bank only to save the manual file without a test.',
+                422
+            );
+        }
+
         try {
-            return (new \PMS\Models\AptitudeJdQuestionSetModel())->createManualSet(
+            $setDetail = (new \PMS\Models\AptitudeJdQuestionSetModel())->createManualSet(
                 $jdTitle,
                 $parsed,
                 (string) ($admin['_id'] ?? $admin['id'] ?? ''),
@@ -716,12 +731,81 @@ final class AptitudeService
                 $jdMimeType,
                 $extracted !== '' ? $extracted : null
             );
+
+            $testView = null;
+            if ($toProblem) {
+                $testView = $this->createCompanyProblemTestFromJdSet($admin, $setDetail, $jdTitle);
+            }
+
+            return [
+                'set' => $setDetail,
+                'id' => (string) ($setDetail['id'] ?? ''),
+                'questionCount' => (int) ($setDetail['questionCount'] ?? count($parsed)),
+                'saveTarget' => $saveTarget,
+                'test' => $testView,
+                'testId' => $testView !== null ? (string) ($testView['id'] ?? '') : '',
+            ];
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         } catch (\Throwable $e) {
             error_log('[PMS Aptitude] manual JD save failed: ' . $e->getMessage());
             Response::error('Could not save question manual.', 500);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $jdSetDetail
+     * @return array<string, mixed>
+     */
+    private function createCompanyProblemTestFromJdSet(array $admin, array $jdSetDetail, string $testTitle): array
+    {
+        $setId = trim((string) ($jdSetDetail['id'] ?? ''));
+        $companyId = trim((string) ($jdSetDetail['companyId'] ?? ''));
+        $companyName = trim((string) ($jdSetDetail['companyName'] ?? ''));
+        $questions = array_values(array_filter((array) ($jdSetDetail['questions'] ?? []), 'is_array'));
+        if ($setId === '' || $companyId === '' || $questions === []) {
+            throw new \InvalidArgumentException('Could not create a company test from this manual.');
+        }
+
+        $selectedIds = [];
+        foreach ($questions as $q) {
+            $qid = trim((string) ($q['id'] ?? ''));
+            if ($qid !== '') {
+                $selectedIds[] = $qid;
+            }
+        }
+        if ($selectedIds === []) {
+            throw new \InvalidArgumentException('Could not create a company test from this manual.');
+        }
+
+        $count = count($selectedIds);
+        $category = trim((string) ($questions[0]['category'] ?? 'General Aptitude')) ?: 'General Aptitude';
+        $jdTitle = trim((string) ($jdSetDetail['jdTitle'] ?? $testTitle));
+
+        return $this->createTest($admin, [
+            'title' => trim($testTitle) !== '' ? trim($testTitle) : $jdTitle,
+            'description' => 'Created from uploaded question manual.',
+            'testKind' => 'company',
+            'companyId' => $companyId,
+            'companyName' => $companyName,
+            'contestType' => 'none',
+            'questionSource' => 'manual',
+            'status' => 'unpublished',
+            'questionCount' => $count,
+            'durationMinutes' => max(30, min(180, $count * 2)),
+            'category' => $category,
+            'jdFilterRules' => [[
+                'jdSetId' => $setId,
+                'jdTitle' => $jdTitle,
+                'count' => $count,
+                'marks' => 1,
+                'selectedQuestionIds' => $selectedIds,
+            ]],
+            'questions' => [],
+            'bankQuestionIds' => [],
+            'randomRules' => [],
+            'bankFilterRules' => [],
+        ]);
     }
 
     /**
