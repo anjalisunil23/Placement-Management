@@ -1917,6 +1917,42 @@ final class OfficerDataService
     }
 
     /**
+     * Last manual AES sync metadata for admin Students page (campus studying directory).
+     *
+     * @return array{syncedAt: ?string, recordCount: int, hasSnapshot: bool}
+     */
+    public function getCampusStudyingDirectorySyncMeta(): array
+    {
+        $payload = $this->readCampusStudyingDirectorySnapshotPayload();
+        $records = is_array($payload['records'] ?? null) ? $payload['records'] : [];
+
+        return [
+            'syncedAt'    => isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : null,
+            'recordCount' => count($records),
+            'hasSnapshot' => $records !== [],
+        ];
+    }
+
+    /**
+     * Pull campus studying students from AES and persist for offline Students tab loads.
+     *
+     * @return array{syncedAt: string, recordCount: int}
+     */
+    public function syncCampusStudyingDirectoryFromAes(string $adminUserId): array
+    {
+        $this->boostMemoryForAesDirectoryLoad();
+        $records = $this->fetchLiveCampusStudyingDirectoryRecords();
+        $syncedAt = DocumentHelper::now();
+        $this->writeCampusStudyingDirectorySnapshot($records, $adminUserId, $syncedAt);
+        unset(self::$aesDirectoryCache['campus:studRoleStudent']);
+
+        return [
+            'syncedAt'    => $syncedAt,
+            'recordCount' => count($records),
+        ];
+    }
+
+    /**
      * Final-year students for a scope: campus-wide (admin) or department (PO/staff).
      * Merges AES directory rows with PlaceHub students so policyAccepted is accurate.
      *
@@ -1977,6 +2013,11 @@ final class OfficerDataService
                 (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
             )
         );
+
+        $rows = array_values(array_filter(
+            $rows,
+            static fn (array $row): bool => AesApiService::normalizeStudRole($row) !== 'alumni'
+        ));
 
         return $this->filterStudentRows($rows, $query);
     }
@@ -2524,35 +2565,38 @@ final class OfficerDataService
 
     private function fetchAesDirectoryRecords(string $deptAesId, bool $campusWide): array
     {
-        $cacheKey = $campusWide ? 'campus' : ('dept:' . $deptAesId);
+        $cacheKey = ($campusWide ? 'campus' : ('dept:' . $deptAesId)) . ':studRoleStudent';
         if (isset(self::$aesDirectoryCache[$cacheKey])) {
             return self::$aesDirectoryCache[$cacheKey];
         }
 
-        $api = new AesApiService();
-        if (!$campusWide) {
-            $params = [];
-            if ($deptAesId !== '') {
-                $params['stud_deptcode'] = $deptAesId;
-            }
-            try {
-                $records = $api->fetchAllStudInfo4Placement($params, true);
-                // Do not loop stud_course aliases (BCA/INMCA/MCAINT/MCA): AES returns
-                // the same large directory for each, wasting several seconds per load.
+        if ($campusWide) {
+            $records = $this->readCampusStudyingDirectorySnapshotRecords();
 
-                return self::$aesDirectoryCache[$cacheKey] = $records;
-            } catch (\Throwable) {
-                return self::$aesDirectoryCache[$cacheKey] = [];
-            }
+            return self::$aesDirectoryCache[$cacheKey] = $records;
         }
 
+        $api = new AesApiService();
+        $params = [];
+        if ($deptAesId !== '') {
+            $params['stud_deptcode'] = $deptAesId;
+        }
+
+        return self::$aesDirectoryCache[$cacheKey] = $this->fetchAesStudyingDirectoryRecords($api, $params);
+    }
+
+    /**
+     * Live AES fetch for admin manual sync (campus-wide, stud_role = Student).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function fetchLiveCampusStudyingDirectoryRecords(): array
+    {
+        $api = new AesApiService();
         $merged = [];
         $seen = [];
-        $append = static function (array $records) use (&$merged, &$seen): void {
-            foreach ($records as $record) {
-                if (!is_array($record)) {
-                    continue;
-                }
+        $append = function (array $records) use (&$merged, &$seen): void {
+            foreach ($this->filterAesStudyingDirectoryRecords($records) as $record) {
                 $key = strtoupper(trim((string) (
                     $record['admno']
                     ?? $record['stud_admno']
@@ -2568,30 +2612,159 @@ final class OfficerDataService
             }
         };
 
-        try {
-            $append($api->fetchAllStudInfo4Placement([], true));
-        } catch (\Throwable) {
-            // Fall through to per-department fetch.
+        foreach ($this->aesStudyingStudRoleParamValues() as $role) {
+            try {
+                $append($api->fetchAllStudInfo4Placement(['stud_role' => $role], true));
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($merged !== []) {
+                break;
+            }
         }
 
-        // Campus-wide already has a full directory from the empty-params call above.
-        // Only fetch per-department when that returned nothing — never re-hit AES
-        // with stud_course aliases (same payload, wasted seconds).
         if ($merged === []) {
             foreach ($this->campusParentDeptAesIds() as $aesId) {
-                try {
-                    $append($api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId], true));
-                } catch (\Throwable) {
-                    continue;
+                $append($this->fetchAesStudyingDirectoryRecords($api, ['stud_deptcode' => $aesId]));
+                if ($merged !== []) {
+                    break;
                 }
             }
         }
 
-        return self::$aesDirectoryCache[$cacheKey] = $merged;
+        return $merged;
     }
 
     /**
-     * stud_role values for getAllStudInfo4Placement alumni directory (AES uses "admin" for pass-outs).
+     * @return list<array<string, mixed>>
+     */
+    private function readCampusStudyingDirectorySnapshotRecords(): array
+    {
+        $payload = $this->readCampusStudyingDirectorySnapshotPayload();
+        $records = $payload['records'] ?? [];
+
+        return is_array($records) ? $records : [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function readCampusStudyingDirectorySnapshotPayload(): array
+    {
+        $path = $this->campusStudyingDirectorySnapshotPath();
+        if (!is_file($path)) {
+            return [];
+        }
+
+        $raw = @file_get_contents($path);
+        if (!is_string($raw) || $raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     */
+    private function writeCampusStudyingDirectorySnapshot(array $records, string $adminUserId, string $syncedAt): void
+    {
+        $path = $this->campusStudyingDirectorySnapshotPath();
+        $payload = [
+            'syncedAt'    => $syncedAt,
+            'syncedBy'    => $adminUserId,
+            'recordCount' => count($records),
+            'records'     => array_values($records),
+        ];
+        $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+        if (!is_string($json)) {
+            throw new \RuntimeException('Could not encode AES directory snapshot.');
+        }
+
+        if (@file_put_contents($path, $json, LOCK_EX) === false) {
+            throw new \RuntimeException('Could not save AES directory snapshot.');
+        }
+    }
+
+    private function campusStudyingDirectorySnapshotPath(): string
+    {
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_aes_campus_studying_directory.json';
+    }
+
+    /**
+     * @param array<string, scalar|null> $baseParams
+     * @return list<array<string, mixed>>
+     */
+    private function fetchAesStudyingDirectoryRecords(AesApiService $api, array $baseParams): array
+    {
+        foreach ($this->aesStudyingStudRoleParamValues() as $role) {
+            try {
+                $records = $api->fetchAllStudInfo4Placement(
+                    array_merge($baseParams, ['stud_role' => $role]),
+                    true
+                );
+                if ($records !== []) {
+                    return $this->filterAesStudyingDirectoryRecords($records);
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        try {
+            $records = $api->fetchAllStudInfo4Placement($baseParams, true);
+
+            return $this->filterAesStudyingDirectoryRecords($records);
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     * @return list<array<string, mixed>>
+     */
+    private function filterAesStudyingDirectoryRecords(array $records): array
+    {
+        $out = [];
+        foreach ($records as $record) {
+            if (!is_array($record) || !$this->isAesStudyingStudent($record)) {
+                continue;
+            }
+            $out[] = $record;
+        }
+
+        return $out;
+    }
+
+    /**
+     * stud_role query values for current students (AES: Student).
+     *
+     * @return list<string>
+     */
+    private function aesStudyingStudRoleParamValues(): array
+    {
+        $custom = trim((string) getenv('AES_STUDYING_STUD_ROLE'));
+        if ($custom !== '') {
+            $parts = preg_split('/[,;|]/', $custom) ?: [];
+            $out = [];
+            foreach ($parts as $part) {
+                $part = trim((string) $part);
+                if ($part !== '') {
+                    $out[] = $part;
+                }
+            }
+
+            return $out !== [] ? $out : ['Student'];
+        }
+
+        return ['Student', 'student'];
+    }
+
+    /**
+     * stud_role query values for alumni directory (AES: Alumni).
      *
      * @return list<string>
      */
@@ -2608,34 +2781,28 @@ final class OfficerDataService
                 }
             }
 
-            return $out !== [] ? $out : ['admin'];
+            return $out !== [] ? $out : ['Alumni'];
         }
 
-        return ['alumni', 'admin'];
+        return ['Alumni', 'alumni'];
     }
 
     /**
-     * Admin Alumni tab / staff alumni filters — drop current students from mixed AES directory payloads.
+     * Admin Alumni tab / staff alumni filters — AES stud_role = Alumni only.
      *
      * @param array<string, mixed> $record
      */
     private function recordQualifiesForAlumniTab(array $record): bool
     {
-        $studRole = strtolower(trim((string) ($record['stud_role'] ?? '')));
-        if (in_array($studRole, ['student', 'stud'], true)) {
-            return false;
-        }
-        if (in_array($studRole, ['alumni', 'alumnus'], true)) {
+        $role = AesApiService::normalizeStudRole($record);
+        if ($role === 'alumni') {
             return true;
         }
-        if ($studRole === 'admin' && $this->isAesAlumniDirectoryRecord($record)) {
-            return true;
-        }
-        if ($this->isAesStudyingStudent($record)) {
+        if ($role === 'student') {
             return false;
         }
 
-        return $this->isAesAlumniDirectoryRecord($record);
+        return false;
     }
 
     /**
@@ -2844,11 +3011,11 @@ final class OfficerDataService
      */
     private function isAesStudyingStudent(array $record): bool
     {
-        $studRole = strtolower(trim((string) ($record['stud_role'] ?? '')));
-        if (in_array($studRole, ['student', 'stud'], true)) {
+        $role = AesApiService::normalizeStudRole($record);
+        if ($role === 'student') {
             return true;
         }
-        if ($studRole !== '' && in_array($studRole, ['alumni', 'alumnus'], true)) {
+        if ($role === 'alumni') {
             return false;
         }
 
@@ -2877,16 +3044,11 @@ final class OfficerDataService
      */
     private function isAesAlumniDirectoryRecord(array $record): bool
     {
-        $studRole = strtolower(trim((string) ($record['stud_role'] ?? '')));
-        if ($studRole !== '') {
-            foreach ($this->aesAlumniStudRoleParamValues() as $allowed) {
-                if ($studRole === strtolower($allowed)) {
-                    return true;
-                }
-            }
+        $role = AesApiService::normalizeStudRole($record);
+        if ($role === 'alumni') {
+            return true;
         }
-
-        if ($this->isAesStudyingStudent($record)) {
+        if ($role === 'student') {
             return false;
         }
 
@@ -3172,6 +3334,7 @@ final class OfficerDataService
             return null;
         }
         $register = $admno;
+        $studRole = AesApiService::normalizeStudRole($record);
 
         // getStudInfo4Placement is authoritative for the student's full name.
         $name = trim((string) ($record['stud_name'] ?? $record['name'] ?? ''));
@@ -3221,6 +3384,10 @@ final class OfficerDataService
         $row['admno'] = $admno;
         if ($regNo !== '') {
             $row['registerno'] = $regNo;
+        }
+        if ($studRole !== null) {
+            $row['studRole'] = $studRole;
+            $row['stud_role'] = $studRole === 'alumni' ? 'Alumni' : 'Student';
         }
         $row['displayName'] = $name !== '' ? $name : (string) ($row['displayName'] ?? $register);
         $row['classBatch'] = $classBatch !== '' ? $classBatch : (string) ($row['classBatch'] ?? '');

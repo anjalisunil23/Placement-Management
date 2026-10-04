@@ -1365,7 +1365,7 @@ final class AdminController
         ));
     }
 
-    /** GET /api/admin/students/allfinal-year — campus-wide AES getAllStudInfo4Placement + student table */
+    /** GET /api/admin/students/allfinal-year — campus snapshot + local student table (no live AES) */
     public function listFinalYearStudents(): void
     {
         RBACMiddleware::requireAdmin();
@@ -1373,6 +1373,26 @@ final class AdminController
         Response::success(
             (new OfficerDataService())->listCampusFinalYearStudents($query !== '' ? $query : null)
         );
+    }
+
+    /** GET /api/admin/students/aes-directory-sync — last campus AES sync metadata */
+    public function campusStudyingDirectorySyncMeta(): void
+    {
+        RBACMiddleware::requireAdmin();
+        Response::success((new OfficerDataService())->getCampusStudyingDirectorySyncMeta());
+    }
+
+    /** POST /api/admin/students/aes-directory-sync — pull studying students from AES into local snapshot */
+    public function syncCampusStudyingDirectoryFromAes(): void
+    {
+        $admin = RBACMiddleware::requireAdmin();
+        try {
+            $result = (new OfficerDataService())->syncCampusStudyingDirectoryFromAes((string) ($admin['_id'] ?? ''));
+        } catch (\Throwable $e) {
+            Response::error($e->getMessage() !== '' ? $e->getMessage() : 'AES sync failed.', 502);
+        }
+
+        Response::success($result, 'Student directory synced from AES.');
     }
 
     /** GET /api/admin/students/alumni — campus-wide alumni from AES getAllStudInfo4Placement */

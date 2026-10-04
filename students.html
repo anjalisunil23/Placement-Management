@@ -63,6 +63,12 @@
     <h1 class="page-title">Students</h1>
     <p class="page-sub" id="pageSub" hidden></p>
   </div>
+  <div class="d-none d-flex flex-wrap align-items-center justify-content-end gap-2" id="aesDirectorySyncTools">
+    <span class="small text-muted-2 text-end" id="aesDirectorySyncStatus">AES directory not synced yet.</span>
+    <button type="button" class="btn btn-outline-primary btn-sm" id="btnSyncStudentsFromAes">
+      <i class="bi bi-cloud-download me-1"></i>Sync students from AES
+    </button>
+  </div>
 </div>
 
 <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto" role="tablist" id="mainTabs">
@@ -893,7 +899,7 @@
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js"></script>
 <script src="js/staff-api.js?v=20260723perf"></script>
-<script src="js/admin-api.js?v=20261003alumnitab"></script>
+<script src="js/admin-api.js?v=20261004aessync"></script>
 <script src="js/officer-api.js?v=20260920pca"></script>
 <script src="js/api.js?v=20260926sync"></script>
 <script src="js/app.js?v=20261001mcqroles"></script>
@@ -912,6 +918,11 @@ const canViewAlumni = isAdminRole;
 const canManageVolunteers = isAdminRole || role === 'placement_officer' || isHodRole;
 const canViewStaffPolicy = false; // replaced by department Registered / Non-registered tabs
 const canUseFindStudent = false; // Find Student removed from placement officer module
+const canSyncCampusAesDirectory = isAdminRole;
+
+if (canSyncCampusAesDirectory) {
+  document.getElementById('aesDirectorySyncTools')?.classList.replace('d-none', 'd-flex');
+}
 
 if (!(role === 'admin' || role === 'placement_officer' || role === 'staff' || isHodRole)) {
   toast('You do not have access to this page.', 'warn');
@@ -2226,6 +2237,66 @@ document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', (e) => {
 let finalYearStudentsAll = [];
 let finalYearLoaded = false;
 let finalYearSearchTimer = null;
+let campusAesDirectoryMeta = { hasSnapshot: false, syncedAt: null, recordCount: 0 };
+
+function formatCampusAesDirectorySyncStatus(meta) {
+  if (!meta?.hasSnapshot) {
+    return 'AES directory not synced yet.';
+  }
+  const d = meta.syncedAt ? new Date(meta.syncedAt) : null;
+  const when = d && !Number.isNaN(d.getTime())
+    ? d.toLocaleString()
+    : String(meta.syncedAt || '').trim();
+  const count = Number(meta.recordCount ?? 0);
+  return when !== ''
+    ? `${count} AES students · last sync ${when}`
+    : `${count} AES students synced`;
+}
+
+async function refreshCampusAesDirectorySyncStatus() {
+  if (!canSyncCampusAesDirectory || typeof AdminApi === 'undefined') return;
+  const meta = await AdminApi.fetchCampusAesDirectorySyncMeta();
+  if (meta) campusAesDirectoryMeta = meta;
+  const el = document.getElementById('aesDirectorySyncStatus');
+  if (el) el.textContent = formatCampusAesDirectorySyncStatus(campusAesDirectoryMeta);
+}
+
+async function runCampusAesDirectorySync() {
+  if (!canSyncCampusAesDirectory || typeof AdminApi === 'undefined') return;
+  if (!(await requireWriteSession())) return;
+  if (!(await confirmAction({
+    title: 'Sync students from AES',
+    message: 'Download the latest campus student directory from AES? This may take a minute and replaces the cached list used on Registered / Non-Registered tabs.',
+    confirmText: 'Sync now',
+    variant: 'primary',
+  }))) return;
+
+  const btn = document.getElementById('btnSyncStudentsFromAes');
+  const prevLabel = btn?.innerHTML || '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Syncing…';
+  }
+  try {
+    const result = await AdminApi.syncCampusStudentsFromAes();
+    if (!result) return;
+    toast(`Synced ${result.recordCount ?? 0} students from AES.`, 'success');
+    await refreshCampusAesDirectorySyncStatus();
+    await loadFinalYearStudents(true);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = prevLabel || '<i class="bi bi-cloud-download me-1"></i>Sync students from AES';
+    }
+  }
+}
+
+function adminFinalYearEmptyHint() {
+  if (!canSyncCampusAesDirectory || campusAesDirectoryMeta?.hasSnapshot) {
+    return '';
+  }
+  return ' Use <strong>Sync students from AES</strong> (top right) to load the campus directory.';
+}
 
 function isFinalYearPolicyRegistered(s) {
   return !!(s && s.policyAccepted);
@@ -2329,7 +2400,8 @@ function renderFinalYearPendingDataTable(list) {
     return;
   }
   if (!list.length) {
-    setFinalYearPendingPlainTable(`<tr><td colspan="5" class="text-muted-2 p-4 text-center">${finalYearPendingEmptyMessage()}</td></tr>`);
+    const pendingEmpty = finalYearPendingEmptyMessage() + adminFinalYearEmptyHint();
+    setFinalYearPendingPlainTable(`<tr><td colspan="5" class="text-muted-2 p-4 text-center">${pendingEmpty}</td></tr>`);
     return;
   }
 
@@ -2663,7 +2735,7 @@ function renderFinalYearList(kind) {
       ? 'No students match your search.'
       : (role === 'staff'
         ? 'No students in your class have registered the placement policy yet.'
-        : 'No final-year students have registered the placement policy yet.');
+        : ('No final-year students have registered the placement policy yet.' + adminFinalYearEmptyHint()));
     tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
     return;
   }
@@ -3860,6 +3932,12 @@ document.getElementById('blacklistForm')?.addEventListener('submit', async e => 
 onAppReady(async () => {
   if (typeof wireFilePickers === 'function') wireFilePickers('#addSelfPlacementModal');
   activateTabFromHash();
+  if (canSyncCampusAesDirectory) {
+    document.getElementById('btnSyncStudentsFromAes')?.addEventListener('click', () => {
+      runCampusAesDirectorySync().catch(() => toast('Could not sync from AES.', 'error'));
+    });
+    refreshCampusAesDirectorySyncStatus().catch(() => {});
+  }
   if (canVerifySelfPlacement) {
     document.getElementById('verifyApproveBtn')?.addEventListener('click', () => approveVerifyPlacement().catch(() => {}));
     document.getElementById('verifyRejectBtn')?.addEventListener('click', () => rejectVerifyPlacement().catch(() => {}));

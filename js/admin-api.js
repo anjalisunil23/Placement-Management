@@ -356,6 +356,21 @@ const AdminApi = {
     return res.data.map(s => this.mapStudentRow(s));
   },
 
+  async fetchCampusAesDirectorySyncMeta() {
+    const res = await api('/admin/students/aes-directory-sync');
+    if (!res.success || !res.data) return null;
+    return res.data;
+  },
+
+  async syncCampusStudentsFromAes() {
+    const res = await api('/admin/students/aes-directory-sync', { method: 'POST' });
+    if (!res.success) {
+      toast(res.message || 'Could not sync students from AES.', 'error');
+      return null;
+    }
+    return res.data;
+  },
+
   async fetchPlacedStudents(params = {}) {
     const qs = new URLSearchParams();
     if (params.q) qs.set('q', params.q);

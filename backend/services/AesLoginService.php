@@ -3643,6 +3643,14 @@ final class AesLoginService
      */
     private function detectAesLoginCategory(array $payload, array $flat, string $roleHint): string
     {
+        $studRoleRaw = strtolower(trim($this->pickInsensitive($flat, ['stud_role', 'studRole'])));
+        if ($studRoleRaw === 'alumni' || $studRoleRaw === 'alumnus') {
+            return 'alumni';
+        }
+        if ($studRoleRaw === 'student' || $studRoleRaw === 'stud') {
+            return 'student';
+        }
+
         $candidates = [$roleHint];
         foreach ($flat as $key => $value) {
             if (!is_scalar($value)) {
@@ -3713,6 +3721,14 @@ final class AesLoginService
             if ($existing && ($existing['role'] ?? '') === 'placement_officer') {
                 return 'placement_officer';
             }
+        }
+
+        $studRoleGate = strtolower(trim($this->pickInsensitive($flat, ['stud_role', 'studRole'])));
+        if ($studRoleGate === 'alumni' || $studRoleGate === 'alumnus') {
+            return 'alumni';
+        }
+        if ($studRoleGate === 'student' || $studRoleGate === 'stud') {
+            return 'student';
         }
 
         if ($roleHint === '') {

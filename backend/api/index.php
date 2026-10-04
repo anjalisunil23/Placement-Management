@@ -194,6 +194,8 @@ $routes = [
     ['GET',    '/admin/students/registered',         [AdminController::class, 'listRegisteredStudentsForUserManagement']],
     ['GET',    '/admin/students/allfinal-year',       [AdminController::class, 'listFinalYearStudents']],
     ['GET',    '/admin/students/final-year',          [AdminController::class, 'listFinalYearStudents']],
+    ['GET',    '/admin/students/aes-directory-sync',  [AdminController::class, 'campusStudyingDirectorySyncMeta']],
+    ['POST',   '/admin/students/aes-directory-sync',  [AdminController::class, 'syncCampusStudyingDirectoryFromAes']],
     ['GET',    '/admin/students/placed',              [AdminController::class, 'listPlacedStudents']],
     ['GET',    '/admin/students/alumni',              [AdminController::class, 'listAlumniStudents']],
     ['GET',    '/admin/students/self-placement/pending', [AdminController::class, 'listPendingSelfPlacements']],

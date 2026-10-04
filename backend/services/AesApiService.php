@@ -537,6 +537,30 @@ final class AesApiService
     }
 
     /**
+     * AES placement directory stud_role — integrated as Student or Alumni only.
+     *
+     * @param array<string, mixed> $record
+     * @return 'student'|'alumni'|null
+     */
+    public static function normalizeStudRole(array $record): ?string
+    {
+        $raw = trim((string) ($record['stud_role'] ?? $record['studRole'] ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        $role = strtolower($raw);
+        if ($role === 'student' || $role === 'stud') {
+            return 'student';
+        }
+        if ($role === 'alumni' || $role === 'alumnus') {
+            return 'alumni';
+        }
+
+        return null;
+    }
+
+    /**
      * @param list<array<string, mixed>> $records
      * @return list<array<string, mixed>>
      */
