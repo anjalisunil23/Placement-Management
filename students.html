@@ -30,6 +30,14 @@
   #tabFinalYearPending .dataTables_wrapper .dataTables_paginate{
     font-size:.8125rem;
   }
+  #tabAlumni .dataTables_wrapper .dataTables_filter input,
+  #tabAlumni .dataTables_wrapper .dataTables_length select{
+    font-size:.875rem;
+  }
+  #tabAlumni .dataTables_wrapper .dataTables_info,
+  #tabAlumni .dataTables_wrapper .dataTables_paginate{
+    font-size:.8125rem;
+  }
   #pcaOfferLetterModal .modal-dialog{
     max-width:min(920px,96vw);
   }
@@ -587,12 +595,8 @@
         </div>
         <span class="badge-soft muted" id="alumniCount">0</span>
       </div>
-      <div class="search-with-icon mb-3 pb-1">
-        <i class="bi bi-search"></i>
-        <input class="form-control" id="searchAlumni" placeholder="Search by name, admission no., department, or batch…" autocomplete="off"/>
-      </div>
       <div class="table-wrap">
-        <table class="table-modern">
+        <table class="table-modern w-100" id="alumniTable">
           <thead>
             <tr>
               <th>Student</th>
@@ -603,7 +607,7 @@
             </tr>
           </thead>
           <tbody id="alumniRows">
-            <tr><td colspan="5" class="text-muted-2 p-4 text-center">Open this tab to load alumni from AES.</td></tr>
+            <tr><td colspan="5" class="text-muted-2 p-4 text-center">Open this tab to load alumni.</td></tr>
           </tbody>
         </table>
       </div>
@@ -2866,17 +2870,6 @@ function renderPlacedTab() {
 
 let alumniStudentsAll = [];
 let alumniLoaded = false;
-let alumniSearchTimer = null;
-
-function alumniMatchesQuery(s, q) {
-  const needle = String(q || '').trim().toLowerCase();
-  if (!needle) return true;
-  const hay = [
-    s.name, s.displayName, s.registerNumber, s.admno,
-    s.department, s.departmentName, s.classBatch,
-  ].map(v => String(v || '').toLowerCase()).join(' ');
-  return hay.includes(needle);
-}
 
 function alumniRowHtml(s) {
   const name = esc(s.displayName || s.name || '—');
@@ -2893,25 +2886,108 @@ function alumniRowHtml(s) {
   </tr>`;
 }
 
-function renderAlumniTab() {
+let alumniDataTable = null;
+
+function alumniDirectoryEmptyMessage() {
+  return 'No alumni records in the campus directory.' + adminAlumniEmptyHint();
+}
+
+function alumniDataTableOptions() {
+  return {
+    pageLength: 25,
+    lengthMenu: [10, 25, 50, 100, 250],
+    order: [[1, 'asc']],
+    columnDefs: [{ orderable: false, searchable: false, targets: 4 }],
+    layout: {
+      topStart: 'pageLength',
+      topEnd: 'search',
+      bottomStart: 'info',
+      bottomEnd: 'paging',
+    },
+    language: {
+      search: '',
+      searchPlaceholder: 'Search name, adm. no., department, batch…',
+      emptyTable: alumniDirectoryEmptyMessage(),
+      zeroRecords: 'No alumni match your search.',
+      lengthMenu: 'Show _MENU_ rows',
+    },
+  };
+}
+
+function destroyAlumniDataTable() {
+  const tableEl = document.getElementById('alumniTable');
+  if (typeof DataTable === 'undefined') {
+    alumniDataTable = null;
+    return;
+  }
+  try {
+    if (alumniDataTable && typeof alumniDataTable.destroy === 'function') {
+      alumniDataTable.destroy();
+    }
+  } catch (_) { /* ignore */ }
+  alumniDataTable = null;
+  if (!tableEl) return;
+  try {
+    if (DataTable.isDataTable(tableEl)) {
+      DataTable.api(tableEl).destroy();
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function alumniRowCells(s) {
+  const tmp = document.createElement('tbody');
+  tmp.innerHTML = alumniRowHtml(s);
+  const tr = tmp.querySelector('tr');
+  if (!tr) return null;
+  return Array.from(tr.cells).map((td) => td.innerHTML);
+}
+
+function setAlumniPlainTable(html) {
+  destroyAlumniDataTable();
   const tbody = document.getElementById('alumniRows');
+  if (tbody) tbody.innerHTML = html;
+}
+
+function renderAlumniDataTable(list) {
+  const tbody = document.getElementById('alumniRows');
+  const tableEl = document.getElementById('alumniTable');
   const countEl = document.getElementById('alumniCount');
-  if (!tbody) return;
-  const q = document.getElementById('searchAlumni')?.value.trim() || '';
-  const list = alumniStudentsAll.filter(s => alumniMatchesQuery(s, q));
+  if (!tbody || !tableEl) return;
   if (countEl) countEl.textContent = String(list.length);
+
   if (!alumniLoaded) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading alumni…</td></tr>';
+    setAlumniPlainTable('<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading alumni…</td></tr>');
     return;
   }
   if (!list.length) {
-    const emptyMsg = q
-      ? 'No alumni match your search.'
-      : ('No alumni records in the campus directory.' + adminAlumniEmptyHint());
-    tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
+    setAlumniPlainTable(`<tr><td colspan="5" class="text-muted-2 p-4 text-center">${alumniDirectoryEmptyMessage()}</td></tr>`);
     return;
   }
-  tbody.innerHTML = list.map(alumniRowHtml).join('');
+
+  if (typeof DataTable === 'undefined') {
+    tbody.innerHTML = list.map((s) => alumniRowHtml(s)).join('');
+    return;
+  }
+
+  if (DataTable.isDataTable(tableEl)) {
+    const api = alumniDataTable || DataTable.api(tableEl);
+    api.clear();
+    list.forEach((s) => {
+      const cells = alumniRowCells(s);
+      if (cells) api.row.add(cells);
+    });
+    api.draw(false);
+    alumniDataTable = api;
+    return;
+  }
+
+  destroyAlumniDataTable();
+  tbody.innerHTML = list.map((s) => alumniRowHtml(s)).join('');
+  alumniDataTable = new DataTable(tableEl, alumniDataTableOptions());
+}
+
+function renderAlumniTab() {
+  renderAlumniDataTable(alumniStudentsAll);
 }
 
 async function loadAlumniStudents(force = false) {
@@ -2920,12 +2996,14 @@ async function loadAlumniStudents(force = false) {
     renderAlumniTab();
     return;
   }
+  destroyAlumniDataTable();
   const tbody = document.getElementById('alumniRows');
   if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading alumni…</td></tr>';
   const rows = (typeof AdminApi !== 'undefined') ? await AdminApi.fetchAlumniStudents() : null;
   if (!rows) {
     alumniStudentsAll = [];
     alumniLoaded = true;
+    destroyAlumniDataTable();
     if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load alumni. Try again.</td></tr>';
     const countEl = document.getElementById('alumniCount');
     if (countEl) countEl.textContent = '0';
@@ -3204,6 +3282,11 @@ document.getElementById('finalYearRegisteredRows')?.addEventListener('click', (e
   openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
 });
 document.getElementById('finalYearPendingRows')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.final-year-open');
+  if (!btn) return;
+  openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
+});
+document.getElementById('alumniRows')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.final-year-open');
   if (!btn) return;
   openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
@@ -4090,10 +4173,6 @@ onAppReady(async () => {
   });
   document.getElementById('linkAlumni')?.addEventListener('shown.bs.tab', () => {
     if (canViewAlumni && live) loadAlumniStudents().catch(() => {});
-  });
-  document.getElementById('searchAlumni')?.addEventListener('input', () => {
-    clearTimeout(alumniSearchTimer);
-    alumniSearchTimer = setTimeout(() => renderAlumniTab(), 180);
   });
   document.getElementById('linkBlacklist')?.addEventListener('shown.bs.tab', () => {
     if (canManageBlacklist && live) {
