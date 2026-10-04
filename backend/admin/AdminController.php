@@ -1355,7 +1355,7 @@ final class AdminController
         Response::success((new OfficerDataService())->listStudents($scope['ctx'], $query !== '' ? $query : null));
     }
 
-    /** GET /api/admin/students/registered — User Management tab (login + policy registration complete) */
+    /** GET /api/admin/students/registered — User Management Students tab (all student login accounts) */
     public function listRegisteredStudentsForUserManagement(): void
     {
         RBACMiddleware::requireAdmin();

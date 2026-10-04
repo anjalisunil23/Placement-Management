@@ -102,6 +102,9 @@ const AdminApi = {
       resumeStatus: resume.verified ? 'approved' : (resume.path ? 'pending' : 'none'),
       policyAccepted: !!(row.policyAccepted),
       policyAcceptedAt: row.policyAcceptedAt || '',
+      policyRegistrationRequired: row.policyRegistrationRequired === true,
+      placementPolicyAccepted: row.placementPolicyAccepted === true,
+      internshipPolicyAccepted: row.internshipPolicyAccepted === true,
     };
   },
 
@@ -334,7 +337,7 @@ const AdminApi = {
     return res.data.map(s => this.mapStudentRow(s));
   },
 
-  /** User Management → Students tab (login + placement policy registration complete). */
+  /** User Management → Students tab (all campus student login accounts). */
   async fetchRegisteredStudents(params = {}) {
     const qs = new URLSearchParams();
     if (params.q) qs.set('q', params.q);

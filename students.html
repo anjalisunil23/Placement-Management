@@ -5,6 +5,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260922bootfix" rel="stylesheet"/>
+<link href="https://cdn.datatables.net/2.1.8/css/dataTables.bootstrap5.min.css" rel="stylesheet"/>
 <style id="ph-po-modal-click-fix">
   /* Placement officer: never let closed Bootstrap modals trap the page. */
   .modal:not(.show){pointer-events:none!important}
@@ -21,6 +22,14 @@
     line-height:1.35;
   }
   .profile-email-value .profile-email-line + .profile-email-line{margin-top:.2rem}
+  #tabFinalYearPending .dataTables_wrapper .dataTables_filter input,
+  #tabFinalYearPending .dataTables_wrapper .dataTables_length select{
+    font-size:.875rem;
+  }
+  #tabFinalYearPending .dataTables_wrapper .dataTables_info,
+  #tabFinalYearPending .dataTables_wrapper .dataTables_paginate{
+    font-size:.8125rem;
+  }
   #pcaOfferLetterModal .modal-dialog{
     max-width:min(920px,96vw);
   }
@@ -250,19 +259,15 @@
         </div>
         <span class="badge-soft warning" id="finalYearPendingCount">0</span>
       </div>
-      <div class="search-with-icon mb-3 pb-1">
-        <i class="bi bi-search"></i>
-        <input class="form-control" id="searchFinalYearPending" placeholder="Search by name, admission no., department, or batch…" autocomplete="off"/>
-      </div>
       <div class="table-wrap">
-        <table class="table-modern">
+        <table class="table-modern w-100" id="finalYearPendingTable">
           <thead>
             <tr>
               <th>Student</th>
               <th>Adm. No.</th>
               <th>Department</th>
               <th>Batch / Class</th>
-              <th></th>
+              <th class="text-end">Actions</th>
             </tr>
           </thead>
           <tbody id="finalYearPendingRows">
@@ -884,6 +889,9 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js"></script>
 <script src="js/staff-api.js?v=20260723perf"></script>
 <script src="js/admin-api.js?v=20261003alumnitab"></script>
 <script src="js/officer-api.js?v=20260920pca"></script>
@@ -2234,13 +2242,84 @@ function finalYearMatchesQuery(s, q) {
 }
 
 function filteredFinalYearStudents(kind) {
-  const inputId = kind === 'registered' ? 'searchFinalYearRegistered' : 'searchFinalYearPending';
-  const q = document.getElementById(inputId)?.value.trim() || '';
+  const q = kind === 'registered'
+    ? (document.getElementById('searchFinalYearRegistered')?.value.trim() || '')
+    : '';
   return finalYearStudentsAll.filter(s => {
     if (role === 'staff' && staffAssignedClassBatches().length && !studentInStaffScope(s)) return false;
     const registered = isFinalYearPolicyRegistered(s);
     if (kind === 'registered' ? !registered : registered) return false;
-    return finalYearMatchesQuery(s, q);
+    return kind === 'pending' || finalYearMatchesQuery(s, q);
+  });
+}
+
+let finalYearPendingDataTable = null;
+
+function finalYearPendingEmptyMessage() {
+  return role === 'staff'
+    ? 'All students in your class have registered the placement policy.'
+    : 'All listed final-year students have registered the placement policy.';
+}
+
+function destroyFinalYearPendingDataTable() {
+  const tableEl = document.getElementById('finalYearPendingTable');
+  if (!tableEl || typeof DataTable === 'undefined') {
+    finalYearPendingDataTable = null;
+    return;
+  }
+  try {
+    if (DataTable.isDataTable(tableEl)) {
+      finalYearPendingDataTable = DataTable.api(tableEl);
+      finalYearPendingDataTable.destroy();
+    }
+  } catch (_) { /* ignore */ }
+  finalYearPendingDataTable = null;
+}
+
+function renderFinalYearPendingDataTable(list) {
+  const tbody = document.getElementById('finalYearPendingRows');
+  const countEl = document.getElementById('finalYearPendingCount');
+  if (!tbody) return;
+  if (countEl) countEl.textContent = String(list.length);
+
+  destroyFinalYearPendingDataTable();
+
+  if (!finalYearLoaded) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
+    return;
+  }
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${finalYearPendingEmptyMessage()}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = list.map((s) => finalYearRowHtml(s, 'pending')).join('');
+
+  if (typeof DataTable === 'undefined') {
+    return;
+  }
+
+  const tableEl = document.getElementById('finalYearPendingTable');
+  if (!tableEl) return;
+
+  finalYearPendingDataTable = new DataTable(tableEl, {
+    pageLength: 25,
+    lengthMenu: [10, 25, 50, 100, 250],
+    order: [[1, 'asc']],
+    columnDefs: [{ orderable: false, searchable: false, targets: 4 }],
+    layout: {
+      topStart: 'pageLength',
+      topEnd: 'search',
+      bottomStart: 'info',
+      bottomEnd: 'paging',
+    },
+    language: {
+      search: '',
+      searchPlaceholder: 'Search name, adm. no., department, batch…',
+      emptyTable: finalYearPendingEmptyMessage(),
+      zeroRecords: 'No students match your search.',
+      lengthMenu: 'Show _MENU_ rows',
+    },
   });
 }
 
@@ -2533,32 +2612,30 @@ function finalYearRowHtml(s, kind = 'registered') {
 }
 
 function renderFinalYearList(kind) {
-  const isRegistered = kind === 'registered';
-  const tbody = document.getElementById(isRegistered ? 'finalYearRegisteredRows' : 'finalYearPendingRows');
-  const countEl = document.getElementById(isRegistered ? 'finalYearRegisteredCount' : 'finalYearPendingCount');
+  if (kind === 'pending') {
+    renderFinalYearPendingDataTable(filteredFinalYearStudents('pending'));
+    return;
+  }
+  const tbody = document.getElementById('finalYearRegisteredRows');
+  const countEl = document.getElementById('finalYearRegisteredCount');
   if (!tbody) return;
-  const list = filteredFinalYearStudents(kind);
+  const list = filteredFinalYearStudents('registered');
   if (countEl) countEl.textContent = String(list.length);
   if (!finalYearLoaded) {
     tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
     return;
   }
   if (!list.length) {
-    const inputId = isRegistered ? 'searchFinalYearRegistered' : 'searchFinalYearPending';
-    const q = document.getElementById(inputId)?.value.trim() || '';
+    const q = document.getElementById('searchFinalYearRegistered')?.value.trim() || '';
     const emptyMsg = q
       ? 'No students match your search.'
-      : (isRegistered
-        ? (role === 'staff'
-          ? 'No students in your class have registered the placement policy yet.'
-          : 'No final-year students have registered the placement policy yet.')
-        : (role === 'staff'
-          ? 'All students in your class have registered the placement policy.'
-          : 'All listed final-year students have registered the placement policy.'));
+      : (role === 'staff'
+        ? 'No students in your class have registered the placement policy yet.'
+        : 'No final-year students have registered the placement policy yet.');
     tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
     return;
   }
-  tbody.innerHTML = list.map((s) => finalYearRowHtml(s, kind)).join('');
+  tbody.innerHTML = list.map((s) => finalYearRowHtml(s, 'registered')).join('');
 }
 
 function renderFinalYearTab() {
@@ -2572,10 +2649,11 @@ async function loadFinalYearStudents(force = false) {
     renderFinalYearTab();
     return;
   }
-  ['finalYearRegisteredRows', 'finalYearPendingRows'].forEach(id => {
-    const tbody = document.getElementById(id);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading final-year students…</td></tr>';
-  });
+  destroyFinalYearPendingDataTable();
+  const regBody = document.getElementById('finalYearRegisteredRows');
+  if (regBody) regBody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading final-year students…</td></tr>';
+  const pendingBody = document.getElementById('finalYearPendingRows');
+  if (pendingBody) pendingBody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading final-year students…</td></tr>';
   let rows = null;
   if (role === 'admin' && typeof AdminApi !== 'undefined') {
     rows = await AdminApi.fetchFinalYearStudents();
@@ -2587,10 +2665,11 @@ async function loadFinalYearStudents(force = false) {
   if (!rows) {
     finalYearStudentsAll = [];
     finalYearLoaded = true;
-    ['finalYearRegisteredRows', 'finalYearPendingRows'].forEach(id => {
-      const tbody = document.getElementById(id);
-      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load final-year students. Try again.</td></tr>';
-    });
+    destroyFinalYearPendingDataTable();
+    const regErr = document.getElementById('finalYearRegisteredRows');
+    if (regErr) regErr.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load final-year students. Try again.</td></tr>';
+    const pendingErr = document.getElementById('finalYearPendingRows');
+    if (pendingErr) pendingErr.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load final-year students. Try again.</td></tr>';
     document.getElementById('finalYearRegisteredCount').textContent = '0';
     document.getElementById('finalYearPendingCount').textContent = '0';
     return;
@@ -3019,11 +3098,9 @@ document.getElementById('placedRows')?.addEventListener('click', (e) => {
   openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
 });
 
-['searchFinalYearRegistered', 'searchFinalYearPending'].forEach(id => {
-  document.getElementById(id)?.addEventListener('input', () => {
-    clearTimeout(finalYearSearchTimer);
-    finalYearSearchTimer = setTimeout(() => renderFinalYearTab(), 160);
-  });
+document.getElementById('searchFinalYearRegistered')?.addEventListener('input', () => {
+  clearTimeout(finalYearSearchTimer);
+  finalYearSearchTimer = setTimeout(() => renderFinalYearList('registered'), 160);
 });
 document.getElementById('searchPlaced')?.addEventListener('input', () => {
   clearTimeout(placedSearchTimer);

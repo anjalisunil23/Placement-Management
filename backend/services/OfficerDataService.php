@@ -765,7 +765,7 @@ final class OfficerDataService
     }
 
     /**
-     * Admin User Management — students with a login who finished placement policy registration.
+     * Admin User Management — every campus student login account (users.role = student).
      *
      * @return array<int, array<string, mixed>>
      */
@@ -781,31 +781,15 @@ final class OfficerDataService
             $departments[(string) $d['_id']] = $d;
         }
 
-        $students = $studentModel->findAll([], 15000);
-        $userIds = [];
-        foreach ($students as $s) {
-            $uid = trim((string) ($s['userId'] ?? ''));
-            if ($uid !== '') {
-                $userIds[$uid] = true;
-            }
-        }
-        $usersById = $userModel->findByIds(array_keys($userIds));
-
         $rows = [];
-        foreach ($students as $s) {
-            $userId = trim((string) ($s['userId'] ?? ''));
-            if ($userId === '' || !isset($usersById[$userId])) {
-                continue;
-            }
-            $user = $usersById[$userId];
-            if ((string) ($user['role'] ?? '') !== 'student') {
+        foreach ($userModel->findAll(['role' => 'student'], 15000) as $user) {
+            $userId = trim((string) ($user['_id'] ?? ''));
+            if ($userId === '') {
                 continue;
             }
 
+            $s = $studentModel->findByUserId($userId) ?? ['userId' => $userId];
             $registration = $policyModel->registrationState($s);
-            if (!empty($registration['policyRegistrationRequired'])) {
-                continue;
-            }
 
             $deptId = (string) ($s['departmentId'] ?? '');
             $dept = $departments[$deptId] ?? null;
@@ -816,6 +800,10 @@ final class OfficerDataService
                 'name' => $dept['name'] ?? '',
                 'code' => $dept['code'] ?? '',
             ] : null;
+            $row['policyRegistrationRequired'] = !empty($registration['policyRegistrationRequired']);
+            $row['policyAccepted'] = !empty($registration['policyAccepted']);
+            $row['placementPolicyAccepted'] = !empty($registration['placementPolicyAccepted']);
+            $row['internshipPolicyAccepted'] = !empty($registration['internshipPolicyAccepted']);
             if (!$this->isPlacementStudentListCandidate($s, $user, $row, false)) {
                 continue;
             }
