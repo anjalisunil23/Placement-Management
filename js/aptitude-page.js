@@ -1683,12 +1683,6 @@
     }
   }
 
-  function getManualJdSaveTarget() {
-    const picked = document.querySelector('input[name="aptManualSaveTarget"]:checked');
-    const value = String(picked?.value || 'bank').toLowerCase();
-    return ['bank', 'problem', 'both'].includes(value) ? value : 'bank';
-  }
-
   function resetManualJdUploadForm() {
     document.getElementById('aptManualJdTitle').value = '';
     document.getElementById('aptManualJdText').value = '';
@@ -1697,8 +1691,6 @@
     const dateEl = document.getElementById('aptManualJdTitleDate');
     if (addDateEl) addDateEl.checked = false;
     if (dateEl) dateEl.value = todayIsoDate();
-    const bankRadio = document.getElementById('aptManualTargetBank');
-    if (bankRadio) bankRadio.checked = true;
     updateManualJdTitleDateUi();
   }
 
@@ -1721,7 +1713,7 @@
     const companyId = String(sel?.value || '').trim();
     const companyName = sel?.selectedOptions?.[0]?.textContent?.trim() || '';
     const titleState = getManualJdTitleFormState();
-    const saveTarget = getManualJdSaveTarget();
+    const saveTarget = 'bank';
     const manualText = (document.getElementById('aptManualJdText')?.value || '').trim();
     const file = document.getElementById('aptManualJdFile')?.files?.[0] || null;
     if (!companyId) {
@@ -1761,7 +1753,6 @@
           jdFilename = file.name;
           jdMimeType = file.type || 'application/octet-stream';
         }
-        const showInCompanyBank = saveTarget !== 'problem';
         const store = loadDemoJdStore();
         store.unshift({
           id: setId,
@@ -1776,20 +1767,15 @@
           hasDocument: !!(jdFileDataUrl || manualText),
           questionCount: 0,
           questions: [],
-          manualSaveTarget: saveTarget,
-          showInCompanyBank,
+          manualSaveTarget: 'bank',
+          showInCompanyBank: true,
         });
         saveDemoJdStore(store);
-        toast(
-          showInCompanyBank
-            ? `Saved manual (demo): ${companyName} · ${titleState.jdTitle}`
-            : `Saved manual under Problems (demo): ${titleState.jdTitle}`,
-          'success'
-        );
+        toast(`Saved manual to question bank (demo): ${companyName} · ${titleState.jdTitle}`, 'success');
         aptJdManualModal?.hide();
         await loadJdLibrary();
         if (jdSelectedCompanyId) {
-          if (!showInCompanyBank) applyAdminJdBlockView('tests');
+          applyAdminJdBlockView('bank');
           showJdCompanyDetail(jdSelectedCompanyId);
         }
         return;
@@ -1805,52 +1791,26 @@
       const res = await api('/aptitude/jd-sets/upload-manual', { method: 'POST', body: fd });
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
       const count = res.data?.questionCount ?? 0;
-      const testId = String(res.data?.testId || '');
-      const skipped = String(res.data?.testSkippedMessage || '').trim();
-      let msg;
-      let tone = 'success';
       const viaAi = res.data?.parseMethod === 'ai';
-      if (saveTarget === 'problem') {
-        if (count > 0) {
-          msg = `Saved ${count} question(s) under company Problems${viaAi ? ' (AI-read from manual)' : ''}. Tap Edit on the card to set up the test (one step).`;
-        } else {
-          msg = 'Saved manual under company Problems. Tap Edit to create the company test, or Document to view the file.';
-        }
-      } else if (saveTarget === 'bank') {
-        msg = count > 0
-          ? `Saved ${count} question(s) to company question bank.`
-          : 'Saved manual to company question bank (no MCQs detected in file).';
-      } else {
-        msg = count > 0
-          ? `Saved ${count} question(s) to question bank.`
-          : 'Saved manual to company question bank.';
-        if (testId) msg += ' Created unpublished company test under Problems.';
-        else if (skipped) {
-          msg = skipped;
-          tone = 'info';
-        }
-      }
-      toast(msg.trim(), tone);
+      const msg = count > 0
+        ? `Saved ${count} question(s) to company question bank${viaAi ? ' (AI-read from manual)' : ''}.`
+        : 'Saved manual to company question bank (no MCQs detected in file).';
+      toast(msg.trim(), 'success');
       delete jdSetDetailsCache[String(res.data?.id || '')];
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();
       await loadJdLibrary();
-      if (testId) {
-        await loadTests().catch(() => {});
-      }
       if (jdSelectedCompanyId) {
-        if (saveTarget === 'problem' || saveTarget === 'both') {
-          applyAdminJdBlockView('tests');
-        }
+        applyAdminJdBlockView('bank');
         showJdCompanyDetail(jdSelectedCompanyId);
         const newSetId = String(res.data?.id || '');
-        if (newSetId && saveTarget === 'problem') {
+        if (newSetId) {
           window.setTimeout(() => {
-            openCompanyProblemEditFromManualSet({ id: newSetId, companyId, jdTitle: titleState.jdTitle });
+            const card = [...document.querySelectorAll('[data-jd-set-card]')].find(
+              (el) => el.getAttribute('data-jd-set-card') === newSetId
+            );
+            card?.querySelector('[data-jd-view]')?.click();
           }, 300);
-        } else if (newSetId && saveTarget === 'both' && testId) {
-          const t = tests.find((x) => String(x.id) === testId);
-          if (t) window.setTimeout(() => openTestForm(t), 300);
         }
       }
     } catch (err) {

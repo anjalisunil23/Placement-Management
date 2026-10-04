@@ -571,7 +571,7 @@
 <div class="modal fade" id="aptJdManualModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title fw-bold">Upload question manual</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body">
-    <p class="small text-muted-2 mb-3">Save a PDF, image, or text question manual under the selected company. Choose where parsed MCQs should go; the file is always stored on the company card for reference.</p>
+    <p class="small text-muted-2 mb-3">Save a PDF, image, or text manual under the selected company. Parsed MCQs are added to that company’s <strong>Question bank</strong> (local bank). Use <strong>New company test</strong> when you want a Problems test.</p>
     <div class="mb-3">
       <label class="form-label small fw-semibold" for="aptManualJdCompany">Company</label>
       <select class="form-select" id="aptManualJdCompany"><option value="">Select company…</option></select>
@@ -589,23 +589,6 @@
       </div>
       <div class="small text-primary mt-1 d-none" id="aptManualJdTitlePreview"></div>
     </div>
-    <fieldset class="mb-3">
-      <legend class="form-label small fw-semibold mb-2">Add parsed questions to</legend>
-      <div class="d-flex flex-column gap-2">
-        <div class="form-check">
-          <input class="form-check-input" type="radio" name="aptManualSaveTarget" id="aptManualTargetBank" value="bank" checked/>
-          <label class="form-check-label" for="aptManualTargetBank">Question bank only <span class="text-muted-2">(company card + MCQs)</span></label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="radio" name="aptManualSaveTarget" id="aptManualTargetProblem" value="problem"/>
-          <label class="form-check-label" for="aptManualTargetProblem">Problems only <span class="text-muted-2">(shows under company Problems, not Question bank)</span></label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="radio" name="aptManualSaveTarget" id="aptManualTargetBoth" value="both"/>
-          <label class="form-check-label" for="aptManualTargetBoth">Both <span class="text-muted-2">(question bank and company test)</span></label>
-        </div>
-      </div>
-    </fieldset>
     <label class="form-label small fw-semibold" for="aptManualJdText">Paste question manual text</label>
     <textarea class="form-control mb-3" id="aptManualJdText" rows="5" placeholder="Paste MCQs or plain text here…"></textarea>
     <div class="text-center small text-muted-2 mb-2">OR</div>
