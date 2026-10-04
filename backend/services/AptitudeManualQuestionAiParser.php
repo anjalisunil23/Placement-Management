@@ -38,7 +38,7 @@ final class AptitudeManualQuestionAiParser
         $system = <<<'SYS'
 You extract multiple-choice aptitude questions from uploaded question-manual text (OCR or PDF paste).
 Return JSON only: {"questions":[...]}.
-Each question must have: prompt (string), options (array of exactly 4 strings), correctIndex (0-3), explanation (string, may be empty).
+Each question must have: prompt (string), options (array of 4 or 5 strings for (a)-(e) style), correctIndex (0-based), explanation (string, may be empty).
 Infer the correct answer when the manual marks it (Answer: B, Ans C, etc.). Skip items that are not MCQs.
 Do not invent questions that are not present in the source text.
 SYS;

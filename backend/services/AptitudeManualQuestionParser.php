@@ -53,6 +53,7 @@ final class AptitudeManualQuestionParser
     private function splitQuestionBlocks(string $text): array
     {
         $patterns = [
+            '/(?=\n\s*\d{1,3}\)\s+\S)/u',
             '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+)/iu',
             '/(?=\n\s*\d{1,4}\s*[\.\):]\s+\S)/u',
             '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}\s*[:\-]\s+\S)/iu',
@@ -114,6 +115,7 @@ final class AptitudeManualQuestionParser
         }
 
         $block = preg_replace('/^\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s*/iu', '', $block) ?? $block;
+        $block = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $block) ?? $block;
         $answerLetter = null;
         if (preg_match('/(?:^|\n)\s*(?:Answer|Correct(?:\s+Answer)?|Ans)\s*[:\.\-]?\s*([A-Da-d])\b/im', $block, $am)) {
             $answerLetter = strtoupper($am[1]);
@@ -152,11 +154,10 @@ final class AptitudeManualQuestionParser
         }
 
         ksort($options);
-        $optionList = array_values($options);
+        $optionList = array_slice(array_values($options), 0, 5);
         while (count($optionList) < 4) {
             $optionList[] = '—';
         }
-        $optionList = array_slice($optionList, 0, 4);
 
         $correctIndex = 0;
         if ($answerLetter !== null && isset($options[$answerLetter])) {
@@ -166,6 +167,7 @@ final class AptitudeManualQuestionParser
                 $correctIndex = 0;
             }
         }
+        $correctIndex = max(0, min(count($optionList) - 1, $correctIndex));
 
         return [
             'prompt' => $prompt,
@@ -185,6 +187,16 @@ final class AptitudeManualQuestionParser
     {
         $options = [];
         if (preg_match_all(
+            '/(?:^|\n)\s*\(([a-eA-E])\)\s*(.+?)(?=(?:^|\n)\s*\([a-eA-E]\)|(?:^|\n)\s*\d{1,3}[\.\)]|\n\s*(?:Answer|Correct|Directions)|\z)/s',
+            $block,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            foreach ($matches as $m) {
+                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+            }
+        }
+        if ($options === [] && preg_match_all(
             '/(?:^|\n)\s*([A-Da-d])[\.\):]\s*(.+?)(?=\n\s*[A-Da-d][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\z)/s',
             $block,
             $matches,
@@ -240,7 +252,7 @@ final class AptitudeManualQuestionParser
     {
         if (!isset($row['options']) && (isset($row['optionA']) || isset($row['A']))) {
             $opts = [];
-            foreach (['optionA', 'optionB', 'optionC', 'optionD', 'A', 'B', 'C', 'D'] as $k) {
+            foreach (['optionA', 'optionB', 'optionC', 'optionD', 'optionE', 'A', 'B', 'C', 'D', 'E'] as $k) {
                 if (isset($row[$k]) && trim((string) $row[$k]) !== '') {
                     $opts[] = trim((string) $row[$k]);
                 }
@@ -263,8 +275,8 @@ final class AptitudeManualQuestionParser
 
         return [
             'prompt' => $prompt,
-            'options' => array_slice(array_values($opts), 0, 4),
-            'correctIndex' => max(0, min(3, $correct)),
+            'options' => array_slice(array_values($opts), 0, 5),
+            'correctIndex' => max(0, min(max(count($opts), 1) - 1, $correct)),
             'explanation' => trim((string) ($row['explanation'] ?? '')),
             'category' => trim((string) ($row['category'] ?? 'General Aptitude')) ?: 'General Aptitude',
             'difficulty' => trim((string) ($row['difficulty'] ?? 'Medium')) ?: 'Medium',

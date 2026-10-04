@@ -2045,7 +2045,7 @@
     }
     const text = String(detail?.manualText || '').trim();
     if (!text) {
-      return '<p class="small text-muted-2 mb-0">No questions could be read from this manual yet. Open <strong>Document</strong> or paste clearer MCQ text and upload again.</p>';
+      return '<p class="small text-muted-2 mb-0">No readable text was extracted from this PDF yet. Image-based PDFs need <strong>OpenAI configured on the server</strong> for page OCR (poppler/ghostscript). Open <strong>Document</strong> to view the file, or re-upload after pasting MCQs as text.</p>';
     }
     const blocks = splitManualTextIntoBlocks(text);
     if (blocks.length > 1) {

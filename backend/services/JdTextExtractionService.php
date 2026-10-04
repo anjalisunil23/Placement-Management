@@ -108,6 +108,9 @@ final class JdTextExtractionService
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $text) ?? $text;
         $text = preg_replace('/\s+/u', ' ', trim($text)) ?? trim($text);
+        if (self::isGarbledExtract($text)) {
+            return '';
+        }
         if (mb_strlen($text) > self::MAX_TEXT_CHARS) {
             $text = mb_substr($text, 0, self::MAX_TEXT_CHARS);
         }
@@ -115,14 +118,122 @@ final class JdTextExtractionService
         return $text;
     }
 
+    public static function isGarbledExtract(string $text): bool
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return false;
+        }
+        $len = mb_strlen($text);
+        if ($len < 50) {
+            return false;
+        }
+        if (preg_match('/Quartz PDFContext|endstream|\/Font\b|Microsoft Word - .+\.docx/i', $text) === 1) {
+            if (preg_match_all('/[\p{L}]{4,}/u', $text, $m) && count($m[0] ?? []) < 8) {
+                return true;
+            }
+        }
+        preg_match_all('/[\p{L}]/u', $text, $letters);
+        $letterCount = count($letters[0] ?? []);
+        if ($letterCount / max(1, $len) < 0.12) {
+            return true;
+        }
+        if (preg_match_all('/\?\s*\d+\s+\d+\s+obj/i', $text) >= 2) {
+            return true;
+        }
+
+        return false;
+    }
+
     private function extractPdfText(string $path): string
     {
         $viaShell = $this->extractPdfViaPdftotext($path);
-        if ($viaShell !== '') {
+        if ($viaShell !== '' && !self::isGarbledExtract($viaShell)) {
             return $viaShell;
         }
 
-        return $this->extractPdfTextHeuristic($path);
+        $viaOcr = $this->extractPdfViaVisionOcr($path);
+        if ($viaOcr !== '') {
+            return $viaOcr;
+        }
+
+        $heuristic = $this->extractPdfTextHeuristic($path);
+        if ($heuristic !== '' && !self::isGarbledExtract($heuristic)) {
+            return $heuristic;
+        }
+
+        return $viaShell !== '' && !self::isGarbledExtract($viaShell) ? $viaShell : '';
+    }
+
+    private function extractPdfViaVisionOcr(string $path): string
+    {
+        if (!$this->openai->isConfigured() || !function_exists('exec')) {
+            return '';
+        }
+
+        $tmpdir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_pdf_' . bin2hex(random_bytes(4));
+        if (!@mkdir($tmpdir) && !is_dir($tmpdir)) {
+            return '';
+        }
+
+        $prefix = $tmpdir . DIRECTORY_SEPARATOR . 'page';
+        $pngPattern = $prefix . '-*.png';
+        $executed = false;
+
+        $commands = [
+            'pdftoppm -png -r 144 ' . escapeshellarg($path) . ' ' . escapeshellarg($prefix),
+            'pdftocairo -png -r 144 ' . escapeshellarg($path) . ' ' . escapeshellarg($prefix),
+        ];
+        foreach ($commands as $cmd) {
+            exec($cmd . ' 2>&1', $out, $code);
+            if ($code === 0 && glob($pngPattern) !== []) {
+                $executed = true;
+                break;
+            }
+        }
+
+        if (!$executed) {
+            $gsOut = $prefix . '-%d.png';
+            $gsCmd = 'gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r144 -dFirstPage=1 -dLastPage=8 '
+                . '-sOutputFile=' . escapeshellarg($gsOut) . ' ' . escapeshellarg($path);
+            exec($gsCmd . ' 2>&1', $gsOutLines, $gsCode);
+            if ($gsCode !== 0 || glob($pngPattern) === []) {
+                $this->removeDir($tmpdir);
+
+                return '';
+            }
+        }
+
+        $files = glob($pngPattern) ?: [];
+        sort($files, SORT_NATURAL);
+        $files = array_slice($files, 0, 8);
+        $chunks = [];
+        foreach ($files as $png) {
+            try {
+                $chunk = $this->extractManualTextFromImage($png, 'png');
+                if (trim($chunk) !== '') {
+                    $chunks[] = trim($chunk);
+                }
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+        $this->removeDir($tmpdir);
+
+        return trim(implode("\n\n", $chunks));
+    }
+
+    private function removeDir(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        foreach (glob($dir . DIRECTORY_SEPARATOR . '*') ?: [] as $file) {
+            if (is_file($file)) {
+                @unlink($file);
+            }
+        }
+        @rmdir($dir);
     }
 
     private function extractPdfViaPdftotext(string $path): string
@@ -311,8 +422,12 @@ final class JdTextExtractionService
             $text = $this->sanitizeText($raw !== false ? (string) $raw : '');
             $method = 'text';
         } elseif ($ext === 'pdf') {
-            $text = $this->sanitizeText($this->extractPdfText($tmp));
-            $method = 'pdf';
+            $rawPdf = $this->extractPdfText($tmp);
+            $text = $this->sanitizeText($rawPdf);
+            $method = $text !== '' ? 'pdf' : ($this->openai->isConfigured() ? 'pdf_ocr' : 'pdf');
+            if ($text === '' && $rawPdf !== '' && self::isGarbledExtract($rawPdf)) {
+                $method = 'pdf_unreadable';
+            }
         } else {
             try {
                 $text = $this->sanitizeText($this->extractManualTextFromImage($tmp, $ext));
