@@ -212,6 +212,11 @@ class TutorialModuleActivityModel extends BaseModel
         $config = $this->normalizeConfig($type, is_array($data['config'] ?? null) ? $data['config'] : []);
         $answerKey = $this->normalizeAnswerKey($type, $mode, is_array($data['answerKey'] ?? null) ? $data['answerKey'] : []);
 
+        $lessonBlockId = trim((string) ($data['lessonBlockId'] ?? ''));
+        if ($lessonBlockId !== '' && preg_match('/^[A-Za-z0-9_-]{1,64}$/', $lessonBlockId) !== 1) {
+            throw new \InvalidArgumentException('Activity lessonBlockId is invalid.');
+        }
+
         return [
             'tutorialId' => $tutorialId,
             'moduleId' => $moduleId,
@@ -227,6 +232,7 @@ class TutorialModuleActivityModel extends BaseModel
             'answerKey' => $answerKey,
             'archived' => ($data['archived'] ?? false) === true,
             'createdBy' => $createdBy,
+            'lessonBlockId' => $lessonBlockId,
         ];
     }
 

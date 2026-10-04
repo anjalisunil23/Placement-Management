@@ -775,6 +775,7 @@ final class TutorialService
             'timeLimitMs' => $limits['timeLimitMs'],
             'memoryLimitKb' => $limits['memoryLimitKb'],
             'sortOrder' => $input['sortOrder'] ?? $this->nextExerciseOrder($moduleId),
+            'lessonBlockId' => (string) ($input['lessonBlockId'] ?? ''),
         ]);
 
         return $this->managedExercise($row, false);
@@ -802,6 +803,9 @@ final class TutorialService
             'timeLimitMs' => $limits['timeLimitMs'],
             'memoryLimitKb' => $limits['memoryLimitKb'],
             'sortOrder' => $input['sortOrder'] ?? $existing['sortOrder'] ?? 1,
+            'lessonBlockId' => array_key_exists('lessonBlockId', $input)
+                ? (string) $input['lessonBlockId']
+                : (string) ($existing['lessonBlockId'] ?? ''),
         ]);
         if ($row === null) {
             throw new \RuntimeException('Exercise not found.', 404);
@@ -1446,7 +1450,9 @@ final class TutorialService
             'sortOrder' => (int) ($module['sortOrder'] ?? 0),
         ];
         if ($includeContent) {
-            $view['content'] = $this->presentLessonContent($this->lessonContentString($module['content'] ?? ''));
+            $rawContent = $this->lessonContentString($module['content'] ?? '');
+            $view['content'] = $this->presentLessonContent($rawContent);
+            $view['lessons'] = $this->buildStudentLessons($rawContent, (string) ($module['title'] ?? 'Lesson'));
             $view['exercises'] = [];
             foreach ($this->exercises->listByModule((string) ($module['_id'] ?? '')) as $exercise) {
                 $view['exercises'][] = [
@@ -1454,6 +1460,7 @@ final class TutorialService
                     'title' => (string) ($exercise['title'] ?? ''),
                     'language' => (string) ($exercise['language'] ?? ''),
                     'sortOrder' => (int) ($exercise['sortOrder'] ?? 0),
+                    'lessonBlockId' => (string) ($exercise['lessonBlockId'] ?? ''),
                 ];
             }
         }
@@ -1489,6 +1496,7 @@ final class TutorialService
             'boilerplate' => (string) ($exercise['boilerplate'] ?? ''),
             'timeLimitMs' => (int) ($exercise['timeLimitMs'] ?? 0),
             'memoryLimitKb' => (int) ($exercise['memoryLimitKb'] ?? 0),
+            'lessonBlockId' => (string) ($exercise['lessonBlockId'] ?? ''),
             'testCases' => $public,
         ];
     }
@@ -1562,6 +1570,7 @@ final class TutorialService
             'timeLimitMs' => (int) ($exercise['timeLimitMs'] ?? 0),
             'memoryLimitKb' => (int) ($exercise['memoryLimitKb'] ?? 0),
             'sortOrder' => (int) ($exercise['sortOrder'] ?? 0),
+            'lessonBlockId' => (string) ($exercise['lessonBlockId'] ?? ''),
         ];
         if ($withCases) {
             $view['testCases'] = array_map(
@@ -1571,6 +1580,79 @@ final class TutorialService
         }
 
         return $view;
+    }
+
+    /**
+     * Split lesson JSON into navigable sections (H2 boundaries). HTML-only modules become one lesson.
+     *
+     * @return list<array{id: string, title: string, html: string}>
+     */
+    private function buildStudentLessons(string $rawContent, string $fallbackTitle): array
+    {
+        $fallbackTitle = trim($fallbackTitle) !== '' ? trim($fallbackTitle) : 'Lesson';
+        $trim = trim($rawContent);
+        if ($trim !== '' && str_starts_with($trim, '{')) {
+            $decoded = json_decode($trim, true);
+            if (is_array($decoded) && (int) ($decoded['version'] ?? 0) === 1 && is_array($decoded['blocks'] ?? null)) {
+                $document = $this->cleanLessonDocument($decoded);
+                $sections = [];
+                $current = null;
+                foreach ((array) ($document['blocks'] ?? []) as $block) {
+                    if (!is_array($block)) {
+                        continue;
+                    }
+                    $isSectionStart = (($block['type'] ?? '') === 'heading') && (int) ($block['level'] ?? 2) === 2;
+                    if ($isSectionStart) {
+                        if ($current !== null) {
+                            $sections[] = $current;
+                        }
+                        $title = trim((string) ($block['text'] ?? ''));
+                        $current = [
+                            'id' => (string) ($block['id'] ?? ('lesson-' . (count($sections) + 1))),
+                            'title' => $title !== '' ? $title : ('Lesson ' . (count($sections) + 1)),
+                            'blocks' => [$block],
+                        ];
+                        continue;
+                    }
+                    if ($current === null) {
+                        $current = [
+                            'id' => 'intro',
+                            'title' => $fallbackTitle,
+                            'blocks' => [],
+                        ];
+                    }
+                    $current['blocks'][] = $block;
+                }
+                if ($current !== null) {
+                    $sections[] = $current;
+                }
+                if ($sections === []) {
+                    return [[
+                        'id' => 'module',
+                        'title' => $fallbackTitle,
+                        'html' => $this->lessonDocumentToHtml($document),
+                    ]];
+                }
+
+                return array_map(
+                    fn (array $section): array => [
+                        'id' => (string) $section['id'],
+                        'title' => (string) $section['title'],
+                        'html' => $this->lessonDocumentToHtml([
+                            'version' => 1,
+                            'blocks' => $section['blocks'],
+                        ]),
+                    ],
+                    $sections
+                );
+            }
+        }
+
+        return [[
+            'id' => 'module',
+            'title' => $fallbackTitle,
+            'html' => $this->presentLessonContent($rawContent),
+        ]];
     }
 
     /**

@@ -45,6 +45,9 @@
     activities: [],
     activityBusy: false,
     activityAiPreview: null,
+    aiCourse: null,
+    aiModule: null,
+    aiSavedTutorialId: '',
     reviewTutorialId: '',
     reviewCourse: null,
     reviewQueue: [],
@@ -356,11 +359,305 @@
 
   function showStaffScreen(name) {
     document.getElementById('tutorialListView').classList.toggle('d-none', name !== 'list');
+    const aiView = document.getElementById('aiCourseView');
+    if (aiView) aiView.classList.toggle('d-none', name !== 'aiCourse');
     document.getElementById('moduleView').classList.toggle('d-none', name !== 'builder');
     document.getElementById('articleView').classList.toggle('d-none', name !== 'article');
     document.getElementById('previewView').classList.toggle('d-none', name !== 'preview');
     const reviewView = document.getElementById('activityReviewView');
     if (reviewView) reviewView.classList.toggle('d-none', name !== 'reviews');
+  }
+
+  function lessonBlocksText(documentJson) {
+    const blocks = (documentJson && documentJson.blocks) || [];
+    return blocks.map((block) => {
+      const type = block.type || '';
+      if (type === 'heading') return `${block.level === 3 ? '###' : '##'} ${block.text || ''}`;
+      if (type === 'code') return `[${block.language || 'code'}]\n${block.source || ''}`;
+      if (type === 'divider') return '---';
+      return block.text || '';
+    }).filter(Boolean).join('\n\n');
+  }
+
+  function setAiError(id, message) {
+    const box = document.getElementById(id);
+    if (!box) return;
+    if (!message) {
+      box.classList.add('d-none');
+      box.textContent = '';
+      return;
+    }
+    box.textContent = message;
+    box.classList.remove('d-none');
+  }
+
+  function fillAiCategorySelect(preferredSlug) {
+    const select = document.getElementById('aiPreviewCategory');
+    if (!select) return;
+    select.innerHTML = (state.categories || []).map((row) => (
+      `<option value="${esc(row.id)}" data-slug="${esc(row.slug || '')}">${esc(row.name)}</option>`
+    )).join('');
+    const match = [...select.options].find((option) => option.getAttribute('data-slug') === preferredSlug);
+    if (match) select.value = match.value;
+  }
+
+  function openAiCourseScreen() {
+    state.aiCourse = null;
+    state.aiSavedTutorialId = '';
+    setAiError('aiCourseError', '');
+    document.getElementById('aiCoursePreview').classList.add('d-none');
+    document.getElementById('aiCourseSaved').classList.add('d-none');
+    document.getElementById('aiCourseLoading').classList.add('d-none');
+    showStaffScreen('aiCourse');
+  }
+
+  function syncAiCourseFromForm() {
+    if (!state.aiCourse) return;
+    state.aiCourse.course.title = document.getElementById('aiPreviewTitle').value.trim();
+    state.aiCourse.course.description = document.getElementById('aiPreviewDescription').value.trim();
+    document.querySelectorAll('#aiPreviewModules [data-ai-module]').forEach((card) => {
+      const index = Number(card.getAttribute('data-ai-module'));
+      const module = state.aiCourse.modules[index];
+      if (!module) return;
+      module.title = card.querySelector('[data-ai-title]').value.trim();
+      module.description = card.querySelector('[data-ai-description]').value.trim();
+      module.subtitle = module.description.slice(0, 240);
+    });
+  }
+
+  function renderAiCoursePreview() {
+    const preview = state.aiCourse;
+    const box = document.getElementById('aiCoursePreview');
+    if (!preview || !preview.course) {
+      box.classList.add('d-none');
+      return;
+    }
+    box.classList.remove('d-none');
+    document.getElementById('aiPreviewTitle').value = preview.course.title || '';
+    document.getElementById('aiPreviewDescription').value = preview.course.description || '';
+    fillAiCategorySelect(preview.suggestedCategorySlug || '');
+    document.getElementById('aiPreviewMeta').textContent = [
+      preview.course.topic ? `Topic: ${preview.course.topic}` : '',
+      preview.course.difficulty || '',
+      preview.course.academicField ? preview.course.academicField.replace(/_/g, ' ') : '',
+      `${(preview.modules || []).length} module${(preview.modules || []).length === 1 ? '' : 's'}`,
+    ].filter(Boolean).join(' · ');
+    document.getElementById('aiPreviewModules').innerHTML = (preview.modules || []).map((module, index) => (
+      `<div class="card-surface p-3" data-ai-module="${index}">
+        <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+          <div class="fw-semibold">Module ${index + 1}</div>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-ai-remove="${index}">Remove</button>
+        </div>
+        <div class="row g-2">
+          <div class="col-12"><label class="form-label">Title</label><input class="form-control form-control-sm" data-ai-title value="${esc(module.title || '')}" maxlength="160"/></div>
+          <div class="col-12"><label class="form-label">Description</label><textarea class="form-control form-control-sm" data-ai-description rows="2">${esc(module.description || module.subtitle || '')}</textarea></div>
+          <div class="col-12"><details><summary class="small">Review lesson content</summary><pre class="small mt-2 mb-0" style="white-space:pre-wrap">${esc(lessonBlocksText(module.lessonDocument))}</pre></details></div>
+        </div>
+      </div>`
+    )).join('') || '<p class="text-muted-2 mb-0">No modules left in this preview.</p>';
+    document.querySelectorAll('[data-ai-remove]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        syncAiCourseFromForm();
+        const index = Number(btn.getAttribute('data-ai-remove'));
+        state.aiCourse.modules.splice(index, 1);
+        renderAiCoursePreview();
+      });
+    });
+  }
+
+  async function generateAiCourse() {
+    const topic = document.getElementById('aiCourseTopic').value.trim();
+    const moduleCount = Number(document.getElementById('aiCourseModuleCount').value);
+    setAiError('aiCourseError', '');
+    document.getElementById('aiCourseSaved').classList.add('d-none');
+    if (!topic) {
+      setAiError('aiCourseError', 'Topic is required.');
+      return;
+    }
+    if (!Number.isInteger(moduleCount) || moduleCount < 1 || moduleCount > 12) {
+      setAiError('aiCourseError', 'Number of modules must be between 1 and 12.');
+      return;
+    }
+    const btn = document.getElementById('aiCourseGenerateBtn');
+    btn.disabled = true;
+    document.getElementById('aiCourseLoading').classList.remove('d-none');
+    try {
+      const data = await call('/tutorials/manage/ai/generate-course', {
+        method: 'POST',
+        body: {
+          topic,
+          academicField: document.getElementById('aiCourseField').value,
+          difficulty: document.getElementById('aiCourseDifficulty').value,
+          moduleCount,
+          additionalInstructions: document.getElementById('aiCourseInstructions').value.trim(),
+          mcqsPerModule: 0,
+          practicalPreference: 'none',
+        },
+      });
+      if (!data || !data.course || !Array.isArray(data.modules) || !data.modules.length) {
+        throw new Error('AI did not return a course preview.');
+      }
+      state.aiCourse = data;
+      state.aiSavedTutorialId = '';
+      renderAiCoursePreview();
+      toast('Review the generated course, then save it as a draft.', 'success');
+    } catch (err) {
+      state.aiCourse = null;
+      document.getElementById('aiCoursePreview').classList.add('d-none');
+      setAiError('aiCourseError', err && err.message ? err.message : 'Course generation failed.');
+    } finally {
+      btn.disabled = false;
+      document.getElementById('aiCourseLoading').classList.add('d-none');
+    }
+  }
+
+  async function saveAiCourseDraft() {
+    if (!state.aiCourse) {
+      setAiError('aiCourseError', 'Generate a course before saving.');
+      return;
+    }
+    syncAiCourseFromForm();
+    if (!state.aiCourse.course.title) {
+      setAiError('aiCourseError', 'Course title is required.');
+      return;
+    }
+    if (!(state.aiCourse.modules || []).length) {
+      setAiError('aiCourseError', 'Keep at least one module before saving.');
+      return;
+    }
+    if ((state.aiCourse.modules || []).some((module) => !String(module.title || '').trim())) {
+      setAiError('aiCourseError', 'Every module needs a title.');
+      return;
+    }
+    const categoryId = document.getElementById('aiPreviewCategory').value;
+    if (!categoryId) {
+      setAiError('aiCourseError', 'Choose a category before saving the generated course.');
+      return;
+    }
+    const btn = document.getElementById('aiCourseSaveBtn');
+    btn.disabled = true;
+    try {
+      const saved = await call('/tutorials/manage/ai/save-course', {
+        method: 'POST',
+        body: {
+          categoryId,
+          visibility: 'all',
+          topic: state.aiCourse.course.topic || document.getElementById('aiCourseTopic').value.trim(),
+          academicField: state.aiCourse.course.academicField || document.getElementById('aiCourseField').value,
+          difficulty: state.aiCourse.course.difficulty || document.getElementById('aiCourseDifficulty').value,
+          course: state.aiCourse.course,
+          modules: state.aiCourse.modules,
+          preferences: state.aiCourse.preferences || { mcqsPerModule: 0, practicalPreference: 'none' },
+        },
+      });
+      state.aiSavedTutorialId = (saved && saved.tutorial && saved.tutorial.id) || '';
+      document.getElementById('aiCourseSaved').classList.remove('d-none');
+      toast('Course saved as draft.', 'success');
+      await refreshList();
+    } catch (err) {
+      setAiError('aiCourseError', err && err.message ? err.message : 'The course could not be saved.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function toggleAiModulePane() {
+    const pane = document.getElementById('aiModulePane');
+    pane.classList.toggle('d-none');
+    if (!pane.classList.contains('d-none')) {
+      setAiError('aiModuleError', '');
+    }
+  }
+
+  function renderAiModulePreview() {
+    const box = document.getElementById('aiModulePreview');
+    const module = state.aiModule && state.aiModule.module;
+    if (!module) {
+      box.classList.add('d-none');
+      return;
+    }
+    box.classList.remove('d-none');
+    document.getElementById('aiModulePreviewTitle').value = module.title || '';
+    document.getElementById('aiModulePreviewSubtitle').value = module.subtitle || '';
+    document.getElementById('aiModulePreviewDescription').value = module.description || '';
+    document.getElementById('aiModulePreviewLesson').textContent = lessonBlocksText(module.lessonDocument) || 'No lesson blocks returned.';
+  }
+
+  async function generateAiModule() {
+    if (!state.active || !state.active.id) {
+      toast('Open a course before generating a module.', 'error');
+      return;
+    }
+    const topic = document.getElementById('aiModuleTopic').value.trim();
+    setAiError('aiModuleError', '');
+    if (!topic) {
+      setAiError('aiModuleError', 'Module topic is required.');
+      return;
+    }
+    const btn = document.getElementById('aiModuleGenerateBtn');
+    btn.disabled = true;
+    document.getElementById('aiModuleLoading').classList.remove('d-none');
+    try {
+      const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/ai/generate-module`, {
+        method: 'POST',
+        body: {
+          topic,
+          academicField: document.getElementById('aiModuleField').value,
+          difficulty: document.getElementById('aiModuleDifficulty').value,
+          additionalInstructions: document.getElementById('aiModuleInstructions').value.trim(),
+          mcqsPerModule: 0,
+          practicalPreference: 'none',
+        },
+      });
+      if (!data || !data.module || !data.module.title) {
+        throw new Error('AI did not return a module preview.');
+      }
+      state.aiModule = data;
+      renderAiModulePreview();
+      toast('Review the module, then save it into this course.', 'success');
+    } catch (err) {
+      state.aiModule = null;
+      document.getElementById('aiModulePreview').classList.add('d-none');
+      setAiError('aiModuleError', err && err.message ? err.message : 'Module generation failed.');
+    } finally {
+      btn.disabled = false;
+      document.getElementById('aiModuleLoading').classList.add('d-none');
+    }
+  }
+
+  async function saveAiModuleDraft() {
+    if (!state.active || !state.aiModule || !state.aiModule.module) {
+      setAiError('aiModuleError', 'Generate a module before saving.');
+      return;
+    }
+    const module = state.aiModule.module;
+    module.title = document.getElementById('aiModulePreviewTitle').value.trim();
+    module.subtitle = document.getElementById('aiModulePreviewSubtitle').value.trim();
+    module.description = document.getElementById('aiModulePreviewDescription').value.trim();
+    if (!module.title) {
+      setAiError('aiModuleError', 'Module title is required.');
+      return;
+    }
+    const btn = document.getElementById('aiModuleSaveBtn');
+    btn.disabled = true;
+    try {
+      await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/ai/save-module`, {
+        method: 'POST',
+        body: {
+          difficulty: document.getElementById('aiModuleDifficulty').value,
+          academicField: document.getElementById('aiModuleField').value,
+          module,
+        },
+      });
+      state.aiModule = null;
+      document.getElementById('aiModulePreview').classList.add('d-none');
+      toast('Module saved. Course status was not changed.', 'success');
+      await openModules(state.active.id);
+    } catch (err) {
+      setAiError('aiModuleError', err && err.message ? err.message : 'The module could not be saved.');
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function openPreview(id) {
@@ -2462,6 +2759,16 @@
 
   function bind() {
     document.getElementById('createTutorialBtn').addEventListener('click', () => { blankTutorialForm(); modal('tutorialModal').show(); });
+    document.getElementById('generateCourseAiBtn').addEventListener('click', openAiCourseScreen);
+    document.getElementById('aiCourseBack').addEventListener('click', () => showStaffScreen('list'));
+    document.getElementById('aiCourseGenerateBtn').addEventListener('click', () => { generateAiCourse().catch(fail); });
+    document.getElementById('aiCourseSaveBtn').addEventListener('click', () => { saveAiCourseDraft().catch(fail); });
+    document.getElementById('aiCourseOpenSaved').addEventListener('click', () => {
+      if (state.aiSavedTutorialId) openModules(state.aiSavedTutorialId).catch(fail);
+    });
+    document.getElementById('generateModuleAiBtn').addEventListener('click', toggleAiModulePane);
+    document.getElementById('aiModuleGenerateBtn').addEventListener('click', () => { generateAiModule().catch(fail); });
+    document.getElementById('aiModuleSaveBtn').addEventListener('click', () => { saveAiModuleDraft().catch(fail); });
     document.getElementById('tutorialForm').addEventListener('submit', saveTutorial);
     document.getElementById('categoryForm').addEventListener('submit', saveCategory);
     document.getElementById('moduleForm').addEventListener('submit', saveModule);
@@ -2619,6 +2926,8 @@
     detail: null,
     moduleIndex: 0,
     module: null,
+    lessons: [],
+    lessonIndex: 0,
     drafts: {},
     progressById: {},
     continueIds: {},
@@ -2859,6 +3168,8 @@
       const modules = learn.detail.modules || [];
       const resumeIndex = modules.findIndex((module) => module.id === resume);
       learn.moduleIndex = resumeIndex >= 0 ? resumeIndex : 0;
+      learn.lessonIndex = 0;
+      learn.lessons = [];
       paintProgress();
       document.getElementById('studentTutorialHeading').textContent = learn.detail.title || '';
       document.getElementById('studentTutorialMeta').textContent = learn.detail.category ? learn.detail.category.name : '';
@@ -2889,6 +3200,130 @@
     });
   }
 
+  function currentLessonId() {
+    const lesson = (learn.lessons || [])[learn.lessonIndex];
+    return lesson ? String(lesson.id || '') : '';
+  }
+
+  function practiceMatchesLesson(item) {
+    const linked = String((item && item.lessonBlockId) || '').trim();
+    if (!linked) return true;
+    return linked === currentLessonId();
+  }
+
+  function renderStudentLessonNav() {
+    const lessons = learn.lessons || [];
+    const select = document.getElementById('studentLessonSelect');
+    if (select) {
+      select.innerHTML = lessons.map((lesson, index) => `<option value="${index}">${esc(lesson.title || ('Lesson ' + (index + 1)))}</option>`).join('');
+      select.value = String(learn.lessonIndex);
+      select.classList.toggle('d-none', lessons.length <= 1);
+      select.classList.toggle('d-lg-none', lessons.length > 1);
+    }
+    const root = document.getElementById('studentLessonNav');
+    if (!root) return;
+    root.innerHTML = lessons.map((lesson, index) => (
+      `<button type="button" class="btn btn-sm text-start ${index === learn.lessonIndex ? 'btn-primary' : 'btn-outline-secondary'}" data-student-lesson="${index}">${esc(lesson.title || ('Lesson ' + (index + 1)))}</button>`
+    )).join('') || '<p class="text-muted-2 mb-0">No lessons in this module.</p>';
+    root.querySelectorAll('[data-student-lesson]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        showStudentLesson(Number(btn.getAttribute('data-student-lesson'))).catch(fail);
+      });
+    });
+  }
+
+  function updateLessonNavButtons() {
+    const modules = (learn.detail && learn.detail.modules) || [];
+    const lessons = learn.lessons || [];
+    const prev = document.getElementById('studentPrevModule');
+    const next = document.getElementById('studentNextModule');
+    if (!prev || !next) return;
+    const atFirst = learn.moduleIndex <= 0 && learn.lessonIndex <= 0;
+    const atLast = learn.moduleIndex >= modules.length - 1 && learn.lessonIndex >= Math.max(lessons.length - 1, 0);
+    prev.disabled = atFirst || !modules.length;
+    next.disabled = atLast || !modules.length;
+  }
+
+  async function showStudentLesson(nextLessonIndex) {
+    const lessons = learn.lessons || [];
+    if (!lessons.length) {
+      document.getElementById('studentLessonHeading').textContent = '';
+      document.getElementById('studentModuleContent').textContent = 'This module does not have lesson content yet.';
+      renderStudentLessonNav();
+      renderStudentPracticeForLesson();
+      updateLessonNavButtons();
+      return;
+    }
+    if (typeof nextLessonIndex === 'number') {
+      learn.lessonIndex = Math.max(0, Math.min(lessons.length - 1, nextLessonIndex));
+    }
+    const lesson = lessons[learn.lessonIndex] || lessons[0];
+    renderStudentLessonNav();
+    document.getElementById('studentLessonHeading').textContent = lesson.title || '';
+    const content = document.getElementById('studentModuleContent');
+    if (lesson.html) setLessonHtml(content, lesson.html);
+    else content.textContent = 'This lesson does not have content yet.';
+    document.getElementById('studentExercisePanel').classList.add('d-none');
+    if (learn.activity && !practiceMatchesLesson(learn.activity)) {
+      learn.activity = null;
+      learn.activityAttempt = null;
+      learn.activityAttempts = [];
+      learn.activityDirty = false;
+      learn.activityViewingSubmitted = false;
+      const panel = document.getElementById('studentActivityPanel');
+      if (panel) panel.classList.add('d-none');
+    }
+    renderStudentPracticeForLesson();
+    updateLessonNavButtons();
+  }
+
+  function renderStudentPracticeForLesson() {
+    const exercises = ((learn.module && learn.module.exercises) || []).filter(practiceMatchesLesson);
+    const list = document.getElementById('studentExerciseList');
+    list.innerHTML = exercises.length
+      ? exercises.map((row) => `<button type="button" class="btn btn-outline-primary text-start" data-student-exercise="${esc(row.id)}">${esc(row.title)}</button>`).join('')
+      : '<p class="text-muted-2 mb-0">No programming exercises for this lesson.</p>';
+    list.querySelectorAll('[data-student-exercise]').forEach((btn) => {
+      btn.addEventListener('click', () => openStudentExercise(btn.getAttribute('data-student-exercise')));
+    });
+    renderStudentActivityList();
+    const activities = (learn.activities || []).filter(practiceMatchesLesson);
+    const hasAssessment = !document.getElementById('studentAssessmentSection').classList.contains('d-none');
+    const empty = document.getElementById('studentPracticeEmpty');
+    if (empty) {
+      empty.classList.toggle('d-none', !!(exercises.length || activities.length || hasAssessment));
+    }
+    const hint = document.getElementById('studentPracticeHint');
+    if (hint) {
+      const lesson = (learn.lessons || [])[learn.lessonIndex];
+      hint.textContent = lesson
+        ? `Practice for “${lesson.title || 'this lesson'}”. Unassigned items appear for every lesson in the module.`
+        : 'Exercises and activities for the selected lesson.';
+    }
+  }
+
+  async function goStudentLessonDelta(delta) {
+    const modules = (learn.detail && learn.detail.modules) || [];
+    const lessons = learn.lessons || [];
+    if (!modules.length) return;
+    let moduleIndex = learn.moduleIndex;
+    let lessonIndex = learn.lessonIndex + delta;
+    if (lessonIndex >= 0 && lessonIndex < lessons.length) {
+      await showStudentLesson(lessonIndex);
+      return;
+    }
+    if (delta > 0 && moduleIndex < modules.length - 1) {
+      await showStudentModule(moduleIndex + 1);
+      return;
+    }
+    if (delta < 0 && moduleIndex > 0) {
+      await showStudentModule(moduleIndex - 1);
+      if ((learn.lessons || []).length) {
+        await showStudentLesson(learn.lessons.length - 1);
+      }
+    }
+  }
+
   async function showStudentModule(nextIndex) {
     if (typeof nextIndex === 'number' && nextIndex !== learn.moduleIndex) {
       if (learn.activityDirty) {
@@ -2907,6 +3342,7 @@
         learn.activityDirty = false;
       }
       learn.moduleIndex = nextIndex;
+      learn.lessonIndex = 0;
     } else if (learn.activityDirty && typeof nextIndex !== 'number') {
       const ok = await confirmAction({
         title: 'Leave unsaved activity?',
@@ -2924,20 +3360,24 @@
     document.getElementById('studentAssessmentAttempt').classList.add('d-none');
     document.getElementById('studentAssessmentResults').classList.add('d-none');
     resetStudentActivityUi();
-    document.getElementById('studentPrevModule').disabled = learn.moduleIndex <= 0;
-    document.getElementById('studentNextModule').disabled = learn.moduleIndex >= modules.length - 1;
     if (!modules.length) {
+      learn.lessons = [];
+      learn.lessonIndex = 0;
       document.getElementById('studentModulePosition').textContent = '';
       document.getElementById('studentModuleHeading').textContent = 'No modules yet';
+      document.getElementById('studentLessonHeading').textContent = '';
       document.getElementById('studentModuleContent').textContent = 'This tutorial does not have any lessons yet.';
       document.getElementById('studentExerciseList').innerHTML = '<p class="text-muted-2 mb-0">There are no exercises until a module is added.</p>';
       document.getElementById('studentMarkModule').disabled = true;
+      renderStudentLessonNav();
+      updateLessonNavButtons();
       return;
     }
     const summary = modules[learn.moduleIndex];
     document.getElementById('studentModuleHeading').textContent = 'Loading…';
+    document.getElementById('studentLessonHeading').textContent = '';
     document.getElementById('studentModuleContent').textContent = 'Loading lesson…';
-    document.getElementById('studentExerciseList').innerHTML = '<p class="text-muted-2 mb-0">Loading exercises…</p>';
+    document.getElementById('studentExerciseList').innerHTML = '<p class="text-muted-2 mb-0">Loading practice…</p>';
     learn.module = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(summary.id)}`);
     try {
       learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/progress`);
@@ -2947,17 +3387,17 @@
     document.getElementById('studentModuleHeading').textContent = learn.module.title || '';
     const subtitle = document.getElementById('studentModuleSubtitle');
     if (subtitle) subtitle.textContent = learn.module.subtitle || '';
-    if (learn.module.content) setLessonHtml(document.getElementById('studentModuleContent'), learn.module.content);
-    else document.getElementById('studentModuleContent').textContent = 'This module does not have lesson content yet.';
-    const exercises = learn.module.exercises || [];
-    document.getElementById('studentExerciseList').innerHTML = exercises.length
-      ? exercises.map((row) => `<button type="button" class="btn btn-outline-primary text-start" data-student-exercise="${esc(row.id)}">${esc(row.title)}</button>`).join('')
-      : '<p class="text-muted-2 mb-0">This module has no exercises.</p>';
-    document.querySelectorAll('[data-student-exercise]').forEach((btn) => {
-      btn.addEventListener('click', () => openStudentExercise(btn.getAttribute('data-student-exercise')));
-    });
+    learn.lessons = Array.isArray(learn.module.lessons) && learn.module.lessons.length
+      ? learn.module.lessons
+      : [{
+        id: 'module',
+        title: learn.module.title || 'Lesson',
+        html: learn.module.content || '',
+      }];
+    if (learn.lessonIndex >= learn.lessons.length) learn.lessonIndex = 0;
     await loadStudentAssessment();
     await loadStudentActivities();
+    await showStudentLesson(learn.lessonIndex);
   }
 
   function resetStudentAssessmentUi() {
@@ -3162,20 +3602,32 @@
   }
 
   async function loadStudentActivities() {
-    resetStudentActivityUi();
-    if (!learn.detail || !learn.module) return;
+    learn.activity = null;
+    learn.activityAttempts = [];
+    learn.activityAttempt = null;
+    learn.activityBusy = false;
+    learn.activityDirty = false;
+    learn.activityViewingSubmitted = false;
+    const panel = document.getElementById('studentActivityPanel');
+    if (panel) panel.classList.add('d-none');
+    if (!learn.detail || !learn.module) {
+      learn.activities = [];
+      learn.activityStatuses = {};
+      return;
+    }
     const section = document.getElementById('studentActivitySection');
     const list = document.getElementById('studentActivityList');
-    section.classList.remove('d-none');
     list.innerHTML = '<p class="text-muted-2 mb-0">Loading activities…</p>';
     try {
       const data = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/activities`);
       learn.activities = data.activities || [];
       if (!learn.activities.length) {
-        section.classList.add('d-none');
+        if (section) section.classList.add('d-none');
         list.innerHTML = '';
+        learn.activityStatuses = {};
         return;
       }
+      if (section) section.classList.remove('d-none');
       const statuses = {};
       await Promise.all(learn.activities.map(async (row) => {
         try {
@@ -3189,8 +3641,10 @@
       learn.activityStatuses = statuses;
       renderStudentActivityList();
     } catch (err) {
+      learn.activities = [];
+      learn.activityStatuses = {};
       if (err && err.status === 404) {
-        section.classList.add('d-none');
+        if (section) section.classList.add('d-none');
         return;
       }
       list.innerHTML = `<p class="text-danger mb-0">${esc(err.message || 'Could not load activities.')}</p>`;
@@ -3199,9 +3653,17 @@
 
   function renderStudentActivityList() {
     const list = document.getElementById('studentActivityList');
-    const rows = learn.activities || [];
+    const section = document.getElementById('studentActivitySection');
+    const all = learn.activities || [];
+    const rows = all.filter(practiceMatchesLesson);
+    if (!all.length) {
+      if (section) section.classList.add('d-none');
+      list.innerHTML = '';
+      return;
+    }
+    if (section) section.classList.remove('d-none');
     if (!rows.length) {
-      list.innerHTML = '<p class="text-muted-2 mb-0">No practical activities for this module.</p>';
+      list.innerHTML = '<p class="text-muted-2 mb-0">No practical activities for this lesson.</p>';
       return;
     }
     list.innerHTML = rows.map((row) => {
@@ -3816,15 +4278,24 @@
         showStudentModule(Number(moduleSelect.value)).catch(fail);
       });
     }
+    const lessonSelect = document.getElementById('studentLessonSelect');
+    if (lessonSelect) {
+      lessonSelect.addEventListener('change', () => {
+        showStudentLesson(Number(lessonSelect.value)).catch(fail);
+      });
+    }
     document.getElementById('studentPrevModule').addEventListener('click', () => {
-      if (learn.moduleIndex <= 0) return;
-      showStudentModule(learn.moduleIndex - 1).catch(fail);
+      goStudentLessonDelta(-1).catch(fail);
     });
     document.getElementById('studentNextModule').addEventListener('click', () => {
-      const total = ((learn.detail && learn.detail.modules) || []).length;
-      if (learn.moduleIndex >= total - 1) return;
-      showStudentModule(learn.moduleIndex + 1).catch(fail);
+      goStudentLessonDelta(1).catch(fail);
     });
+    const exerciseClose = document.getElementById('studentExerciseCloseBtn');
+    if (exerciseClose) {
+      exerciseClose.addEventListener('click', () => {
+        document.getElementById('studentExercisePanel').classList.add('d-none');
+      });
+    }
     document.getElementById('studentMarkModule').addEventListener('click', async () => {
       const current = ((learn.detail && learn.detail.modules) || [])[learn.moduleIndex];
       if (!current || !learn.detail) return;

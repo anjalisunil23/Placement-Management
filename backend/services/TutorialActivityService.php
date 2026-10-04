@@ -90,6 +90,7 @@ final class TutorialActivityService
             'answerKey' => is_array($input['answerKey'] ?? null) ? $input['answerKey'] : [],
             'archived' => false,
             'createdBy' => $userId,
+            'lessonBlockId' => (string) ($input['lessonBlockId'] ?? ''),
         ]);
 
         return $this->managedView($row, true);
@@ -130,6 +131,9 @@ final class TutorialActivityService
                 ? $input['answerKey']
                 : (is_array($existing['answerKey'] ?? null) ? $existing['answerKey'] : []),
             'archived' => ($existing['archived'] ?? false) === true,
+            'lessonBlockId' => array_key_exists('lessonBlockId', $input)
+                ? (string) $input['lessonBlockId']
+                : (string) ($existing['lessonBlockId'] ?? ''),
         ]);
         if ($row === null) {
             throw new \RuntimeException('Activity not found.', 404);
@@ -408,6 +412,7 @@ final class TutorialActivityService
             'sortOrder' => (int) ($activity['sortOrder'] ?? 0),
             'status' => (string) ($activity['status'] ?? 'draft'),
             'evaluationMode' => (string) ($activity['evaluationMode'] ?? 'tutor_review'),
+            'lessonBlockId' => (string) ($activity['lessonBlockId'] ?? ''),
             'config' => $this->publicConfig(
                 (string) ($activity['activityType'] ?? ''),
                 is_array($activity['config'] ?? null) ? $activity['config'] : []
@@ -645,6 +650,7 @@ final class TutorialActivityService
             'sortOrder' => (int) ($activity['sortOrder'] ?? 0),
             'status' => (string) ($activity['status'] ?? 'draft'),
             'evaluationMode' => (string) ($activity['evaluationMode'] ?? 'tutor_review'),
+            'lessonBlockId' => (string) ($activity['lessonBlockId'] ?? ''),
             'config' => is_array($activity['config'] ?? null) ? $activity['config'] : [],
             'archived' => ($activity['archived'] ?? false) === true,
             'createdBy' => (string) ($activity['createdBy'] ?? ''),

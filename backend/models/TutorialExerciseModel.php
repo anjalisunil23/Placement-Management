@@ -127,6 +127,11 @@ class TutorialExerciseModel extends BaseModel
             throw new \InvalidArgumentException('Exercise language is required.');
         }
 
+        $lessonBlockId = trim((string) ($data['lessonBlockId'] ?? ''));
+        if ($lessonBlockId !== '' && preg_match('/^[A-Za-z0-9_-]{1,64}$/', $lessonBlockId) !== 1) {
+            throw new \InvalidArgumentException('Exercise lessonBlockId is invalid.');
+        }
+
         return [
             'moduleId' => $moduleId,
             'title' => $title,
@@ -136,6 +141,7 @@ class TutorialExerciseModel extends BaseModel
             'timeLimitMs' => self::positiveInt($data['timeLimitMs'] ?? 5000, 'timeLimitMs'),
             'memoryLimitKb' => self::positiveInt($data['memoryLimitKb'] ?? 128000, 'memoryLimitKb'),
             'sortOrder' => TutorialModuleModel::sortOrder($data['sortOrder'] ?? 1),
+            'lessonBlockId' => $lessonBlockId,
         ];
     }
 
