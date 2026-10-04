@@ -546,7 +546,147 @@ final class AesApiService
             }
         }
 
+        foreach ($this->passthroughPlacementDirectoryFields($record) as $key => $value) {
+            $out[$key] = $value;
+        }
+
         return $out;
+    }
+
+    /**
+     * Copy placement / higher-education keys from getAllStudInfo4Placement rows for registry sync.
+     *
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    private function passthroughPlacementDirectoryFields(array $record): array
+    {
+        $out = [];
+        foreach ($record as $key => $value) {
+            if (!is_string($key)) {
+                continue;
+            }
+            if (is_array($value) || is_object($value)) {
+                continue;
+            }
+            $scalar = trim((string) $value);
+            if ($scalar === '') {
+                continue;
+            }
+            $k = strtolower($key);
+            if (preg_match(
+                '/(?:company|employer|organ|placement|salary|ctc|package|job|designat|'
+                . 'higher|research|institut|join|offer|firm|university|college_name|'
+                . 'placed|recruit|intern|contact|address|status|recordtype|nature)/',
+                $k
+            ) !== 1) {
+                continue;
+            }
+            if (str_contains($k, 'dept') && !str_contains($k, 'employ')) {
+                continue;
+            }
+            $out[$key] = $value;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Map getAllStudInfo4Placement directory fields into student_placements placement payload.
+     *
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    public function placementFieldsFromStudInfoDirectoryRecord(array $record): array
+    {
+        $company = $this->firstNonEmptyString($record, [
+            'stud_company', 'company', 'company_name', 'companyName', 'employer', 'employer_name',
+            'organization', 'organisation', 'org_name', 'placed_company', 'placement_company',
+            'job_company', 'firm', 'firm_name', 'institution', 'stud_institution',
+            'higher_education_institution', 'university', 'college_name', 'companyname',
+        ]);
+        if ($company === '') {
+            return [];
+        }
+
+        $role = $this->firstNonEmptyString($record, [
+            'job_role', 'jobrole', 'role', 'designation', 'job_title', 'jobTitle', 'stud_designation',
+            'position', 'placed_role',
+        ]);
+        $package = $this->firstNonEmptyString($record, [
+            'package', 'salary', 'ctc', 'monthly_salary', 'monthlySalary', 'pay', 'compensation',
+            'stud_salary', 'placed_package',
+        ]);
+        $address = $this->firstNonEmptyString($record, [
+            'company_address', 'employer_address', 'address', 'org_address', 'office_address',
+        ]);
+        $contact = $this->firstNonEmptyString($record, [
+            'employer_contact', 'company_contact', 'contact', 'hr_contact', 'phone_office',
+        ]);
+        $joinDate = $this->firstNonEmptyString($record, [
+            'join_date', 'joinDate', 'date_of_joining', 'placed_date', 'placement_date',
+        ]);
+        $typeRaw = strtolower($this->firstNonEmptyString($record, [
+            'record_type', 'recordType', 'placement_type', 'placementType', 'type',
+            'category', 'placement_category',
+        ]));
+        $recordType = 'Placement';
+        if ($typeRaw !== '') {
+            if (str_contains($typeRaw, 'research')) {
+                $recordType = 'Research';
+            } elseif (str_contains($typeRaw, 'higher') || str_contains($typeRaw, 'education') || str_contains($typeRaw, 'pg ')) {
+                $recordType = 'Higher Education';
+            }
+        }
+
+        $out = array_filter([
+            'company'         => $company,
+            'role'            => $role,
+            'package'         => $package,
+            'address'         => $address,
+            'employerContact' => $contact,
+            'joinDate'        => $joinDate,
+            'recordType'      => $recordType,
+            'source'          => 'aes_getAllStudInfo4Placement',
+        ], static fn (string $v): bool => trim($v) !== '');
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param list<string> $keys
+     */
+    private function firstNonEmptyString(array $record, array $keys): string
+    {
+        foreach ($keys as $key) {
+            foreach ([$key, strtolower($key), strtoupper($key)] as $variant) {
+                if (!array_key_exists($variant, $record)) {
+                    continue;
+                }
+                $value = trim((string) $record[$variant]);
+                if ($value !== '' && strcasecmp($value, 'null') !== 0 && $value !== '—' && $value !== '-') {
+                    return $value;
+                }
+            }
+        }
+        foreach ($record as $rawKey => $value) {
+            if (!is_string($rawKey)) {
+                continue;
+            }
+            $norm = strtolower(preg_replace('/[^a-z0-9]/', '', $rawKey) ?? $rawKey);
+            foreach ($keys as $want) {
+                $wantNorm = strtolower(preg_replace('/[^a-z0-9]/', '', $want) ?? $want);
+                if ($norm !== '' && $wantNorm !== '' && ($norm === $wantNorm || str_contains($norm, $wantNorm))) {
+                    $text = trim((string) $value);
+                    if ($text !== '' && strcasecmp($text, 'null') !== 0) {
+                        return $text;
+                    }
+                }
+            }
+        }
+
+        return '';
     }
 
     /**

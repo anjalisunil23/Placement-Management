@@ -95,12 +95,8 @@ final class StaffPlacementRegistryService
             $aesClassRows = $isAlumni
                 ? $this->officerData->listAesAlumniClassStudents($wideCtx, $program, $batch, true)
                 : $this->officerData->listAesClassStudents($wideCtx, $program, $batch, true);
-            $localClassRows = $isAlumni
-                ? []
-                : $this->officerData->listLocalClassStudentsForBatch($wideCtx, $batch);
-            $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
+            $classRows = $aesClassRows;
             $classRows = $this->filterRosterByPlacementStudRole($classRows, $studRole);
-            $classRows = $this->attachRegistryPlacements($classRows);
             $studentsSynced += $this->syncClassRowsToStudentPlacements(
                 $classRows,
                 $deptId,
@@ -113,18 +109,14 @@ final class StaffPlacementRegistryService
                 $aesRows = $program !== ''
                     ? $this->officerData->listAlumniProgrammeStudents($wideCtx, $program)
                     : $this->officerData->listAlumniStudentsForPlacementRegistry($wideCtx);
-                $localRows = [];
             } elseif ($program !== '') {
                 $aesRows = $this->officerData->listAesProgrammeStudents($wideCtx, $program);
-                $localRows = $this->officerData->listLocalProgrammeStudents($wideCtx, $program);
             } else {
                 $aesRows = $this->officerData->listStudyingStudentsForPlacementRegistry($wideCtx);
-                $localRows = $this->officerData->listLocalDepartmentRosterRows($wideCtx);
             }
-            $classRows = $this->mergeCompleteClassRoster($localRows, $aesRows);
+            $classRows = $aesRows;
             $classRows = $this->filterRosterByPlacementStudRole($classRows, $studRole);
-            $classRows = $this->attachRegistryPlacements($classRows);
-            if ($classRows !== [] && ($program !== '' || $batch !== '' || count($classRows) <= 500)) {
+            if ($classRows !== []) {
                 $studentsSynced += $this->syncAesDirectoryRowsToStudentPlacements(
                     $classRows,
                     $deptId,
@@ -884,8 +876,11 @@ final class StaffPlacementRegistryService
                 continue;
             }
 
-            $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-            $placement = $this->placementFieldsForAesSync($placement);
+            $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+            $fromDirectory = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
+                array_merge($row, $embedded)
+            );
+            $placement = $this->placementFieldsForAesSync(array_merge($embedded, $fromDirectory));
             $meta = StudentPlacementModel::normalizeRosterMeta(array_merge(
                 $row,
                 $this->rosterStudRoleFieldsForSync($row, $placementStudRole),

@@ -3815,6 +3815,13 @@ final class OfficerDataService
             $row['placementStatus'] = 'placed';
         }
 
+        $fromDirectory = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord($record);
+        if ($fromDirectory !== []) {
+            $existing = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+            $row['placement'] = array_merge($existing, $fromDirectory);
+            $row['placed'] = trim((string) ($row['placement']['company'] ?? '')) !== '';
+        }
+
         return $row;
     }
 
