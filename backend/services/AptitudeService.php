@@ -735,8 +735,6 @@ final class AptitudeService
         if (!in_array($saveTarget, ['bank', 'problem', 'both'], true)) {
             $saveTarget = 'bank';
         }
-        $toProblem = $saveTarget === 'problem' || $saveTarget === 'both';
-
         try {
             $setDetail = (new \PMS\Models\AptitudeJdQuestionSetModel())->createManualSet(
                 $jdTitle,
@@ -755,14 +753,12 @@ final class AptitudeService
 
             $testView = null;
             $testSkippedMessage = null;
-            if ($toProblem) {
+            // "Problems only" → one manual card; staff use Edit to create the company test once.
+            // "Both" → question bank entry plus one auto-created unpublished company test.
+            if ($saveTarget === 'both') {
                 if ($parsed === []) {
-                    if ($saveTarget === 'problem') {
-                        $testSkippedMessage = null;
-                    } else {
-                        $testSkippedMessage = 'Manual saved on the company card. We could not detect MCQs in this file, '
-                            . 'so no company test was created. Try pasting text, use a clearer PDF, or add questions with AI Generate.';
-                    }
+                    $testSkippedMessage = 'Manual saved on the company card. We could not detect MCQs in this file, '
+                        . 'so no company test was created. Try pasting text, use a clearer PDF, or add questions with AI Generate.';
                 } else {
                     try {
                         $testView = $this->createCompanyProblemTestFromJdSet($admin, $setDetail, $jdTitle);

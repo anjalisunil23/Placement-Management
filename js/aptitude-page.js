@@ -1811,12 +1811,10 @@
       let tone = 'success';
       const viaAi = res.data?.parseMethod === 'ai';
       if (saveTarget === 'problem') {
-        if (testId) {
-          msg = `Saved under company Problems and created unpublished test (${count} question(s)${viaAi ? ', AI-read from manual' : ''}).`;
-        } else if (count > 0) {
-          msg = `Saved ${count} question(s) under company Problems${viaAi ? ' (AI-read from manual)' : ''}. Tap Questions to review.`;
+        if (count > 0) {
+          msg = `Saved ${count} question(s) under company Problems${viaAi ? ' (AI-read from manual)' : ''}. Tap Edit on the card to set up the test (one step).`;
         } else {
-          msg = 'Saved manual under company Problems. Tap Questions or Document on the card to view extracted text.';
+          msg = 'Saved manual under company Problems. Tap Edit to create the company test, or Document to view the file.';
         }
       } else if (saveTarget === 'bank') {
         msg = count > 0
@@ -1846,13 +1844,13 @@
         }
         showJdCompanyDetail(jdSelectedCompanyId);
         const newSetId = String(res.data?.id || '');
-        if (newSetId) {
+        if (newSetId && saveTarget === 'problem') {
           window.setTimeout(() => {
-            const card = [...document.querySelectorAll('[data-jd-set-card]')].find(
-              (el) => el.getAttribute('data-jd-set-card') === newSetId
-            );
-            card?.querySelector('[data-jd-view]')?.click();
+            openCompanyProblemEditFromManualSet({ id: newSetId, companyId, jdTitle: titleState.jdTitle });
           }, 300);
+        } else if (newSetId && saveTarget === 'both' && testId) {
+          const t = tests.find((x) => String(x.id) === testId);
+          if (t) window.setTimeout(() => openTestForm(t), 300);
         }
       }
     } catch (err) {
@@ -2092,7 +2090,7 @@
     </div>`;
   }
 
-  function renderJdSetCardsHtml(sets, { allowDelete = true, selectable = false } = {}) {
+  function renderJdSetCardsHtml(sets, { allowDelete = true, selectable = false, forProblems = false } = {}) {
     return (sets || []).map((set) => {
       const id = String(set.id || '');
       const hasDoc = !!(set.hasDocument || set.jdFileUrl);
@@ -2107,6 +2105,7 @@
           <div class="d-flex gap-2 flex-shrink-0">
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
             <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
+            ${forProblems ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-edit-problem="${esc(id)}">Edit</button>` : ''}
             ${allowDelete ? `<button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>` : ''}
           </div>
         </div>
@@ -2174,8 +2173,9 @@
     root.querySelectorAll('[data-jd-doc]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-jd-doc');
-        const card = btn.closest('[data-jd-set-card]');
-        const panel = card?.querySelector('[data-jd-doc-panel]');
+        const host = btn.closest('[data-jd-set-card]') || btn.closest('.border.rounded-3');
+        const panel = host?.querySelector(`[data-jd-doc-panel="${CSS.escape(String(id || ''))}"]`)
+          || host?.querySelector('[data-jd-doc-panel]');
         if (!panel) return;
         if (!panel.classList.contains('d-none')) {
           panel.classList.add('d-none');
@@ -2191,8 +2191,9 @@
     root.querySelectorAll('[data-jd-view]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-jd-view');
-        const card = btn.closest('[data-jd-set-card]');
-        const panel = card?.querySelector('[data-jd-questions]');
+        const host = btn.closest('[data-jd-set-card]') || btn.closest('.border.rounded-3');
+        const panel = host?.querySelector(`[data-jd-questions="${CSS.escape(String(id || ''))}"]`)
+          || host?.querySelector('[data-jd-questions]');
         if (!panel) return;
         if (!panel.classList.contains('d-none')) {
           panel.classList.add('d-none');
@@ -2203,6 +2204,13 @@
         panel.innerHTML = renderManualQuestionsPanel(detail || {});
         panel.classList.remove('d-none');
         btn.textContent = 'Hide';
+      });
+    });
+    root.querySelectorAll('[data-jd-edit-problem]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-jd-edit-problem');
+        const set = (jdCompanyBlocks.flatMap((b) => b.sets || [])).find((s) => String(s.id) === String(id));
+        openCompanyProblemEditFromManualSet(set || { id, companyId: jdSelectedCompanyId });
       });
     });
     if (allowDelete) {
@@ -2250,9 +2258,52 @@
     return '';
   }
 
+  function companyTestForManualSet(companyId, setId) {
+    const sid = String(setId || '');
+    if (!sid) return null;
+    return studentCompanyTestsFor(companyId).find((t) => primaryJdSetIdForTest(t) === sid) || null;
+  }
+
+  async function openCompanyProblemEditFromManualSet(set) {
+    const setId = String(set?.id || set || '');
+    if (!setId) return;
+    const companyId = String(set?.companyId || jdSelectedCompanyId || '');
+    const existing = companyTestForManualSet(companyId, setId);
+    if (existing) {
+      await openTestForm(existing);
+      return;
+    }
+    const detail = await getJdSetDetail(setId);
+    const questions = Array.isArray(detail?.questions) ? detail.questions : [];
+    const selectedQuestionIds = questions.map((q) => String(q.id || '')).filter(Boolean);
+    const count = selectedQuestionIds.length || Number(detail?.questionCount || 0);
+    const jdTitle = String(detail?.jdTitle || set?.jdTitle || 'Company problem');
+    const duration = Math.max(30, Math.min(180, (count || 1) * 2));
+    await openTestForm(null, {
+      testKind: 'company',
+      companyId: companyId || detail?.companyId || '',
+      title: jdTitle,
+      status: 'unpublished',
+      durationMinutes: duration,
+      questionCount: count,
+      jdFilterRules: count > 0 ? [{
+        jdSetId: setId,
+        jdTitle,
+        count,
+        marks: 1,
+        selectedQuestionIds,
+      }] : [],
+    });
+  }
+
   function renderAdminCompanyProblemsHtml(companyId) {
     const companyTests = studentCompanyTestsFor(companyId);
-    const manualOnly = companyProblemOnlyManualSets(companyId);
+    const linkedManualSetIds = new Set(
+      companyTests.map((t) => primaryJdSetIdForTest(t)).filter(Boolean)
+    );
+    const manualOnly = companyProblemOnlyManualSets(companyId).filter(
+      (s) => !linkedManualSetIds.has(String(s.id || ''))
+    );
     if (!companyTests.length && !manualOnly.length) {
       return '<p class="small text-muted-2 mb-0">No company problems or uploaded manuals for this company yet.</p>';
     }
@@ -2261,7 +2312,7 @@
       chunks.push(companyTests.map((t) => renderManageRow(t, { selectable: true })).join(''));
     }
     if (manualOnly.length) {
-      chunks.push(`<div class="d-flex flex-column gap-3">${renderJdSetCardsHtml(manualOnly, { allowDelete: true, selectable: false })}</div>`);
+      chunks.push(`<div class="d-flex flex-column gap-3">${renderJdSetCardsHtml(manualOnly, { allowDelete: true, selectable: false, forProblems: true })}</div>`);
     }
     return chunks.join('');
   }
@@ -5597,23 +5648,27 @@
     const checked = selectedManageTestIds.has(id);
     const docSetId = isCompanyTest(t) ? primaryJdSetIdForTest(t) : '';
     return `
-      <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
-        <div class="d-flex align-items-start gap-2 min-w-0">
-          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
-          <div class="min-w-0">
-          <strong>${esc(t.title)}</strong>
-          <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
-          ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
-          ${showContestBadge ? contestBadgeHtml(t) : ''}
-          ${showContestBadge ? contestScheduleControls(t) : ''}
+      <div class="border rounded-3 p-3">
+        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+          <div class="d-flex align-items-start gap-2 min-w-0">
+            ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
+            <div class="min-w-0">
+            <strong>${esc(t.title)}</strong>
+            <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
+            ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
+            ${showContestBadge ? contestBadgeHtml(t) : ''}
+            ${showContestBadge ? contestScheduleControls(t) : ''}
+            </div>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(docSetId)}">Document</button>` : ''}
+            ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(docSetId)}">Questions</button>` : ''}
+            ${docSetId ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>`}
+            <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
           </div>
         </div>
-        <div class="d-flex flex-wrap gap-2">
-          ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(docSetId)}">Document</button>` : ''}
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>
-          <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
-          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
-        </div>
+        ${docSetId ? `<div class="d-none mt-3" data-jd-doc-panel="${esc(docSetId)}"></div><div class="d-none mt-3" data-jd-questions="${esc(docSetId)}"></div>` : ''}
       </div>`;
   }
 
@@ -6685,11 +6740,11 @@
     document.getElementById('tfDescription').value = test?.description || '';
     document.getElementById('tfQuestionCount').value = test
       ? String(test?.questionCount || (test?.questions || []).length || '')
-      : '';
-    document.getElementById('tfDuration').value = test?.durationMinutes || 30;
+      : (preset?.questionCount != null && preset.questionCount !== '' ? String(preset.questionCount) : '');
+    document.getElementById('tfDuration').value = test?.durationMinutes || preset?.durationMinutes || 30;
     document.getElementById('tfStatus').value = test
       ? (test.status === 'unpublished' ? 'unpublished' : 'published')
-      : 'published';
+      : (preset?.status === 'unpublished' ? 'unpublished' : 'published');
 
     let source = test?.questionSource === 'random_jd'
       ? 'random_jd'
@@ -6708,6 +6763,9 @@
     const rules = test?.randomRules?.length ? test.randomRules : [];
     if (source === 'random' && rules.length) rules.forEach((r) => addRandomRuleRow(r, { loading: true }));
     let jdRules = test?.jdFilterRules?.length ? test.jdFilterRules : [];
+    if (!jdRules.length && preset?.jdFilterRules?.length) {
+      jdRules = preset.jdFilterRules;
+    }
     if (!jdRules.length && source === 'manual' && (test?.questions || []).some((q) => q.jdSetId)) {
       jdRules = inferJdRulesFromQuestions(test?.questions || []);
     }
