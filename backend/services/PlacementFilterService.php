@@ -180,8 +180,7 @@ final class PlacementFilterService
 
         if ($this->placementStudRole($ctx) === 'alumni') {
             $batches = $this->distinctAlumniClassBatches($ctx, $program, $branch);
-            $batches = $this->dedupeBatchLabelsByCohort(array_values(array_unique($batches)));
-            $batches = $this->sortLabels($batches);
+            $batches = $this->normalizeBatchLabelsForFilters($batches, $ctx);
 
             return $finalYearOnly
                 ? $this->preferSpecificFinalYearBatches($batches)
@@ -216,8 +215,12 @@ final class PlacementFilterService
             }
         }
 
-        $batches = $this->dedupeBatchLabelsByCohort(array_values(array_unique($batches)));
-        $batches = $this->sortLabels($batches);
+        $batches = array_merge(
+            $batches,
+            $this->mergeAesStudyingClassBatchesForFilterDropdown($ctx, $program, $branch)
+        );
+
+        $batches = $this->normalizeBatchLabelsForFilters($batches, $ctx);
         if (empty($ctx['filterMode'])) {
             $batches = $this->restrictBatchOptionsToStaffAssignment($ctx, $batches, $program, $branch);
         }
@@ -258,6 +261,71 @@ final class PlacementFilterService
         }
 
         return array_values($best);
+    }
+
+    /**
+     * Filter dropdowns: keep every distinct stud_class (S4, S6, S8, …). Roster views still cohort-dedupe.
+     *
+     * @param list<string> $batches
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function normalizeBatchLabelsForFilters(array $batches, array $ctx): array
+    {
+        $batches = array_values(array_unique(array_filter(array_map(
+            static fn ($b) => trim((string) $b),
+            $batches
+        ), static fn (string $b): bool => $b !== '')));
+
+        if (!empty($ctx['filterMode'])) {
+            return $this->sortLabels($batches);
+        }
+
+        return $this->sortLabels($this->dedupeBatchLabelsByCohort($batches));
+    }
+
+    /**
+     * Staff/officer filter mode: all current batches per programme from AES without full directory load.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function mergeAesStudyingClassBatchesForFilterDropdown(array $ctx, string $program, string $branch): array
+    {
+        if (empty($ctx['filterMode']) || $this->placementStudRole($ctx) === 'alumni') {
+            return [];
+        }
+
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        $programmes = $program === ''
+            ? $this->fetchProgramOptions($ctx)
+            : $this->resolveProgrammeList($program);
+        if ($programmes === []) {
+            return [];
+        }
+
+        $api = new AesApiService();
+        $collected = [];
+        foreach ($programmes as $prog) {
+            $prog = trim((string) $prog);
+            if ($prog === '') {
+                continue;
+            }
+            try {
+                $collected = array_merge(
+                    $collected,
+                    $api->fetchPlacementClassBatches($deptAesId, $prog, $branch)
+                );
+            } catch (\Throwable) {
+                // Keep other sources when AES is temporarily unavailable.
+            }
+        }
+
+        return $collected;
     }
 
     /**

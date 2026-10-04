@@ -2438,6 +2438,10 @@ final class OfficerDataService
         $seenAdmno = [];
 
         foreach ($records as $record) {
+            if (!$this->recordQualifiesForAlumniTab($record)) {
+                continue;
+            }
+
             $recordDept = strtoupper(trim((string) (
                 $record['stud_deptcode']
                 ?? $record['parentDepartmentCode']
@@ -2619,7 +2623,31 @@ final class OfficerDataService
             return $out !== [] ? $out : ['admin'];
         }
 
-        return ['admin', 'alumni'];
+        return ['alumni', 'admin'];
+    }
+
+    /**
+     * Admin Alumni tab / staff alumni filters — drop current students from mixed AES directory payloads.
+     *
+     * @param array<string, mixed> $record
+     */
+    private function recordQualifiesForAlumniTab(array $record): bool
+    {
+        $studRole = strtolower(trim((string) ($record['stud_role'] ?? '')));
+        if (in_array($studRole, ['student', 'stud'], true)) {
+            return false;
+        }
+        if (in_array($studRole, ['alumni', 'alumnus'], true)) {
+            return true;
+        }
+        if ($studRole === 'admin' && $this->isAesAlumniDirectoryRecord($record)) {
+            return true;
+        }
+        if ($this->isAesStudyingStudent($record)) {
+            return false;
+        }
+
+        return $this->isAesAlumniDirectoryRecord($record);
     }
 
     /**
@@ -2638,15 +2666,22 @@ final class OfficerDataService
         $api = new AesApiService();
         $roles = $this->aesAlumniStudRoleParamValues();
 
-        $fetchWithRole = static function (array $baseParams) use ($api, $roles): array {
+        $fetchWithRole = function (array $baseParams) use ($api, $roles): array {
             foreach ($roles as $role) {
                 try {
                     $records = $api->fetchAllStudInfo4Placement(
                         array_merge($baseParams, ['stud_role' => $role]),
                         true
                     );
-                    if ($records !== []) {
-                        return $records;
+                    if ($records === []) {
+                        continue;
+                    }
+                    $filtered = array_values(array_filter(
+                        $records,
+                        fn (array $row): bool => $this->recordQualifiesForAlumniTab($row)
+                    ));
+                    if ($filtered !== []) {
+                        return $filtered;
                     }
                 } catch (\Throwable) {
                     continue;
@@ -2667,9 +2702,9 @@ final class OfficerDataService
 
         $merged = [];
         $seen = [];
-        $append = static function (array $records) use (&$merged, &$seen): void {
+        $append = function (array $records) use (&$merged, &$seen): void {
             foreach ($records as $record) {
-                if (!is_array($record)) {
+                if (!is_array($record) || !$this->recordQualifiesForAlumniTab($record)) {
                     continue;
                 }
                 $key = strtoupper(trim((string) (
@@ -2692,9 +2727,6 @@ final class OfficerDataService
                 $append($api->fetchAllStudInfo4Placement(['stud_role' => $role], true));
             } catch (\Throwable) {
                 continue;
-            }
-            if ($merged !== []) {
-                break;
             }
         }
 
@@ -2825,6 +2857,9 @@ final class OfficerDataService
     private function isAesStudyingStudent(array $record): bool
     {
         $studRole = strtolower(trim((string) ($record['stud_role'] ?? '')));
+        if (in_array($studRole, ['student', 'stud'], true)) {
+            return true;
+        }
         if ($studRole !== '' && in_array($studRole, ['alumni', 'alumnus'], true)) {
             return false;
         }
