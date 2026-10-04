@@ -2261,48 +2261,8 @@ function finalYearPendingEmptyMessage() {
     : 'All listed final-year students have registered the placement policy.';
 }
 
-function destroyFinalYearPendingDataTable() {
-  const tableEl = document.getElementById('finalYearPendingTable');
-  if (!tableEl || typeof DataTable === 'undefined') {
-    finalYearPendingDataTable = null;
-    return;
-  }
-  try {
-    if (DataTable.isDataTable(tableEl)) {
-      finalYearPendingDataTable = DataTable.api(tableEl);
-      finalYearPendingDataTable.destroy();
-    }
-  } catch (_) { /* ignore */ }
-  finalYearPendingDataTable = null;
-}
-
-function renderFinalYearPendingDataTable(list) {
-  const tbody = document.getElementById('finalYearPendingRows');
-  const countEl = document.getElementById('finalYearPendingCount');
-  if (!tbody) return;
-  if (countEl) countEl.textContent = String(list.length);
-
-  destroyFinalYearPendingDataTable();
-
-  if (!finalYearLoaded) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
-    return;
-  }
-  if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${finalYearPendingEmptyMessage()}</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = list.map((s) => finalYearRowHtml(s, 'pending')).join('');
-
-  if (typeof DataTable === 'undefined') {
-    return;
-  }
-
-  const tableEl = document.getElementById('finalYearPendingTable');
-  if (!tableEl) return;
-
-  finalYearPendingDataTable = new DataTable(tableEl, {
+function finalYearPendingDataTableOptions() {
+  return {
     pageLength: 25,
     lengthMenu: [10, 25, 50, 100, 250],
     order: [[1, 'asc']],
@@ -2320,7 +2280,79 @@ function renderFinalYearPendingDataTable(list) {
       zeroRecords: 'No students match your search.',
       lengthMenu: 'Show _MENU_ rows',
     },
-  });
+  };
+}
+
+function destroyFinalYearPendingDataTable() {
+  const tableEl = document.getElementById('finalYearPendingTable');
+  if (typeof DataTable === 'undefined') {
+    finalYearPendingDataTable = null;
+    return;
+  }
+  try {
+    if (finalYearPendingDataTable && typeof finalYearPendingDataTable.destroy === 'function') {
+      finalYearPendingDataTable.destroy();
+    }
+  } catch (_) { /* ignore */ }
+  finalYearPendingDataTable = null;
+  if (!tableEl) return;
+  try {
+    if (DataTable.isDataTable(tableEl)) {
+      DataTable.api(tableEl).destroy();
+    }
+  } catch (_) { /* ignore */ }
+}
+
+function finalYearPendingRowCells(s) {
+  const tmp = document.createElement('tbody');
+  tmp.innerHTML = finalYearRowHtml(s, 'pending');
+  const tr = tmp.querySelector('tr');
+  if (!tr) return null;
+  return Array.from(tr.cells).map((td) => td.innerHTML);
+}
+
+function setFinalYearPendingPlainTable(html) {
+  destroyFinalYearPendingDataTable();
+  const tbody = document.getElementById('finalYearPendingRows');
+  if (tbody) tbody.innerHTML = html;
+}
+
+function renderFinalYearPendingDataTable(list) {
+  const tbody = document.getElementById('finalYearPendingRows');
+  const tableEl = document.getElementById('finalYearPendingTable');
+  const countEl = document.getElementById('finalYearPendingCount');
+  if (!tbody || !tableEl) return;
+  if (countEl) countEl.textContent = String(list.length);
+
+  if (!finalYearLoaded) {
+    setFinalYearPendingPlainTable('<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>');
+    return;
+  }
+  if (!list.length) {
+    setFinalYearPendingPlainTable(`<tr><td colspan="5" class="text-muted-2 p-4 text-center">${finalYearPendingEmptyMessage()}</td></tr>`);
+    return;
+  }
+
+  if (typeof DataTable === 'undefined') {
+    tbody.innerHTML = list.map((s) => finalYearRowHtml(s, 'pending')).join('');
+    return;
+  }
+
+  if (DataTable.isDataTable(tableEl)) {
+    const api = finalYearPendingDataTable || DataTable.api(tableEl);
+    api.clear();
+    list.forEach((s) => {
+      const cells = finalYearPendingRowCells(s);
+      if (cells) api.row.add(cells);
+    });
+    api.draw(false);
+    finalYearPendingDataTable = api;
+    return;
+  }
+
+  destroyFinalYearPendingDataTable();
+  tbody.innerHTML = list.map((s) => finalYearRowHtml(s, 'pending')).join('');
+  finalYearPendingDataTable = new DataTable(tableEl, finalYearPendingDataTableOptions());
 }
 
 let volunteersAll = [];
