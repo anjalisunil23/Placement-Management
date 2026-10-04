@@ -2780,9 +2780,9 @@ async function loadFinalYearStudents(force = false) {
   }
   destroyFinalYearPendingDataTable();
   const regBody = document.getElementById('finalYearRegisteredRows');
-  if (regBody) regBody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading final-year students…</td></tr>';
+  if (regBody) regBody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading students list…</td></tr>';
   const pendingBody = document.getElementById('finalYearPendingRows');
-  if (pendingBody) pendingBody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading final-year students…</td></tr>';
+  if (pendingBody) pendingBody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading students list…</td></tr>';
   let rows = null;
   if (role === 'admin' && typeof AdminApi !== 'undefined') {
     rows = await AdminApi.fetchFinalYearStudents();

@@ -1289,7 +1289,9 @@ final class OfficerDataService
         $campusWide = !empty($ctx['campusWide']) || (
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
-        $staffBatches = !empty($ctx['staffScope']) ? StaffContext::assignedClassBatches($ctx) : [];
+        $staffBatches = !empty($ctx['staffScope']) && empty($ctx['placementRegistryWide'])
+            ? StaffContext::assignedClassBatches($ctx)
+            : [];
 
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
         $records = $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide);
@@ -1373,9 +1375,10 @@ final class OfficerDataService
             return [];
         }
 
-        $source = !empty($ctx['staffScope'])
-            ? $this->listLocalStaffClassRosterRows($ctx)
-            : (new StudentModel())->findAll(PlacementOfficerContext::studentCollectionFilter($ctx), 5000);
+        $deptWideLocal = empty($ctx['staffScope']) || !empty($ctx['placementRegistryWide']);
+        $source = $deptWideLocal
+            ? (new StudentModel())->findAll(PlacementOfficerContext::studentCollectionFilter($ctx), 5000)
+            : $this->listLocalStaffClassRosterRows($ctx);
 
         $rows = [];
         foreach ($source as $row) {
@@ -1501,11 +1504,65 @@ final class OfficerDataService
         }
         $wantCohort = ClassInchargeRegistry::cohortKey($batch);
         $rows = [];
-        foreach ($this->listLocalStaffClassRosterRows($ctx) as $row) {
+        foreach ($this->listLocalDepartmentRosterRows($ctx) as $row) {
             $rowBatch = StaffContext::studentClassBatch($row);
             if ($this->classBatchMatchesSelection($rowBatch, $batch, true, $wantCohort)) {
                 $rows[] = $row;
             }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * All PlaceHub students in the staff/placement-officer department (not CT-assigned only).
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listLocalDepartmentRosterRows(array $ctx): array
+    {
+        $studentModel = new StudentModel();
+        $userModel = new UserModel();
+        $deptModel = new DepartmentModel();
+
+        $departments = [];
+        foreach ($deptModel->findAll([], 400) as $d) {
+            $departments[(string) ($d['_id'] ?? '')] = $d;
+        }
+
+        $rows = [];
+        foreach ($studentModel->findAll(PlacementOfficerContext::studentCollectionFilter($ctx), 10000) as $student) {
+            $userId = (string) ($student['userId'] ?? '');
+            $user = $userId !== '' ? $userModel->findById($userId) : null;
+            if (is_array($user)) {
+                $role = (string) ($user['role'] ?? '');
+                if ($role !== '' && $role !== 'student') {
+                    continue;
+                }
+                if (($user['status'] ?? '') === 'blocked') {
+                    continue;
+                }
+            }
+
+            $deptId = (string) ($student['departmentId'] ?? '');
+            $dept = $departments[$deptId] ?? null;
+            $row = DocumentHelper::serialize($student) ?? [];
+            $row = $this->enrichStudentListRow($row, $student, $user, false);
+            $admno = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? $student['registerNumber'] ?? '')));
+            if ($admno !== '') {
+                $row['admno'] = $admno;
+                $row['registerNumber'] = $admno;
+            }
+            $row['department'] = $dept ? [
+                'id'   => (string) $dept['_id'],
+                'name' => $dept['name'] ?? '',
+                'code' => $dept['code'] ?? '',
+            ] : ($row['department'] ?? null);
+            if (!$this->isPlacementStudentListCandidate($student, $user, $row, false)) {
+                continue;
+            }
+            $rows[] = $row;
         }
 
         return $rows;
@@ -2359,7 +2416,9 @@ final class OfficerDataService
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
-        $staffBatches = !empty($ctx['staffScope']) ? StaffContext::assignedClassBatches($ctx) : [];
+        $staffBatches = !empty($ctx['staffScope']) && empty($ctx['placementRegistryWide'])
+            ? StaffContext::assignedClassBatches($ctx)
+            : [];
         $rows = [];
         $seenAdmno = [];
 
@@ -2430,6 +2489,28 @@ final class OfficerDataService
         );
 
         return $rows;
+    }
+
+    /**
+     * Department-wide studying roster for staff Placements &amp; Higher Ed (all batches/branches).
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listStudyingStudentsForPlacementRegistry(array $ctx): array
+    {
+        return $this->listStudentsFromAesDirectory(array_merge($ctx, ['placementRegistryWide' => true]));
+    }
+
+    /**
+     * Department-wide alumni roster for staff Placements &amp; Higher Ed.
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAlumniStudentsForPlacementRegistry(array $ctx): array
+    {
+        return $this->listAlumniFromAesDirectory(array_merge($ctx, ['placementRegistryWide' => true]));
     }
 
     /**

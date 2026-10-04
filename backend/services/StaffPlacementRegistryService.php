@@ -39,17 +39,19 @@ final class StaffPlacementRegistryService
         $isAlumni = $studRole === 'alumni';
 
         $registry = [];
+        $deptId = (string) ($staffCtx['departmentId'] ?? '');
+        $wideCtx = array_merge($officerCtx, ['placementRegistryWide' => true]);
+
         // Fast path for a selected class: one AES directory pass for that cohort,
         // merged with local PlaceHub classmates (covers S8/S9 and AES gaps).
         if ($program !== '' && $batch !== '') {
             $aesClassRows = $isAlumni
-                ? $this->officerData->listAesAlumniClassStudents($officerCtx, $program, $batch, true)
-                : $this->officerData->listAesClassStudents($officerCtx, $program, $batch, true);
+                ? $this->officerData->listAesAlumniClassStudents($wideCtx, $program, $batch, true)
+                : $this->officerData->listAesClassStudents($wideCtx, $program, $batch, true);
             $localClassRows = $isAlumni
                 ? []
-                : $this->officerData->listLocalClassStudentsForBatch($officerCtx, $batch);
+                : $this->officerData->listLocalClassStudentsForBatch($wideCtx, $batch);
             $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
-            $deptId = (string) ($staffCtx['departmentId'] ?? '');
             // Passed-out / AES-absent cohorts live only in student_placements — merge before sync.
             $tableRows = (new StudentPlacementModel())->listRosterRowsForClass($deptId, $program, $batch);
             $classRows = $this->mergeCompleteClassRoster($classRows, $tableRows);
@@ -57,23 +59,32 @@ final class StaffPlacementRegistryService
             $this->syncClassRowsToStudentPlacements($classRows, $deptId, $program, $batch);
 
             $tableRows = (new StudentPlacementModel())->listRosterRowsForClass($deptId, $program, $batch);
-            $rosterSource = $this->mergeTableRosterWithClass($tableRows, $classRows);
-            foreach ($rosterSource as $row) {
-                foreach ($this->extractRegistryRows($row, false, true) as $entry) {
-                    $registry[] = $entry;
-                }
-            }
-            $registry = $this->deduplicateStudentRows($registry);
-            usort($registry, static fn (array $a, array $b): int => strcasecmp(
-                (string) ($a['studentName'] ?? ''),
-                (string) ($b['studentName'] ?? '')
-            ));
+            $registry = $this->registryEntriesFromRoster(
+                $this->mergeTableRosterWithClass($tableRows, $classRows)
+            );
             $filtered = $this->applyFilters($registry, $filters);
             $filterOptions = $this->buildLiteFilterOptions($staffCtx, $filters, $filtered);
         } else {
-            // Do not scan the whole department (AES directory) until branch + batch are chosen.
-            $filterOptions = $this->buildFilterOptions($staffCtx, $filters);
-            $filtered = [];
+            $placementModel = new StudentPlacementModel();
+            if ($isAlumni) {
+                $aesRows = $this->officerData->listAlumniStudentsForPlacementRegistry($wideCtx);
+                $localRows = [];
+            } elseif ($program !== '') {
+                $aesRows = $this->officerData->listAesProgrammeStudents($wideCtx, $program);
+                $localRows = $this->officerData->listLocalProgrammeStudents($wideCtx, $program);
+            } else {
+                $aesRows = $this->officerData->listStudyingStudentsForPlacementRegistry($wideCtx);
+                $localRows = $this->officerData->listLocalDepartmentRosterRows($wideCtx);
+            }
+            $classRows = $this->mergeCompleteClassRoster($localRows, $aesRows);
+            $tableRows = $placementModel->listRosterRowsForDepartment($deptId);
+            $classRows = $this->mergeCompleteClassRoster($classRows, $tableRows);
+            $classRows = $this->attachRegistryPlacements($classRows);
+            $registry = $this->registryEntriesFromRoster(
+                $this->mergeTableRosterWithClass($tableRows, $classRows)
+            );
+            $filtered = $this->applyFilters($registry, $filters);
+            $filterOptions = $this->buildLiteFilterOptions($staffCtx, $filters, $filtered);
         }
 
         $placementCount = 0;
@@ -174,6 +185,27 @@ final class StaffPlacementRegistryService
         }
 
         return array_merge(array_values($byKey), $unkeyed);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rosterSource
+     * @return array<int, array<string, mixed>>
+     */
+    private function registryEntriesFromRoster(array $rosterSource): array
+    {
+        $registry = [];
+        foreach ($rosterSource as $row) {
+            foreach ($this->extractRegistryRows($row, false, true) as $entry) {
+                $registry[] = $entry;
+            }
+        }
+        $registry = $this->deduplicateStudentRows($registry);
+        usort($registry, static fn (array $a, array $b): int => strcasecmp(
+            (string) ($a['studentName'] ?? ''),
+            (string) ($b['studentName'] ?? '')
+        ));
+
+        return $registry;
     }
 
     /**
@@ -780,12 +812,10 @@ final class StaffPlacementRegistryService
             $filterSvc->fetchProgramOptions($filterCtx),
             $programs
         ))));
-        if ($program !== '') {
-            $batches = array_values(array_unique(array_filter(array_merge(
-                $filterSvc->fetchBatchOptions($filterCtx, $program, $branch, false),
-                $batches
-            ))));
-        }
+        $batches = array_values(array_unique(array_filter(array_merge(
+            $filterSvc->fetchBatchOptions($filterCtx, $program, $branch, false),
+            $batches
+        ))));
 
         sort($programs, SORT_STRING);
         sort($batches, SORT_STRING);
@@ -801,7 +831,7 @@ final class StaffPlacementRegistryService
     /**
      * @param array<string, mixed> $staffCtx
      * @param array<string, string> $filters
-     * @return array{programs: string[], branches: string[], batches: string[], departments: array<int, array{id:string,code:string,name:string}>}
+     * @return array{programs: string[], branches: string[], batches: string[], departments: array<int, array{id:string,name:string}>}
      */
     private function buildFilterOptions(array $staffCtx, array $filters = []): array
     {
@@ -812,9 +842,7 @@ final class StaffPlacementRegistryService
 
         $programs = $filterSvc->fetchProgramOptions($filterCtx);
         $branches = $program !== '' ? $filterSvc->fetchBranchOptions($filterCtx, $program) : [];
-        $batches = $program !== ''
-            ? $filterSvc->fetchBatchOptions($filterCtx, $program, $branch, false)
-            : [];
+        $batches = $filterSvc->fetchBatchOptions($filterCtx, $program, $branch, false);
 
         return [
             'programs'     => $programs,

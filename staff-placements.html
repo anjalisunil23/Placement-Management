@@ -21,7 +21,7 @@
         <div class="page-header">
           <div>
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">Department class rosters with placement / higher-education details in <code>student_placements</code>. Choose branch and batch; only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">Department rosters with placement / higher-education details in <code>student_placements</code>. Use branch and batch to narrow the list, or leave both on <strong>All</strong> to browse everyone in your department. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
         </div>
 
@@ -29,11 +29,7 @@
 
         <div class="card-surface p-3 p-md-4 mb-3">
           <div class="row g-2 align-items-end">
-            <div class="col-6 col-md-4 col-lg">
-              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterDepartmentLabel">Department</label>
-              <input class="form-control form-control-sm" id="filterDepartmentLabel" readonly tabindex="-1" value=""/>
-              <input type="hidden" id="filterDepartment" value=""/>
-            </div>
+            <input type="hidden" id="filterDepartment" value=""/>
             <div class="col-6 col-md-4 col-lg">
               <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterStudRole">Role</label>
               <select class="form-select form-select-sm" id="filterStudRole">
@@ -50,7 +46,7 @@
             <div class="col-6 col-md-4 col-lg">
               <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterBatch">Batch</label>
               <select class="form-select form-select-sm" id="filterBatch">
-                <option value="">Select batch</option>
+                <option value="">All batches</option>
               </select>
             </div>
             <div class="col-6 col-md-4 col-lg">
@@ -835,13 +831,10 @@
         }
       }
 
-      if (!filterProgram && programs.length) {
-        filterProgram = pickPreferredProgram(programs);
-      }
-      fillSelect('filterProgram', programs, 'All branches', filterProgram, true);
+      fillSelect('filterProgram', programs, 'All branches', filterProgram, false);
       filterProgram = document.getElementById('filterProgram')?.value || '';
 
-      fillSelect('filterBatch', batches, 'Select batch', filterBatch, false);
+      fillSelect('filterBatch', batches, 'All batches', filterBatch, false);
       filterBatch = document.getElementById('filterBatch')?.value || '';
       // Do not clear canEditSelectedBatch here — loadRegistry() sets it from the
       // server (CT/CoCT). Resetting it made co-class teachers look "view only".
@@ -850,10 +843,6 @@
       }
       updateClassTeacherBanner();
 
-      const branchEl = document.getElementById('filterProgram');
-      const batchEl = document.getElementById('filterBatch');
-      if (branchEl) branchEl.disabled = !filterDepartmentId;
-      if (batchEl) batchEl.disabled = !filterProgram;
     }
 
     function applyDefaultDepartment(departments = null) {
@@ -876,9 +865,7 @@
 
       filterDepartmentId = id;
       const hidden = document.getElementById('filterDepartment');
-      const shown = document.getElementById('filterDepartmentLabel');
       if (hidden) hidden.value = filterDepartmentId;
-      if (shown) shown.value = label || (filterDepartmentId ? 'Your department' : '—');
     }
 
     function fillDepartmentSelect() {
@@ -924,10 +911,7 @@
 
       const colSpan = registryColspan();
       if (!slice.length) {
-        const needClass = !filterDepartmentId || !filterProgram || !filterBatch;
-        tbody.innerHTML = needClass
-          ? `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">Select branch and batch to list all students in the class.</td></tr>`
-          : `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students found for this class.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students match the current filters.</td></tr>`;
         return;
       }
 
@@ -1251,15 +1235,15 @@
     async function loadRegistry() {
       const tbody = document.getElementById('registryRows');
       applyDefaultDepartment();
-      if (!filterDepartmentId || !filterProgram || !filterBatch) {
+      if (!filterDepartmentId) {
         allRows = [];
         filteredRows = [];
         document.getElementById('rowCount').textContent = '';
         document.getElementById('pageInfo').textContent = '';
-        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Select branch and batch to list all students in the class.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Your account has no department assigned.</td></tr>`;
         return;
       }
-      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading class list…</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading roster…</td></tr>`;
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
         const detail = (StaffApi._lastPlacementsFetchError || '').trim();
