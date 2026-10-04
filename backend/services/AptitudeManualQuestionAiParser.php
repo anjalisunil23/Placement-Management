@@ -41,6 +41,7 @@ Return JSON only: {"questions":[...]}.
 Each question must have: prompt (string), options (array of 4 or 5 strings for (a)-(e) style), correctIndex (0-based), explanation (string, may be empty).
 Infer the correct answer when the manual marks it (Answer: B, Ans C, etc.). Skip items that are not MCQs.
 Do not invent questions that are not present in the source text.
+Return one JSON object per MCQ — never merge the whole paper into a single question.
 SYS;
 
         $user = "Extract every MCQ you can find in this manual text:\n\n" . $text;
@@ -82,7 +83,7 @@ SYS;
             $norm = AptitudeTestModel::normalizeMcq([
                 'prompt' => (string) ($row['prompt'] ?? $row['question'] ?? ''),
                 'options' => $opts,
-                'correctIndex' => max(0, min(3, $correct)),
+                'correctIndex' => max(0, min(max(count($opts), 1) - 1, $correct)),
                 'explanation' => (string) ($row['explanation'] ?? ''),
                 'category' => 'General Aptitude',
                 'difficulty' => 'Medium',
@@ -92,6 +93,10 @@ SYS;
                 $norm['source'] = 'MANUAL_UPLOAD';
                 $out[] = $norm;
             }
+        }
+
+        if (count($out) === 1 && mb_strlen(trim((string) ($out[0]['prompt'] ?? ''))) > 350) {
+            return [];
         }
 
         return $out;

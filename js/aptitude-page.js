@@ -1986,9 +1986,11 @@
   }
 
   function renderMcqPickDetailHtml(q, index, { compact = false } = {}) {
-    const letters = ['A', 'B', 'C', 'D'];
-    const opts = (q.options || []).slice(0, 4);
-    const correct = Math.max(0, Math.min(3, Number(q.correctIndex ?? 0)));
+    const letters = ['A', 'B', 'C', 'D', 'E'];
+    const opts = (q.options || []).filter((o) => String(o || '').trim() && String(o).trim() !== '—').slice(0, 5);
+    const pad = opts.length ? opts : (q.options || []).slice(0, 5);
+    const displayOpts = pad.length ? pad : [];
+    const correct = Math.max(0, Math.min(Math.max(displayOpts.length, 1) - 1, Number(q.correctIndex ?? 0)));
     const promptRaw = String(q.prompt || '').trim();
     const promptBlock = /<[^>]+>/.test(promptRaw)
       ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
@@ -2003,14 +2005,14 @@
     return `<div class="${shellCls}">
       <div class="fw-semibold mb-2">Q${index + 1}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
       ${promptBlock}
-      <div class="small mb-2">${opts.length
-        ? opts.map((o, oi) => {
+      <div class="small mb-2">${displayOpts.length
+        ? displayOpts.map((o, oi) => {
           const label = esc(stripHtml(String(o || '')) || String(o || ''));
           const isCorrect = oi === correct;
-          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${letters[oi]}. ${label}${isCorrect ? ' ✓' : ''}</div>`;
+          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${letters[oi] || String.fromCharCode(65 + oi)}. ${label}${isCorrect ? ' ✓' : ''}</div>`;
         }).join('')
         : '<div class="text-muted-2">No options</div>'}</div>
-      <div class="small mb-1"><span class="fw-semibold">Answer:</span> ${letters[correct]}. ${esc(stripHtml(String(opts[correct] || '')) || opts[correct] || '—')}</div>
+      <div class="small mb-1"><span class="fw-semibold">Answer:</span> ${letters[correct] || String.fromCharCode(65 + correct)}. ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>
       ${explanation ? `<div class="small mt-2"><span class="fw-semibold">Explanation:</span> ${esc(explanation)}</div>` : ''}
     </div>`;
   }
@@ -2022,7 +2024,10 @@
   function splitManualTextIntoBlocks(text) {
     const raw = String(text || '').trim();
     if (!raw) return [];
-    let parts = raw.split(/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+)/gi).map((p) => p.trim()).filter(Boolean);
+    let parts = raw.split(/\s+(?=\d{1,3}\)\s+[A-Za-z(])/u).map((p) => p.trim()).filter(Boolean);
+    if (parts.length <= 1) {
+      parts = raw.split(/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+)/gi).map((p) => p.trim()).filter(Boolean);
+    }
     if (parts.length <= 1) {
       parts = raw.split(/\n\s*\d{1,4}[\.\):]\s+/).map((p, i) => (i === 0 ? p.trim() : p.trim())).filter(Boolean);
       if (parts.length > 1 && !/^\d/.test(raw)) {

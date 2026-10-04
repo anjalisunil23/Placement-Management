@@ -713,7 +713,11 @@ final class AptitudeService
             Response::error('Upload a file or paste question manual text.', 422);
         }
 
-        $parsed = (new AptitudeManualQuestionParser())->parse($extracted);
+        $manualSanitizer = new JdTextExtractionService();
+        $extracted = $manualSanitizer->sanitizeManualText($extracted);
+
+        $parser = new AptitudeManualQuestionParser();
+        $parsed = $parser->parse($extracted);
         $parseMethod = $parsed !== [] ? 'local' : 'none';
         if ($parsed === [] && mb_strlen($extracted) >= 80) {
             $aiParsed = (new AptitudeManualQuestionAiParser())->parse($extracted);
@@ -721,6 +725,10 @@ final class AptitudeService
                 $parsed = $aiParsed;
                 $parseMethod = 'ai';
             }
+        }
+        $parsed = $parser->expandIfSingleMergedBlob($parsed, $extracted);
+        if ($parsed !== [] && $parseMethod === 'none') {
+            $parseMethod = 'local';
         }
 
         $saveTarget = strtolower(trim($saveTarget));

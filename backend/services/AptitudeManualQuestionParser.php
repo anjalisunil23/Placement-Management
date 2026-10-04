@@ -27,7 +27,16 @@ final class AptitudeManualQuestionParser
         $blocks = $this->splitQuestionBlocks($text);
         $out = [];
         foreach ($blocks as $block) {
-            $parsed = $this->parseQuestionBlock(trim($block));
+            $trim = trim($block);
+            if ($trim === '') {
+                continue;
+            }
+            if (!preg_match('/\([a-eA-E]\)/', $trim)
+                && !preg_match('/(?:^|[\s])[a-eA-E]\)/u', $trim)
+                && !preg_match('/[A-Da-d][\.\):]/u', $trim)) {
+                continue;
+            }
+            $parsed = $this->parseQuestionBlock($trim);
             if ($parsed !== null) {
                 $out[] = $parsed;
             }
@@ -36,13 +45,32 @@ final class AptitudeManualQuestionParser
         return $out;
     }
 
+    /**
+     * @param list<array<string, mixed>> $parsed
+     * @return list<array<string, mixed>>
+     */
+    public function expandIfSingleMergedBlob(array $parsed, string $rawText): array
+    {
+        if (count($parsed) !== 1) {
+            return $parsed;
+        }
+        $prompt = trim((string) ($parsed[0]['prompt'] ?? ''));
+        $optionCount = count((array) ($parsed[0]['options'] ?? []));
+        if (mb_strlen($prompt) < 280 && $optionCount <= 5) {
+            return $parsed;
+        }
+        $again = $this->parse($rawText);
+
+        return count($again) > 1 ? $again : $parsed;
+    }
+
     private function normalizeManualText(string $text): string
     {
-        $text = str_replace(["\r\n", "\r"], "\n", $text);
-        $text = preg_replace("/[ \t]+/u", ' ', $text) ?? $text;
-        // PDF line-wrap: join when a line break splits a sentence mid-word (no punctuation end).
+        $text = (new JdTextExtractionService())->sanitizeManualText($text);
+        if ($text === '') {
+            return '';
+        }
         $text = preg_replace("/(\w)-\n(\w)/u", '$1$2', $text) ?? $text;
-        $text = preg_replace("/(?<=[a-z,;])\n(?=[a-z(])/u", ' ', $text) ?? $text;
 
         return trim($text);
     }
@@ -64,6 +92,11 @@ final class AptitudeManualQuestionParser
                 return array_values(array_filter(array_map('trim', $blocks), static fn (string $b): bool => $b !== ''));
             }
         }
+        $inline = preg_split('/\s+(?=\d{1,3}\)\s+[A-Za-z(])/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        if (is_array($inline) && count($inline) > 1) {
+            return array_values(array_filter(array_map('trim', $inline), static fn (string $b): bool => $b !== ''));
+        }
+
         $blocks = preg_split('/\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+/iu', $text, -1, PREG_SPLIT_NO_EMPTY);
 
         return is_array($blocks)
@@ -134,7 +167,9 @@ final class AptitudeManualQuestionParser
         if ($options !== []) {
             $firstPos = null;
             foreach (array_keys($options) as $letter) {
-                if (preg_match('/(?:^|\n)\s*' . preg_quote($letter, '/') . '[\.\):]/i', $block, $pm, PREG_OFFSET_CAPTURE)) {
+                if (preg_match('/(?:^|[\n\s])\(' . preg_quote(strtolower($letter), '/') . '\)/i', $block, $pm, PREG_OFFSET_CAPTURE)
+                    || preg_match('/(?:^|[\n\s])' . preg_quote(strtolower($letter), '/') . '\)/i', $block, $pm, PREG_OFFSET_CAPTURE)
+                    || preg_match('/(?:^|\n)\s*' . preg_quote($letter, '/') . '[\.\):]/i', $block, $pm, PREG_OFFSET_CAPTURE)) {
                     $pos = (int) ($pm[0][1] ?? -1);
                     if ($pos >= 0 && ($firstPos === null || $pos < $firstPos)) {
                         $firstPos = $pos;
@@ -187,7 +222,17 @@ final class AptitudeManualQuestionParser
     {
         $options = [];
         if (preg_match_all(
-            '/(?:^|\n)\s*\(([a-eA-E])\)\s*(.+?)(?=(?:^|\n)\s*\([a-eA-E]\)|(?:^|\n)\s*\d{1,3}[\.\)]|\n\s*(?:Answer|Correct|Directions)|\z)/s',
+            '/(?:^|[\n\s])\(([a-eA-E])\)\s*(.+?)(?=(?:[\n\s]\([a-eA-E]\)|\s+\d{1,3}\)|$))/s',
+            $block,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            foreach ($matches as $m) {
+                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+            }
+        }
+        if ($options === [] && preg_match_all(
+            '/(?:^|[\n\s])([a-eA-E])\)\s*(.+?)(?=(?:[\n\s][a-eA-E]\)|\s+\d{1,3}\)|$))/su',
             $block,
             $matches,
             PREG_SET_ORDER

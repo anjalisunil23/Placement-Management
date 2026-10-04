@@ -118,6 +118,30 @@ final class JdTextExtractionService
         return $text;
     }
 
+    /** Preserve line breaks for aptitude manual / OCR parsing. */
+    public function sanitizeManualText(string $text): string
+    {
+        $text = strip_tags($text);
+        $text = preg_replace('/```+/u', '', $text) ?? $text;
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $text) ?? $text;
+        $text = str_replace(["\r\n", "\r"], "\n", $text);
+        $text = preg_replace('/[^\S\n]+/u', ' ', $text) ?? $text;
+        $text = preg_replace('/\n{3,}/u', "\n\n", $text) ?? $text;
+        $text = trim($text);
+        // Flat OCR blobs: "… hour? a) 6% b) 2% … 2) Find …"
+        $text = preg_replace('/(\s)(\d{1,3}\)\s+(?=[A-Za-z(]))/u', "\n$2", $text) ?? $text;
+        $text = preg_replace('/(\s)(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "\n$2", $text) ?? $text;
+        if (self::isGarbledExtract($text)) {
+            return '';
+        }
+        if (mb_strlen($text) > self::MAX_TEXT_CHARS) {
+            $text = mb_substr($text, 0, self::MAX_TEXT_CHARS);
+        }
+
+        return $text;
+    }
+
     public static function isGarbledExtract(string $text): bool
     {
         $text = trim($text);
@@ -419,18 +443,18 @@ final class JdTextExtractionService
         $method = $ext;
         if ($ext === 'txt') {
             $raw = file_get_contents($tmp);
-            $text = $this->sanitizeText($raw !== false ? (string) $raw : '');
+            $text = $this->sanitizeManualText($raw !== false ? (string) $raw : '');
             $method = 'text';
         } elseif ($ext === 'pdf') {
             $rawPdf = $this->extractPdfText($tmp);
-            $text = $this->sanitizeText($rawPdf);
+            $text = $this->sanitizeManualText($rawPdf);
             $method = $text !== '' ? 'pdf' : ($this->openai->isConfigured() ? 'pdf_ocr' : 'pdf');
             if ($text === '' && $rawPdf !== '' && self::isGarbledExtract($rawPdf)) {
                 $method = 'pdf_unreadable';
             }
         } else {
             try {
-                $text = $this->sanitizeText($this->extractManualTextFromImage($tmp, $ext));
+                $text = $this->sanitizeManualText($this->extractManualTextFromImage($tmp, $ext));
                 $method = 'ocr';
             } catch (\Throwable) {
                 $text = '';
