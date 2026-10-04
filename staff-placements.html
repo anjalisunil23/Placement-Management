@@ -21,7 +21,7 @@
         <div class="page-header">
           <div>
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">Department rosters with placement / higher-education details in <code>student_placements</code>. Use branch and batch to narrow the list, or leave both on <strong>All</strong> to browse everyone in your department. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">Placement / higher-education details in <code>student_placements</code>. Filter by department, branch, and batch, or leave them on <strong>All</strong> to browse the full roster. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
         </div>
 
@@ -29,7 +29,12 @@
 
         <div class="card-surface p-3 p-md-4 mb-3">
           <div class="row g-2 align-items-end">
-            <input type="hidden" id="filterDepartment" value=""/>
+            <div class="col-6 col-md-4 col-lg">
+              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterDepartment">Department</label>
+              <select class="form-select form-select-sm" id="filterDepartment">
+                <option value="">All departments</option>
+              </select>
+            </div>
             <div class="col-6 col-md-4 col-lg">
               <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterStudRole">Role</label>
               <select class="form-select form-select-sm" id="filterStudRole">
@@ -795,12 +800,29 @@
       return '';
     }
 
+    function syncDepartmentFilter() {
+      filterDepartmentId = document.getElementById('filterDepartment')?.value ?? '';
+    }
+
+    function fillDepartmentSelect(departments, selected = '') {
+      const el = document.getElementById('filterDepartment');
+      if (!el) return;
+      const current = selected || el.value || '';
+      el.innerHTML = '<option value="">All departments</option>' + (departments || []).map(d => {
+        const id = String(d.id || '').trim();
+        const label = String(d.name || d.code || id).trim();
+        if (!id) return '';
+        return `<option value="${esc(id)}">${esc(label)}</option>`;
+      }).join('');
+      if (current && [...el.options].some(o => o.value === current)) el.value = current;
+      else el.value = '';
+      syncDepartmentFilter();
+    }
+
     async function loadPlacementFilters() {
       if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
 
-      // Department is fixed from the staff session — no select / no re-pick.
-      applyDefaultDepartment();
-
+      syncDepartmentFilter();
       filterStudRole = document.getElementById('filterStudRole')?.value || filterStudRole || 'student';
       const initialProgram = filterProgram || '';
       const data = await StaffApi.fetchPlacementFilters({
@@ -814,7 +836,7 @@
         apiAssignedBatches = data.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
       }
 
-      applyDefaultDepartment(data.departments || []);
+      fillDepartmentSelect(data.departments || [], filterDepartmentId);
 
       let programs = data.programs || [];
       let batches = data.batches || [];
@@ -843,34 +865,6 @@
       }
       updateClassTeacherBanner();
 
-    }
-
-    function applyDefaultDepartment(departments = null) {
-      const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
-      const deptId = String(u.departmentId || filterDepartmentId || '').trim();
-      const deptName = String(
-        u.departmentName || u.department || ''
-      ).trim();
-      let label = deptName;
-      let id = deptId;
-
-      if (Array.isArray(departments) && departments.length) {
-        const match = departments.find(d => String(d.id || '') === id)
-          || (departments.length === 1 ? departments[0] : null);
-        if (match) {
-          id = String(match.id || id).trim();
-          label = String(match.name || match.code || label).trim();
-        }
-      }
-
-      filterDepartmentId = id;
-      const hidden = document.getElementById('filterDepartment');
-      if (hidden) hidden.value = filterDepartmentId;
-    }
-
-    function fillDepartmentSelect() {
-      // No-op: department is a fixed read-only field for staff.
-      applyDefaultDepartment();
     }
 
     function applyClientFilter() {
@@ -1234,15 +1228,7 @@
 
     async function loadRegistry() {
       const tbody = document.getElementById('registryRows');
-      applyDefaultDepartment();
-      if (!filterDepartmentId) {
-        allRows = [];
-        filteredRows = [];
-        document.getElementById('rowCount').textContent = '';
-        document.getElementById('pageInfo').textContent = '';
-        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Your account has no department assigned.</td></tr>`;
-        return;
-      }
+      syncDepartmentFilter();
       tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading roster…</td></tr>`;
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
@@ -1269,8 +1255,8 @@
       }
       // Department only — branch/batch dropdowns come from loadPlacementFilters()
       // (registry filters.batches is a lite subset and must not replace the full list).
-      if (data.filters && typeof data.filters === 'object') {
-        applyDefaultDepartment(data.filters.departments || []);
+      if (data.filters && typeof data.filters === 'object' && Array.isArray(data.filters.departments)) {
+        fillDepartmentSelect(data.filters.departments, filterDepartmentId);
       }
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
@@ -1281,7 +1267,16 @@
       if (typeof StaffApi.clearPlacementsCache === 'function') {
         StaffApi.clearPlacementsCache();
       }
-      if (changed === 'filterStudRole') {
+      if (changed === 'filterDepartment') {
+        syncDepartmentFilter();
+        filterProgram = '';
+        filterBatch = '';
+        const programEl = document.getElementById('filterProgram');
+        const batchEl = document.getElementById('filterBatch');
+        if (programEl) programEl.value = '';
+        if (batchEl) batchEl.value = '';
+        await loadPlacementFilters();
+      } else if (changed === 'filterStudRole') {
         filterStudRole = document.getElementById('filterStudRole')?.value || 'student';
         filterBatch = '';
         const batchEl = document.getElementById('filterBatch');
@@ -1317,7 +1312,7 @@
       }
     }
 
-    ['filterStudRole', 'filterProgram', 'filterBatch'].forEach(id => {
+    ['filterDepartment', 'filterStudRole', 'filterProgram', 'filterBatch'].forEach(id => {
       document.getElementById(id)?.addEventListener('change', () => {
         onScopeFilterChange(id).catch(() => loadRegistry());
       });
@@ -1359,7 +1354,7 @@
         wireFilePickers('#editPlacementModal');
         wireFilePickers('#uploadPlacementModal');
       }
-      applyDefaultDepartment();
+      syncDepartmentFilter();
       setRegistryColumns([
         { key: '_sl', label: 'Sl#', sortable: true, sortKey: 'registerNumber', source: 'student_placements', group: 'snapshot' },
         { key: 'studentName', label: 'Student name', sortable: true, sortKey: 'studentName', source: 'student_placements', group: 'snapshot', payloadField: 'studentName' },

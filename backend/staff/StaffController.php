@@ -371,17 +371,21 @@ final class StaffController
         $program = trim((string) ($_GET['program'] ?? ''));
         $branch = trim((string) ($_GET['branch'] ?? ''));
         $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'student')));
-        $filterCtx = array_merge(StaffContext::officerCompatible($ctx), [
-            'filterMode' => true,
-            'placementStudRole' => $studRole === 'alumni' ? 'alumni' : 'student',
-        ]);
+        $registrySvc = new StaffPlacementRegistryService();
+        $filterPayload = [
+            'departmentId' => (string) ($_GET['departmentId'] ?? ''),
+            'program'      => $program,
+            'branch'       => $branch,
+            'studRole'     => $studRole,
+        ];
+        $filterCtx = $registrySvc->placementFilterContext($ctx, $filterPayload);
         $svc = new PlacementFilterService();
         $assigned = StaffContext::assignedClassBatches($filterCtx);
         if ($assigned === []) {
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
         Response::success(DocumentHelper::jsonSafe([
-            'departments' => $svc->fetchDepartmentOptions($filterCtx),
+            'departments' => $registrySvc->departmentFilterOptions(),
             'programs' => $svc->fetchProgramOptions($filterCtx),
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
@@ -396,12 +400,13 @@ final class StaffController
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
         $filters = [
-            'program'  => (string) ($_GET['program'] ?? ''),
-            'branch'   => (string) ($_GET['branch'] ?? ''),
-            'batch'    => (string) ($_GET['batch'] ?? ''),
-            'studRole' => (string) ($_GET['studRole'] ?? 'student'),
-            'type'     => (string) ($_GET['type'] ?? ''),
-            'q'        => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+            'departmentId' => (string) ($_GET['departmentId'] ?? ''),
+            'program'      => (string) ($_GET['program'] ?? ''),
+            'branch'       => (string) ($_GET['branch'] ?? ''),
+            'batch'        => (string) ($_GET['batch'] ?? ''),
+            'studRole'     => (string) ($_GET['studRole'] ?? 'student'),
+            'type'         => (string) ($_GET['type'] ?? ''),
+            'q'            => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
         ];
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->list($ctx, $filters)

@@ -408,7 +408,8 @@ class StudentPlacementModel extends BaseModel
             return [];
         }
 
-        $filter = $this->registryDepartmentFilter($departmentId);
+        $departmentId = trim($departmentId);
+        $filter = $departmentId !== '' ? $this->registryDepartmentFilter($departmentId) : [];
         $rows = [];
         foreach ($this->findAll($filter, max(1, min($limit, 5000))) as $doc) {
             $rows[] = self::rosterRowFromDocument($doc);

@@ -29,18 +29,42 @@ final class StaffPlacementRegistryService
      * @param array<string, string> $filters
      * @return array<string, mixed>
      */
+    /**
+     * @return list<array{id:string,code:string,name:string}>
+     */
+    public function departmentFilterOptions(): array
+    {
+        return $this->loadAllDepartments();
+    }
+
+    /**
+     * AES / dropdown filter context for the selected department (or entire campus).
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
+     * @return array<string, mixed>
+     */
+    public function placementFilterContext(array $staffCtx, array $filters = []): array
+    {
+        return $this->placementFilterCtx($staffCtx, $filters);
+    }
+
     public function list(array $staffCtx, array $filters = []): array
     {
         StaffContext::requireDepartmentScope($staffCtx);
-        $officerCtx = StaffContext::officerCompatible($staffCtx);
+        $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
+        $officerCtx = StaffContext::officerCompatible($listCtx);
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
         $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'student')));
         $isAlumni = $studRole === 'alumni';
 
         $registry = [];
-        $deptId = (string) ($staffCtx['departmentId'] ?? '');
-        $wideCtx = array_merge($officerCtx, ['placementRegistryWide' => true]);
+        $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
+        $wideCtx = array_merge($officerCtx, [
+            'placementRegistryWide' => true,
+            'campusWide' => $deptId === '' || !empty($listCtx['campusWide']),
+        ]);
 
         // Fast path for a selected class: one AES directory pass for that cohort,
         // merged with local PlaceHub classmates (covers S8/S9 and AES gaps).
@@ -63,7 +87,7 @@ final class StaffPlacementRegistryService
                 $this->mergeTableRosterWithClass($tableRows, $classRows)
             );
             $filtered = $this->applyFilters($registry, $filters);
-            $filterOptions = $this->buildLiteFilterOptions($staffCtx, $filters, $filtered);
+            $filterOptions = $this->buildLiteFilterOptions($listCtx, $filters, $filtered);
         } else {
             $placementModel = new StudentPlacementModel();
             if ($isAlumni) {
@@ -84,7 +108,7 @@ final class StaffPlacementRegistryService
                 $this->mergeTableRosterWithClass($tableRows, $classRows)
             );
             $filtered = $this->applyFilters($registry, $filters);
-            $filterOptions = $this->buildLiteFilterOptions($staffCtx, $filters, $filtered);
+            $filterOptions = $this->buildLiteFilterOptions($listCtx, $filters, $filtered);
         }
 
         $placementCount = 0;
@@ -824,7 +848,7 @@ final class StaffPlacementRegistryService
             'programs'    => $programs,
             'branches'    => $program !== '' ? $filterSvc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'     => $batches,
-            'departments' => $this->loadScopedDepartments($staffCtx),
+            'departments' => $this->loadAllDepartments(),
         ];
     }
 
@@ -848,8 +872,42 @@ final class StaffPlacementRegistryService
             'programs'     => $programs,
             'branches'     => $branches,
             'batches'      => $batches,
-            'departments'  => $this->loadScopedDepartments($staffCtx),
+            'departments'  => $this->loadAllDepartments(),
         ];
+    }
+
+    /**
+     * Listing scope from UI department filter (empty = all departments / campus-wide).
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
+     * @return array<string, mixed>
+     */
+    private function resolveRegistryListContext(array $staffCtx, array $filters): array
+    {
+        $selectedDeptId = trim((string) ($filters['departmentId'] ?? ''));
+        if ($selectedDeptId === '') {
+            return array_merge($staffCtx, [
+                'departmentId' => '',
+                'department'   => null,
+                'campusWide'   => true,
+            ]);
+        }
+
+        if ($selectedDeptId === trim((string) ($staffCtx['departmentId'] ?? ''))) {
+            return $staffCtx;
+        }
+
+        $dept = (new DepartmentModel())->findById($selectedDeptId);
+        if (!is_array($dept) || $dept === []) {
+            return $staffCtx;
+        }
+
+        return array_merge($staffCtx, [
+            'departmentId' => $selectedDeptId,
+            'department'   => $dept,
+            'campusWide'   => false,
+        ]);
     }
 
     /**
@@ -865,11 +923,14 @@ final class StaffPlacementRegistryService
      */
     private function placementFilterCtx(array $staffCtx, array $filters = []): array
     {
+        $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
         $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'student')));
+        $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
 
-        return array_merge(StaffContext::officerCompatible($staffCtx), [
+        return array_merge(StaffContext::officerCompatible($listCtx), [
             'filterMode' => true,
             'placementStudRole' => $studRole === 'alumni' ? 'alumni' : 'student',
+            'campusWide' => $deptId === '' || !empty($listCtx['campusWide']),
         ]);
     }
 
