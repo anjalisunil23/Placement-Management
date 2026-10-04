@@ -962,24 +962,62 @@ final class StaffPlacementRegistryService
      */
     private function loadAllDepartments(): array
     {
+        $api = new AesApiService();
         try {
-            (new AesApiService())->syncDepartmentsToLocal();
+            $api->syncDepartmentsToLocal();
         } catch (\Throwable) {
             // Serve local departments when AES is unreachable.
         }
 
+        $catalog = [];
+        try {
+            $catalog = $api->listDepartments();
+        } catch (\Throwable) {
+            $catalog = [];
+        }
+
+        $model = new DepartmentModel();
         $rows = [];
-        foreach ((new DepartmentModel())->findAll([], 200) as $dept) {
-            $code = strtoupper(trim((string) ($dept['code'] ?? '')));
-            $name = trim((string) ($dept['name'] ?? ''));
-            if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
-                continue;
+
+        if ($catalog !== []) {
+            foreach ($catalog as $aesRow) {
+                $code = strtoupper(trim((string) ($aesRow['code'] ?? '')));
+                $name = trim((string) ($aesRow['name'] ?? ''));
+                if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
+                    continue;
+                }
+                if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+                    continue;
+                }
+                $local = $model->findByCode($code);
+                if ($local === null) {
+                    continue;
+                }
+                $rows[] = [
+                    'id'   => (string) ($local['_id'] ?? ''),
+                    'code' => $code,
+                    'name' => $name,
+                ];
             }
-            $rows[] = [
-                'id'   => (string) ($dept['_id'] ?? ''),
-                'code' => $code,
-                'name' => $name,
-            ];
+        } else {
+            foreach ($model->findAll([], 200) as $dept) {
+                $code = strtoupper(trim((string) ($dept['code'] ?? '')));
+                $name = trim((string) ($dept['name'] ?? ''));
+                if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
+                    continue;
+                }
+                if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+                    continue;
+                }
+                if (empty($dept['aesAcademic']) && trim((string) ($dept['aesId'] ?? '')) === '') {
+                    continue;
+                }
+                $rows[] = [
+                    'id'   => (string) ($dept['_id'] ?? ''),
+                    'code' => $code,
+                    'name' => $name,
+                ];
+            }
         }
 
         usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Models\DepartmentModel;
+use PMS\Models\StudentModel;
+use PMS\Utils\Security;
 
 /**
  * Client for AES institute data API (https://api.aesajce.in).
@@ -2432,7 +2434,8 @@ final class AesApiService
     }
 
     /**
-     * Pull AES departments into the local departments collection and reconcile numeric AES ids to short codes.
+     * Pull AES getAcademicDepartments rows into the local departments collection.
+     * Drops AES-synced local rows that no longer appear in the academic catalog (when unused).
      */
     public function syncDepartmentsToLocal(): int
     {
@@ -2443,7 +2446,9 @@ final class AesApiService
         }
 
         $model = new DepartmentModel();
+        $studentModel = new StudentModel();
         $changed = 0;
+        $syncedCodes = [];
         foreach ($rows as $row) {
             $code = strtoupper(trim($row['code']));
             $name = trim($row['name']);
@@ -2451,24 +2456,27 @@ final class AesApiService
             if ($code === '' || $name === '') {
                 continue;
             }
-            // Keep numeric AES ids out; sync academic programmes and staff/support units alike.
             if (preg_match('/^\d+$/', $code) === 1) {
                 continue;
             }
+            if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+                continue;
+            }
+
+            $syncedCodes[$code] = true;
+            $meta = ['aesAcademic' => true];
 
             $existing = $model->findByCode($code);
             if ($existing !== null) {
-                $patch = [];
+                $patch = $meta;
                 if (trim((string) ($existing['name'] ?? '')) !== $name) {
                     $patch['name'] = $name;
                 }
                 if ($aesId !== '' && trim((string) ($existing['aesId'] ?? '')) !== $aesId) {
                     $patch['aesId'] = $aesId;
                 }
-                if ($patch !== []) {
-                    $model->update((string) $existing['_id'], $patch);
-                    $changed++;
-                }
+                $model->update((string) $existing['_id'], $patch);
+                $changed++;
                 if ($aesId !== '') {
                     $numeric = $model->findByCode($aesId);
                     if ($numeric !== null && (string) ($numeric['_id'] ?? '') !== (string) ($existing['_id'] ?? '')) {
@@ -2482,17 +2490,38 @@ final class AesApiService
             if ($aesId !== '') {
                 $numeric = $model->findByCode($aesId) ?? $model->findByAesId($aesId);
                 if ($numeric !== null) {
-                    $model->update((string) $numeric['_id'], [
+                    $model->update((string) $numeric['_id'], array_merge($meta, [
                         'code'  => $code,
                         'name'  => $name,
                         'aesId' => $aesId,
-                    ]);
+                    ]));
                     $changed++;
                     continue;
                 }
             }
 
-            $model->createDepartment(['code' => $code, 'name' => $name, 'aesId' => $aesId]);
+            $id = $model->createDepartment(['code' => $code, 'name' => $name, 'aesId' => $aesId]);
+            if ($id !== '') {
+                $model->update($id, $meta);
+            }
+            $changed++;
+        }
+
+        foreach ($model->findAll([], 500) as $dept) {
+            $code = strtoupper(trim((string) ($dept['code'] ?? '')));
+            if ($code === '' || isset($syncedCodes[$code])) {
+                continue;
+            }
+            $aesId = trim((string) ($dept['aesId'] ?? ''));
+            $wasAesRow = $aesId !== '' || !empty($dept['aesAcademic']);
+            if (!$wasAesRow) {
+                continue;
+            }
+            $deptOid = Security::toObjectId((string) ($dept['_id'] ?? ''));
+            if ($deptOid !== null && $studentModel->count(['departmentId' => $deptOid]) > 0) {
+                continue;
+            }
+            $model->delete((string) $dept['_id']);
             $changed++;
         }
 
