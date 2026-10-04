@@ -549,6 +549,7 @@ $routes = [
     ['POST', '/aptitude/ai/extract-jd',       [AptitudeController::class, 'extractAiJobDescription']],
     ['POST', '/aptitude/ai/save',             [AptitudeController::class, 'saveAiQuestions']],
     ['POST', '/aptitude/ai/save-jd',          [AptitudeController::class, 'saveAiJdQuestions']],
+    ['POST', '/aptitude/jd-sets/upload-manual', [AptitudeController::class, 'uploadJdQuestionManual']],
     ['GET',  '/aptitude/jd-companies',        [AptitudeController::class, 'listJdCompanies']],
     ['GET',  '/aptitude/student/jd-block',    [AptitudeController::class, 'listStudentJdBlock']],
     ['GET',  '/aptitude/student/jd-sets/{id}/document', [AptitudeController::class, 'streamStudentJdSetDocument']],

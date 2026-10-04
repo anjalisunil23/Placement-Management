@@ -17,6 +17,9 @@ final class JdTextExtractionService
     /** @var list<string> */
     private const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
 
+    /** @var list<string> */
+    private const MANUAL_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'txt'];
+
     public function __construct(
         private ?OpenAIService $openai = null
     ) {
@@ -88,6 +91,7 @@ final class JdTextExtractionService
             'pdf' => 'application/pdf',
             'jpg', 'jpeg' => 'image/jpeg',
             'png' => 'image/png',
+            'txt' => 'text/plain',
             default => 'application/octet-stream',
         };
 
@@ -246,5 +250,57 @@ final class JdTextExtractionService
         };
 
         return $this->openai->extractTextFromImage(base64_encode($bytes), $mime);
+    }
+
+    /**
+     * Ingest a question manual upload (PDF, image, or plain text). File is always stored when possible;
+     * extracted text may be empty (e.g. scanned image without OCR).
+     *
+     * @return array{text:string,filename:?string,method:string,jdFile?:string,jdFileUrl?:string,jdMimeType?:string}
+     */
+    public function ingestManualUpload(array $file): array
+    {
+        $error = Security::validateUploadedFile($file, self::MAX_FILE_BYTES, self::MANUAL_EXTENSIONS);
+        if ($error !== null) {
+            throw new \InvalidArgumentException($error);
+        }
+
+        $tmp = (string) ($file['tmp_name'] ?? '');
+        if ($tmp === '' || !is_uploaded_file($tmp)) {
+            throw new \InvalidArgumentException('Invalid upload.');
+        }
+
+        $name = basename((string) ($file['name'] ?? 'manual-upload'));
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        if ($ext === 'text') {
+            $ext = 'txt';
+        }
+
+        $stored = $this->persistUploadedFile($file, $name, $ext === 'txt' ? 'txt' : $ext);
+
+        $text = '';
+        $method = $ext;
+        if ($ext === 'txt') {
+            $raw = file_get_contents($tmp);
+            $text = $this->sanitizeText($raw !== false ? (string) $raw : '');
+            $method = 'text';
+        } elseif ($ext === 'pdf') {
+            $text = $this->sanitizeText($this->extractPdfText($tmp));
+            $method = 'pdf';
+        } else {
+            try {
+                $text = $this->sanitizeText($this->extractImageText($tmp, $ext));
+                $method = 'ocr';
+            } catch (\Throwable) {
+                $text = '';
+                $method = 'image';
+            }
+        }
+
+        return array_merge([
+            'text' => $text,
+            'filename' => $name,
+            'method' => $method,
+        ], $stored);
     }
 }

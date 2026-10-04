@@ -649,6 +649,82 @@ final class AptitudeService
     }
 
     /**
+     * Upload a question manual (PDF, image, or text) into a company-wise card.
+     *
+     * @param array<string, mixed>|null $file
+     * @return array<string, mixed>
+     */
+    public function uploadJdQuestionManual(
+        array $admin,
+        string $companyId,
+        string $jdTitle,
+        string $manualText = '',
+        ?array $file = null,
+        ?string $companyName = null
+    ): array {
+        AptitudeAccessService::requireManager($admin);
+        $jdTitle = trim($jdTitle);
+        if ($jdTitle === '') {
+            Response::error('Title is required.', 422);
+        }
+        $companyId = trim($companyId);
+        if ($companyId === '') {
+            Response::error('Company is required.', 422);
+        }
+
+        $jdFilename = null;
+        $jdFile = null;
+        $jdFileUrl = null;
+        $jdMimeType = null;
+        $extracted = trim($manualText);
+
+        if ($file !== null && ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            try {
+                $ingest = (new JdTextExtractionService())->ingestManualUpload($file);
+                $jdFilename = isset($ingest['filename']) ? (string) $ingest['filename'] : null;
+                $jdFile = isset($ingest['jdFile']) ? (string) $ingest['jdFile'] : null;
+                $jdFileUrl = isset($ingest['jdFileUrl']) ? (string) $ingest['jdFileUrl'] : null;
+                $jdMimeType = isset($ingest['jdMimeType']) ? (string) $ingest['jdMimeType'] : null;
+                $fileText = trim((string) ($ingest['text'] ?? ''));
+                if ($fileText !== '') {
+                    $extracted = $extracted !== '' ? ($extracted . "\n\n" . $fileText) : $fileText;
+                }
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            } catch (\Throwable $e) {
+                error_log('[PMS Aptitude] manual upload ingest failed: ' . $e->getMessage());
+                Response::error('Could not read the uploaded file.', 422);
+            }
+        }
+
+        if ($extracted === '' && ($jdFile === null || trim((string) $jdFile) === '')) {
+            Response::error('Upload a file or paste question manual text.', 422);
+        }
+
+        $parsed = (new AptitudeManualQuestionParser())->parse($extracted);
+
+        try {
+            return (new \PMS\Models\AptitudeJdQuestionSetModel())->createManualSet(
+                $jdTitle,
+                $parsed,
+                (string) ($admin['_id'] ?? $admin['id'] ?? ''),
+                $companyId,
+                $companyName,
+                $jdFilename,
+                $jdFile,
+                $jdFileUrl,
+                $jdMimeType,
+                $extracted !== '' ? $extracted : null
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            error_log('[PMS Aptitude] manual JD save failed: ' . $e->getMessage());
+            Response::error('Could not save question manual.', 500);
+        }
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function listJdQuestionSets(): array

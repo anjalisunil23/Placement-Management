@@ -262,6 +262,24 @@ final class AptitudeController
         );
     }
 
+    /** POST /api/aptitude/jd-sets/upload-manual — multipart: companyId, jdTitle, manualText?, manual? */
+    public function uploadJdQuestionManual(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $companyId = trim((string) ($_POST['companyId'] ?? ''));
+        $jdTitle = trim((string) ($_POST['jdTitle'] ?? ''));
+        $manualText = trim((string) ($_POST['manualText'] ?? ''));
+        $companyName = isset($_POST['companyName']) ? trim((string) $_POST['companyName']) : null;
+        $file = null;
+        if (isset($_FILES['manual']) && is_array($_FILES['manual']) && ($_FILES['manual']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $file = $_FILES['manual'];
+        }
+        Response::success(
+            $this->service->uploadJdQuestionManual($user, $companyId, $jdTitle, $manualText, $file, $companyName),
+            'Question manual saved.'
+        );
+    }
+
     /** GET /api/aptitude/jd-companies */
     public function listJdCompanies(): void
     {

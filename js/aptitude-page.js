@@ -446,6 +446,7 @@
   let adminJdBlockView = 'tests';
   const jdSetDetailsCache = {};
   let aptAiModal;
+  let aptJdManualModal;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
   let aiGenerateContext = 'bank';
@@ -1644,6 +1645,168 @@
     }).join('')}`;
   }
 
+  function fillAptManualJdCompanySelect(selectedId = '') {
+    const sel = document.getElementById('aptManualJdCompany');
+    if (!sel) return;
+    const pick = String(selectedId || '');
+    sel.innerHTML = `<option value="">Select company…</option>${jdCompanies.map((c) => {
+      const id = String(c.id || '');
+      return `<option value="${esc(id)}"${id === pick ? ' selected' : ''}>${esc(c.name || 'Company')}</option>`;
+    }).join('')}`;
+  }
+
+  function getManualJdTitleFormState() {
+    const base = (document.getElementById('aptManualJdTitle')?.value || '').trim();
+    const addDate = document.getElementById('aptManualJdTitleAddDate')?.checked === true;
+    const dateValue = document.getElementById('aptManualJdTitleDate')?.value || todayIsoDate();
+    return {
+      jdTitleBase: base,
+      jdTitleAddDate: addDate,
+      jdTitleDate: dateValue,
+      jdTitle: resolveJdTitle(base, addDate, dateValue),
+    };
+  }
+
+  function updateManualJdTitleDateUi() {
+    const addDate = document.getElementById('aptManualJdTitleAddDate')?.checked === true;
+    document.getElementById('aptManualJdTitleDateWrap')?.classList.toggle('d-none', !addDate);
+    const preview = document.getElementById('aptManualJdTitlePreview');
+    const { jdTitleBase, jdTitle } = getManualJdTitleFormState();
+    if (preview) {
+      if (addDate && jdTitleBase && jdTitle !== jdTitleBase) {
+        preview.textContent = `Saved as: ${jdTitle}`;
+        preview.classList.remove('d-none');
+      } else {
+        preview.textContent = '';
+        preview.classList.add('d-none');
+      }
+    }
+  }
+
+  function resetManualJdUploadForm() {
+    document.getElementById('aptManualJdTitle').value = '';
+    document.getElementById('aptManualJdText').value = '';
+    document.getElementById('aptManualJdFile').value = '';
+    const addDateEl = document.getElementById('aptManualJdTitleAddDate');
+    const dateEl = document.getElementById('aptManualJdTitleDate');
+    if (addDateEl) addDateEl.checked = false;
+    if (dateEl) dateEl.value = todayIsoDate();
+    updateManualJdTitleDateUi();
+  }
+
+  function openJdManualUploadModal(opts = {}) {
+    const preCompany = opts.companyId
+      || (jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '');
+    ensureJdCompaniesLoaded().then(() => {
+      fillAptManualJdCompanySelect(preCompany);
+      resetManualJdUploadForm();
+      aptJdManualModal?.show();
+    }).catch(() => {
+      fillAptManualJdCompanySelect(preCompany);
+      resetManualJdUploadForm();
+      aptJdManualModal?.show();
+    });
+  }
+
+  async function saveJdManualUpload() {
+    const sel = document.getElementById('aptManualJdCompany');
+    const companyId = String(sel?.value || '').trim();
+    const companyName = sel?.selectedOptions?.[0]?.textContent?.trim() || '';
+    const titleState = getManualJdTitleFormState();
+    const manualText = (document.getElementById('aptManualJdText')?.value || '').trim();
+    const file = document.getElementById('aptManualJdFile')?.files?.[0] || null;
+    if (!companyId) {
+      toast('Select a company.', 'error');
+      return;
+    }
+    if (!titleState.jdTitleBase) {
+      toast('Enter a title for this manual.', 'error');
+      return;
+    }
+    if (!manualText && !file) {
+      toast('Upload a file or paste question manual text.', 'error');
+      return;
+    }
+    if (file && file.size > AI_JD_MAX_FILE_BYTES) {
+      toast('File must be 5 MB or smaller.', 'error');
+      return;
+    }
+
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    const status = document.getElementById('aptManualJdSaveStatus');
+    const btn = document.getElementById('btnAptManualJdSave');
+    status?.classList.remove('d-none');
+    btn?.setAttribute('disabled', 'disabled');
+    try {
+      if (!live) {
+        if (!Auth.isDemo() || !access.canManage) {
+          toast('Saving requires a live session.', 'info');
+          return;
+        }
+        const setId = `demo-jd-manual-${Date.now()}`;
+        let jdFileDataUrl = '';
+        let jdMimeType = '';
+        let jdFilename = '';
+        if (file) {
+          jdFileDataUrl = await readFileAsDataUrl(file);
+          jdFilename = file.name;
+          jdMimeType = file.type || 'application/octet-stream';
+        }
+        const store = loadDemoJdStore();
+        store.unshift({
+          id: setId,
+          companyId,
+          companyName,
+          jdTitle: titleState.jdTitle,
+          jdFilename,
+          jdFileDataUrl,
+          jdFileUrl: jdFileDataUrl,
+          jdMimeType,
+          manualText,
+          hasDocument: !!(jdFileDataUrl || manualText),
+          questionCount: 0,
+          questions: [],
+        });
+        saveDemoJdStore(store);
+        toast(`Saved manual to Company Block: ${companyName} · ${titleState.jdTitle}`, 'success');
+        aptJdManualModal?.hide();
+        await loadJdLibrary();
+        if (jdSelectedCompanyId) {
+          showJdCompanyDetail(jdSelectedCompanyId);
+        }
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append('companyId', companyId);
+      fd.append('companyName', companyName);
+      fd.append('jdTitle', titleState.jdTitle);
+      if (manualText) fd.append('manualText', manualText);
+      if (file) fd.append('manual', file);
+      const res = await api('/aptitude/jd-sets/upload-manual', { method: 'POST', body: fd });
+      if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
+      const count = res.data?.questionCount ?? 0;
+      toast(
+        count > 0
+          ? `Saved ${count} parsed question(s) and manual to ${titleState.jdTitle}.`
+          : `Saved manual to company card: ${titleState.jdTitle}.`,
+        'success'
+      );
+      delete jdSetDetailsCache[String(res.data?.id || '')];
+      manualJdSetSummaries = [];
+      aptJdManualModal?.hide();
+      await loadJdLibrary();
+      if (jdSelectedCompanyId) {
+        showJdCompanyDetail(jdSelectedCompanyId);
+      }
+    } catch (err) {
+      toast(err?.message || 'Could not save question manual.', 'error');
+    } finally {
+      status?.classList.add('d-none');
+      btn?.removeAttribute('disabled');
+    }
+  }
+
   function selectedJdCompanyFromForm() {
     const sel = document.getElementById('aptAiJdCompany');
     const companyId = String(sel?.value || '').trim();
@@ -1800,6 +1963,13 @@
 
   function renderJdDocumentPanel(detail) {
     const url = jdDocumentUrl(detail);
+    const manualText = String(detail?.manualText || '').trim();
+    if (!url && manualText) {
+      return `<div class="border rounded-2 p-3 bg-light">
+        <div class="small text-muted-2 mb-2">Pasted manual text</div>
+        <pre class="small mb-0 text-wrap" style="white-space:pre-wrap;max-height:480px;overflow:auto">${esc(manualText)}</pre>
+      </div>`;
+    }
     if (!url) {
       return '<p class="small text-muted-2 mb-0">No uploaded document for this set.</p>';
     }
@@ -6746,6 +6916,9 @@
     testFormModal = new bootstrap.Modal(document.getElementById('testFormModal'));
     bulkModal = new bootstrap.Modal(document.getElementById('bulkModal'));
     aptAiModal = document.getElementById('aptAiModal') ? new bootstrap.Modal(document.getElementById('aptAiModal')) : null;
+    aptJdManualModal = document.getElementById('aptJdManualModal')
+      ? new bootstrap.Modal(document.getElementById('aptJdManualModal'))
+      : null;
     exam = AptitudeExam.createExamController({
       root: document.getElementById('examShell'),
       onExit: () => closeExam(),
@@ -6960,6 +7133,14 @@
     });
     document.getElementById('btnBankUploadPanel')?.addEventListener('click', () => openBulk('bank'));
     document.getElementById('btnBankAiGenerate')?.addEventListener('click', () => openAptAiModal());
+    document.getElementById('btnJdManualUpload')?.addEventListener('click', () => {
+      const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
+      openJdManualUploadModal({ companyId });
+    });
+    document.getElementById('btnAptManualJdSave')?.addEventListener('click', () => saveJdManualUpload());
+    document.getElementById('aptManualJdTitleAddDate')?.addEventListener('change', updateManualJdTitleDateUi);
+    document.getElementById('aptManualJdTitleDate')?.addEventListener('change', updateManualJdTitleDateUi);
+    document.getElementById('aptManualJdTitle')?.addEventListener('input', updateManualJdTitleDateUi);
     document.getElementById('btnJdAiGenerate')?.addEventListener('click', () => {
       const companyId = jdSelectedCompanyId && jdSelectedCompanyId !== '_unassigned' ? jdSelectedCompanyId : '';
       openAptAiModal({ jd: true, companyId });

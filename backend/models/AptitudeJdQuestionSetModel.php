@@ -223,6 +223,108 @@ class AptitudeJdQuestionSetModel extends BaseModel
     }
 
     /**
+     * Save a company-wise manual upload (document and/or parsed MCQs).
+     *
+     * @param array<int, array<string, mixed>> $questions
+     * @return array<string, mixed>
+     */
+    public function createManualSet(
+        string $jdTitle,
+        array $questions,
+        ?string $createdBy = null,
+        ?string $companyId = null,
+        ?string $companyName = null,
+        ?string $jdFilename = null,
+        ?string $jdFile = null,
+        ?string $jdFileUrl = null,
+        ?string $jdMimeType = null,
+        ?string $manualText = null
+    ): array {
+        $jdTitle = trim($jdTitle);
+        if ($jdTitle === '') {
+            throw new \InvalidArgumentException('Title is required.');
+        }
+
+        $companyId = trim((string) ($companyId ?? ''));
+        if ($companyId === '' || !Security::isValidId($companyId)) {
+            throw new \InvalidArgumentException('Company is required.');
+        }
+        $companyName = trim((string) ($companyName ?? ''));
+        if ($companyName === '') {
+            $company = (new CompanyModel())->findById($companyId);
+            if ($company === null) {
+                throw new \InvalidArgumentException('Selected company was not found.');
+            }
+            $companyName = trim((string) ($company['companyName'] ?? ''));
+        }
+        if ($companyName === '') {
+            throw new \InvalidArgumentException('Selected company was not found.');
+        }
+
+        $fileUri = trim((string) ($jdFile ?? ''));
+        $manualTextTrim = trim((string) ($manualText ?? ''));
+
+        $normalized = [];
+        foreach (array_values($questions) as $i => $q) {
+            if (!is_array($q)) {
+                continue;
+            }
+            $norm = AptitudeTestModel::normalizeMcq($q, 'General Aptitude', $i);
+            if ($norm === null) {
+                continue;
+            }
+            $topic = trim((string) ($q['topic'] ?? ''));
+            if ($topic !== '') {
+                $norm['topic'] = $topic;
+            }
+            $norm['id'] = 'jdq-' . ($i + 1) . '-' . bin2hex(random_bytes(4));
+            $norm['source'] = 'MANUAL_UPLOAD';
+            $normalized[] = $norm;
+        }
+
+        if ($normalized === [] && $fileUri === '' && $manualTextTrim === '') {
+            throw new \InvalidArgumentException(
+                'Upload a PDF, image, or text file, paste manual text, or include parseable MCQs.'
+            );
+        }
+
+        $doc = [
+            'jdTitle' => $jdTitle,
+            'companyId' => $companyId,
+            'companyName' => $companyName,
+            'questionCount' => count($normalized),
+            'questions' => $normalized,
+            'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
+            'manualSource' => 'upload',
+        ];
+        $filename = trim((string) ($jdFilename ?? ''));
+        if ($filename !== '') {
+            $doc['jdFilename'] = $filename;
+        }
+        if ($fileUri !== '') {
+            $doc['jdFile'] = $fileUri;
+        }
+        $fileUrl = trim((string) ($jdFileUrl ?? ''));
+        if ($fileUrl !== '') {
+            $doc['jdFileUrl'] = $fileUrl;
+        }
+        $mime = trim((string) ($jdMimeType ?? ''));
+        if ($mime !== '') {
+            $doc['jdMimeType'] = $mime;
+        }
+        if ($manualTextTrim !== '') {
+            $doc['manualText'] = mb_strlen($manualTextTrim) > 50000
+                ? mb_substr($manualTextTrim, 0, 50000)
+                : $manualTextTrim;
+        }
+
+        $id = $this->insert($doc);
+        $saved = $this->findById($id);
+
+        return $saved !== null ? $this->detailView($saved) : ['id' => $id, 'jdTitle' => $jdTitle];
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $rules
      * @return list<array<string, mixed>>
      */
@@ -387,7 +489,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'jdFilename' => (string) ($row['jdFilename'] ?? ''),
             'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
             'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
-            'hasDocument' => trim((string) ($row['jdFile'] ?? '')) !== '' || trim((string) ($row['jdFileUrl'] ?? '')) !== '',
+            'hasDocument' => $this->rowHasManualDocument($row),
             'questionCount' => (int) ($row['questionCount'] ?? count((array) ($row['questions'] ?? []))),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
         ], $row, $forStudent);
@@ -428,11 +530,32 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'jdFilename' => (string) ($row['jdFilename'] ?? ''),
             'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
             'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
-            'hasDocument' => trim((string) ($row['jdFile'] ?? '')) !== '' || trim((string) ($row['jdFileUrl'] ?? '')) !== '',
+            'hasDocument' => $this->rowHasManualDocument($row),
             'questionCount' => count($questions),
             'questions' => $questions,
+            'manualText' => $this->manualTextForView($row),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
         ], $row, $forStudent);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function rowHasManualDocument(array $row): bool
+    {
+        return trim((string) ($row['jdFile'] ?? '')) !== ''
+            || trim((string) ($row['jdFileUrl'] ?? '')) !== ''
+            || trim((string) ($row['manualText'] ?? '')) !== '';
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function manualTextForView(array $row): string
+    {
+        $text = trim((string) ($row['manualText'] ?? ''));
+
+        return mb_strlen($text) > 20000 ? (mb_substr($text, 0, 20000) . '…') : $text;
     }
 
     /**
