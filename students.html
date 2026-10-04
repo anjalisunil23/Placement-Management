@@ -2760,7 +2760,7 @@ function renderFinalYearList(kind) {
       ? 'No students match your search.'
       : (role === 'staff'
         ? 'No students in your class have registered the placement policy yet.'
-        : ('No final-year students have registered the placement policy yet.' + adminFinalYearEmptyHint()));
+        : ('No students have registered the placement policy yet.' + adminFinalYearEmptyHint()));
     tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
     return;
   }
