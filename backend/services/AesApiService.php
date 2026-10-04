@@ -527,7 +527,7 @@ final class AesApiService
             'stud_photo' => trim((string) ($record['stud_photo'] ?? $record['photoUrl'] ?? '')),
             'photoUrl' => trim((string) ($record['stud_photo'] ?? $record['photoUrl'] ?? '')),
         ];
-        foreach (['stud_status', 'status', 'studying', 'is_studying'] as $flag) {
+        foreach (['stud_status', 'status', 'studying', 'is_studying', 'stud_role', 'role'] as $flag) {
             if (array_key_exists($flag, $record)) {
                 $out[$flag] = $record[$flag];
             }
