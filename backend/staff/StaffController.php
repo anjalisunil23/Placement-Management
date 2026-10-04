@@ -372,11 +372,16 @@ final class StaffController
         $branch = trim((string) ($_GET['branch'] ?? ''));
         $filterCtx = array_merge(StaffContext::officerCompatible($ctx), ['filterMode' => true]);
         $svc = new PlacementFilterService();
+        $assigned = StaffContext::assignedClassBatches($filterCtx);
+        if ($assigned === []) {
+            $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
+        }
         Response::success(DocumentHelper::jsonSafe([
             'departments' => $svc->fetchDepartmentOptions($filterCtx),
             'programs' => $svc->fetchProgramOptions($filterCtx),
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
+            'assignedClassBatches' => $assigned,
         ]));
     }
 

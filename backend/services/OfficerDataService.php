@@ -2650,7 +2650,7 @@ final class OfficerDataService
     private function isAesStudyingStudent(array $record): bool
     {
         $studRole = strtolower(trim((string) ($record['stud_role'] ?? '')));
-        if ($studRole !== '' && in_array($studRole, ['admin', 'alumni', 'alumnus'], true)) {
+        if ($studRole !== '' && in_array($studRole, ['alumni', 'alumnus'], true)) {
             return false;
         }
 

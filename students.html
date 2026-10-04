@@ -1151,6 +1151,18 @@ function staffDepartmentCode() {
   return String(u.department || '').trim().toUpperCase();
 }
 
+function staffAssignedClassBatches() {
+  if (typeof staffClassInchargeBatches === 'function') {
+    return staffClassInchargeBatches();
+  }
+  const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
+  const fromUser = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
+  const profile = u.profile && typeof u.profile === 'object' ? u.profile : {};
+  const fromProfile = Array.isArray(profile.assignedClassBatches) ? profile.assignedClassBatches : [];
+  const merged = [...new Set([...fromUser, ...fromProfile].map(v => String(v || '').trim()).filter(Boolean))];
+  return merged.length > 12 ? [] : merged;
+}
+
 function studentInStaffScope(s) {
   if (role !== 'staff') return true;
   const dept = staffDepartmentCode();
@@ -1164,9 +1176,9 @@ function studentInStaffScope(s) {
     || ['MCA', 'BCA', 'INMCA', 'INTEGRATED MCA', 'COMPUTER APPLICATIONS'].includes(studentDept);
   if (!deptOk) return false;
 
-  const u = Auth.user() || {};
-  const assigned = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
-  if (!assigned.length) return false;
+  const assigned = staffAssignedClassBatches();
+  // Dept-wide staff (no CT/CoCT): API already scopes by department — do not hide every row.
+  if (!assigned.length) return deptOk;
   const batch = String(s.classBatch || s.batch || '').trim().toUpperCase();
   if (!batch) return false;
   const cohort = batch.replace(/-S\d+$/i, '');
@@ -2603,11 +2615,7 @@ function filteredPlacedStudents() {
   const q = document.getElementById('searchPlaced')?.value.trim() || '';
   return placedStudentsAll.filter(s => {
     // CT/CoCT: only their assigned class (API also scopes; keep UI aligned).
-    if (role === 'staff') {
-      const u = (typeof Auth !== 'undefined' && Auth.user) ? (Auth.user() || {}) : {};
-      const assigned = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
-      if (assigned.length && !studentInStaffScope(s)) return false;
-    }
+    if (role === 'staff' && staffAssignedClassBatches().length && !studentInStaffScope(s)) return false;
     return placedMatchesQuery(s, q);
   });
 }

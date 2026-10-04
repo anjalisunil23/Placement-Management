@@ -75,6 +75,13 @@ final class PlacementFilterService
      */
     public function fetchProgramOptions(array $ctx): array
     {
+        if (!empty($ctx['staffScope'])) {
+            $assigned = StaffContext::assignedClassBatches($ctx);
+            if ($assigned !== []) {
+                return $this->programmesFromStaffAssignments($ctx);
+            }
+        }
+
         $programmes = $this->distinctFieldFromScopedRows($ctx, 'stud_course', '', '');
         $deptAesId = $this->resolveParentDeptAesId($ctx);
         if ($deptAesId !== '' && empty($ctx['filterMode'])) {
@@ -521,7 +528,8 @@ final class PlacementFilterService
      */
     private function appendFilterModeStudInfoRows(array $ctx, array &$rows, array &$seen): void
     {
-        foreach (StaffContext::assignedClassBatches($ctx) as $batchLabel) {
+        $assigned = StaffContext::assignedClassBatches($ctx);
+        foreach ($assigned as $batchLabel) {
             $batchLabel = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $batchLabel));
             if ($batchLabel === '') {
                 continue;
@@ -533,6 +541,11 @@ final class PlacementFilterService
                 'stud_class' => $batchLabel,
             ];
             $this->pushStudInfoRow($row, $rows, $seen);
+        }
+
+        // Class incharge: only assigned batches — not every batch in the department registry.
+        if (!empty($ctx['staffScope']) && $assigned !== []) {
+            return;
         }
 
         $deptId = trim((string) ($ctx['departmentId'] ?? ''));
@@ -807,6 +820,25 @@ final class PlacementFilterService
         }
 
         return false;
+    }
+
+    /**
+     * Programme codes inferred from class-incharge batch assignments.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function programmesFromStaffAssignments(array $ctx): array
+    {
+        $codes = [];
+        foreach (StaffContext::assignedClassBatches($ctx) as $batchLabel) {
+            $code = $this->programmeCodeFromBatch(trim((string) $batchLabel));
+            if ($code !== '') {
+                $codes[] = $code;
+            }
+        }
+
+        return $this->sortLabels(array_values(array_unique($codes)));
     }
 
     /**

@@ -680,6 +680,25 @@
       else el.value = '';
     }
 
+    function scopeFilterOptionsToAssigned(programs, batches) {
+      const assigned = assignedBatches();
+      if (!assigned.length) {
+        return { programs: programs || [], batches: batches || [] };
+      }
+      const progs = (programs || []).filter(p => assigned.some(b => batchLooksLikeProgramme(b, p)));
+      const bats = (batches || []).filter(b => assigned.some(a => {
+        const A = String(a || '').trim();
+        const B = String(b || '').trim();
+        if (!A || !B) return false;
+        return A.toLowerCase() === B.toLowerCase() || cohortKey(A) === cohortKey(B);
+      }));
+      const inferredPrograms = [...new Set(assigned.map(programFromBatch).filter(Boolean))];
+      return {
+        programs: progs.length ? progs : inferredPrograms,
+        batches: bats.length ? bats : assigned.slice(),
+      };
+    }
+
     function assignedBatches() {
       // Prefer server list (registry CT/CoCT only). Ignore stale localStorage dumps.
       if (apiAssignedBatches.length) {
@@ -803,15 +822,13 @@
       });
       if (!data) return;
 
+      if (Array.isArray(data.assignedClassBatches) && data.assignedClassBatches.length) {
+        apiAssignedBatches = data.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
+      }
+
       applyDefaultDepartment(data.departments || []);
 
-      const programs = data.programs || [];
-      if (!filterProgram) {
-        filterProgram = pickPreferredProgram(programs);
-      }
-      fillSelect('filterProgram', programs, 'All branches', filterProgram, true);
-      filterProgram = document.getElementById('filterProgram')?.value || '';
-
+      let programs = data.programs || [];
       let batches = data.batches || [];
       // Only re-fetch batches when programme just became known and first payload had none.
       if (filterProgram && !batches.length) {
@@ -820,7 +837,19 @@
           program: filterProgram,
         });
         batches = again?.batches || [];
+        if (Array.isArray(again?.assignedClassBatches) && again.assignedClassBatches.length) {
+          apiAssignedBatches = again.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
+        }
       }
+
+      const scoped = scopeFilterOptionsToAssigned(programs, batches);
+      programs = scoped.programs;
+      batches = scoped.batches;
+      if (!filterProgram && programs.length) {
+        filterProgram = pickPreferredProgram(programs);
+      }
+      fillSelect('filterProgram', programs, 'All branches', filterProgram, true);
+      filterProgram = document.getElementById('filterProgram')?.value || '';
 
       if (!filterBatch) {
         filterBatch = pickPreferredBatch(batches, filterProgram);
