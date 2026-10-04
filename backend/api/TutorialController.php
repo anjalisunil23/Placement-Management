@@ -187,6 +187,15 @@ final class TutorialController
         Response::success($this->ai->saveCourseDraft($user, $this->body()), 'AI course saved as draft.', 201);
     }
 
+    public function aiGenerateLessonExercises(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success(
+            $this->ai->generateLessonExercisesPreview($user, $this->body()),
+            'AI lesson exercises generated.'
+        );
+    }
+
     public function aiGenerateModule(string $tutorialId): void
     {
         $user = AuthMiddleware::authenticate();

@@ -366,6 +366,212 @@ try {
         'business field does not keep programming code blocks'
     );
 
+    // Lesson-linked programming exercises
+    $exerciseCourse = $sampleCourseJson(2);
+    $exerciseCourse['course']['title'] = 'Python With Practice';
+    $exerciseCourse['modules'][0]['lessonDocument']['blocks'] = [
+        ['id' => 'vars', 'type' => 'heading', 'level' => 2, 'text' => 'Python Variables'],
+        ['type' => 'paragraph', 'text' => 'A variable stores a name or a number.'],
+        ['id' => 'types', 'type' => 'heading', 'level' => 2, 'text' => 'Data Types'],
+        ['type' => 'paragraph', 'text' => 'Integers, strings, and booleans are different types.'],
+    ];
+    $exerciseCourse['modules'][0]['exercises'] = [
+        [
+            'lessonTitle' => 'Python Variables',
+            'title' => 'Store a name',
+            'instructions' => 'Create a variable for a student name and print it.',
+            'language' => 'python',
+            'boilerplate' => "name = ''\n",
+            'testCases' => [
+                ['stdin' => '', 'expectedOutput' => "Ada\n", 'sample' => true],
+                ['stdin' => '', 'expectedOutput' => "HIDDEN_NAME\n", 'sample' => false],
+            ],
+        ],
+        [
+            'lessonBlockId' => 'missing-lesson',
+            'lessonTitle' => 'Not a lesson',
+            'title' => 'Orphan exercise',
+            'instructions' => 'This exercise does not belong to a lesson.',
+            'language' => 'python',
+            'testCases' => [
+                ['stdin' => '', 'expectedOutput' => "x\n", 'sample' => true],
+            ],
+        ],
+        [
+            'lessonTitle' => 'data types',
+            'title' => 'Show types',
+            'instructions' => 'Create variables of different types and print them.',
+            'language' => 'py',
+            'boilerplate' => "value = 1\n",
+            'testCases' => [
+                ['stdin' => '', 'expectedOutput' => "1\n", 'sample' => true],
+                ['stdin' => '', 'expectedOutput' => "2\n", 'sample' => true],
+            ],
+        ],
+        [
+            'lessonTitle' => 'Python Variables',
+            'title' => 'Blank output',
+            'instructions' => 'This case has no expected output.',
+            'language' => 'python',
+            'testCases' => [
+                ['stdin' => '', 'expectedOutput' => '   ', 'sample' => true],
+            ],
+        ],
+    ];
+    $exerciseCourse['modules'][1]['lessonDocument']['blocks'] = [
+        ['id' => 'loops', 'type' => 'heading', 'level' => 2, 'text' => 'Loops'],
+        ['type' => 'paragraph', 'text' => 'A loop repeats work.'],
+    ];
+    $exerciseCourse['modules'][1]['exercises'] = [[
+        'lessonBlockId' => 'loops',
+        'title' => 'Count to three',
+        'instructions' => 'Print the numbers 1, 2, and 3.',
+        'language' => 'python',
+        'boilerplate' => '',
+        'testCases' => [
+            ['stdin' => '', 'expectedOutput' => "1\n2\n3\n", 'sample' => true],
+            ['stdin' => '', 'expectedOutput' => "1\n2\n3\n", 'sample' => false],
+        ],
+    ]];
+    $linked = $ai->normalizeCourseDocument($exerciseCourse, $ai->normalizeCourseRequest([
+        'topic' => 'Python',
+        'academicField' => 'computer_applications',
+        'difficulty' => 'beginner',
+        'moduleCount' => 2,
+    ]));
+    $firstExercises = $linked['modules'][0]['exercises'] ?? [];
+    $secondExercises = $linked['modules'][1]['exercises'] ?? [];
+    $lessonIds = array_map(static fn (array $row): string => (string) ($row['lessonBlockId'] ?? ''), $firstExercises);
+    $typeExercise = null;
+    foreach ($firstExercises as $row) {
+        if (($row['lessonBlockId'] ?? '') === 'types') {
+            $typeExercise = $row;
+        }
+    }
+    $check(
+        count($firstExercises) === 2
+        && in_array('vars', $lessonIds, true)
+        && in_array('types', $lessonIds, true)
+        && !in_array('missing-lesson', $lessonIds, true)
+        && count($secondExercises) === 1
+        && ($secondExercises[0]['lessonBlockId'] ?? '') === 'loops',
+        'generated exercises link only to real lessons'
+    );
+    $check(
+        is_array($typeExercise)
+        && ($typeExercise['language'] ?? '') === 'python'
+        && ($typeExercise['testCases'][1]['sample'] ?? true) === false,
+        'exercise language and hidden test cases are normalized'
+    );
+    $check(
+        ($linked['modules'][0]['exercises'] ?? null) !== null
+        && count($ai->normalizeCourseDocument($sampleCourseJson(1), $ai->normalizeCourseRequest([
+            'topic' => 'Python', 'academicField' => 'computer_applications', 'difficulty' => 'beginner', 'moduleCount' => 1,
+        ]))['modules'][0]['exercises'] ?? []) === 0,
+        'courses without exercises remain valid'
+    );
+
+    $linked['modules'][0]['exercises'][0]['title'] = 'Store a student name';
+    $linked['modules'][0]['exercises'] = array_values(array_filter(
+        $linked['modules'][0]['exercises'],
+        static fn (array $row): bool => ($row['lessonBlockId'] ?? '') !== 'types'
+    ));
+    $linked['modules'][0]['exercises'][] = [
+        'lessonBlockId' => 'removed-heading',
+        'lessonTitle' => 'Gone',
+        'title' => 'Should not save',
+        'instructions' => 'The lesson no longer exists.',
+        'language' => 'python',
+        'testCases' => [
+            ['stdin' => '', 'expectedOutput' => "no\n", 'sample' => true],
+        ],
+    ];
+    @unlink(sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_tutorial_ai_' . hash('sha256', (string) $staff['_id']) . '.cooldown');
+    $practiceSaved = $ai->saveCourseDraft($staff, [
+        'categoryId' => $categoryId,
+        'visibility' => 'all',
+        'course' => $linked['course'],
+        'modules' => $linked['modules'],
+    ]);
+    $practiceTutorialId = (string) ($practiceSaved['tutorial']['id'] ?? '');
+    $tutorialIds[] = $practiceTutorialId;
+    $check(
+        ($practiceSaved['status'] ?? '') === 'draft'
+        && ($practiceSaved['tutorial']['status'] ?? '') === 'draft'
+        && (int) ($practiceSaved['modules'][0]['exerciseCount'] ?? 0) === 1
+        && (int) ($practiceSaved['modules'][1]['exerciseCount'] ?? 0) === 1,
+        'edited lesson exercises save with the draft and invalid links are dropped'
+    );
+    $throws(static function () use ($service, $student, $practiceTutorialId, $practiceSaved): void {
+        $service->moduleForStudent($student, $practiceTutorialId, (string) ($practiceSaved['modules'][0]['id'] ?? ''));
+    }, 'draft lesson exercises stay hidden from students');
+    $service->publish($staff, $practiceTutorialId);
+    $studentModule = $service->moduleForStudent($student, $practiceTutorialId, (string) ($practiceSaved['modules'][0]['id'] ?? ''));
+    $studentLessonIds = [];
+    foreach (($studentModule['lessons'] ?? []) as $lesson) {
+        $studentLessonIds[] = (string) ($lesson['id'] ?? '');
+    }
+    $studentExerciseIds = array_map(static fn (array $row): string => (string) ($row['lessonBlockId'] ?? ''), $studentModule['exercises'] ?? []);
+    $check(
+        $studentLessonIds === ['vars', 'types']
+        && $studentExerciseIds === ['vars']
+        && count($studentModule['exercises'] ?? []) === 1,
+        'student module lists only the exercises for its lessons'
+    );
+    $otherModule = $service->moduleForStudent($student, $practiceTutorialId, (string) ($practiceSaved['modules'][1]['id'] ?? ''));
+    $check(
+        array_map(static fn (array $row): string => (string) ($row['lessonBlockId'] ?? ''), $otherModule['exercises'] ?? []) === ['loops'],
+        'changing the module returns that lesson\'s exercises'
+    );
+    $studentExercise = $service->exerciseForStudent($student, (string) ($studentModule['exercises'][0]['id'] ?? ''));
+    $studentJson = json_encode($studentExercise);
+    $check(
+        ($studentExercise['lessonBlockId'] ?? '') === 'vars'
+        && ($studentExercise['title'] ?? '') === 'Store a student name'
+        && count($studentExercise['testCases'] ?? []) === 1
+        && (($studentExercise['testCases'][0]['sample'] ?? false) === true)
+        && is_string($studentJson)
+        && !str_contains($studentJson, 'HIDDEN_NAME'),
+        'student exercise API hides hidden test cases'
+    );
+
+    @unlink(sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_tutorial_ai_' . hash('sha256', (string) $staff['_id']) . '.cooldown');
+    $ai->nextJson = [
+        'exercises' => [[
+            'lessonTitle' => 'Something else',
+            'title' => 'Add two numbers',
+            'instructions' => 'Store two numbers and print their sum.',
+            'language' => 'python',
+            'boilerplate' => "a = 0\nb = 0\n",
+            'testCases' => [
+                ['stdin' => "2\n3\n", 'expectedOutput' => "5\n", 'sample' => true],
+                ['stdin' => "4\n5\n", 'expectedOutput' => "9\n", 'sample' => false],
+            ],
+        ]],
+    ];
+    $regenerated = $ai->generateLessonExercisesPreview($staff, [
+        'lessonBlockId' => 'vars',
+        'lessonTitle' => 'Python Variables',
+        'lessonText' => 'A variable stores a name or a number.',
+        'topic' => 'Python',
+        'difficulty' => 'beginner',
+        'academicField' => 'computer_applications',
+        'count' => 2,
+    ]);
+    $check(
+        count($regenerated['exercises'] ?? []) === 1
+        && ($regenerated['exercises'][0]['lessonBlockId'] ?? '') === 'vars'
+        && ($regenerated['exercises'][0]['testCases'][1]['sample'] ?? true) === false,
+        'regenerated exercises stay linked to the requested lesson'
+    );
+    $throws(static function () use ($ai, $student): void {
+        $ai->generateLessonExercisesPreview($student, [
+            'lessonBlockId' => 'vars',
+            'lessonTitle' => 'Python Variables',
+            'lessonText' => 'Variables.',
+        ]);
+    }, 'students cannot regenerate lesson exercises');
+
     // 22 manual create still works
     $manual = $service->createTutorial($staff, [
         'title' => 'Manual Course ' . $suffix,
@@ -379,7 +585,19 @@ try {
         'title' => 'Manual Module',
         'content' => '<p>Manual HTML still works</p>',
     ]);
-    $check(($manualModule['title'] ?? '') === 'Manual Module', 'existing manual course and module creation still work');
+    $manualExercise = $service->createExercise($staff, (string) $manual['id'], (string) $manualModule['id'], [
+        'title' => 'Manual sum',
+        'instructions' => 'Add two numbers that a tutor created by hand.',
+        'language' => 'python',
+        'boilerplate' => '',
+        'lessonBlockId' => '',
+    ]);
+    $check(
+        ($manualModule['title'] ?? '') === 'Manual Module'
+        && ($manualExercise['title'] ?? '') === 'Manual sum'
+        && ($manualExercise['lessonBlockId'] ?? 'missing') === '',
+        'existing manual course and module creation still work'
+    );
 } catch (Throwable $e) {
     $check(false, 'unexpected: ' . $e->getMessage());
 } finally {

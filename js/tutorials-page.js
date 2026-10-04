@@ -411,6 +411,160 @@
     showStaffScreen('aiCourse');
   }
 
+  const AI_EXERCISE_LANGUAGES = ['python', 'javascript', 'java', 'c', 'cpp', 'php', 'sql'];
+
+  function lessonSections(documentJson) {
+    const blocks = (documentJson && documentJson.blocks) || [];
+    const sections = [];
+    blocks.forEach((block) => {
+      if (block && block.type === 'heading' && Number(block.level || 2) === 2) {
+        sections.push({
+          id: String(block.id || ''),
+          title: block.text || 'Lesson',
+          blocks: [block],
+        });
+        return;
+      }
+      if (!sections.length) return;
+      sections[sections.length - 1].blocks.push(block);
+    });
+    return sections;
+  }
+
+  function syncAiPractice(root, module) {
+    if (!root || !module) return;
+    const exercises = module.exercises || [];
+    root.querySelectorAll('[data-ai-exercise]').forEach((card) => {
+      const exercise = exercises[Number(card.getAttribute('data-ai-exercise'))];
+      if (!exercise) return;
+      exercise.title = card.querySelector('[data-ai-ex-title]').value.trim();
+      exercise.instructions = card.querySelector('[data-ai-ex-instructions]').value.trim();
+      exercise.language = card.querySelector('[data-ai-ex-language]').value;
+      exercise.boilerplate = card.querySelector('[data-ai-ex-boilerplate]').value;
+      card.querySelectorAll('[data-ai-case]').forEach((caseCard) => {
+        const row = (exercise.testCases || [])[Number(caseCard.getAttribute('data-ai-case'))];
+        if (!row) return;
+        row.stdin = caseCard.querySelector('[data-ai-case-stdin]').value;
+        row.expectedOutput = caseCard.querySelector('[data-ai-case-output]').value;
+        row.sample = caseCard.querySelector('[data-ai-case-sample]').checked;
+      });
+    });
+  }
+
+  function renderAiExerciseEditor(exercise, exerciseIndex) {
+    const cases = (exercise.testCases || []).map((row, caseIndex) => (
+      `<div class="border rounded p-2 mb-2" data-ai-case="${caseIndex}">
+        <div class="d-flex justify-content-between gap-2 mb-1">
+          <label class="small mb-0"><input type="checkbox" data-ai-case-sample ${row.sample ? 'checked' : ''}/> Public sample</label>
+          <button type="button" class="btn btn-sm btn-link text-danger p-0" data-ai-case-remove="${exerciseIndex}:${caseIndex}">Remove case</button>
+        </div>
+        <label class="form-label small mb-1">Input</label>
+        <textarea class="form-control form-control-sm mb-1" data-ai-case-stdin rows="2">${esc(row.stdin || '')}</textarea>
+        <label class="form-label small mb-1">Expected output</label>
+        <textarea class="form-control form-control-sm" data-ai-case-output rows="2">${esc(row.expectedOutput || '')}</textarea>
+      </div>`
+    )).join('');
+    const languages = AI_EXERCISE_LANGUAGES.map((lang) => (
+      `<option value="${lang}" ${exercise.language === lang ? 'selected' : ''}>${esc(lang)}</option>`
+    )).join('');
+    return `<div class="border rounded p-2 mb-2 bg-white" data-ai-exercise="${exerciseIndex}">
+      <div class="d-flex justify-content-between gap-2 mb-2">
+        <div class="small fw-semibold">Exercise</div>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-ai-exercise-remove="${exerciseIndex}">Remove</button>
+      </div>
+      <label class="form-label small">Title</label>
+      <input class="form-control form-control-sm mb-2" data-ai-ex-title value="${esc(exercise.title || '')}" maxlength="160"/>
+      <label class="form-label small">Problem and instructions</label>
+      <textarea class="form-control form-control-sm mb-2" data-ai-ex-instructions rows="3">${esc(exercise.instructions || '')}</textarea>
+      <label class="form-label small">Language</label>
+      <select class="form-select form-select-sm mb-2" data-ai-ex-language>${languages}</select>
+      <label class="form-label small">Starter code</label>
+      <textarea class="form-control form-control-sm font-monospace mb-2" data-ai-ex-boilerplate rows="4">${esc(exercise.boilerplate || '')}</textarea>
+      <div class="small fw-semibold mb-1">Test cases</div>
+      ${cases || '<p class="small text-muted-2">No test cases.</p>'}
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-ai-case-add="${exerciseIndex}">Add test case</button>
+    </div>`;
+  }
+
+  function renderAiLessonPractice(module) {
+    const sections = lessonSections(module.lessonDocument);
+    const exercises = module.exercises || [];
+    if (!sections.length) {
+      return '<p class="small text-muted-2 mb-0">No lessons were returned for this module.</p>';
+    }
+    return sections.map((section) => {
+      const cards = exercises.map((exercise, exerciseIndex) => ({ exercise, exerciseIndex }))
+        .filter((row) => String(row.exercise.lessonBlockId || '') === section.id)
+        .map((row) => renderAiExerciseEditor(row.exercise, row.exerciseIndex))
+        .join('') || '<p class="small text-muted-2">No exercises for this lesson yet.</p>';
+      return `<div class="border rounded p-2 mt-2" data-ai-lesson="${esc(section.id)}">
+        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center mb-2">
+          <div class="small fw-semibold">${esc(section.title)}</div>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-ai-regen="${esc(section.id)}" ${section.id ? '' : 'disabled'}>Regenerate exercises</button>
+        </div>
+        <details class="mb-2"><summary class="small">Lesson content</summary><pre class="small mt-2 mb-0" style="white-space:pre-wrap">${esc(lessonBlocksText({ blocks: section.blocks }))}</pre></details>
+        ${cards}
+      </div>`;
+    }).join('');
+  }
+
+  function bindAiPractice(root, scope) {
+    if (!root) return;
+    root.querySelectorAll('[data-ai-exercise-remove]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const module = aiPracticeModule(scope, root);
+        if (!module) return;
+        syncAiPractice(root, module);
+        module.exercises.splice(Number(btn.getAttribute('data-ai-exercise-remove')), 1);
+        refreshAiPractice(scope);
+      });
+    });
+    root.querySelectorAll('[data-ai-case-remove]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const module = aiPracticeModule(scope, root);
+        if (!module) return;
+        syncAiPractice(root, module);
+        const parts = String(btn.getAttribute('data-ai-case-remove') || '').split(':');
+        const exercise = (module.exercises || [])[Number(parts[0])];
+        if (!exercise || !Array.isArray(exercise.testCases)) return;
+        exercise.testCases.splice(Number(parts[1]), 1);
+        refreshAiPractice(scope);
+      });
+    });
+    root.querySelectorAll('[data-ai-case-add]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const module = aiPracticeModule(scope, root);
+        if (!module) return;
+        syncAiPractice(root, module);
+        const exercise = (module.exercises || [])[Number(btn.getAttribute('data-ai-case-add'))];
+        if (!exercise) return;
+        exercise.testCases = exercise.testCases || [];
+        exercise.testCases.push({ stdin: '', expectedOutput: '', sample: exercise.testCases.length === 0 });
+        refreshAiPractice(scope);
+      });
+    });
+    root.querySelectorAll('[data-ai-regen]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        regenerateLessonExercises(scope, root, btn.getAttribute('data-ai-regen') || '').catch((err) => {
+          const errorId = scope === 'module' ? 'aiModuleError' : 'aiCourseError';
+          setAiError(errorId, err && err.message ? err.message : 'Exercises could not be regenerated.');
+        });
+      });
+    });
+  }
+
+  function aiPracticeModule(scope, root) {
+    if (scope === 'module') return state.aiModule && state.aiModule.module;
+    const card = root.closest ? root.closest('[data-ai-module]') : null;
+    const index = card ? Number(card.getAttribute('data-ai-module')) : Number(root.getAttribute('data-ai-module'));
+    return state.aiCourse && state.aiCourse.modules ? state.aiCourse.modules[index] : null;
+  }
+
+  function refreshAiPractice(scope) {
+    if (scope === 'module') renderAiModulePreview();
+    else renderAiCoursePreview();
+  }
+
   function syncAiCourseFromForm() {
     if (!state.aiCourse) return;
     state.aiCourse.course.title = document.getElementById('aiPreviewTitle').value.trim();
@@ -422,6 +576,7 @@
       module.title = card.querySelector('[data-ai-title]').value.trim();
       module.description = card.querySelector('[data-ai-description]').value.trim();
       module.subtitle = module.description.slice(0, 240);
+      syncAiPractice(card, module);
     });
   }
 
@@ -451,7 +606,7 @@
         <div class="row g-2">
           <div class="col-12"><label class="form-label">Title</label><input class="form-control form-control-sm" data-ai-title value="${esc(module.title || '')}" maxlength="160"/></div>
           <div class="col-12"><label class="form-label">Description</label><textarea class="form-control form-control-sm" data-ai-description rows="2">${esc(module.description || module.subtitle || '')}</textarea></div>
-          <div class="col-12"><details><summary class="small">Review lesson content</summary><pre class="small mt-2 mb-0" style="white-space:pre-wrap">${esc(lessonBlocksText(module.lessonDocument))}</pre></details></div>
+          <div class="col-12"><div class="small fw-semibold mb-1">Lessons and practice</div>${renderAiLessonPractice(module)}</div>
         </div>
       </div>`
     )).join('') || '<p class="text-muted-2 mb-0">No modules left in this preview.</p>';
@@ -463,6 +618,51 @@
         renderAiCoursePreview();
       });
     });
+    document.querySelectorAll('#aiPreviewModules [data-ai-module]').forEach((card) => bindAiPractice(card, 'course'));
+  }
+
+  async function regenerateLessonExercises(scope, root, lessonId) {
+    const module = aiPracticeModule(scope, root);
+    if (!module) return;
+    if (scope === 'course') syncAiCourseFromForm();
+    else syncAiPractice(document.getElementById('aiModulePreview'), module);
+    const section = lessonSections(module.lessonDocument).find((row) => row.id === lessonId);
+    if (!section || !section.id) {
+      throw new Error('This lesson cannot be linked to exercises.');
+    }
+    const errorId = scope === 'module' ? 'aiModuleError' : 'aiCourseError';
+    setAiError(errorId, '');
+    root.querySelectorAll('[data-ai-regen]').forEach((button) => {
+      button.disabled = true;
+    });
+    const topicInput = document.getElementById(scope === 'module' ? 'aiModuleTopic' : 'aiCourseTopic');
+    const fieldInput = document.getElementById(scope === 'module' ? 'aiModuleField' : 'aiCourseField');
+    const difficultyInput = document.getElementById(scope === 'module' ? 'aiModuleDifficulty' : 'aiCourseDifficulty');
+    const course = scope === 'course' && state.aiCourse ? state.aiCourse.course : null;
+    try {
+      const data = await call('/tutorials/manage/ai/generate-lesson-exercises', {
+        method: 'POST',
+        body: {
+          lessonBlockId: section.id,
+          lessonTitle: section.title,
+          lessonText: lessonBlocksText({ blocks: section.blocks }),
+          topic: (course && course.topic) || (topicInput ? topicInput.value.trim() : '') || section.title,
+          academicField: (course && course.academicField) || (fieldInput ? fieldInput.value : 'computer_applications'),
+          difficulty: (course && course.difficulty) || (difficultyInput ? difficultyInput.value : 'beginner'),
+          count: 3,
+        },
+      });
+      const next = Array.isArray(data && data.exercises) ? data.exercises : [];
+      module.exercises = (module.exercises || []).filter((row) => String(row.lessonBlockId || '') !== section.id).concat(next);
+      refreshAiPractice(scope);
+      toast(next.length ? 'Exercises regenerated for this lesson.' : 'No exercises were returned for this lesson.', next.length ? 'success' : 'error');
+    } finally {
+      if (root.isConnected) {
+        root.querySelectorAll('[data-ai-regen]').forEach((button) => {
+          button.disabled = false;
+        });
+      }
+    }
   }
 
   async function generateAiCourse() {
@@ -580,7 +780,11 @@
     document.getElementById('aiModulePreviewTitle').value = module.title || '';
     document.getElementById('aiModulePreviewSubtitle').value = module.subtitle || '';
     document.getElementById('aiModulePreviewDescription').value = module.description || '';
-    document.getElementById('aiModulePreviewLesson').textContent = lessonBlocksText(module.lessonDocument) || 'No lesson blocks returned.';
+    const practice = document.getElementById('aiModuleExercises');
+    if (practice) {
+      practice.innerHTML = renderAiLessonPractice(module);
+      bindAiPractice(document.getElementById('aiModulePreview'), 'module');
+    }
   }
 
   async function generateAiModule() {
@@ -634,6 +838,7 @@
     module.title = document.getElementById('aiModulePreviewTitle').value.trim();
     module.subtitle = document.getElementById('aiModulePreviewSubtitle').value.trim();
     module.description = document.getElementById('aiModulePreviewDescription').value.trim();
+    syncAiPractice(document.getElementById('aiModulePreview'), module);
     if (!module.title) {
       setAiError('aiModuleError', 'Module title is required.');
       return;
