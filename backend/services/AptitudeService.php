@@ -698,11 +698,30 @@ final class AptitudeService
             }
         }
 
+        if ($extracted === '' && $jdFile !== null && trim((string) $jdFile) !== '') {
+            try {
+                $extracted = trim((new JdTextExtractionService())->extractTextFromStoredUri(
+                    (string) $jdFile,
+                    $jdMimeType
+                ));
+            } catch (\Throwable) {
+                $extracted = trim($extracted);
+            }
+        }
+
         if ($extracted === '' && ($jdFile === null || trim((string) $jdFile) === '')) {
             Response::error('Upload a file or paste question manual text.', 422);
         }
 
         $parsed = (new AptitudeManualQuestionParser())->parse($extracted);
+        $parseMethod = $parsed !== [] ? 'local' : 'none';
+        if ($parsed === [] && mb_strlen($extracted) >= 80) {
+            $aiParsed = (new AptitudeManualQuestionAiParser())->parse($extracted);
+            if ($aiParsed !== []) {
+                $parsed = $aiParsed;
+                $parseMethod = 'ai';
+            }
+        }
 
         $saveTarget = strtolower(trim($saveTarget));
         if (!in_array($saveTarget, ['bank', 'problem', 'both'], true)) {
@@ -721,15 +740,21 @@ final class AptitudeService
                 $jdFile,
                 $jdFileUrl,
                 $jdMimeType,
-                $extracted !== '' ? $extracted : null
+                $extracted !== '' ? $extracted : null,
+                $saveTarget,
+                $parseMethod
             );
 
             $testView = null;
             $testSkippedMessage = null;
             if ($toProblem) {
                 if ($parsed === []) {
-                    $testSkippedMessage = 'Manual saved on the company card. We could not detect MCQs in this file, '
-                        . 'so no company test was created. Try pasting text, use a clearer PDF, or add questions with AI Generate.';
+                    if ($saveTarget === 'problem') {
+                        $testSkippedMessage = null;
+                    } else {
+                        $testSkippedMessage = 'Manual saved on the company card. We could not detect MCQs in this file, '
+                            . 'so no company test was created. Try pasting text, use a clearer PDF, or add questions with AI Generate.';
+                    }
                 } else {
                     try {
                         $testView = $this->createCompanyProblemTestFromJdSet($admin, $setDetail, $jdTitle);
@@ -748,6 +773,8 @@ final class AptitudeService
                 'test' => $testView,
                 'testId' => $testView !== null ? (string) ($testView['id'] ?? '') : '',
                 'testSkippedMessage' => $testSkippedMessage,
+                'parseMethod' => $parseMethod,
+                'extractedCharCount' => mb_strlen($extracted),
             ];
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);

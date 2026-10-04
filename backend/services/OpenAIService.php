@@ -129,6 +129,42 @@ final class OpenAIService
     }
 
     /**
+     * OCR with a custom instruction (e.g. aptitude question manuals).
+     */
+    public function extractTextFromImageWithPrompt(string $base64, string $mimeType, string $instruction): string
+    {
+        if (!$this->isConfigured()) {
+            throw new \RuntimeException('OpenAI is not configured on the server.');
+        }
+
+        $mimeType = trim($mimeType) !== '' ? trim($mimeType) : 'image/jpeg';
+        $instruction = trim($instruction) !== '' ? trim($instruction) : 'Extract all readable text. Plain text only.';
+        $payload = [
+            'model' => $this->model,
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'text', 'text' => $instruction],
+                        [
+                            'type' => 'image_url',
+                            'image_url' => [
+                                'url' => 'data:' . $mimeType . ';base64,' . $base64,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'temperature' => 0,
+            'max_tokens' => 4096,
+        ];
+
+        $raw = $this->post('/chat/completions', $payload);
+
+        return trim((string) ($raw['choices'][0]['message']['content'] ?? ''));
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */

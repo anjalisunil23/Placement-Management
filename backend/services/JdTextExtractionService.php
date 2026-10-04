@@ -252,6 +252,32 @@ final class JdTextExtractionService
         return $this->openai->extractTextFromImage(base64_encode($bytes), $mime);
     }
 
+    private function extractManualTextFromImage(string $path, string $ext): string
+    {
+        if (!$this->openai->isConfigured()) {
+            return $this->extractImageText($path, $ext);
+        }
+
+        $bytes = file_get_contents($path);
+        if ($bytes === false || $bytes === '') {
+            return '';
+        }
+
+        $mime = match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            default => 'application/octet-stream',
+        };
+
+        return $this->openai->extractTextFromImageWithPrompt(
+            base64_encode($bytes),
+            $mime,
+            'Extract all text from this aptitude question manual image. Include every question, '
+            . 'all option labels (A B C D or 1 2 3 4), and any marked answers. Return plain text only, '
+            . 'preserving question order and line breaks where helpful. No commentary.'
+        );
+    }
+
     /**
      * Ingest a question manual upload (PDF, image, or plain text). File is always stored when possible;
      * extracted text may be empty (e.g. scanned image without OCR).
@@ -289,7 +315,7 @@ final class JdTextExtractionService
             $method = 'pdf';
         } else {
             try {
-                $text = $this->sanitizeText($this->extractImageText($tmp, $ext));
+                $text = $this->sanitizeText($this->extractManualTextFromImage($tmp, $ext));
                 $method = 'ocr';
             } catch (\Throwable) {
                 $text = '';

@@ -238,7 +238,9 @@ class AptitudeJdQuestionSetModel extends BaseModel
         ?string $jdFile = null,
         ?string $jdFileUrl = null,
         ?string $jdMimeType = null,
-        ?string $manualText = null
+        ?string $manualText = null,
+        string $manualSaveTarget = 'bank',
+        ?string $manualParseMethod = null
     ): array {
         $jdTitle = trim($jdTitle);
         if ($jdTitle === '') {
@@ -288,6 +290,11 @@ class AptitudeJdQuestionSetModel extends BaseModel
             );
         }
 
+        $target = strtolower(trim($manualSaveTarget));
+        if (!in_array($target, ['bank', 'problem', 'both'], true)) {
+            $target = 'bank';
+        }
+
         $doc = [
             'jdTitle' => $jdTitle,
             'companyId' => $companyId,
@@ -296,7 +303,13 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questions' => $normalized,
             'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
             'manualSource' => 'upload',
+            'manualSaveTarget' => $target,
+            'showInCompanyBank' => $target !== 'problem',
         ];
+        $parseTag = trim((string) ($manualParseMethod ?? ''));
+        if ($parseTag !== '') {
+            $doc['manualParseMethod'] = $parseTag;
+        }
         $filename = trim((string) ($jdFilename ?? ''));
         if ($filename !== '') {
             $doc['jdFilename'] = $filename;
@@ -491,6 +504,9 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
             'hasDocument' => $this->rowHasManualDocument($row),
             'questionCount' => (int) ($row['questionCount'] ?? count((array) ($row['questions'] ?? []))),
+            'manualSaveTarget' => (string) ($row['manualSaveTarget'] ?? 'bank'),
+            'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
+            'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
         ], $row, $forStudent);
     }
@@ -534,6 +550,9 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questionCount' => count($questions),
             'questions' => $questions,
             'manualText' => $this->manualTextForView($row),
+            'manualSaveTarget' => (string) ($row['manualSaveTarget'] ?? 'bank'),
+            'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
+            'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
         ], $row, $forStudent);
     }

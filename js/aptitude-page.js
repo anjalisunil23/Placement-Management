@@ -1761,6 +1761,7 @@
           jdFilename = file.name;
           jdMimeType = file.type || 'application/octet-stream';
         }
+        const showInCompanyBank = saveTarget !== 'problem';
         const store = loadDemoJdStore();
         store.unshift({
           id: setId,
@@ -1775,12 +1776,20 @@
           hasDocument: !!(jdFileDataUrl || manualText),
           questionCount: 0,
           questions: [],
+          manualSaveTarget: saveTarget,
+          showInCompanyBank,
         });
         saveDemoJdStore(store);
-        toast(`Saved manual (demo): ${companyName} · ${titleState.jdTitle}`, 'success');
+        toast(
+          showInCompanyBank
+            ? `Saved manual (demo): ${companyName} · ${titleState.jdTitle}`
+            : `Saved manual under Problems (demo): ${titleState.jdTitle}`,
+          'success'
+        );
         aptJdManualModal?.hide();
         await loadJdLibrary();
         if (jdSelectedCompanyId) {
+          if (!showInCompanyBank) applyAdminJdBlockView('tests');
           showJdCompanyDetail(jdSelectedCompanyId);
         }
         return;
@@ -1798,17 +1807,30 @@
       const count = res.data?.questionCount ?? 0;
       const testId = String(res.data?.testId || '');
       const skipped = String(res.data?.testSkippedMessage || '').trim();
-      let msg = count > 0
-        ? `Saved ${count} parsed question(s) to ${titleState.jdTitle}.`
-        : `Saved manual to ${titleState.jdTitle}.`;
+      let msg;
       let tone = 'success';
-      if (testId) {
-        msg += ' Created unpublished company test.';
-      } else if (skipped && (saveTarget === 'problem' || saveTarget === 'both')) {
-        msg = skipped;
-        tone = 'info';
-      } else if (saveTarget === 'bank' && count === 0) {
-        msg = 'Saved manual to company question bank (no MCQs detected in file).';
+      const viaAi = res.data?.parseMethod === 'ai';
+      if (saveTarget === 'problem') {
+        if (testId) {
+          msg = `Saved under company Problems and created unpublished test (${count} question(s)${viaAi ? ', AI-read from manual' : ''}).`;
+        } else if (count > 0) {
+          msg = `Saved ${count} question(s) under company Problems${viaAi ? ' (AI-read from manual)' : ''}. Tap Questions to review.`;
+        } else {
+          msg = 'Saved manual under company Problems. Tap Questions or Document on the card to view extracted text.';
+        }
+      } else if (saveTarget === 'bank') {
+        msg = count > 0
+          ? `Saved ${count} question(s) to company question bank.`
+          : 'Saved manual to company question bank (no MCQs detected in file).';
+      } else {
+        msg = count > 0
+          ? `Saved ${count} question(s) to question bank.`
+          : 'Saved manual to company question bank.';
+        if (testId) msg += ' Created unpublished company test under Problems.';
+        else if (skipped) {
+          msg = skipped;
+          tone = 'info';
+        }
       }
       toast(msg.trim(), tone);
       delete jdSetDetailsCache[String(res.data?.id || '')];
@@ -1823,6 +1845,15 @@
           applyAdminJdBlockView('tests');
         }
         showJdCompanyDetail(jdSelectedCompanyId);
+        const newSetId = String(res.data?.id || '');
+        if (newSetId) {
+          window.setTimeout(() => {
+            const card = [...document.querySelectorAll('[data-jd-set-card]')].find(
+              (el) => el.getAttribute('data-jd-set-card') === newSetId
+            );
+            card?.querySelector('[data-jd-view]')?.click();
+          }, 300);
+        }
       }
     } catch (err) {
       toast(err?.message || 'Could not save question manual.', 'error');
@@ -1936,6 +1967,8 @@
         jdMimeType: String(s.jdMimeType || ''),
         hasDocument: !!(s.jdFileUrl || s.jdFileDataUrl),
         questionCount: Number(s.questionCount || s.questions?.length || 0),
+        manualSaveTarget: String(s.manualSaveTarget || 'bank'),
+        showInCompanyBank: s.showInCompanyBank !== false,
       }));
       jdCompanyBlocks = groupJdSetsIntoBlocks(jdLibrarySets);
     }
@@ -1984,6 +2017,46 @@
 
   function renderJdQuestionDetailHtml(q, index, opts = {}) {
     return renderMcqPickDetailHtml(q, index, opts);
+  }
+
+  function splitManualTextIntoBlocks(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return [];
+    let parts = raw.split(/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+)/gi).map((p) => p.trim()).filter(Boolean);
+    if (parts.length <= 1) {
+      parts = raw.split(/\n\s*\d{1,4}[\.\):]\s+/).map((p, i) => (i === 0 ? p.trim() : p.trim())).filter(Boolean);
+      if (parts.length > 1 && !/^\d/.test(raw)) {
+        const head = parts.shift();
+        if (head) parts.unshift(head);
+      }
+    }
+    return parts.map((body, i) => {
+      const cleaned = body.replace(/^(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s*/i, '').trim();
+      return { index: i + 1, body: cleaned || body };
+    });
+  }
+
+  function renderManualQuestionsPanel(detail) {
+    const qs = Array.isArray(detail?.questions) ? detail.questions : [];
+    if (qs.length) {
+      const via = detail?.manualParseMethod === 'ai' ? ' (read from manual via AI)' : '';
+      return `<p class="small text-muted-2 mb-2">${qs.length} question(s)${via}</p>`
+        + `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderJdQuestionDetailHtml(q, i)).join('')}</div>`;
+    }
+    const text = String(detail?.manualText || '').trim();
+    if (!text) {
+      return '<p class="small text-muted-2 mb-0">No questions could be read from this manual yet. Open <strong>Document</strong> or paste clearer MCQ text and upload again.</p>';
+    }
+    const blocks = splitManualTextIntoBlocks(text);
+    if (blocks.length > 1) {
+      return `<p class="small text-muted-2 mb-2">Extracted text from manual (${blocks.length} section(s)). Structured MCQs were not detected — showing raw content:</p>`
+        + blocks.map((b) => `<div class="border rounded-2 p-3 bg-light mb-2">
+          <div class="fw-semibold small mb-1">Section ${b.index}</div>
+          <pre class="small mb-0 text-wrap" style="white-space:pre-wrap">${esc(b.body)}</pre>
+        </div>`).join('');
+    }
+    return `<p class="small text-muted-2 mb-2">Extracted text from manual:</p>
+      <pre class="small mb-0 text-wrap border rounded-2 p-3 bg-light" style="white-space:pre-wrap;max-height:480px;overflow:auto">${esc(text)}</pre>`;
   }
 
   function renderJdDocumentPanel(detail) {
@@ -2122,10 +2195,7 @@
           return;
         }
         const detail = await getDetail(id);
-        const qs = detail?.questions || [];
-        panel.innerHTML = qs.length
-          ? `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderJdQuestionDetailHtml(q, i)).join('')}</div>`
-          : '<p class="small text-muted-2 mb-0">No questions in this set.</p>';
+        panel.innerHTML = renderManualQuestionsPanel(detail || {});
         panel.classList.remove('d-none');
         btn.textContent = 'Hide';
       });
@@ -2153,11 +2223,42 @@
     }
   }
 
-  function renderAdminCompanyTestsHtml(companyTests) {
-    if (!companyTests.length) {
-      return '<p class="small text-muted-2 mb-0">No company tests for this company yet.</p>';
+  function companyJdBlockFor(companyId) {
+    const id = String(companyId || '');
+    return jdCompanyBlocks.find((b) => (String(b.companyId || '') || '_unassigned') === (id || '_unassigned'));
+  }
+
+  function companyQuestionBankSets(companyId) {
+    return (companyJdBlockFor(companyId)?.sets || []).filter((s) => s.showInCompanyBank !== false);
+  }
+
+  function companyProblemOnlyManualSets(companyId) {
+    return (companyJdBlockFor(companyId)?.sets || []).filter((s) => s.showInCompanyBank === false);
+  }
+
+  function primaryJdSetIdForTest(t) {
+    const rules = Array.isArray(t?.jdFilterRules) ? t.jdFilterRules : [];
+    for (const r of rules) {
+      const id = String(r?.jdSetId || '').trim();
+      if (id) return id;
     }
-    return companyTests.map((t) => renderManageRow(t, { selectable: true })).join('');
+    return '';
+  }
+
+  function renderAdminCompanyProblemsHtml(companyId) {
+    const companyTests = studentCompanyTestsFor(companyId);
+    const manualOnly = companyProblemOnlyManualSets(companyId);
+    if (!companyTests.length && !manualOnly.length) {
+      return '<p class="small text-muted-2 mb-0">No company problems or uploaded manuals for this company yet.</p>';
+    }
+    const chunks = [];
+    if (companyTests.length) {
+      chunks.push(companyTests.map((t) => renderManageRow(t, { selectable: true })).join(''));
+    }
+    if (manualOnly.length) {
+      chunks.push(`<div class="d-flex flex-column gap-3">${renderJdSetCardsHtml(manualOnly, { allowDelete: true, selectable: false })}</div>`);
+    }
+    return chunks.join('');
   }
 
   function showJdCompanyDetail(companyId) {
@@ -2178,14 +2279,14 @@
     bankSection?.classList.toggle('d-none', showTests);
     document.getElementById('btnNewCompanyTest')?.classList.toggle('d-none', !showTests);
     if (showTests) {
-      const companyTests = studentCompanyTestsFor(companyId);
       if (testsRoot) {
-        testsRoot.innerHTML = renderAdminCompanyTestsHtml(companyTests);
+        testsRoot.innerHTML = renderAdminCompanyProblemsHtml(companyId);
         bindManageListActions(testsRoot);
+        bindJdSetCardEvents(testsRoot, { allowDelete: true });
       }
     } else {
       const list = document.getElementById('jdBlockSetsList');
-      const sets = block?.sets || [];
+      const sets = companyQuestionBankSets(companyId);
       if (!list) return;
       const bulkBar = document.getElementById('jdBulkActions');
       if (!sets.length) {
@@ -5489,6 +5590,7 @@
   function renderManageRow(t, { showContestBadge = false, showCompanyBadge = false, selectable = false } = {}) {
     const id = String(t.id || '');
     const checked = selectedManageTestIds.has(id);
+    const docSetId = isCompanyTest(t) ? primaryJdSetIdForTest(t) : '';
     return `
       <div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div class="d-flex align-items-start gap-2 min-w-0">
@@ -5502,6 +5604,7 @@
           </div>
         </div>
         <div class="d-flex flex-wrap gap-2">
+          ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(docSetId)}">Document</button>` : ''}
           <button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>
           <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
           <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
