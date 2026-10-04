@@ -1917,38 +1917,47 @@ final class OfficerDataService
     }
 
     /**
-     * Last manual AES sync metadata for admin Students page (campus studying directory).
+     * Last manual AES sync metadata for admin Students page (campus studying + alumni directories).
      *
-     * @return array{syncedAt: ?string, recordCount: int, hasSnapshot: bool}
+     * @return array<string, mixed>
      */
     public function getCampusStudyingDirectorySyncMeta(): array
     {
-        $payload = $this->readCampusStudyingDirectorySnapshotPayload();
-        $records = is_array($payload['records'] ?? null) ? $payload['records'] : [];
+        $payload = $this->readCampusDirectorySnapshotPayload();
+        $students = $this->studyingRecordsFromCampusDirectoryPayload($payload);
+        $alumni = $this->alumniRecordsFromCampusDirectoryPayload($payload);
 
         return [
-            'syncedAt'    => isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : null,
-            'recordCount' => count($records),
-            'hasSnapshot' => $records !== [],
+            'syncedAt'            => isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : null,
+            'studentRecordCount'  => count($students),
+            'alumniRecordCount'   => count($alumni),
+            'recordCount'         => count($students) + count($alumni),
+            'hasStudentSnapshot'  => $students !== [],
+            'hasAlumniSnapshot'   => $alumni !== [],
+            'hasSnapshot'         => $students !== [] || $alumni !== [],
         ];
     }
 
     /**
-     * Pull campus studying students from AES and persist for offline Students tab loads.
+     * Pull campus studying students and alumni from AES into local snapshots.
      *
-     * @return array{syncedAt: string, recordCount: int}
+     * @return array<string, mixed>
      */
     public function syncCampusStudyingDirectoryFromAes(string $adminUserId): array
     {
         $this->boostMemoryForAesDirectoryLoad();
-        $records = $this->fetchLiveCampusStudyingDirectoryRecords();
+        $students = $this->fetchLiveCampusStudyingDirectoryRecords();
+        $alumni = $this->fetchLiveCampusAlumniDirectoryRecords();
         $syncedAt = DocumentHelper::now();
-        $this->writeCampusStudyingDirectorySnapshot($records, $adminUserId, $syncedAt);
+        $this->writeCampusDirectorySnapshot($students, $alumni, $adminUserId, $syncedAt);
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
+        self::$aesAlumniDirectoryCache = [];
 
         return [
-            'syncedAt'    => $syncedAt,
-            'recordCount' => count($records),
+            'syncedAt'           => $syncedAt,
+            'studentRecordCount' => count($students),
+            'alumniRecordCount'  => count($alumni),
+            'recordCount'        => count($students) + count($alumni),
         ];
     }
 
@@ -2640,43 +2649,82 @@ final class OfficerDataService
      */
     private function readCampusStudyingDirectorySnapshotRecords(): array
     {
-        $payload = $this->readCampusStudyingDirectorySnapshotPayload();
-        $records = $payload['records'] ?? [];
+        return $this->studyingRecordsFromCampusDirectoryPayload($this->readCampusDirectorySnapshotPayload());
+    }
 
-        return is_array($records) ? $records : [];
+    private function readCampusAlumniDirectorySnapshotRecords(): array
+    {
+        return $this->alumniRecordsFromCampusDirectoryPayload($this->readCampusDirectorySnapshotPayload());
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return list<array<string, mixed>>
+     */
+    private function studyingRecordsFromCampusDirectoryPayload(array $payload): array
+    {
+        if (isset($payload['studyingRecords']) && is_array($payload['studyingRecords'])) {
+            return $payload['studyingRecords'];
+        }
+        if (isset($payload['records']) && is_array($payload['records'])) {
+            return $payload['records'];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return list<array<string, mixed>>
+     */
+    private function alumniRecordsFromCampusDirectoryPayload(array $payload): array
+    {
+        return is_array($payload['alumniRecords'] ?? null) ? $payload['alumniRecords'] : [];
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function readCampusStudyingDirectorySnapshotPayload(): array
+    private function readCampusDirectorySnapshotPayload(): array
     {
-        $path = $this->campusStudyingDirectorySnapshotPath();
-        if (!is_file($path)) {
-            return [];
+        foreach ([
+            $this->campusDirectorySnapshotPath(),
+            $this->legacyCampusStudyingDirectorySnapshotPath(),
+        ] as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+            $raw = @file_get_contents($path);
+            if (!is_string($raw) || $raw === '') {
+                continue;
+            }
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
         }
 
-        $raw = @file_get_contents($path);
-        if (!is_string($raw) || $raw === '') {
-            return [];
-        }
-
-        $decoded = json_decode($raw, true);
-
-        return is_array($decoded) ? $decoded : [];
+        return [];
     }
 
     /**
-     * @param list<array<string, mixed>> $records
+     * @param list<array<string, mixed>> $studyingRecords
+     * @param list<array<string, mixed>> $alumniRecords
      */
-    private function writeCampusStudyingDirectorySnapshot(array $records, string $adminUserId, string $syncedAt): void
-    {
-        $path = $this->campusStudyingDirectorySnapshotPath();
+    private function writeCampusDirectorySnapshot(
+        array $studyingRecords,
+        array $alumniRecords,
+        string $adminUserId,
+        string $syncedAt
+    ): void {
+        $path = $this->campusDirectorySnapshotPath();
         $payload = [
-            'syncedAt'    => $syncedAt,
-            'syncedBy'    => $adminUserId,
-            'recordCount' => count($records),
-            'records'     => array_values($records),
+            'syncedAt'         => $syncedAt,
+            'syncedBy'         => $adminUserId,
+            'studyingRecords'  => array_values($studyingRecords),
+            'alumniRecords'    => array_values($alumniRecords),
+            'studentRecordCount' => count($studyingRecords),
+            'alumniRecordCount'  => count($alumniRecords),
         ];
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($json)) {
@@ -2688,9 +2736,74 @@ final class OfficerDataService
         }
     }
 
-    private function campusStudyingDirectorySnapshotPath(): string
+    private function campusDirectorySnapshotPath(): string
+    {
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_aes_campus_directory.json';
+    }
+
+    private function legacyCampusStudyingDirectorySnapshotPath(): string
     {
         return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_aes_campus_studying_directory.json';
+    }
+
+    /**
+     * Live AES fetch for admin manual sync (campus-wide, stud_role = Alumni).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function fetchLiveCampusAlumniDirectoryRecords(): array
+    {
+        $api = new AesApiService();
+        $roles = $this->aesAlumniStudRoleParamValues();
+        $merged = [];
+        $seen = [];
+        $append = function (array $records) use (&$merged, &$seen): void {
+            foreach ($records as $record) {
+                if (!is_array($record) || !$this->recordQualifiesForAlumniTab($record)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) (
+                    $record['admno']
+                    ?? $record['stud_admno']
+                    ?? $record['registerNumber']
+                    ?? $record['registerno']
+                    ?? ''
+                )));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $merged[] = $record;
+            }
+        };
+
+        $fetchWithRole = function (array $baseParams) use ($api, $roles, $append): void {
+            foreach ($roles as $role) {
+                try {
+                    $records = $api->fetchAllStudInfo4Placement(
+                        array_merge($baseParams, ['stud_role' => $role]),
+                        true
+                    );
+                    if ($records !== []) {
+                        $append($records);
+                    }
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+        };
+
+        $fetchWithRole([]);
+        if ($merged === []) {
+            foreach ($this->campusParentDeptAesIds() as $aesId) {
+                $fetchWithRole(['stud_deptcode' => $aesId]);
+                if ($merged !== []) {
+                    break;
+                }
+            }
+        }
+
+        return $merged;
     }
 
     /**
@@ -2855,43 +2968,9 @@ final class OfficerDataService
             return self::$aesAlumniDirectoryCache[$cacheKey] = $fetchWithRole($params);
         }
 
-        $merged = [];
-        $seen = [];
-        $append = function (array $records) use (&$merged, &$seen): void {
-            foreach ($records as $record) {
-                if (!is_array($record) || !$this->recordQualifiesForAlumniTab($record)) {
-                    continue;
-                }
-                $key = strtoupper(trim((string) (
-                    $record['admno']
-                    ?? $record['stud_admno']
-                    ?? $record['registerNumber']
-                    ?? $record['registerno']
-                    ?? ''
-                )));
-                if ($key === '' || isset($seen[$key])) {
-                    continue;
-                }
-                $seen[$key] = true;
-                $merged[] = $record;
-            }
-        };
+        $records = $this->readCampusAlumniDirectorySnapshotRecords();
 
-        foreach ($roles as $role) {
-            try {
-                $append($api->fetchAllStudInfo4Placement(['stud_role' => $role], true));
-            } catch (\Throwable) {
-                continue;
-            }
-        }
-
-        if ($merged === []) {
-            foreach ($this->campusParentDeptAesIds() as $aesId) {
-                $append($fetchWithRole(['stud_deptcode' => $aesId]));
-            }
-        }
-
-        return self::$aesAlumniDirectoryCache[$cacheKey] = $merged;
+        return self::$aesAlumniDirectoryCache[$cacheKey] = $records;
     }
 
     /**

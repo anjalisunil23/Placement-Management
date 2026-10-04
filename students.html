@@ -66,7 +66,7 @@
   <div class="d-none d-flex flex-wrap align-items-center justify-content-end gap-2" id="aesDirectorySyncTools">
     <span class="small text-muted-2 text-end" id="aesDirectorySyncStatus">AES directory not synced yet.</span>
     <button type="button" class="btn btn-outline-primary btn-sm" id="btnSyncStudentsFromAes">
-      <i class="bi bi-cloud-download me-1"></i>Sync students from AES
+      <i class="bi bi-cloud-download me-1"></i>Sync from AES
     </button>
   </div>
 </div>
@@ -899,7 +899,7 @@
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js"></script>
 <script src="js/staff-api.js?v=20260723perf"></script>
-<script src="js/admin-api.js?v=20261004aessync"></script>
+<script src="js/admin-api.js?v=20261004aessync2"></script>
 <script src="js/officer-api.js?v=20260920pca"></script>
 <script src="js/api.js?v=20260926sync"></script>
 <script src="js/app.js?v=20261001mcqroles"></script>
@@ -2247,10 +2247,14 @@ function formatCampusAesDirectorySyncStatus(meta) {
   const when = d && !Number.isNaN(d.getTime())
     ? d.toLocaleString()
     : String(meta.syncedAt || '').trim();
-  const count = Number(meta.recordCount ?? 0);
+  const students = Number(meta.studentRecordCount ?? meta.recordCount ?? 0);
+  const alumni = Number(meta.alumniRecordCount ?? 0);
+  const summary = alumni > 0
+    ? `${students} students · ${alumni} alumni`
+    : `${students} students`;
   return when !== ''
-    ? `${count} AES students · last sync ${when}`
-    : `${count} AES students synced`;
+    ? `${summary} · last sync ${when}`
+    : summary;
 }
 
 async function refreshCampusAesDirectorySyncStatus() {
@@ -2265,8 +2269,8 @@ async function runCampusAesDirectorySync() {
   if (!canSyncCampusAesDirectory || typeof AdminApi === 'undefined') return;
   if (!(await requireWriteSession())) return;
   if (!(await confirmAction({
-    title: 'Sync students from AES',
-    message: 'Download the latest campus student directory from AES? This may take a minute and replaces the cached list used on Registered / Non-Registered tabs.',
+    title: 'Sync from AES',
+    message: 'Download the latest campus student and alumni directories from AES? This may take a minute and replaces the cached lists used on Registered, Non-Registered, and Alumni tabs.',
     confirmText: 'Sync now',
     variant: 'primary',
   }))) return;
@@ -2280,22 +2284,39 @@ async function runCampusAesDirectorySync() {
   try {
     const result = await AdminApi.syncCampusStudentsFromAes();
     if (!result) return;
-    toast(`Synced ${result.recordCount ?? 0} students from AES.`, 'success');
+    const sc = result.studentRecordCount ?? 0;
+    const ac = result.alumniRecordCount ?? 0;
+    toast(`Synced ${sc} students and ${ac} alumni from AES.`, 'success');
     await refreshCampusAesDirectorySyncStatus();
     await loadFinalYearStudents(true);
+    if (canViewAlumni) await loadAlumniStudents(true);
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = prevLabel || '<i class="bi bi-cloud-download me-1"></i>Sync students from AES';
+      btn.innerHTML = prevLabel || '<i class="bi bi-cloud-download me-1"></i>Sync from AES';
     }
   }
 }
 
-function adminFinalYearEmptyHint() {
+function adminAesDirectoryEmptyHint() {
   if (!canSyncCampusAesDirectory || campusAesDirectoryMeta?.hasSnapshot) {
     return '';
   }
-  return ' Use <strong>Sync students from AES</strong> (top right) to load the campus directory.';
+  return ' Use <strong>Sync from AES</strong> (top right) to load the campus directory.';
+}
+
+function adminFinalYearEmptyHint() {
+  if (!canSyncCampusAesDirectory || campusAesDirectoryMeta?.hasStudentSnapshot) {
+    return '';
+  }
+  return adminAesDirectoryEmptyHint();
+}
+
+function adminAlumniEmptyHint() {
+  if (!canSyncCampusAesDirectory || campusAesDirectoryMeta?.hasAlumniSnapshot) {
+    return '';
+  }
+  return adminAesDirectoryEmptyHint();
 }
 
 function isFinalYearPolicyRegistered(s) {
@@ -2884,7 +2905,9 @@ function renderAlumniTab() {
     return;
   }
   if (!list.length) {
-    const emptyMsg = q ? 'No alumni match your search.' : 'No alumni records found in AES for this campus.';
+    const emptyMsg = q
+      ? 'No alumni match your search.'
+      : ('No alumni records in the campus directory.' + adminAlumniEmptyHint());
     tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
     return;
   }
@@ -2898,7 +2921,7 @@ async function loadAlumniStudents(force = false) {
     return;
   }
   const tbody = document.getElementById('alumniRows');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading alumni from AES…</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading alumni…</td></tr>';
   const rows = (typeof AdminApi !== 'undefined') ? await AdminApi.fetchAlumniStudents() : null;
   if (!rows) {
     alumniStudentsAll = [];

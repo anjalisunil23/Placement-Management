@@ -1382,7 +1382,7 @@ final class AdminController
         Response::success((new OfficerDataService())->getCampusStudyingDirectorySyncMeta());
     }
 
-    /** POST /api/admin/students/aes-directory-sync — pull studying students from AES into local snapshot */
+    /** POST /api/admin/students/aes-directory-sync — pull studying students + alumni from AES into local snapshots */
     public function syncCampusStudyingDirectoryFromAes(): void
     {
         $admin = RBACMiddleware::requireAdmin();
@@ -1392,10 +1392,10 @@ final class AdminController
             Response::error($e->getMessage() !== '' ? $e->getMessage() : 'AES sync failed.', 502);
         }
 
-        Response::success($result, 'Student directory synced from AES.');
+        Response::success($result, 'Student and alumni directories synced from AES.');
     }
 
-    /** GET /api/admin/students/alumni — campus-wide alumni from AES getAllStudInfo4Placement */
+    /** GET /api/admin/students/alumni — campus alumni snapshot + local merge (no live AES) */
     public function listAlumniStudents(): void
     {
         RBACMiddleware::requireAdmin();
