@@ -1797,18 +1797,20 @@
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
       const count = res.data?.questionCount ?? 0;
       const testId = String(res.data?.testId || '');
-      let msg = `Saved manual to ${titleState.jdTitle}.`;
-      if (saveTarget === 'bank' || saveTarget === 'both') {
-        msg = count > 0
-          ? `Saved ${count} question(s) to company question bank.`
-          : `Saved manual to company question bank (no MCQs parsed).`;
+      const skipped = String(res.data?.testSkippedMessage || '').trim();
+      let msg = count > 0
+        ? `Saved ${count} parsed question(s) to ${titleState.jdTitle}.`
+        : `Saved manual to ${titleState.jdTitle}.`;
+      let tone = 'success';
+      if (testId) {
+        msg += ' Created unpublished company test.';
+      } else if (skipped && (saveTarget === 'problem' || saveTarget === 'both')) {
+        msg = skipped;
+        tone = 'info';
+      } else if (saveTarget === 'bank' && count === 0) {
+        msg = 'Saved manual to company question bank (no MCQs detected in file).';
       }
-      if (saveTarget === 'problem' || saveTarget === 'both') {
-        msg = testId
-          ? `${msg} Created unpublished company test.`
-          : `${msg} Could not create company test.`;
-      }
-      toast(msg.trim(), 'success');
+      toast(msg.trim(), tone);
       delete jdSetDetailsCache[String(res.data?.id || '')];
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();

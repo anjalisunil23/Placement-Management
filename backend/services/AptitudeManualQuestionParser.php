@@ -14,7 +14,7 @@ final class AptitudeManualQuestionParser
      */
     public function parse(string $text): array
     {
-        $text = trim(str_replace(["\r\n", "\r"], "\n", $text));
+        $text = $this->normalizeManualText($text);
         if ($text === '') {
             return [];
         }
@@ -24,19 +24,7 @@ final class AptitudeManualQuestionParser
             return $json;
         }
 
-        $blocks = preg_split(
-            '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+)/iu',
-            "\n" . $text,
-            -1,
-            PREG_SPLIT_NO_EMPTY
-        );
-        if ($blocks === false || count($blocks) <= 1) {
-            $blocks = preg_split('/\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+/iu', $text, -1, PREG_SPLIT_NO_EMPTY);
-        }
-        if (!is_array($blocks) || $blocks === []) {
-            return [];
-        }
-
+        $blocks = $this->splitQuestionBlocks($text);
         $out = [];
         foreach ($blocks as $block) {
             $parsed = $this->parseQuestionBlock(trim($block));
@@ -46,6 +34,40 @@ final class AptitudeManualQuestionParser
         }
 
         return $out;
+    }
+
+    private function normalizeManualText(string $text): string
+    {
+        $text = str_replace(["\r\n", "\r"], "\n", $text);
+        $text = preg_replace("/[ \t]+/u", ' ', $text) ?? $text;
+        // PDF line-wrap: join when a line break splits a sentence mid-word (no punctuation end).
+        $text = preg_replace("/(\w)-\n(\w)/u", '$1$2', $text) ?? $text;
+        $text = preg_replace("/(?<=[a-z,;])\n(?=[a-z(])/u", ' ', $text) ?? $text;
+
+        return trim($text);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function splitQuestionBlocks(string $text): array
+    {
+        $patterns = [
+            '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+)/iu',
+            '/(?=\n\s*\d{1,4}\s*[\.\):]\s+\S)/u',
+            '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}\s*[:\-]\s+\S)/iu',
+        ];
+        foreach ($patterns as $pattern) {
+            $blocks = preg_split($pattern, "\n" . $text, -1, PREG_SPLIT_NO_EMPTY);
+            if (is_array($blocks) && count($blocks) > 1) {
+                return array_values(array_filter(array_map('trim', $blocks), static fn (string $b): bool => $b !== ''));
+            }
+        }
+        $blocks = preg_split('/\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+/iu', $text, -1, PREG_SPLIT_NO_EMPTY);
+
+        return is_array($blocks)
+            ? array_values(array_filter(array_map('trim', $blocks), static fn (string $b): bool => $b !== ''))
+            : [];
     }
 
     /**
@@ -104,17 +126,7 @@ final class AptitudeManualQuestionParser
             $block = preg_replace('/(?:^|\n)\s*(?:Explanation|Solution|Exp)\s*[:\.\-]?\s*.+$/is', '', $block) ?? $block;
         }
 
-        $options = [];
-        if (preg_match_all(
-            '/(?:^|\n)\s*([A-Da-d])[\.\):]\s*(.+?)(?=\n\s*[A-Da-d][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\z)/s',
-            $block,
-            $matches,
-            PREG_SET_ORDER
-        )) {
-            foreach ($matches as $m) {
-                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
-            }
-        }
+        $options = $this->extractOptionsFromBlock($block);
 
         $prompt = trim($block);
         if ($options !== []) {
@@ -164,6 +176,60 @@ final class AptitudeManualQuestionParser
             'difficulty' => 'Medium',
             'source' => 'MANUAL_UPLOAD',
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function extractOptionsFromBlock(string $block): array
+    {
+        $options = [];
+        if (preg_match_all(
+            '/(?:^|\n)\s*([A-Da-d])[\.\):]\s*(.+?)(?=\n\s*[A-Da-d][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\z)/s',
+            $block,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            foreach ($matches as $m) {
+                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+            }
+        }
+        if ($options === [] && preg_match_all(
+            '/(?:^|\n|\s)\(([A-Da-d])\)\s*(.+?)(?=(?:^|\n|\s)\([A-Da-d]\)|\n\s*(?:Answer|Correct)|\z)/s',
+            $block,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            foreach ($matches as $m) {
+                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+            }
+        }
+        if ($options === [] && preg_match_all(
+            '/(?:^|\n)\s*([1-4])[\.\):]\s*(.+?)(?=\n\s*[1-4][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\z)/s',
+            $block,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            $map = ['1' => 'A', '2' => 'B', '3' => 'C', '4' => 'D'];
+            foreach ($matches as $m) {
+                $letter = $map[$m[1]] ?? '';
+                if ($letter !== '') {
+                    $options[$letter] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+                }
+            }
+        }
+        if ($options === [] && preg_match_all(
+            '/\b([A-Da-d])\.\s+(.+?)(?=\s+[A-Da-d]\.\s+|\s*(?:Answer|Ans)\s*[:\.]|\z)/s',
+            $block,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            foreach ($matches as $m) {
+                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+            }
+        }
+
+        return $options;
     }
 
     /**

@@ -710,14 +710,6 @@ final class AptitudeService
         }
         $toProblem = $saveTarget === 'problem' || $saveTarget === 'both';
 
-        if ($toProblem && $parsed === []) {
-            Response::error(
-                'Problems need at least one parseable MCQ (numbered question with A–D options). '
-                . 'Choose Question bank only to save the manual file without a test.',
-                422
-            );
-        }
-
         try {
             $setDetail = (new \PMS\Models\AptitudeJdQuestionSetModel())->createManualSet(
                 $jdTitle,
@@ -733,8 +725,19 @@ final class AptitudeService
             );
 
             $testView = null;
+            $testSkippedMessage = null;
             if ($toProblem) {
-                $testView = $this->createCompanyProblemTestFromJdSet($admin, $setDetail, $jdTitle);
+                if ($parsed === []) {
+                    $testSkippedMessage = 'Manual saved on the company card. We could not detect MCQs in this file, '
+                        . 'so no company test was created. Try pasting text, use a clearer PDF, or add questions with AI Generate.';
+                } else {
+                    try {
+                        $testView = $this->createCompanyProblemTestFromJdSet($admin, $setDetail, $jdTitle);
+                    } catch (\InvalidArgumentException $e) {
+                        $testSkippedMessage = 'Manual saved, but the company test could not be created: '
+                            . $e->getMessage();
+                    }
+                }
             }
 
             return [
@@ -744,6 +747,7 @@ final class AptitudeService
                 'saveTarget' => $saveTarget,
                 'test' => $testView,
                 'testId' => $testView !== null ? (string) ($testView['id'] ?? '') : '',
+                'testSkippedMessage' => $testSkippedMessage,
             ];
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
