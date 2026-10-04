@@ -101,7 +101,13 @@ final class StaffPlacementRegistryService
             $classRows = $this->mergeCompleteClassRoster($localClassRows, $aesClassRows);
             $classRows = $this->filterRosterByPlacementStudRole($classRows, $studRole);
             $classRows = $this->attachRegistryPlacements($classRows);
-            $studentsSynced += $this->syncClassRowsToStudentPlacements($classRows, $deptId, $program, $batch);
+            $studentsSynced += $this->syncClassRowsToStudentPlacements(
+                $classRows,
+                $deptId,
+                $program,
+                $batch,
+                $isAlumni ? 'alumni' : 'student'
+            );
         } else {
             if ($isAlumni) {
                 $aesRows = $program !== ''
@@ -119,7 +125,11 @@ final class StaffPlacementRegistryService
             $classRows = $this->filterRosterByPlacementStudRole($classRows, $studRole);
             $classRows = $this->attachRegistryPlacements($classRows);
             if ($classRows !== [] && ($program !== '' || $batch !== '' || count($classRows) <= 500)) {
-                $studentsSynced += $this->syncAesDirectoryRowsToStudentPlacements($classRows, $deptId);
+                $studentsSynced += $this->syncAesDirectoryRowsToStudentPlacements(
+                    $classRows,
+                    $deptId,
+                    $isAlumni ? 'alumni' : 'student'
+                );
             }
         }
 
@@ -299,8 +309,8 @@ final class StaffPlacementRegistryService
             return $role === $wantRole;
         }
 
-        // Local / student_placements shells without AES stud_role — treat as studying students.
-        return $wantRole === 'student';
+        // Legacy rows saved before studRole was stored — show under both filters until re-sync stamps role.
+        return true;
     }
 
     /**
@@ -807,8 +817,11 @@ final class StaffPlacementRegistryService
      *
      * @param array<int, array<string, mixed>> $classRows
      */
-    private function syncAesDirectoryRowsToStudentPlacements(array $classRows, string $departmentId): int
-    {
+    private function syncAesDirectoryRowsToStudentPlacements(
+        array $classRows,
+        string $departmentId,
+        string $placementStudRole = 'student'
+    ): int {
         $grouped = [];
         foreach ($classRows as $row) {
             $batch = trim((string) ($row['classBatch'] ?? $row['stud_class'] ?? $row['batch'] ?? ''));
@@ -841,7 +854,8 @@ final class StaffPlacementRegistryService
                 $group['rows'],
                 $departmentId,
                 (string) $group['program'],
-                (string) $group['batch']
+                (string) $group['batch'],
+                $placementStudRole
             );
         }
 
@@ -852,7 +866,8 @@ final class StaffPlacementRegistryService
         array $classRows,
         string $departmentId,
         string $program,
-        string $batch
+        string $batch,
+        string $placementStudRole = 'student'
     ): int {
         $model = new StudentPlacementModel();
         $deptId = trim($departmentId);
@@ -871,10 +886,14 @@ final class StaffPlacementRegistryService
 
             $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
             $placement = $this->placementFieldsForAesSync($placement);
-            $meta = StudentPlacementModel::normalizeRosterMeta(array_merge($row, [
-                'classBatch' => $batchLabel !== '' ? $batchLabel : ($row['classBatch'] ?? $row['stud_class'] ?? ''),
-                'programme'  => $programCode !== '' ? $programCode : ($row['programme'] ?? $row['stud_course'] ?? ''),
-            ]));
+            $meta = StudentPlacementModel::normalizeRosterMeta(array_merge(
+                $row,
+                $this->rosterStudRoleFieldsForSync($row, $placementStudRole),
+                [
+                    'classBatch' => $batchLabel !== '' ? $batchLabel : ($row['classBatch'] ?? $row['stud_class'] ?? ''),
+                    'programme'  => $programCode !== '' ? $programCode : ($row['programme'] ?? $row['stud_course'] ?? ''),
+                ]
+            ));
 
             try {
                 $model->upsertForStudent(
@@ -899,6 +918,21 @@ final class StaffPlacementRegistryService
      * @param array<string, mixed> $placement
      * @return array<string, mixed>
      */
+    /**
+     * @param array<string, mixed> $row
+     * @return array{studRole: string, stud_role: string}
+     */
+    private function rosterStudRoleFieldsForSync(array $row, string $scopeRole): array
+    {
+        $scopeRole = strtolower(trim($scopeRole)) === 'alumni' ? 'alumni' : 'student';
+        $role = AesApiService::normalizeStudRole($row) ?? $scopeRole;
+
+        return [
+            'studRole'  => $role,
+            'stud_role' => $role === 'alumni' ? 'Alumni' : 'Student',
+        ];
+    }
+
     private function placementFieldsForAesSync(array $placement): array
     {
         $allowed = [

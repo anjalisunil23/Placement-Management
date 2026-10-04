@@ -475,7 +475,26 @@ class StudentPlacementModel extends BaseModel
             'placement'      => $placement,
             'placed'         => trim((string) ($placement['company'] ?? '')) !== '',
             'source'         => 'student_placements',
+            'studRole'       => self::studRoleFromDocument($doc),
+            'stud_role'      => trim((string) ($doc['stud_role'] ?? '')),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $doc
+     */
+    public static function studRoleFromDocument(array $doc): string
+    {
+        $role = \PMS\Services\AesApiService::normalizeStudRole($doc);
+        if ($role === 'alumni' || $role === 'student') {
+            return $role;
+        }
+        $raw = strtolower(trim((string) ($doc['studRole'] ?? '')));
+        if ($raw === 'alumni' || $raw === 'student') {
+            return $raw;
+        }
+
+        return '';
     }
 
     /**
@@ -506,6 +525,20 @@ class StudentPlacementModel extends BaseModel
                     break;
                 }
             }
+        }
+
+        $role = \PMS\Services\AesApiService::normalizeStudRole($meta);
+        if ($role === null) {
+            $raw = strtolower(trim((string) ($meta['studRole'] ?? $meta['placementStudRole'] ?? '')));
+            if ($raw === 'alumni') {
+                $role = 'alumni';
+            } elseif ($raw === 'student') {
+                $role = 'student';
+            }
+        }
+        if ($role !== null) {
+            $out['studRole'] = $role;
+            $out['stud_role'] = $role === 'alumni' ? 'Alumni' : 'Student';
         }
 
         return $out;
@@ -612,6 +645,8 @@ class StudentPlacementModel extends BaseModel
             $doc['phone'],
             $doc['email'],
             $doc['admissionNo'],
+            $doc['studRole'],
+            $doc['stud_role'],
             $doc['createdAt'],
             $doc['updatedAt']
         );
