@@ -876,7 +876,7 @@ function renderProfileQualifications(quals, lockedFields) {
   const canEdit = role === 'student';
   body.innerHTML = settingsQualRows.map((q, i) => {
     const qual = escHtml(q.qualification || '—');
-    const isLocked = (field) => settingsLockedFields.has(`academic.qualifications.${i}.${field}`);
+    const isLocked = () => false;
     const cell = (field, display, opts = {}) => {
       const empty = qualCellEmpty(q[field] ?? q[field === 'maxMark' ? 'maxmark' : field]);
       // First visit: allow editing AES-filled cells until locked after first save.
@@ -1001,9 +1001,9 @@ function applyStudentFieldLocks(p) {
   // Phone / email always editable; academic locks only after first student save.
   lockInput('profPhone', 'profPhoneHint', 'personal.phone', phone, true);
   lockInput('profPersonalEmail', 'profPersonalEmailHint', 'personal.personalEmail', personalEmail, true);
-  lockInput('profMarks10', 'profMarks10Hint', 'academic.marks10th', marks10, false);
-  lockInput('profMarks12', 'profMarks12Hint', 'academic.marks12th', marks12, false);
-  lockInput('profCgpa', 'profCgpaHint', 'academic.cgpa', cgpa, false);
+  lockInput('profMarks10', 'profMarks10Hint', 'academic.marks10th', marks10, true);
+  lockInput('profMarks12', 'profMarks12Hint', 'academic.marks12th', marks12, true);
+  lockInput('profCgpa', 'profCgpaHint', 'academic.cgpa', cgpa, true);
 }
 
 function showMissingFieldsBanner(missingFields) {

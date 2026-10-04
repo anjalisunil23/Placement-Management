@@ -9,9 +9,8 @@ use PMS\Utils\Response;
 use PMS\Utils\Security;
 
 /**
- * Student self-service may fill empty academic fields once.
- * Phone, personal email, and marital status stay student-editable.
- * Class teacher / co-class teacher may overwrite locked academic fields afterward.
+ * Student self-service may edit personal and academic fields at any time (manual corrections).
+ * Backlogs remain staff/AES-owned. Staff may still update profiles via applyStaffUpdate.
  */
 final class StudentProfileEditService
 {
@@ -43,29 +42,10 @@ final class StudentProfileEditService
         }
         foreach (self::ACADEMIC_KEYS as $key) {
             $path = 'academic.' . $key;
-            // Students may fill marks/CGPA when empty; backlogs stay staff/AES-owned.
             if ($key === 'backlogs') {
                 continue;
             }
-            if ($this->isFieldLockedForStudent($profile, $path)) {
-                $locked[] = $path;
-            } else {
-                $editable[] = $path;
-            }
-        }
-
-        $locks = is_array($profile['profileFieldLocks'] ?? null) ? $profile['profileFieldLocks'] : [];
-        foreach ($locks as $path => $meta) {
-            $path = (string) $path;
-            if ($path === '' || !is_array($meta)) {
-                continue;
-            }
-            if (!str_starts_with($path, 'academic.qualifications.')) {
-                continue;
-            }
-            if ($this->isFieldLockedForStudent($profile, $path)) {
-                $locked[] = $path;
-            }
+            $editable[] = $path;
         }
 
         return [
@@ -124,10 +104,6 @@ final class StudentProfileEditService
             }
             $existingVal = $academic[$key] ?? null;
             if ($this->valuesEqual($path, $existingVal, $value)) {
-                continue;
-            }
-            if ($this->isFieldLockedForStudent($profile, $path)) {
-                $rejected[] = $path;
                 continue;
             }
             if ($this->isEmptyValue($path, $value)) {
@@ -189,14 +165,6 @@ final class StudentProfileEditService
             }
         }
 
-        if ($rejected !== []) {
-            Response::error(
-                'Some profile fields are already set and can only be changed by your class teacher or co-class teacher.',
-                422,
-                ['lockedFields' => array_values(array_unique($rejected))]
-            );
-        }
-
         $update = [];
         if ($personal !== (is_array($profile['personal'] ?? null) ? $profile['personal'] : [])) {
             $update['personal'] = $personal;
@@ -220,18 +188,6 @@ final class StudentProfileEditService
         if ($update === []) {
             Response::error('No valid fields to update.', 422);
         }
-
-        // First successful profile save locks filled academic fields (AES + student).
-        // Further academic edits require class teacher / co-class teacher.
-        $locks = $this->lockFilledAcademicFields(
-            array_merge($profile, $update, [
-                'academic' => $update['academic'] ?? $academic,
-                'profileFieldLocks' => $update['profileFieldLocks'] ?? $locks,
-            ]),
-            is_array($update['profileFieldLocks'] ?? null) ? $update['profileFieldLocks'] : $locks,
-            $now
-        );
-        $update['profileFieldLocks'] = $locks;
 
         $id = (string) ($profile['_id'] ?? '');
         $this->students->update($id, $update);
@@ -360,20 +316,7 @@ final class StudentProfileEditService
      */
     public function isFieldLockedForStudent(array $profile, string $path): bool
     {
-        $value = $this->readPath($profile, $path);
-        // Invalid CGPA (e.g. admission number mis-mapped as CGPA) is treated as unset.
-        if ($path === 'academic.cgpa' && !$this->isValidCgpa($value)) {
-            return false;
-        }
-
-        // Lock only after an explicit student/staff save — AES-prefilled values stay
-        // editable on first visit so the student can correct them once.
-        $locks = is_array($profile['profileFieldLocks'] ?? null) ? $profile['profileFieldLocks'] : [];
-        if (!isset($locks[$path]) || !is_array($locks[$path])) {
-            return false;
-        }
-
-        return !$this->isEmptyValue($path, $value);
+        return false;
     }
 
     /**
@@ -580,10 +523,6 @@ final class StudentProfileEditService
                     if ($newVal === '' || strcasecmp($existingVal, $newVal) === 0) {
                         continue;
                     }
-                    if ($existingVal !== '' || (isset($locks[$path]) && is_array($locks[$path]))) {
-                        $rejected[] = $path;
-                        continue;
-                    }
                     $row[$field] = $newVal;
                     $locks[$path] = ['lockedAt' => $now, 'lockedBy' => 'student'];
                     continue;
@@ -605,15 +544,7 @@ final class StudentProfileEditService
                     continue;
                 }
                 $existingNum = isset($row[$field]) && is_numeric($row[$field]) ? (float) $row[$field] : 0.0;
-                if ($existingNum > 0) {
-                    if (abs($existingNum - $num) < 0.0001) {
-                        continue;
-                    }
-                    $rejected[] = $path;
-                    continue;
-                }
-                if (isset($locks[$path]) && is_array($locks[$path])) {
-                    $rejected[] = $path;
+                if ($existingNum > 0 && abs($existingNum - $num) < 0.0001) {
                     continue;
                 }
                 $row[$field] = $num;
