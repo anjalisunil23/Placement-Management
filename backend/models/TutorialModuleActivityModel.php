@@ -300,7 +300,7 @@ class TutorialModuleActivityModel extends BaseModel
                 continue;
             }
             $id = trim(strip_tags((string) ($part['id'] ?? ('part-' . ($index + 1)))));
-            if ($id === '') {
+            if ($id === '' || !preg_match('/^[A-Za-z0-9_-]{1,40}$/', $id)) {
                 $id = 'part-' . ($index + 1);
             }
             $out[] = [
@@ -310,6 +310,15 @@ class TutorialModuleActivityModel extends BaseModel
         }
         if ($out === []) {
             throw new \InvalidArgumentException('Case study activities need at least one part prompt.');
+        }
+        $seen = [];
+        foreach ($out as $i => $part) {
+            $id = $part['id'];
+            if (isset($seen[$id])) {
+                $id = 'part-' . ($i + 1);
+                $out[$i]['id'] = $id;
+            }
+            $seen[$id] = true;
         }
 
         return $out;

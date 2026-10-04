@@ -3515,8 +3515,26 @@
     paintStudentActivityPanel();
   }
 
-  function collectStudentActivityResponse() {
+  function studentAttemptActivityView() {
     const activity = learn.activity;
+    if (!activity) return null;
+    const snapshot = learn.activityAttempt && learn.activityAttempt.activitySnapshot
+      ? learn.activityAttempt.activitySnapshot
+      : null;
+    if (!snapshot) return activity;
+    return {
+      ...activity,
+      title: snapshot.title || activity.title,
+      instructions: snapshot.instructions || activity.instructions,
+      activityType: snapshot.activityType || activity.activityType,
+      difficulty: snapshot.difficulty || activity.difficulty,
+      evaluationMode: snapshot.evaluationMode || activity.evaluationMode,
+      config: snapshot.config || activity.config,
+    };
+  }
+
+  function collectStudentActivityResponse() {
+    const activity = studentAttemptActivityView();
     if (!activity) throw new Error('Open an activity first.');
     const type = activity.activityType;
     if (type === 'programming_task') {
@@ -3641,18 +3659,20 @@
     let response;
     try {
       response = collectStudentActivityResponse();
-      if (learn.activity.activityType === 'case_study') {
-        const parts = (learn.activity.config && learn.activity.config.parts) || [];
+      const attemptActivity = studentAttemptActivityView() || learn.activity;
+      const attemptType = attemptActivity.activityType;
+      if (attemptType === 'case_study') {
+        const parts = (attemptActivity.config && attemptActivity.config.parts) || [];
         const missing = parts.some((part) => !String((response.parts || {})[part.id] || '').trim());
         if (missing) throw new Error('Answer every case-study part before submitting.');
       }
-      if (learn.activity.activityType === 'programming_task' && !String(response.source || '').trim()) {
+      if (attemptType === 'programming_task' && !String(response.source || '').trim()) {
         throw new Error('Source code is required.');
       }
-      if (learn.activity.activityType === 'sql_query' && !String(response.sql || '').trim()) {
+      if (attemptType === 'sql_query' && !String(response.sql || '').trim()) {
         throw new Error('SQL is required.');
       }
-      if ((learn.activity.activityType === 'short_answer' || learn.activity.activityType === 'analytical_design')
+      if ((attemptType === 'short_answer' || attemptType === 'analytical_design')
         && !String(response.text || '').trim()) {
         throw new Error('A response is required.');
       }

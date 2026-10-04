@@ -192,6 +192,34 @@ try {
         $check(isset($row['answerKey']), 'staff view includes answerKey for ' . $type);
     }
 
+    $casePartsNormalized = $activities->create($staff, $tutorialId, $moduleId, [
+        'title' => 'Case part id normalize',
+        'instructions' => 'Answer each part.',
+        'activityType' => 'case_study',
+        'evaluationMode' => 'tutor_review',
+        'academicField' => 'other',
+        'config' => [
+            'parts' => [
+                ['id' => '!!!bad!!!', 'prompt' => 'First prompt'],
+                ['id' => 'part-2', 'prompt' => 'Second prompt'],
+                ['id' => 'part-2', 'prompt' => 'Duplicate id prompt'],
+            ],
+        ],
+        'answerKey' => [],
+    ]);
+    $activityIds[] = (string) ($casePartsNormalized['id'] ?? '');
+    $normIds = array_map(
+        static fn (array $p): string => (string) ($p['id'] ?? ''),
+        is_array($casePartsNormalized['config']['parts'] ?? null) ? $casePartsNormalized['config']['parts'] : []
+    );
+    $check(
+        count($normIds) === 3
+        && count(array_unique($normIds)) === 3
+        && !in_array('!!!bad!!!', $normIds, true)
+        && preg_match('/^[A-Za-z0-9_-]{1,40}$/', $normIds[0] ?? '') === 1,
+        'case-study part ids normalized to valid unique values'
+    );
+
     $throws(static function () use ($activities, $staff, $tutorialId, $moduleId): void {
         $activities->create($staff, $tutorialId, $moduleId, [
             'title' => 'Bad',
@@ -222,9 +250,9 @@ try {
     }, 'numerical auto_compare requires expectedValue');
 
     $list = $activities->listManaged($staff, $tutorialId, $moduleId);
-    $check(($list['count'] ?? 0) === 6, 'activity listing count');
+    $check(($list['count'] ?? 0) === 7, 'activity listing count');
     $orders = array_map(static fn (array $row): int => (int) ($row['sortOrder'] ?? 0), $list['activities']);
-    $check($orders === range(1, 6), 'activity default ordering');
+    $check($orders === range(1, 7), 'activity default ordering');
 
     $ids = array_map(static fn (array $row): string => (string) ($row['id'] ?? ''), $list['activities']);
     $reversed = array_reverse($ids);
