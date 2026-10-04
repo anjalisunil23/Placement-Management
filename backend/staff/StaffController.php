@@ -365,6 +365,7 @@ final class StaffController
     /** GET /api/staff/placement-filters */
     public function placementFilters(): void
     {
+        PlacementFilterService::clearScopedRowsCache();
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);

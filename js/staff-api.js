@@ -310,7 +310,9 @@ const StaffApi = {
       const keys = [];
       for (let i = 0; i < sessionStorage.length; i++) {
         const k = sessionStorage.key(i);
-        if (k && k.startsWith('ph_staff_placements')) keys.push(k);
+        if (k && (k.startsWith('ph_staff_placements') || k.startsWith('ph_staff_placement_filters_'))) {
+          keys.push(k);
+        }
       }
       keys.forEach(k => sessionStorage.removeItem(k));
     } catch (_) { /* ignore */ }

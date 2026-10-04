@@ -52,6 +52,7 @@ final class StaffPlacementRegistryService
     public function list(array $staffCtx, array $filters = []): array
     {
         StaffContext::requireDepartmentScope($staffCtx);
+        @ini_set('memory_limit', trim((string) ($_ENV['AES_DIRECTORY_MEMORY_LIMIT'] ?? '512M')));
         $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
         $officerCtx = StaffContext::officerCompatible($listCtx);
         $program = trim((string) ($filters['program'] ?? ''));
@@ -104,6 +105,9 @@ final class StaffPlacementRegistryService
             $tableRows = $placementModel->listRosterRowsForDepartment($deptId);
             $classRows = $this->mergeCompleteClassRoster($classRows, $tableRows);
             $classRows = $this->attachRegistryPlacements($classRows);
+            if ($classRows !== [] && ($program !== '' || $batch !== '' || count($classRows) <= 500)) {
+                $this->syncAesDirectoryRowsToStudentPlacements($classRows, $deptId);
+            }
             $registry = $this->registryEntriesFromRoster(
                 $this->mergeTableRosterWithClass($tableRows, $classRows)
             );
@@ -685,6 +689,49 @@ final class StaffPlacementRegistryService
      *
      * @param array<int, array<string, mixed>> $classRows
      */
+    /**
+     * Materialize getAllStudInfo4Placement roster shells into student_placements (per class).
+     *
+     * @param array<int, array<string, mixed>> $classRows
+     */
+    private function syncAesDirectoryRowsToStudentPlacements(array $classRows, string $departmentId): void
+    {
+        $grouped = [];
+        foreach ($classRows as $row) {
+            $batch = trim((string) ($row['classBatch'] ?? $row['stud_class'] ?? $row['batch'] ?? ''));
+            if ($batch === '') {
+                continue;
+            }
+            $program = DepartmentProgrammeCatalog::resolveProgrammeCode(trim((string) (
+                $row['programme'] ?? $row['stud_course'] ?? $row['program'] ?? ''
+            )));
+            if ($program === '') {
+                $norm = DepartmentProgrammeCatalog::normalizeCode($batch);
+                if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+                    $program = 'INMCA';
+                } elseif (str_starts_with($norm, 'MCA')) {
+                    $program = 'MCA';
+                } elseif (str_contains($norm, 'BCA')) {
+                    $program = 'BCA';
+                }
+            }
+            $key = strtoupper($program . '|' . $batch);
+            if (!isset($grouped[$key])) {
+                $grouped[$key] = ['program' => $program, 'batch' => $batch, 'rows' => []];
+            }
+            $grouped[$key]['rows'][] = $row;
+        }
+
+        foreach ($grouped as $group) {
+            $this->syncClassRowsToStudentPlacements(
+                $group['rows'],
+                $departmentId,
+                (string) $group['program'],
+                (string) $group['batch']
+            );
+        }
+    }
+
     private function syncClassRowsToStudentPlacements(
         array $classRows,
         string $departmentId,
@@ -931,6 +978,7 @@ final class StaffPlacementRegistryService
             'filterMode' => true,
             'placementStudRole' => $studRole === 'alumni' ? 'alumni' : 'student',
             'campusWide' => $deptId === '' || !empty($listCtx['campusWide']),
+            'placementStaffRegistryFilters' => true,
         ]);
     }
 

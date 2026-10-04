@@ -1176,7 +1176,7 @@ final class OfficerDataService
         );
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
 
-        return $this->fetchAesAlumniDirectoryRecords($deptAesId, $campusWide);
+        return $this->fetchAesAlumniDirectoryRecords($deptAesId, $campusWide, $ctx);
     }
 
     /**
@@ -1294,7 +1294,7 @@ final class OfficerDataService
             : [];
 
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
-        $records = $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide);
+        $records = $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide, $ctx);
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
@@ -1422,10 +1422,11 @@ final class OfficerDataService
     private function fetchAesDirectoryRecordsForProgramme(
         string $deptAesId,
         string $programme,
-        bool $campusWide
+        bool $campusWide,
+        array $ctx = []
     ): array {
         $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
-        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide, $ctx);
         if ($programme === '' || $records === []) {
             return $records;
         }
@@ -1887,7 +1888,7 @@ final class OfficerDataService
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
-        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide, $ctx);
 
         $batchCounts = [];
         foreach ($records as $record) {
@@ -2407,7 +2408,7 @@ final class OfficerDataService
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
-        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+        $records = $this->fetchAesDirectoryRecords($deptAesId, $campusWide, $ctx);
         if ($records === []) {
             return [];
         }
@@ -2544,7 +2545,7 @@ final class OfficerDataService
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
         $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
-        $records = $this->fetchAesAlumniDirectoryRecords($deptAesId, $campusWide);
+        $records = $this->fetchAesAlumniDirectoryRecords($deptAesId, $campusWide, $ctx);
         if ($records === []) {
             return [];
         }
@@ -2632,7 +2633,12 @@ final class OfficerDataService
         bool $campusWide,
         string $deptAesId
     ): array {
-        if ($matchCohort && !$campusWide && $deptAesId !== '' && trim($batch) !== '') {
+        $useDirectoryOnly = !empty($ctx['placementRegistryWide']);
+        if (!$useDirectoryOnly
+            && $matchCohort
+            && !$campusWide
+            && $deptAesId !== ''
+            && trim($batch) !== '') {
             $classRows = (new AesApiService())->fetchClassStudInfo4Placement($deptAesId, $programme, $batch);
             if ($classRows !== []) {
                 return $classRows;
@@ -2640,8 +2646,8 @@ final class OfficerDataService
         }
 
         return $matchCohort
-            ? $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide)
-            : $this->fetchAesDirectoryRecords($deptAesId, $campusWide);
+            ? $this->fetchAesDirectoryRecordsForProgramme($deptAesId, $programme, $campusWide, $ctx)
+            : $this->fetchAesDirectoryRecords($deptAesId, $campusWide, $ctx);
     }
 
     /** Students page loads full AES directory — raise limit when hosting allows it. */
@@ -2653,15 +2659,21 @@ final class OfficerDataService
         }
     }
 
-    private function fetchAesDirectoryRecords(string $deptAesId, bool $campusWide): array
+    private function fetchAesDirectoryRecords(string $deptAesId, bool $campusWide, array $ctx = []): array
     {
+        $liveRegistry = !empty($ctx['placementRegistryWide']);
         $cacheKey = ($campusWide ? 'campus' : ('dept:' . $deptAesId)) . ':studRoleStudent';
+        if ($liveRegistry) {
+            $cacheKey .= ':liveReg';
+        }
         if (isset(self::$aesDirectoryCache[$cacheKey])) {
             return self::$aesDirectoryCache[$cacheKey];
         }
 
         if ($campusWide) {
-            $records = $this->readCampusStudyingDirectorySnapshotRecords();
+            $records = $liveRegistry
+                ? $this->fetchLiveCampusStudyingDirectoryRecords()
+                : $this->readCampusStudyingDirectorySnapshotRecords();
 
             return self::$aesDirectoryCache[$cacheKey] = $records;
         }
@@ -3004,10 +3016,14 @@ final class OfficerDataService
      *
      * @return list<array<string, mixed>>
      */
-    private function fetchAesAlumniDirectoryRecords(string $deptAesId, bool $campusWide): array
+    private function fetchAesAlumniDirectoryRecords(string $deptAesId, bool $campusWide, array $ctx = []): array
     {
+        $liveRegistry = !empty($ctx['placementRegistryWide']);
         $roleKey = implode(',', $this->aesAlumniStudRoleParamValues());
         $cacheKey = ($campusWide ? 'campus' : ('dept:' . $deptAesId)) . ':roles:' . $roleKey;
+        if ($liveRegistry) {
+            $cacheKey .= ':liveReg';
+        }
         if (isset(self::$aesAlumniDirectoryCache[$cacheKey])) {
             return self::$aesAlumniDirectoryCache[$cacheKey];
         }
@@ -3049,7 +3065,9 @@ final class OfficerDataService
             return self::$aesAlumniDirectoryCache[$cacheKey] = $fetchWithRole($params);
         }
 
-        $records = $this->readCampusAlumniDirectorySnapshotRecords();
+        $records = $liveRegistry
+            ? $this->fetchLiveCampusAlumniDirectoryRecords()
+            : $this->readCampusAlumniDirectorySnapshotRecords();
 
         return self::$aesAlumniDirectoryCache[$cacheKey] = $records;
     }
