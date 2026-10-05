@@ -73,6 +73,33 @@ final class StaffPlacementRegistryService
     public function syncFromAes(array $staffCtx, array $filters = []): array
     {
         StaffContext::requireDepartmentScope($staffCtx);
+        $role = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
+        if ($role === 'all') {
+            $student = $this->syncFromAesForStudRole(
+                $staffCtx,
+                array_merge($filters, ['studRole' => 'student'])
+            );
+            $alumni = $this->syncFromAesForStudRole(
+                $staffCtx,
+                array_merge($filters, ['studRole' => 'alumni'])
+            );
+
+            return [
+                'studentsSynced' => (int) ($student['studentsSynced'] ?? 0) + (int) ($alumni['studentsSynced'] ?? 0),
+                'scope'          => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
+            ];
+        }
+
+        return $this->syncFromAesForStudRole($staffCtx, array_merge($filters, ['studRole' => $role]));
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
+     * @return array<string, mixed>
+     */
+    private function syncFromAesForStudRole(array $staffCtx, array $filters = []): array
+    {
         @ini_set('memory_limit', trim((string) ($_ENV['AES_DIRECTORY_MEMORY_LIMIT'] ?? '512M')));
         @set_time_limit(max(120, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 300)));
 
@@ -80,7 +107,7 @@ final class StaffPlacementRegistryService
         $officerCtx = StaffContext::officerCompatible($listCtx);
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
-        $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'student')));
+        $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'student'));
         $isAlumni = $studRole === 'alumni';
         $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
         $wideCtx = array_merge($officerCtx, [
@@ -146,7 +173,7 @@ final class StaffPlacementRegistryService
         $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
-        $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'student')));
+        $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
 
         $model = new StudentPlacementModel();
         if ($program !== '' && $batch !== '') {
@@ -155,7 +182,9 @@ final class StaffPlacementRegistryService
             $tableRows = $model->listRosterRowsForDepartment($deptId);
         }
 
-        $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
+        if ($studRole !== 'all') {
+            $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
+        }
 
         return $this->registryEntriesFromRoster($tableRows, true);
     }
@@ -281,8 +310,25 @@ final class StaffPlacementRegistryService
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */
+    private function normalizeRegistryStudRoleFilter(string $studRole): string
+    {
+        $role = strtolower(trim($studRole));
+        if ($role === '' || $role === 'all' || $role === 'both') {
+            return 'all';
+        }
+
+        return $role === 'alumni' ? 'alumni' : 'student';
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
     private function filterRosterByPlacementStudRole(array $rows, string $studRole): array
     {
+        if ($this->normalizeRegistryStudRoleFilter($studRole) === 'all') {
+            return $rows;
+        }
         $want = strtolower(trim($studRole)) === 'alumni' ? 'alumni' : 'student';
 
         return array_values(array_filter(
@@ -310,6 +356,10 @@ final class StaffPlacementRegistryService
      */
     private function registryRowMatchesStudRole(array $row, string $studRole): bool
     {
+        if ($this->normalizeRegistryStudRoleFilter($studRole) === 'all') {
+            return true;
+        }
+
         return $this->rosterRowMatchesPlacementStudRole(
             $row,
             strtolower(trim($studRole)) === 'alumni' ? 'alumni' : 'student'
@@ -1149,12 +1199,12 @@ final class StaffPlacementRegistryService
     private function placementFilterCtx(array $staffCtx, array $filters = []): array
     {
         $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
-        $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'student')));
+        $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
         $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
 
         return array_merge(StaffContext::officerCompatible($listCtx), [
             'filterMode' => true,
-            'placementStudRole' => $studRole === 'alumni' ? 'alumni' : 'student',
+            'placementStudRole' => $studRole,
             'campusWide' => $deptId === '' || !empty($listCtx['campusWide']),
             'placementStaffRegistryFilters' => true,
         ]);
@@ -1305,7 +1355,7 @@ final class StaffPlacementRegistryService
         $branch = trim((string) ($filters['branch'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
         $type = trim((string) ($filters['type'] ?? ''));
-        $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'student')));
+        $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
 
         $wantCohort = $batch !== '' ? ClassInchargeRegistry::cohortKey($batch) : '';

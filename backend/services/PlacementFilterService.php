@@ -203,6 +203,16 @@ final class PlacementFilterService
         $branch = trim($branch);
         $program = trim($program);
 
+        if ($this->placementStudRole($ctx) === 'all') {
+            $studentCtx = array_merge($ctx, ['placementStudRole' => 'student']);
+            $alumniCtx = array_merge($ctx, ['placementStudRole' => 'alumni']);
+
+            return $this->sortLabels(array_values(array_unique(array_merge(
+                $this->fetchBatchOptions($studentCtx, $program, $branch, $finalYearOnly),
+                $this->fetchBatchOptions($alumniCtx, $program, $branch, $finalYearOnly)
+            ))));
+        }
+
         if ($this->placementStudRole($ctx) === 'alumni') {
             $batches = $this->distinctAlumniClassBatches($ctx, $program, $branch);
             $batches = $this->normalizeBatchLabelsForFilters($batches, $ctx);
@@ -513,6 +523,9 @@ final class PlacementFilterService
     private function placementStudRole(array $ctx): string
     {
         $role = strtolower(trim((string) ($ctx['placementStudRole'] ?? 'student')));
+        if ($role === 'all' || $role === 'both') {
+            return 'all';
+        }
 
         return $role === 'alumni' ? 'alumni' : 'student';
     }
@@ -772,7 +785,8 @@ final class PlacementFilterService
 
         if ($filterMode) {
             $this->appendFilterModeStudInfoRows($ctx, $rows, $seen);
-            if ($this->placementStudRole($ctx) === 'alumni') {
+            $role = $this->placementStudRole($ctx);
+            if ($role === 'alumni' || $role === 'all') {
                 $this->appendAlumniDirectoryFilterRows($ctx, $rows, $seen);
             }
         }

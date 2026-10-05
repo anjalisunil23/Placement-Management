@@ -371,13 +371,13 @@ final class StaffController
         StaffContext::requireDepartmentScope($ctx);
         $program = trim((string) ($_GET['program'] ?? ''));
         $branch = trim((string) ($_GET['branch'] ?? ''));
-        $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'student')));
+        $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'all')));
         $registrySvc = new StaffPlacementRegistryService();
         $filterPayload = [
             'departmentId' => (string) ($_GET['departmentId'] ?? ''),
             'program'      => $program,
             'branch'       => $branch,
-            'studRole'     => $studRole,
+            'studRole'     => $studRole !== '' ? $studRole : 'all',
         ];
         $filterCtx = $registrySvc->placementFilterContext($ctx, $filterPayload);
         $svc = new PlacementFilterService();
@@ -405,7 +405,7 @@ final class StaffController
             'program'      => (string) ($_GET['program'] ?? ''),
             'branch'       => (string) ($_GET['branch'] ?? ''),
             'batch'        => (string) ($_GET['batch'] ?? ''),
-            'studRole'     => (string) ($_GET['studRole'] ?? 'student'),
+            'studRole'     => (string) ($_GET['studRole'] ?? 'all'),
             'type'         => (string) ($_GET['type'] ?? ''),
             'q'            => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
         ];
@@ -425,7 +425,7 @@ final class StaffController
             'program'      => (string) ($_GET['program'] ?? $_POST['program'] ?? ''),
             'branch'       => (string) ($_GET['branch'] ?? $_POST['branch'] ?? ''),
             'batch'        => (string) ($_GET['batch'] ?? $_POST['batch'] ?? ''),
-            'studRole'     => (string) ($_GET['studRole'] ?? $_POST['studRole'] ?? 'student'),
+            'studRole'     => (string) ($_GET['studRole'] ?? $_POST['studRole'] ?? 'all'),
         ];
         $result = (new StaffPlacementRegistryService())->syncFromAes($ctx, $filters);
         $count = (int) ($result['studentsSynced'] ?? 0);
