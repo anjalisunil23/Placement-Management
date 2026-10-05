@@ -243,7 +243,8 @@ class AptitudeJdQuestionSetModel extends BaseModel
         ?string $jdMimeType = null,
         ?string $manualText = null,
         string $manualSaveTarget = 'bank',
-        ?string $manualParseMethod = null
+        ?string $manualParseMethod = null,
+        ?array $importMeta = null
     ): array {
         $jdTitle = trim($jdTitle);
         if ($jdTitle === '') {
@@ -284,6 +285,14 @@ class AptitudeJdQuestionSetModel extends BaseModel
             }
             $norm['id'] = 'jdq-' . ($i + 1) . '-' . bin2hex(random_bytes(4));
             $norm['source'] = 'MANUAL_UPLOAD';
+            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'directionsBlock'] as $metaKey) {
+                if (array_key_exists($metaKey, $q)) {
+                    $norm[$metaKey] = $q[$metaKey];
+                }
+            }
+            if (!isset($norm['answerKnown'])) {
+                $norm['answerKnown'] = false;
+            }
             $normalized[] = $norm;
         }
 
@@ -334,11 +343,55 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 ? mb_substr($manualTextTrim, 0, 50000)
                 : $manualTextTrim;
         }
+        if (is_array($importMeta) && $importMeta !== []) {
+            $doc['importMeta'] = $importMeta;
+        }
+
+        $existing = $this->findLocalManualSetByTitle($companyId, $jdTitle);
+        if ($existing !== null) {
+            $existingId = (string) ($existing['_id'] ?? '');
+            if ($existingId !== '' && $this->update($existingId, $doc)) {
+                $saved = $this->findById($existingId);
+
+                return array_merge(
+                    $saved !== null ? $this->detailView($saved) : ['id' => $existingId, 'jdTitle' => $jdTitle],
+                    ['replacedExisting' => true]
+                );
+            }
+        }
 
         $id = $this->insert($doc);
         $saved = $this->findById($id);
+        $view = $saved !== null ? $this->detailView($saved) : ['id' => $id, 'jdTitle' => $jdTitle];
+        $view['replacedExisting'] = false;
 
-        return $saved !== null ? $this->detailView($saved) : ['id' => $id, 'jdTitle' => $jdTitle];
+        return $view;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findLocalManualSetByTitle(string $companyId, string $jdTitle): ?array
+    {
+        $companyId = trim($companyId);
+        $titleNorm = mb_strtolower(trim($jdTitle));
+        if ($companyId === '' || $titleNorm === '') {
+            return null;
+        }
+
+        $rows = $this->findAll(['companyId' => $companyId], 400, 0, ['createdAt' => -1]);
+        foreach ($rows as $row) {
+            if (mb_strtolower(trim((string) ($row['jdTitle'] ?? ''))) !== $titleNorm) {
+                continue;
+            }
+            if (self::resolveCompanyBankKind($row) !== 'local') {
+                continue;
+            }
+
+            return $row;
+        }
+
+        return null;
     }
 
     /**
@@ -538,7 +591,14 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 'difficulty' => (string) ($q['difficulty'] ?? 'Medium'),
                 'category' => (string) ($q['category'] ?? 'General Aptitude'),
                 'marks' => (float) ($q['marks'] ?? 1),
-                'source' => 'AI_JD',
+                'source' => (string) ($q['source'] ?? 'MANUAL_UPLOAD'),
+                'questionNumber' => (int) ($q['questionNumber'] ?? 0),
+                'sourcePage' => (int) ($q['sourcePage'] ?? 0),
+                'section' => (string) ($q['section'] ?? ''),
+                'confidence' => isset($q['confidence']) ? (float) $q['confidence'] : null,
+                'containsImage' => !empty($q['containsImage']),
+                'answerKnown' => !empty($q['answerKnown']),
+                'directionsBlock' => (string) ($q['directionsBlock'] ?? ''),
             ];
         }
 
@@ -561,6 +621,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'companyBankKind' => self::resolveCompanyBankKind($row),
             'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
             'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
+            'importMeta' => is_array($row['importMeta'] ?? null) ? $row['importMeta'] : [],
             'createdAt' => (string) ($row['createdAt'] ?? ''),
         ], $row, $forStudent);
     }

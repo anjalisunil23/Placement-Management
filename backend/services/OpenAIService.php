@@ -54,7 +54,7 @@ final class OpenAIService
     /**
      * @return array<string, mixed>
      */
-    public function generateJson(string $systemPrompt, string $userPrompt, ?int $maxTokens = null): array
+    public function generateJson(string $systemPrompt, string $userPrompt, ?int $maxTokens = null, float $temperature = 0.35): array
     {
         if (!$this->isConfigured()) {
             throw new \RuntimeException('AI question generation is not configured. Contact the administrator.');
@@ -67,7 +67,7 @@ final class OpenAIService
                 ['role' => 'user', 'content' => $userPrompt],
             ],
             'response_format' => ['type' => 'json_object'],
-            'temperature' => 0.35,
+            'temperature' => max(0.0, min(1.0, $temperature)),
         ];
         if ($maxTokens !== null && $maxTokens > 0) {
             $payload['max_tokens'] = $maxTokens;

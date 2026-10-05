@@ -678,6 +678,9 @@ final class AptitudeService
         $jdFileUrl = null;
         $jdMimeType = null;
         $extracted = trim($manualText);
+        $extractionMethod = 'text';
+        $extractionPageCount = 0;
+        $ocrAttempted = false;
 
         if ($file !== null && ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
             try {
@@ -686,6 +689,9 @@ final class AptitudeService
                 $jdFile = isset($ingest['jdFile']) ? (string) $ingest['jdFile'] : null;
                 $jdFileUrl = isset($ingest['jdFileUrl']) ? (string) $ingest['jdFileUrl'] : null;
                 $jdMimeType = isset($ingest['jdMimeType']) ? (string) $ingest['jdMimeType'] : null;
+                $extractionMethod = (string) ($ingest['method'] ?? 'file');
+                $extractionPageCount = (int) ($ingest['pageCount'] ?? 0);
+                $ocrAttempted = !empty($ingest['ocrAttempted']);
                 $fileText = trim((string) ($ingest['text'] ?? ''));
                 if ($fileText !== '') {
                     $extracted = $extracted !== '' ? ($extracted . "\n\n" . $fileText) : $fileText;
@@ -716,20 +722,16 @@ final class AptitudeService
         $manualSanitizer = new JdTextExtractionService();
         $extracted = $manualSanitizer->sanitizeManualText($extracted);
 
-        $parser = new AptitudeManualQuestionParser();
-        $parsed = $parser->parse($extracted);
-        $parseMethod = $parsed !== [] ? 'local' : 'none';
-        if ($parsed === [] && mb_strlen($extracted) >= 80) {
-            $aiParsed = (new AptitudeManualQuestionAiParser())->parse($extracted);
-            if ($aiParsed !== []) {
-                $parsed = $aiParsed;
-                $parseMethod = 'ai';
-            }
-        }
-        $parsed = $parser->expandIfSingleMergedBlob($parsed, $extracted);
-        if ($parsed !== [] && $parseMethod === 'none') {
-            $parseMethod = 'local';
-        }
+        $parseResult = $this->parseManualUploadQuestions($extracted);
+        $parsed = $parseResult['questions'];
+        $parseMethod = (string) ($parseResult['parseMethod'] ?? 'none');
+        $importMeta = [
+            'extractionMethod' => $extractionMethod,
+            'pageCount' => $extractionPageCount,
+            'ocrAttempted' => $ocrAttempted,
+            'sectionsDetected' => $parseResult['sections'] ?? [],
+            'extractedCharCount' => mb_strlen($extracted),
+        ];
 
         $saveTarget = strtolower(trim($saveTarget));
         if (!in_array($saveTarget, ['bank', 'problem', 'both'], true)) {
@@ -748,7 +750,8 @@ final class AptitudeService
                 $jdMimeType,
                 $extracted !== '' ? $extracted : null,
                 $saveTarget,
-                $parseMethod
+                $parseMethod,
+                $importMeta
             );
 
             $testView = null;
@@ -774,11 +777,13 @@ final class AptitudeService
                 'id' => (string) ($setDetail['id'] ?? ''),
                 'questionCount' => (int) ($setDetail['questionCount'] ?? count($parsed)),
                 'saveTarget' => $saveTarget,
+                'replacedExisting' => !empty($setDetail['replacedExisting']),
                 'test' => $testView,
                 'testId' => $testView !== null ? (string) ($testView['id'] ?? '') : '',
                 'testSkippedMessage' => $testSkippedMessage,
                 'parseMethod' => $parseMethod,
                 'extractedCharCount' => mb_strlen($extracted),
+                'importMeta' => $importMeta,
             ];
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
@@ -786,6 +791,71 @@ final class AptitudeService
             error_log('[PMS Aptitude] manual JD save failed: ' . $e->getMessage());
             Response::error('Could not save question manual.', 500);
         }
+    }
+
+    /**
+     * Local regex parse first; AI extraction when OCR text is large or local parse is sparse.
+     *
+     * @return array{questions:list<array<string,mixed>>,parseMethod:string,sections:list<string>}
+     */
+    private function parseManualUploadQuestions(string $extracted): array
+    {
+        $parser = new AptitudeManualQuestionParser();
+        $local = $parser->parse($extracted);
+        $local = $parser->expandIfSingleMergedBlob($local, $extracted);
+        $parseMethod = $local !== [] ? 'local' : 'none';
+
+        $expected = $this->estimateMcqCountInText($extracted);
+        $useAi = mb_strlen($extracted) >= 80
+            && (new OpenAIService())->isConfigured()
+            && (
+                $local === []
+                || count($local) < max(3, (int) floor($expected * 0.45))
+                || ($expected >= 8 && count($local) < (int) floor($expected * 0.65))
+            );
+
+        $final = $local;
+        if ($useAi) {
+            $aiParsed = (new AptitudeManualQuestionAiParser())->parse($extracted);
+            if (count($aiParsed) > count($final)) {
+                $final = $aiParsed;
+                $parseMethod = 'ai';
+            } elseif ($final === [] && $aiParsed !== []) {
+                $final = $aiParsed;
+                $parseMethod = 'ai';
+            }
+        }
+
+        if ($final !== [] && $parseMethod === 'none') {
+            $parseMethod = 'local';
+        }
+
+        $sections = [];
+        foreach ($final as $q) {
+            $sec = trim((string) ($q['section'] ?? $q['topic'] ?? ''));
+            if ($sec !== '' && !in_array($sec, $sections, true)) {
+                $sections[] = $sec;
+            }
+        }
+
+        return [
+            'questions' => $final,
+            'parseMethod' => $parseMethod,
+            'sections' => $sections,
+        ];
+    }
+
+    private function estimateMcqCountInText(string $text): int
+    {
+        $n = 0;
+        if (preg_match_all('/(?:^|\n)\s*\d{1,3}[\.\):]\s+\S/mu', $text, $m)) {
+            $n = max($n, count($m[0] ?? []));
+        }
+        if (preg_match_all('/(?:^|\n)\s*[A-Ea-e][\.\)]\s+\S/mu', $text, $m2)) {
+            $n = max($n, (int) floor(count($m2[0] ?? []) / 4));
+        }
+
+        return max(0, $n);
     }
 
     /**

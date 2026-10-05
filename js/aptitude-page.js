@@ -448,6 +448,7 @@
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aptJdManualModal;
+  let manualJdUploadBusy = false;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
   let aiGenerateContext = 'bank';
@@ -1710,6 +1711,7 @@
   }
 
   async function saveJdManualUpload() {
+    if (manualJdUploadBusy) return;
     const sel = document.getElementById('aptManualJdCompany');
     const companyId = String(sel?.value || '').trim();
     const companyName = sel?.selectedOptions?.[0]?.textContent?.trim() || '';
@@ -1739,6 +1741,7 @@
     const btn = document.getElementById('btnAptManualJdSave');
     status?.classList.remove('d-none');
     btn?.setAttribute('disabled', 'disabled');
+    manualJdUploadBusy = true;
     try {
       if (!live) {
         if (!Auth.isDemo() || !access.canManage) {
@@ -1755,8 +1758,14 @@
           jdMimeType = file.type || 'application/octet-stream';
         }
         const store = loadDemoJdStore();
-        store.unshift({
-          id: setId,
+        const titleNorm = titleState.jdTitle.trim().toLowerCase();
+        const existingIdx = store.findIndex(
+          (s) => String(s.companyId || '') === companyId
+            && String(s.jdTitle || '').trim().toLowerCase() === titleNorm
+            && jdSetCompanyBankKind(s) === 'local'
+        );
+        const entry = {
+          id: existingIdx >= 0 ? String(store[existingIdx].id || setId) : setId,
           companyId,
           companyName,
           jdTitle: titleState.jdTitle,
@@ -1772,9 +1781,20 @@
           manualSource: 'upload',
           companyBankKind: 'local',
           showInCompanyBank: true,
-        });
+        };
+        if (existingIdx >= 0) {
+          store[existingIdx] = { ...store[existingIdx], ...entry };
+        } else {
+          store.unshift(entry);
+        }
         saveDemoJdStore(store);
-        toast(`Saved manual to local bank (demo): ${companyName} · ${titleState.jdTitle}`, 'success');
+        const demoReplaced = existingIdx >= 0;
+        toast(
+          demoReplaced
+            ? `Updated local bank entry (same title): ${companyName} · ${titleState.jdTitle}`
+            : `Saved manual to local bank (demo): ${companyName} · ${titleState.jdTitle}`,
+          'success'
+        );
         aptJdManualModal?.hide();
         await loadJdLibrary();
         if (jdSelectedCompanyId) {
@@ -1795,9 +1815,17 @@
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
       const count = res.data?.questionCount ?? 0;
       const viaAi = res.data?.parseMethod === 'ai';
-      const msg = count > 0
-        ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.`
-        : 'Saved manual to local bank (no MCQs detected in file).';
+      const replaced = !!res.data?.replacedExisting;
+      let msg;
+      if (replaced) {
+        msg = count > 0
+          ? `Updated local bank entry — ${count} question(s)${viaAi ? ' (AI-read from manual)' : ''}.`
+          : 'Updated local bank entry (no MCQs detected in file).';
+      } else {
+        msg = count > 0
+          ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.`
+          : 'Saved manual to local bank (no MCQs detected in file).';
+      }
       toast(msg.trim(), 'success');
       delete jdSetDetailsCache[String(res.data?.id || '')];
       manualJdSetSummaries = [];
@@ -1819,6 +1847,7 @@
     } catch (err) {
       toast(err?.message || 'Could not save question manual.', 'error');
     } finally {
+      manualJdUploadBusy = false;
       status?.classList.add('d-none');
       btn?.removeAttribute('disabled');
     }
@@ -1948,40 +1977,53 @@
     return /\.(jpg|jpeg|png)$/i.test(String(detail?.jdFilename || ''));
   }
 
-  function renderMcqPickDetailHtml(q, index, { compact = false } = {}) {
+  function renderMcqPickDetailHtml(q, index, { compact = false, manualPreview = false } = {}) {
     const letters = ['A', 'B', 'C', 'D', 'E'];
     const opts = (q.options || []).filter((o) => String(o || '').trim() && String(o).trim() !== '—').slice(0, 5);
     const pad = opts.length ? opts : (q.options || []).slice(0, 5);
     const displayOpts = pad.length ? pad : [];
+    const answerKnown = q.answerKnown !== false && q.answerKnown !== 0;
     const correct = Math.max(0, Math.min(Math.max(displayOpts.length, 1) - 1, Number(q.correctIndex ?? 0)));
     const promptRaw = String(q.prompt || '').trim();
     const promptBlock = /<[^>]+>/.test(promptRaw)
       ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
       : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
     const metaParts = [];
-    if (q.topic) metaParts.push(String(q.topic));
+    if (manualPreview && q.section) metaParts.push(String(q.section));
+    else if (q.topic) metaParts.push(String(q.topic));
     else if (q.category) metaParts.push(String(q.category));
     if (q.difficulty) metaParts.push(String(q.difficulty));
     const meta = metaParts.map((v) => esc(v)).join(' · ');
+    const qLabel = q.questionNumber ? `Q${q.questionNumber}` : `Q${index + 1}`;
     const explanation = String(q.explanation || '').trim();
     const shellCls = compact ? 'min-w-0' : 'border rounded-2 p-3 bg-white';
+    const srcPage = Number(q.sourcePage || 0);
+    const conf = q.confidence != null && q.confidence !== '' ? Math.round(Number(q.confidence) * 100) : null;
+    const importMetaLines = manualPreview ? [
+      srcPage > 0 ? `<div class="small text-muted-2">Source: Page ${srcPage}${q.containsImage ? ' · contains image/diagram' : ''}</div>` : (q.containsImage ? '<div class="small text-muted-2">Source: diagram/image question</div>' : ''),
+      conf != null && !Number.isNaN(conf) ? `<div class="small text-muted-2">Confidence: ${conf}%</div>` : '',
+    ].filter(Boolean).join('') : '';
+    const answerLine = manualPreview && !answerKnown
+      ? '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>'
+      : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${letters[correct] || String.fromCharCode(65 + correct)}. ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
     return `<div class="${shellCls}">
-      <div class="fw-semibold mb-2">Q${index + 1}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
+      <div class="fw-semibold mb-2">${esc(qLabel)}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
       ${promptBlock}
       <div class="small mb-2">${displayOpts.length
         ? displayOpts.map((o, oi) => {
           const label = esc(stripHtml(String(o || '')) || String(o || ''));
-          const isCorrect = oi === correct;
+          const isCorrect = answerKnown && oi === correct;
           return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${letters[oi] || String.fromCharCode(65 + oi)}. ${label}${isCorrect ? ' ✓' : ''}</div>`;
         }).join('')
         : '<div class="text-muted-2">No options</div>'}</div>
-      <div class="small mb-1"><span class="fw-semibold">Answer:</span> ${letters[correct] || String.fromCharCode(65 + correct)}. ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>
+      ${answerLine}
+      ${importMetaLines}
       ${explanation ? `<div class="small mt-2"><span class="fw-semibold">Explanation:</span> ${esc(explanation)}</div>` : ''}
     </div>`;
   }
 
   function renderJdQuestionDetailHtml(q, index, opts = {}) {
-    return renderMcqPickDetailHtml(q, index, opts);
+    return renderMcqPickDetailHtml(q, index, { ...opts, manualPreview: true });
   }
 
   function splitManualTextIntoBlocks(text) {
@@ -2007,13 +2049,27 @@
   function renderManualQuestionsPanel(detail) {
     const qs = Array.isArray(detail?.questions) ? detail.questions : [];
     if (qs.length) {
-      const via = detail?.manualParseMethod === 'ai' ? ' (read from manual via AI)' : '';
-      return `<p class="small text-muted-2 mb-2">${qs.length} question(s)${via}</p>`
+      const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};
+      const sections = Array.isArray(meta.sectionsDetected) ? meta.sectionsDetected : [];
+      const via = detail?.manualParseMethod === 'ai' ? ' · AI extraction from manual' : '';
+      const ocrNote = meta.ocrAttempted ? ' · OCR' : '';
+      const pages = meta.pageCount > 0 ? ` · ${meta.pageCount} page(s) processed` : '';
+      const fname = esc(detail?.jdFilename || 'Uploaded manual');
+      const summary = `<div class="small text-muted-2 mb-3 border-bottom pb-2">
+        <div><span class="fw-semibold text-body">${fname}</span></div>
+        <div>Questions detected: <strong>${qs.length}</strong>${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
+        ${sections.length ? `<div class="mt-1">Sections: ${sections.map((s) => esc(s)).join(', ')}</div>` : ''}
+      </div>`;
+      return summary
         + `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderJdQuestionDetailHtml(q, i)).join('')}</div>`;
     }
     const text = String(detail?.manualText || '').trim();
+    const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};
     if (!text) {
-      return '<p class="small text-muted-2 mb-0">No readable text was extracted from this PDF yet. Image-based PDFs need <strong>OpenAI configured on the server</strong> for page OCR (poppler/ghostscript). Open <strong>Document</strong> to view the file, or re-upload after pasting MCQs as text.</p>';
+      const ocrTried = meta.ocrAttempted
+        ? ' Automatic OCR was attempted but no usable text was returned.'
+        : ' For scanned PDFs, configure <strong>OpenAI</strong> on the server and ensure <strong>poppler</strong> or <strong>ghostscript</strong> can render pages.';
+      return `<p class="small text-muted-2 mb-0">No readable text could be extracted from this file.${ocrTried} Open <strong>Document</strong> to verify the upload, paste MCQs as text, or re-upload a clearer PDF.</p>`;
     }
     const blocks = splitManualTextIntoBlocks(text);
     if (blocks.length > 1) {

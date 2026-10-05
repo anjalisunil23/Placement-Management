@@ -181,34 +181,90 @@ final class JdTextExtractionService
         return false;
     }
 
-    /** PDF text for aptitude manuals — prefers vision OCR when font encoding corrupts symbols. */
+    /**
+     * True when pdftotext output is usable for MCQ parsing (not just non-empty).
+     */
+    public static function isManualExtractSufficient(string $text): bool
+    {
+        $text = trim($text);
+        if ($text === '' || self::isGarbledExtract($text)) {
+            return false;
+        }
+        $len = mb_strlen($text);
+        if ($len < 100) {
+            return false;
+        }
+        preg_match_all('/[\p{L}]{3,}/u', $text, $words);
+        $wordCount = count($words[0] ?? []);
+        if ($wordCount < 20) {
+            return false;
+        }
+        preg_match_all('/[\p{L}]/u', $text, $letters);
+        if (count($letters[0] ?? []) / max(1, $len) < 0.07) {
+            return false;
+        }
+        $signals = 0;
+        if (preg_match_all('/(?:^|\n)\s*(?:\d{1,3}[\.\):]|\(\s*[a-eA-E]\s*\)|[A-E][\.\)])/mu', $text, $qm) >= 1) {
+            $signals += min(15, count($qm[0] ?? []));
+        }
+        if (preg_match('/\?\s*[\n\r]/u', $text) || preg_match('/\?\s+[A-Za-z(]/u', $text)) {
+            $signals += 2;
+        }
+        if (preg_match('/Directions\s*\(\s*\d+/iu', $text)) {
+            $signals += 2;
+        }
+        if (preg_match('/(?:^|\n)\s*[A-E][\.\)]\s+\S/mu', $text)) {
+            $signals += 2;
+        }
+
+        return $signals >= 2 || ($wordCount >= 60 && $signals >= 1);
+    }
+
+    /** PDF text for aptitude manuals — OCR when text layer is missing or low quality. */
     public function extractPdfTextForManual(string $path): array
     {
         $viaShell = $this->extractPdfViaPdftotext($path, true);
         $viaShell = self::repairCommonPdfMojibake($viaShell);
-        $shellOk = $viaShell !== '' && !self::isGarbledExtract($viaShell);
+        $shellSufficient = $viaShell !== ''
+            && !self::isGarbledExtract($viaShell)
+            && self::isManualExtractSufficient($viaShell)
+            && !self::hasLikelyFontEncodingIssues($viaShell)
+            && !self::symbolArrangementNeedsOcr($viaShell);
 
-        $needsOcr = !$shellOk
-            || self::hasLikelyFontEncodingIssues($viaShell)
-            || self::symbolArrangementNeedsOcr($viaShell);
+        $needsOcr = !$shellSufficient;
 
-        $viaOcr = '';
+        $ocrResult = ['text' => '', 'pageCount' => 0];
         if ($needsOcr && $this->openai->isConfigured()) {
-            $viaOcr = self::repairCommonPdfMojibake($this->extractPdfViaVisionOcr($path, 200));
+            $ocrResult = $this->extractPdfViaVisionOcrPaged($path, 200, 40);
         }
 
-        $ocrOk = $viaOcr !== '' && !self::isGarbledExtract($viaOcr);
-        if ($ocrOk && (!$shellOk || self::manualExtractQuality($viaOcr) > self::manualExtractQuality($viaShell))) {
-            return ['text' => $viaOcr, 'method' => 'pdf_ocr'];
+        $viaOcr = self::repairCommonPdfMojibake((string) ($ocrResult['text'] ?? ''));
+        $ocrOk = $viaOcr !== ''
+            && !self::isGarbledExtract($viaOcr)
+            && self::isManualExtractSufficient($viaOcr);
+
+        if ($ocrOk && (!$shellSufficient || self::manualExtractQuality($viaOcr) > self::manualExtractQuality($viaShell))) {
+            return [
+                'text' => $viaOcr,
+                'method' => 'pdf_ocr',
+                'pageCount' => (int) ($ocrResult['pageCount'] ?? 0),
+            ];
         }
-        if ($shellOk) {
-            return ['text' => $viaShell, 'method' => 'pdf'];
+        if ($shellSufficient) {
+            return ['text' => $viaShell, 'method' => 'pdf', 'pageCount' => 0];
         }
         if ($ocrOk) {
-            return ['text' => $viaOcr, 'method' => 'pdf_ocr'];
+            return [
+                'text' => $viaOcr,
+                'method' => 'pdf_ocr',
+                'pageCount' => (int) ($ocrResult['pageCount'] ?? 0),
+            ];
+        }
+        if ($viaShell !== '' && !self::isGarbledExtract($viaShell)) {
+            return ['text' => $viaShell, 'method' => 'pdf', 'pageCount' => 0];
         }
 
-        return ['text' => $viaShell, 'method' => $viaShell !== '' ? 'pdf' : 'pdf'];
+        return ['text' => $viaOcr !== '' ? $viaOcr : $viaShell, 'method' => 'pdf', 'pageCount' => 0];
     }
 
     public static function hasLikelyFontEncodingIssues(string $text): bool
@@ -352,23 +408,89 @@ final class JdTextExtractionService
             }
         }
 
+        $paged = $this->ocrRenderedPdfPages($prefix, $pngPattern, 8);
+        $this->removeDir($tmpdir);
+
+        return (string) ($paged['text'] ?? '');
+    }
+
+    /**
+     * @return array{text:string, pageCount:int}
+     */
+    public function extractPdfViaVisionOcrPaged(string $path, int $dpi = 200, int $maxPages = 40): array
+    {
+        if (!$this->openai->isConfigured() || !function_exists('exec')) {
+            return ['text' => '', 'pageCount' => 0];
+        }
+
+        $dpi = max(96, min(300, $dpi));
+        $maxPages = max(1, min(60, $maxPages));
+
+        $tmpdir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_pdf_' . bin2hex(random_bytes(4));
+        if (!@mkdir($tmpdir) && !is_dir($tmpdir)) {
+            return ['text' => '', 'pageCount' => 0];
+        }
+
+        $prefix = $tmpdir . DIRECTORY_SEPARATOR . 'page';
+        $pngPattern = $prefix . '-*.png';
+        $executed = false;
+
+        $commands = [
+            'pdftoppm -png -r ' . $dpi . ' ' . escapeshellarg($path) . ' ' . escapeshellarg($prefix),
+            'pdftocairo -png -r ' . $dpi . ' ' . escapeshellarg($path) . ' ' . escapeshellarg($prefix),
+        ];
+        foreach ($commands as $cmd) {
+            exec($cmd . ' 2>&1', $out, $code);
+            if ($code === 0 && glob($pngPattern) !== []) {
+                $executed = true;
+                break;
+            }
+        }
+
+        if (!$executed) {
+            $gsOut = $prefix . '-%d.png';
+            $gsCmd = 'gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r' . $dpi . ' -dFirstPage=1 -dLastPage=' . $maxPages . ' '
+                . '-sOutputFile=' . escapeshellarg($gsOut) . ' ' . escapeshellarg($path);
+            exec($gsCmd . ' 2>&1', $gsOutLines, $gsCode);
+            if ($gsCode !== 0 || glob($pngPattern) === []) {
+                $this->removeDir($tmpdir);
+
+                return ['text' => '', 'pageCount' => 0];
+            }
+        }
+
+        $result = $this->ocrRenderedPdfPages($prefix, $pngPattern, $maxPages);
+        $this->removeDir($tmpdir);
+
+        return $result;
+    }
+
+    /**
+     * @return array{text:string, pageCount:int}
+     */
+    private function ocrRenderedPdfPages(string $prefix, string $pngPattern, int $maxPages): array
+    {
         $files = glob($pngPattern) ?: [];
         sort($files, SORT_NATURAL);
-        $files = array_slice($files, 0, 8);
+        $files = array_slice($files, 0, $maxPages);
         $chunks = [];
+        $pageNum = 0;
         foreach ($files as $png) {
+            $pageNum++;
             try {
-                $chunk = $this->extractManualTextFromImage($png, 'png');
-                if (trim($chunk) !== '') {
-                    $chunks[] = trim($chunk);
+                $chunk = trim($this->extractManualTextFromImage($png, 'png'));
+                if ($chunk !== '') {
+                    $chunks[] = '--- PAGE ' . $pageNum . " ---\n" . $chunk;
                 }
             } catch (\Throwable) {
                 continue;
             }
         }
-        $this->removeDir($tmpdir);
 
-        return trim(implode("\n\n", $chunks));
+        return [
+            'text' => trim(implode("\n\n", $chunks)),
+            'pageCount' => $pageNum,
+        ];
     }
 
     private function removeDir(string $dir): void
@@ -567,6 +689,8 @@ final class JdTextExtractionService
 
         $text = '';
         $method = $ext;
+        $pageCount = 0;
+        $ocrAttempted = false;
         if ($ext === 'txt') {
             $raw = file_get_contents($tmp);
             $text = $this->sanitizeManualText($raw !== false ? (string) $raw : '');
@@ -576,6 +700,8 @@ final class JdTextExtractionService
             $rawPdf = (string) ($pdfExtract['text'] ?? '');
             $text = $this->sanitizeManualText($rawPdf);
             $method = (string) ($pdfExtract['method'] ?? 'pdf');
+            $pageCount = (int) ($pdfExtract['pageCount'] ?? 0);
+            $ocrAttempted = $method === 'pdf_ocr';
             if ($text === '') {
                 $method = $rawPdf !== '' && self::isGarbledExtract($rawPdf) ? 'pdf_unreadable' : $method;
             }
@@ -583,6 +709,7 @@ final class JdTextExtractionService
             try {
                 $text = $this->sanitizeManualText($this->extractManualTextFromImage($tmp, $ext));
                 $method = 'ocr';
+                $ocrAttempted = true;
             } catch (\Throwable) {
                 $text = '';
                 $method = 'image';
@@ -593,6 +720,8 @@ final class JdTextExtractionService
             'text' => $text,
             'filename' => $name,
             'method' => $method,
+            'pageCount' => $pageCount,
+            'ocrAttempted' => $ocrAttempted,
         ], $stored);
     }
 }
