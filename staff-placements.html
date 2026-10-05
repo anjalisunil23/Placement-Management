@@ -935,6 +935,13 @@
 
       applyScopeFromFiltersApi(data);
       fillDepartmentSelect(data.departments || [], filterDepartmentId || scopeDepartmentId);
+      if (!filterDepartmentId && scopeDepartmentId) {
+        const deptEl = document.getElementById('filterDepartment');
+        if (deptEl && [...deptEl.options].some(o => o.value === scopeDepartmentId)) {
+          deptEl.value = scopeDepartmentId;
+          syncDepartmentFilter();
+        }
+      }
 
       let programs = data.programs || [];
       let batches = data.batches || [];

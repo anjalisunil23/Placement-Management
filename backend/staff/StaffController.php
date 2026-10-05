@@ -365,6 +365,7 @@ final class StaffController
     /** GET /api/staff/placement-filters */
     public function placementFilters(): void
     {
+        @set_time_limit(max(30, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 60)));
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
@@ -372,8 +373,12 @@ final class StaffController
         $branch = trim((string) ($_GET['branch'] ?? ''));
         $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'all')));
         $registrySvc = new StaffPlacementRegistryService();
+        $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
+        if ($departmentId === '' && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+            $departmentId = trim((string) $ctx['departmentId']);
+        }
         $filterPayload = [
-            'departmentId' => (string) ($_GET['departmentId'] ?? ''),
+            'departmentId' => $departmentId,
             'program'      => $program,
             'branch'       => $branch,
             'studRole'     => $studRole !== '' ? $studRole : 'all',
@@ -401,8 +406,12 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
+        $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
+        if ($departmentId === '' && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+            $departmentId = trim((string) $ctx['departmentId']);
+        }
         $filters = [
-            'departmentId' => (string) ($_GET['departmentId'] ?? ''),
+            'departmentId' => $departmentId,
             'program'      => (string) ($_GET['program'] ?? ''),
             'branch'       => (string) ($_GET['branch'] ?? ''),
             'batch'        => (string) ($_GET['batch'] ?? ''),

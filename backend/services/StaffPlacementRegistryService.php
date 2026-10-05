@@ -681,11 +681,16 @@ final class StaffPlacementRegistryService
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
 
+        $tableLimit = max(100, min(5000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 2500)));
+        if ($departmentId === '' && $batch === '') {
+            return [];
+        }
+
         $tableRows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
             $departmentId,
             $program,
             $batch,
-            5000,
+            $tableLimit,
             $batch !== ''
         );
         if (!$tableOnly) {
@@ -703,7 +708,9 @@ final class StaffPlacementRegistryService
                 $tableRows[$idx] = $this->promoteContactFieldsFromPlacement($row);
             }
         }
-        $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
+        if ($this->registryListEnrichLocalStudentsEnabled()) {
+            $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
+        }
 
         if ($studRole !== 'all') {
             $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
@@ -767,10 +774,14 @@ final class StaffPlacementRegistryService
             }
         }
 
-        return array_values(array_filter(
-            $rows,
-            fn (array $row): bool => $this->rosterRowHasSnapshot($row)
-        ));
+        return $rows;
+    }
+
+    private function registryListEnrichLocalStudentsEnabled(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_LIST_ENRICH_LOCAL'] ?? '0')));
+
+        return in_array($v, ['1', 'true', 'yes', 'on'], true);
     }
 
     /**
