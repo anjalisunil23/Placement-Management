@@ -678,12 +678,11 @@ final class StaffPlacementRegistryService
         );
         $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
         if ($aesRows !== []) {
-            // Prefer AES class roster as the student list; legacy rows supply placement fields.
+            // Keep legacy placement rows as the base. AES only adds classmates missing
+            // from student_placements — never replace the table with slim AES shells.
+            $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
             if ($legacyFlat) {
-                $tableRows = $this->mergeCompleteClassRoster($aesRows, []);
                 $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
-            } else {
-                $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
             }
         }
         $localRows = $this->fetchLocalRosterForRegistryFilters($listCtx, $filters);
@@ -701,7 +700,7 @@ final class StaffPlacementRegistryService
                 $this->officerData->listAesClassStudents($liveCtx, $program, $batch, true)
             );
             if ($retryAes !== []) {
-                $tableRows = $this->mergeCompleteClassRoster($retryAes, []);
+                $tableRows = $this->mergeCompleteClassRoster($tableRows, $retryAes);
                 if ($legacyFlat) {
                     $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
                 }
@@ -718,14 +717,18 @@ final class StaffPlacementRegistryService
                     }
                 }
             }
-        } elseif (!$legacyFlat || $aesRows === []) {
+        } elseif ($legacyFlat) {
             $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
         }
         $tableRows = array_map(
             fn (array $row): array => $this->hydrateRosterRowFromAesKeys($row),
             $tableRows
         );
-        $tableRows = $this->enrichRosterRowsFromAesProfiles($tableRows, $this->enrichProfileMaxForList());
+        // Do not call live AES profiles over rows that already have table placement data —
+        // sparse AES responses were wiping phone/email/company.
+        if (!$legacyFlat) {
+            $tableRows = $this->enrichRosterRowsFromAesProfiles($tableRows, $this->enrichProfileMaxForList());
+        }
         $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
 
         if ($studRole !== 'all') {
@@ -830,6 +833,7 @@ final class StaffPlacementRegistryService
 
         $byStudentId = [];
         $byName = [];
+        $byEmail = [];
         foreach ($legacyRows as $legacy) {
             $sid = trim((string) ($legacy['studentId'] ?? ''));
             if ($sid !== '' && ctype_digit($sid)) {
@@ -839,13 +843,23 @@ final class StaffPlacementRegistryService
             if ($nameKey !== '') {
                 $byName[$nameKey] = $legacy;
             }
+            $emailKey = strtolower(trim((string) ($legacy['email'] ?? $legacy['collegeEmail'] ?? '')));
+            if ($emailKey !== '') {
+                $byEmail[$emailKey] = $legacy;
+            }
         }
 
         foreach ($rows as $idx => $row) {
             $legacy = null;
-            $aesSid = trim((string) ($row['aesStudentId'] ?? $row['stud_id'] ?? ''));
+            $aesSid = trim((string) ($row['aesStudentId'] ?? $row['stud_id'] ?? $row['studentId'] ?? ''));
             if ($aesSid !== '' && ctype_digit($aesSid)) {
                 $legacy = $byStudentId[ltrim($aesSid, '0') ?: '0'] ?? null;
+            }
+            if ($legacy === null) {
+                $emailKey = strtolower(trim((string) ($row['email'] ?? $row['collegeEmail'] ?? '')));
+                if ($emailKey !== '') {
+                    $legacy = $byEmail[$emailKey] ?? null;
+                }
             }
             if ($legacy === null) {
                 $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($row['studentName'] ?? $row['displayName'] ?? ''))) ?? '');
@@ -886,6 +900,18 @@ final class StaffPlacementRegistryService
             $row['company'] = $company;
             $row['employer'] = $company;
             $row['placed'] = true;
+        }
+        foreach (['phone', 'email', 'collegeEmail', 'package', 'role', 'address', 'employerContact', 'placementStatus'] as $field) {
+            $incoming = trim((string) ($legacy[$field] ?? ($field === 'package' || $field === 'role' || $field === 'address' || $field === 'employerContact' || $field === 'placementStatus'
+                ? ($legacyPlacement[$field] ?? '')
+                : '')));
+            if ($incoming !== '' && trim((string) ($row[$field] ?? '')) === '') {
+                $row[$field] = $incoming;
+            }
+        }
+        if (trim((string) ($row['email'] ?? '')) === '' && trim((string) ($legacy['email'] ?? '')) !== '') {
+            $row['email'] = trim((string) $legacy['email']);
+            $row['collegeEmail'] = $row['email'];
         }
 
         return $row;
@@ -1204,15 +1230,67 @@ final class StaffPlacementRegistryService
                 $unique[$key] = $row;
                 continue;
             }
-            // Prefer the row that already has placement / HE details filled in.
-            $existingEmployer = trim((string) ($unique[$key]['employer'] ?? $unique[$key]['company'] ?? ''));
-            $newEmployer = trim((string) ($row['employer'] ?? $row['company'] ?? ''));
-            if ($existingEmployer === '' && $newEmployer !== '') {
-                $unique[$key] = $row;
-            }
+            $unique[$key] = $this->preferRicherRegistryRow($unique[$key], $row);
         }
 
-        return array_values($unique);
+        // Legacy studentId (5458) and AES register numbers rarely share a key — collapse by name.
+        $byName = [];
+        $out = [];
+        foreach ($unique as $row) {
+            $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($row['studentName'] ?? ''))) ?? '');
+            if ($nameKey === '') {
+                $out[] = $row;
+                continue;
+            }
+            if (!isset($byName[$nameKey])) {
+                $byName[$nameKey] = $row;
+                continue;
+            }
+            $byName[$nameKey] = $this->preferRicherRegistryRow($byName[$nameKey], $row);
+        }
+        foreach ($byName as $row) {
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $a
+     * @param array<string, mixed> $b
+     * @return array<string, mixed>
+     */
+    private function preferRicherRegistryRow(array $a, array $b): array
+    {
+        $score = static function (array $row): int {
+            $n = 0;
+            foreach (['studentName', 'registerNumber', 'phone', 'email', 'company', 'employer', 'role', 'package', 'address', 'employerContact'] as $field) {
+                if (trim((string) ($row[$field] ?? '')) !== '') {
+                    $n++;
+                }
+            }
+
+            return $n;
+        };
+        if ($score($b) > $score($a)) {
+            return $this->presentRegistryRow(array_merge($a, array_filter(
+                $b,
+                static fn ($v): bool => !(is_string($v) && trim($v) === '')
+            )));
+        }
+        foreach (['phone', 'email', 'company', 'employer', 'role', 'package', 'address', 'employerContact', 'placementStatus'] as $field) {
+            if (trim((string) ($a[$field] ?? '')) === '' && trim((string) ($b[$field] ?? '')) !== '') {
+                $a[$field] = $b[$field];
+            }
+        }
+        if (trim((string) ($a['company'] ?? $a['employer'] ?? '')) === ''
+            && trim((string) ($b['company'] ?? $b['employer'] ?? '')) !== '') {
+            $company = trim((string) ($b['company'] ?? $b['employer'] ?? ''));
+            $a['company'] = $company;
+            $a['employer'] = $company;
+        }
+
+        return $this->presentRegistryRow($a);
     }
 
     /**
@@ -1261,11 +1339,21 @@ final class StaffPlacementRegistryService
      */
     private function rosterRowNeedsAesProfile(array $row): bool
     {
+        if (!empty($row['legacyFlatRow'])) {
+            return false;
+        }
         $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $hasCompany = trim((string) ($placement['company'] ?? $row['company'] ?? $row['employer'] ?? '')) !== '';
+        $hasPhone = trim((string) ($row['phone'] ?? '')) !== '';
+        $hasEmail = trim((string) ($row['email'] ?? $row['collegeEmail'] ?? '')) !== '';
+        // Already have placement + contact — do not risk a sparse AES overwrite.
+        if ($hasCompany && ($hasPhone || $hasEmail)) {
+            return false;
+        }
         if (trim((string) ($row['studentName'] ?? $row['displayName'] ?? '')) === '') {
             return true;
         }
-        if (trim((string) ($row['phone'] ?? '')) === '' || trim((string) ($row['email'] ?? '')) === '') {
+        if (!$hasPhone || !$hasEmail) {
             return true;
         }
         foreach (['company', 'role', 'package', 'address', 'employerContact', 'placementStatus'] as $key) {
@@ -1274,11 +1362,12 @@ final class StaffPlacementRegistryService
             }
         }
 
-        return trim((string) ($placement['company'] ?? '')) === '';
+        return !$hasCompany;
     }
 
     /**
      * Live getStudInfo4Placement merge (contact + placement fields).
+     * Never overwrite non-empty local/table values with blank AES fields.
      *
      * @param array<string, mixed> $row
      * @return array<string, mixed>
@@ -1308,9 +1397,50 @@ final class StaffPlacementRegistryService
                 } catch (\Throwable) {
                     $profile = [];
                 }
-                if ($profile !== []) {
-                    return $this->hydrateRosterRowFromAesKeys(array_merge($row, $profile));
+                if ($profile === []) {
+                    continue;
                 }
+
+                return $this->hydrateRosterRowFromAesKeys(
+                    $this->mergeProfileWithoutWipingFilled($row, $profile)
+                );
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $profile
+     * @return array<string, mixed>
+     */
+    private function mergeProfileWithoutWipingFilled(array $row, array $profile): array
+    {
+        foreach ($profile as $key => $value) {
+            if ($key === 'placement' && is_array($value)) {
+                $existing = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+                foreach ($value as $pKey => $pVal) {
+                    if (!is_scalar($pVal) && $pVal !== null) {
+                        continue;
+                    }
+                    if (trim((string) ($existing[$pKey] ?? '')) === '' && trim((string) $pVal) !== '') {
+                        $existing[$pKey] = $pVal;
+                    }
+                }
+                $row['placement'] = $existing;
+                continue;
+            }
+            if (!is_scalar($value) && $value !== null) {
+                continue;
+            }
+            $incoming = trim((string) $value);
+            if ($incoming === '') {
+                continue;
+            }
+            $current = trim((string) ($row[$key] ?? ''));
+            if ($current === '') {
+                $row[$key] = $value;
             }
         }
 

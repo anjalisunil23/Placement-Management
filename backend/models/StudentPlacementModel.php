@@ -794,6 +794,7 @@ class StudentPlacementModel extends BaseModel
         $studentId = trim((string) ($doc['studentId'] ?? $doc['_id'] ?? ''));
         $placement = self::placementFieldsFromDoc($doc);
         $snapshot = self::rosterSnapshotFromPayload($doc, $placement);
+        $company = trim((string) ($placement['company'] ?? $doc['employer'] ?? $doc['company'] ?? ''));
 
         return [
             '_id'            => $studentId,
@@ -819,11 +820,19 @@ class StudentPlacementModel extends BaseModel
             'courseId'       => $snapshot['courseId'],
             'branchId'       => $snapshot['branchId'],
             'departmentId'   => $snapshot['departmentId'],
+            'company'        => $company,
+            'employer'       => $company,
+            'role'           => trim((string) ($placement['role'] ?? '')),
+            'package'        => trim((string) ($placement['package'] ?? '')),
+            'address'        => trim((string) ($placement['address'] ?? '')),
+            'employerContact'=> trim((string) ($placement['employerContact'] ?? '')),
+            'placementStatus'=> trim((string) ($placement['placementStatus'] ?? '')),
             'placement'      => $placement,
-            'placed'         => trim((string) ($placement['company'] ?? '')) !== '',
+            'placed'         => $company !== '',
             'source'         => 'student_placements',
             'studRole'       => self::studRoleFromDocument($doc),
             'stud_role'      => trim((string) ($doc['stud_role'] ?? '')),
+            'legacyFlatRow'  => !empty($doc['legacyFlatRow']),
         ];
     }
 
