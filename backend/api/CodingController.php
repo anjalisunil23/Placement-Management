@@ -404,7 +404,7 @@ final class CodingController
             Response::forbidden('You cannot run code on this account.');
         }
         $body = $this->body();
-        $language = trim((string) ($body['language'] ?? 'Python'));
+        $language = \PMS\Utils\CodingLanguage::canonicalLabel((string) ($body['language'] ?? 'Python'));
         $source = (string) ($body['source'] ?? '');
         $stdin = (string) ($body['stdin'] ?? '');
         $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 3000)));

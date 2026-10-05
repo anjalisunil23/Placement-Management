@@ -116,8 +116,10 @@
     for (let i = 0; i < lines.length; i += 1) {
       const raw = lines[i];
       const line = raw.replace(/#.*$/, '').trimEnd();
-      if (!line.trim()) continue;
-      if (needsColon.test(line) && !line.trim().endsWith(':') && !line.trim().endsWith('\\')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (/^(?:if|for|while)\s*\(/.test(trimmed)) continue;
+      if (needsColon.test(line) && !trimmed.endsWith(':') && !trimmed.endsWith('\\')) {
         return { line: i + 1, message: 'SyntaxError: invalid syntax' };
       }
     }

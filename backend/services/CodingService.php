@@ -2485,7 +2485,7 @@ final class CodingService
         if (trim($source) === '') {
             Response::error('Source code is required.', 422);
         }
-        $language = trim((string) ($body['language'] ?? 'Python'));
+        $language = \PMS\Utils\CodingLanguage::canonicalLabel((string) ($body['language'] ?? 'Python'));
         $stdin = (string) ($body['stdin'] ?? '');
         $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 8000)));
 
