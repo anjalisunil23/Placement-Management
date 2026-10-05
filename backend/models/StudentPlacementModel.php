@@ -33,6 +33,93 @@ class StudentPlacementModel extends BaseModel
         'employer', 'empcno', 'empadr', 'payscale',
     ];
 
+    /** Placement-owned payload keys — never erased by empty AES values on sync/list. */
+    public const PLACEMENT_OWNED_FIELDS = [
+        'company', 'companyName', 'employer', 'role', 'address', 'package', 'payscale',
+        'employerContact', 'contact', 'joinDate', 'endDate', 'academicDuration',
+        'internshipDetails', 'natureOfJob', 'monthlySalary', 'placementStatus',
+        'recordType', 'type', 'offerLetterVerified', 'verificationDate',
+        'fordvv', 'includedvv', 'offerLetter', 'joiningLetter', 'companyIdDoc',
+        'phone', 'email', 'collegeEmail', 'personalEmail', 'cno',
+    ];
+
+    /**
+     * Blank for merge purposes: null or "" only. Keeps 0, false, and "0".
+     */
+    public static function isBlankMergeValue(mixed $value): bool
+    {
+        return $value === null || $value === '';
+    }
+
+    /**
+     * Non-destructive merge: keep $base values; fill only from non-blank $incoming.
+     * Nested arrays are merged recursively with the same rule.
+     *
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    public static function mergePreserveFilled(array $base, array $incoming): array
+    {
+        foreach ($incoming as $key => $value) {
+            if (!is_string($key) && !is_int($key)) {
+                continue;
+            }
+            $key = (string) $key;
+            if (is_array($value)) {
+                $childBase = is_array($base[$key] ?? null) ? $base[$key] : [];
+                $base[$key] = self::mergePreserveFilled($childBase, $value);
+                continue;
+            }
+            if (self::isBlankMergeValue($value)) {
+                continue;
+            }
+            if (!self::isBlankMergeValue($base[$key] ?? null)) {
+                continue;
+            }
+            $base[$key] = $value;
+        }
+
+        return $base;
+    }
+
+    /**
+     * Like mergePreserveFilled, but non-blank incoming always wins (except blank incoming
+     * never erases base). Use for profile enrichment when AES is authoritative for empties.
+     *
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    public static function mergeNonEmptyValues(array $base, array $incoming): array
+    {
+        foreach ($incoming as $key => $value) {
+            if (!is_string($key) && !is_int($key)) {
+                continue;
+            }
+            $key = (string) $key;
+            if (is_array($value)) {
+                $childBase = is_array($base[$key] ?? null) ? $base[$key] : [];
+                $base[$key] = self::mergeNonEmptyValues($childBase, $value);
+                continue;
+            }
+            if (self::isBlankMergeValue($value)) {
+                continue;
+            }
+            $base[$key] = $value;
+        }
+
+        return $base;
+    }
+
+    public static function normalizePersonName(string $name): string
+    {
+        $name = strtolower(trim($name));
+        $name = preg_replace('/\s+/', ' ', $name) ?? '';
+
+        return $name;
+    }
+
     protected function collectionName(): string
     {
         return Collections::STUDENT_PLACEMENTS;
@@ -631,6 +718,25 @@ class StudentPlacementModel extends BaseModel
 
         $register = strtoupper(trim($registerNumber));
         $now = DocumentHelper::now();
+
+        $existing = $this->findOne(['pairKey' => self::pairKey($studentId)]);
+        if (!$existing && $register !== '') {
+            $byReg = $this->findOne(['registerNumber' => $register]);
+            if (is_array($byReg)) {
+                $existing = $byReg;
+            }
+        }
+
+        if (is_array($existing)) {
+            $existingPlacement = self::placementFieldsFromDoc($existing);
+            // SQL placement fields win; AES/incoming only fills blanks.
+            $placement = self::mergePreserveFilled($existingPlacement, $placement);
+            $rosterMeta = self::mergePreserveFilled(
+                self::normalizeRosterMeta($existing),
+                $rosterMeta
+            );
+        }
+
         $set = array_merge($placement, self::normalizeRosterMeta($rosterMeta), [
             'pairKey'        => self::pairKey($studentId),
             'studentId'      => $studentId,
@@ -639,6 +745,14 @@ class StudentPlacementModel extends BaseModel
         ]);
         if ($departmentId !== null && trim($departmentId) !== '') {
             $set['departmentId'] = trim($departmentId);
+        }
+
+        // Drop blank scalars so BaseModel::update array_merge cannot erase stored values.
+        foreach ($set as $key => $value) {
+            if (is_scalar($value) && self::isBlankMergeValue($value)
+                && in_array((string) $key, self::PLACEMENT_OWNED_FIELDS, true)) {
+                unset($set[$key]);
+            }
         }
 
         return $this->upsert(

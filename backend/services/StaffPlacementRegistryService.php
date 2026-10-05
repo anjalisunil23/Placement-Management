@@ -1148,22 +1148,18 @@ final class StaffPlacementRegistryService
      */
     private function mergeRosterStudentRows(array $local, array $aes): array
     {
-        foreach ([
-            'displayName', 'studentName', 'classBatch', 'stud_class', 'stud_course', 'stud_branch',
-            'programme', 'admno', 'collegeEmail', 'personalEmail', 'email', 'phone', 'photoUrl',
-            'studRole', 'stud_role',
-            'year', 'semester',
-            // AES course/branch numeric ids — local placement shells often omit these.
-            'courseId', 'course_id', 'stud_courseid', 'stud_course_id',
-            'branchId', 'branch_id', 'stud_branchid', 'stud_branch_id',
-            'stud_deptcode', 'parentDepartmentCode', 'deptCode',
-        ] as $field) {
-            $localVal = $local[$field] ?? null;
-            $aesVal = $aes[$field] ?? null;
-            $localEmpty = $localVal === null || $localVal === '' || $localVal === [];
-            if ($localEmpty && $aesVal !== null && $aesVal !== '' && $aesVal !== []) {
-                $local[$field] = $aesVal;
-            }
+        // SQL/local is base — AES only fills blanks (never wipe placement/contact).
+        $local = StudentPlacementModel::mergePreserveFilled($local, $aes);
+
+        $localPlacement = is_array($local['placement'] ?? null) ? $local['placement'] : [];
+        $aesPlacement = is_array($aes['placement'] ?? null) ? $aes['placement'] : [];
+        $local['placement'] = StudentPlacementModel::mergePreserveFilled($localPlacement, $aesPlacement);
+
+        $company = trim((string) ($local['placement']['company'] ?? $local['company'] ?? $local['employer'] ?? ''));
+        if ($company !== '') {
+            $local['company'] = $company;
+            $local['employer'] = $company;
+            $local['placed'] = true;
         }
 
         // Prefer AES numeric course/branch ids when local values are blank or non-numeric.
@@ -1237,7 +1233,7 @@ final class StaffPlacementRegistryService
         $byName = [];
         $out = [];
         foreach ($unique as $row) {
-            $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($row['studentName'] ?? ''))) ?? '');
+            $nameKey = StudentPlacementModel::normalizePersonName((string) ($row['studentName'] ?? ''));
             if ($nameKey === '') {
                 $out[] = $row;
                 continue;
@@ -1298,7 +1294,7 @@ final class StaffPlacementRegistryService
      */
     private function studentRowKey(array $row): string
     {
-        foreach (['admissionNo', 'admno', 'registerNumber', 'studentId', 'id'] as $field) {
+        foreach (['admissionNo', 'admno', 'registerNumber', 'registerno', 'aesStudentId', 'stud_id', 'studentId', 'id'] as $field) {
             $value = strtoupper(trim((string) ($row[$field] ?? '')));
             if ($value === '') {
                 continue;
@@ -1309,6 +1305,16 @@ final class StaffPlacementRegistryService
             }
 
             return $value;
+        }
+
+        $email = strtolower(trim((string) ($row['email'] ?? $row['collegeEmail'] ?? $row['personalEmail'] ?? '')));
+        if ($email !== '' && str_contains($email, '@')) {
+            return 'email:' . $email;
+        }
+
+        $name = StudentPlacementModel::normalizePersonName((string) ($row['studentName'] ?? $row['displayName'] ?? ''));
+        if ($name !== '') {
+            return 'name:' . $name;
         }
 
         return '';
@@ -1417,34 +1423,7 @@ final class StaffPlacementRegistryService
      */
     private function mergeProfileWithoutWipingFilled(array $row, array $profile): array
     {
-        foreach ($profile as $key => $value) {
-            if ($key === 'placement' && is_array($value)) {
-                $existing = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-                foreach ($value as $pKey => $pVal) {
-                    if (!is_scalar($pVal) && $pVal !== null) {
-                        continue;
-                    }
-                    if (trim((string) ($existing[$pKey] ?? '')) === '' && trim((string) $pVal) !== '') {
-                        $existing[$pKey] = $pVal;
-                    }
-                }
-                $row['placement'] = $existing;
-                continue;
-            }
-            if (!is_scalar($value) && $value !== null) {
-                continue;
-            }
-            $incoming = trim((string) $value);
-            if ($incoming === '') {
-                continue;
-            }
-            $current = trim((string) ($row[$key] ?? ''));
-            if ($current === '') {
-                $row[$key] = $value;
-            }
-        }
-
-        return $row;
+        return StudentPlacementModel::mergePreserveFilled($row, $profile);
     }
 
     /**
@@ -1535,7 +1514,7 @@ final class StaffPlacementRegistryService
             array_merge($row, $placement)
         );
         if ($fromAes !== []) {
-            $row['placement'] = array_merge($placement, $fromAes);
+            $row['placement'] = StudentPlacementModel::mergePreserveFilled($placement, $fromAes);
             $row['placed'] = trim((string) ($row['placement']['company'] ?? '')) !== '';
         }
 
@@ -1553,7 +1532,7 @@ final class StaffPlacementRegistryService
             array_merge($row, $placement)
         );
 
-        return array_merge($placement, $fromAes);
+        return StudentPlacementModel::mergePreserveFilled($placement, $fromAes);
     }
 
     /**
@@ -2080,9 +2059,15 @@ final class StaffPlacementRegistryService
         ];
         $out = [];
         foreach ($allowed as $key) {
-            if (array_key_exists($key, $placement)) {
-                $out[$key] = $placement[$key];
+            if (!array_key_exists($key, $placement)) {
+                continue;
             }
+            $value = $placement[$key];
+            // Never write blank placement scalars from AES — preserves SQL on upsert merge.
+            if (is_scalar($value) && StudentPlacementModel::isBlankMergeValue($value)) {
+                continue;
+            }
+            $out[$key] = $value;
         }
         if (isset($out['companyName']) && !isset($out['company'])) {
             $out['company'] = $out['companyName'];
