@@ -89,12 +89,14 @@ final class StaffPlacementRegistryService
         );
         $studyingCount = (int) ($student['studentsSynced'] ?? 0);
         $alumniCount = (int) ($alumni['studentsSynced'] ?? 0);
+        $aesFetched = (int) ($student['aesRosterFetched'] ?? 0) + (int) ($alumni['aesRosterFetched'] ?? 0);
 
         return [
-            'studentsSynced' => $studyingCount + $alumniCount,
-            'studyingSynced' => $studyingCount,
-            'alumniSynced'   => $alumniCount,
-            'scope'          => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
+            'studentsSynced'   => $studyingCount + $alumniCount,
+            'studyingSynced'   => $studyingCount,
+            'alumniSynced'     => $alumniCount,
+            'aesRosterFetched' => $aesFetched,
+            'scope'            => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
         ];
     }
 
@@ -121,21 +123,25 @@ final class StaffPlacementRegistryService
             'placementRegistryWide' => true,
             'placementStudRole'     => $roleTag,
             'campusWide'            => $campusWide,
+            'placementForceLiveAes' => true,
         ]);
         // Class-scoped AES (getStudInfo4Placement per batch) — required for INMCA / MCA cohorts.
         $classCtx = array_merge($officerCtx, [
             'placementRegistryWide' => false,
             'placementStudRole'     => $roleTag,
             'campusWide'            => $campusWide,
+            'placementForceLiveAes' => true,
         ]);
 
         $studentsSynced = 0;
+        $aesRosterFetched = 0;
 
         if ($program !== '' && $batch !== '') {
             $aesClassRows = $isAlumni
                 ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $batch, true)
                 : $this->officerData->listAesClassStudents($classCtx, $program, $batch, true);
             $classRows = $this->filterRosterByPlacementStudRole($aesClassRows, $studRole);
+            $aesRosterFetched += count($classRows);
             $studentsSynced += $this->syncClassRowsToStudentPlacements(
                 $classRows,
                 $deptId,
@@ -160,6 +166,7 @@ final class StaffPlacementRegistryService
                     $classRows = $this->filterRosterByPlacementStudRole($aesRows, $studRole);
                 }
             }
+            $aesRosterFetched += count($classRows);
             if ($classRows !== []) {
                 $studentsSynced += $this->syncAesDirectoryRowsToStudentPlacements(
                     $classRows,
@@ -170,7 +177,8 @@ final class StaffPlacementRegistryService
         }
 
         return [
-            'studentsSynced' => $studentsSynced,
+            'studentsSynced'   => $studentsSynced,
+            'aesRosterFetched' => $aesRosterFetched,
             'scope'          => [
                 'departmentId' => $deptId,
                 'program'      => $program,
@@ -1377,7 +1385,7 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * Listing scope from UI department filter (empty = all departments / campus-wide).
+     * Listing scope from UI department filter (empty = staff home department when assigned).
      *
      * @param array<string, mixed> $staffCtx
      * @param array<string, string> $filters
@@ -1387,6 +1395,11 @@ final class StaffPlacementRegistryService
     {
         $selectedDeptId = trim((string) ($filters['departmentId'] ?? ''));
         if ($selectedDeptId === '') {
+            $staffDept = trim((string) ($staffCtx['departmentId'] ?? ''));
+            if ($staffDept !== '' && is_array($staffCtx['department'] ?? null)) {
+                return $staffCtx;
+            }
+
             return array_merge($staffCtx, [
                 'departmentId' => '',
                 'department'   => null,

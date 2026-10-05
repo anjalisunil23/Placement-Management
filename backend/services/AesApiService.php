@@ -3054,8 +3054,22 @@ final class AesApiService
      *
      * @return list<array<string, mixed>>
      */
-    public function fetchClassStudInfo4Placement(string $deptAesId, string $programmeCode, string $studClass): array
+    public static function clearSharedListCaches(): void
     {
+        $pattern = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_aes_*.json';
+        foreach (glob($pattern) ?: [] as $path) {
+            if (is_file($path)) {
+                @unlink($path);
+            }
+        }
+    }
+
+    public function fetchClassStudInfo4Placement(
+        string $deptAesId,
+        string $programmeCode,
+        string $studClass,
+        bool $skipSharedCache = false
+    ): array {
         $deptAesId = trim($deptAesId);
         $studClass = trim($studClass);
         $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($programmeCode));
@@ -3064,9 +3078,11 @@ final class AesApiService
         }
 
         $cacheKey = 'classstud_' . md5($deptAesId . '|' . $programmeCode . '|' . strtoupper($studClass));
-        $cached = $this->readSharedListCache($cacheKey, 900);
-        if (is_array($cached)) {
-            return $cached;
+        if (!$skipSharedCache) {
+            $cached = $this->readSharedListCache($cacheKey, 900);
+            if (is_array($cached)) {
+                return $cached;
+            }
         }
 
         $classVariants = array_values(array_unique(array_filter([

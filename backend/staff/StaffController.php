@@ -432,6 +432,7 @@ final class StaffController
         $count = (int) ($result['studentsSynced'] ?? 0);
         $studying = (int) ($result['studyingSynced'] ?? 0);
         $alumni = (int) ($result['alumniSynced'] ?? 0);
+        $aesFetched = (int) ($result['aesRosterFetched'] ?? 0);
         $listFilters = [
             'departmentId' => (string) ($filters['departmentId'] ?? ''),
             'program'      => (string) ($filters['program'] ?? ''),
@@ -441,13 +442,15 @@ final class StaffController
             'type'         => '',
             'q'            => '',
         ];
-        $inTable = (int) (($registrySvc->list($ctx, $listFilters)['totals']['all'] ?? 0));
+        $registry = $registrySvc->list($ctx, $listFilters);
+        $inTable = (int) ($registry['totals']['all'] ?? 0);
         $result['rowsInTable'] = $inTable;
-        $message = $count > 0
-            ? "Synced {$count} record(s) from AES ({$studying} studying, {$alumni} alumni) into student_placements."
+        $result['registry'] = $registry;
+        $message = $aesFetched > 0
+            ? "Fetched {$aesFetched} student(s) from AES; saved {$count} to student_placements ({$studying} studying, {$alumni} alumni). Grid shows {$inTable} row(s) for these filters."
             : ($inTable > 0
-                ? "AES added no new rows; showing {$inTable} record(s) already in student_placements for these filters."
-                : 'No rows in student_placements for these filters yet. AES returned no roster to import — pick a specific batch (Integrated MCA / INMCA) or verify AES is reachable from the server.');
+                ? 'AES returned no roster for these filters. Grid shows existing student_placements rows only — try a specific batch (e.g. INMCA) or check AES from the server.'
+                : 'AES returned no roster to import. Pick department, branch, and batch (Integrated MCA / INMCA) or verify AES is reachable from the server.');
         Response::success(
             DocumentHelper::jsonSafe($result),
             $message

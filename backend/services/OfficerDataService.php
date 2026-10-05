@@ -43,6 +43,7 @@ final class OfficerDataService
     {
         self::$aesDirectoryCache = [];
         self::$aesAlumniDirectoryCache = [];
+        AesApiService::clearSharedListCaches();
     }
 
     /**
@@ -2742,7 +2743,12 @@ final class OfficerDataService
             && !$campusWide
             && $deptAesId !== ''
             && trim($batch) !== '') {
-            $classRows = (new AesApiService())->fetchClassStudInfo4Placement($deptAesId, $programme, $batch);
+            $classRows = (new AesApiService())->fetchClassStudInfo4Placement(
+                $deptAesId,
+                $programme,
+                $batch,
+                !empty($ctx['placementForceLiveAes'])
+            );
             if ($classRows !== []) {
                 return $classRows;
             }
@@ -2769,12 +2775,15 @@ final class OfficerDataService
         if ($liveRegistry) {
             $cacheKey .= ':liveReg';
         }
-        if (isset(self::$aesDirectoryCache[$cacheKey])) {
+        $forceLive = !empty($ctx['placementForceLiveAes']);
+        if ($forceLive) {
+            unset(self::$aesDirectoryCache[$cacheKey]);
+        } elseif (isset(self::$aesDirectoryCache[$cacheKey])) {
             return self::$aesDirectoryCache[$cacheKey];
         }
 
         if ($campusWide) {
-            $records = $liveRegistry
+            $records = ($liveRegistry || $forceLive)
                 ? $this->fetchLiveCampusStudyingDirectoryRecords()
                 : $this->readCampusStudyingDirectorySnapshotRecords();
 
@@ -3127,7 +3136,10 @@ final class OfficerDataService
         if ($liveRegistry) {
             $cacheKey .= ':liveReg';
         }
-        if (isset(self::$aesAlumniDirectoryCache[$cacheKey])) {
+        $forceLive = !empty($ctx['placementForceLiveAes']);
+        if ($forceLive) {
+            unset(self::$aesAlumniDirectoryCache[$cacheKey]);
+        } elseif (isset(self::$aesAlumniDirectoryCache[$cacheKey])) {
             return self::$aesAlumniDirectoryCache[$cacheKey];
         }
 

@@ -21,7 +21,7 @@
         <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">The table lists rows from <code>student_placements</code> (local registry). <strong>Sync from AES</strong> imports/updates that table from AES for the current filters, then reloads the grid. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">The grid reads <code>student_placements</code> after you sync. <strong>Sync from AES</strong> calls the live AES placement APIs for your filters, writes roster rows into <code>student_placements</code>, then refreshes the table. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
           <button type="button" class="btn btn-outline-primary btn-sm flex-shrink-0" id="btnSyncPlacementsFromAes" title="Fetch placement and higher-education data from AES into student_placements">
             <i class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></i>Sync from AES
@@ -1254,11 +1254,15 @@
           toast(res?.message || 'AES sync failed.', 'error');
           return;
         }
-        const n = res?.data?.studentsSynced;
-        const inTable = res?.data?.rowsInTable;
-        const tone = (typeof n === 'number' && n > 0) ? 'success' : ((typeof inTable === 'number' && inTable > 0) ? 'info' : 'warn');
-        toast(res.message || (typeof n === 'number' ? `Synced ${n} record(s).` : 'Sync complete.'), tone);
-        await loadRegistry();
+        const aesN = res?.data?.aesRosterFetched;
+        const saved = res?.data?.studentsSynced;
+        const tone = (typeof aesN === 'number' && aesN > 0) ? 'success' : 'warn';
+        toast(res.message || (typeof saved === 'number' ? `Saved ${saved} record(s) from AES.` : 'Sync complete.'), tone);
+        if (res?.data?.registry) {
+          applyRegistryPayload(res.data.registry);
+        } else {
+          await loadRegistry();
+        }
       } catch (_) {
         toast('AES sync failed.', 'error');
       } finally {
@@ -1269,20 +1273,8 @@
       }
     }
 
-    async function loadRegistry() {
-      const tbody = document.getElementById('registryRows');
-      syncDepartmentFilter();
-      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading from student_placements…</td></tr>`;
-      const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
-      if (!data) {
-        const detail = (StaffApi._lastPlacementsFetchError || '').trim();
-        const msg = detail
-          ? esc(detail)
-          : 'Could not load registry. Sign in as staff and try again.';
-        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-danger p-4 text-center">${msg}</td></tr>`;
-        if (detail && typeof toast === 'function') toast(detail, 'error');
-        return;
-      }
+    function applyRegistryPayload(data) {
+      if (!data || typeof data !== 'object') return false;
       if (Array.isArray(data.columns) && data.columns.length) {
         setRegistryColumns(data.columns);
       }
@@ -1296,14 +1288,30 @@
           }
         } catch (_) { /* ignore */ }
       }
-      // Department only — branch/batch dropdowns come from loadPlacementFilters()
-      // (registry filters.batches is a lite subset and must not replace the full list).
       if (data.filters && typeof data.filters === 'object' && Array.isArray(data.filters.departments)) {
         fillDepartmentSelect(data.filters.departments, filterDepartmentId);
       }
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
       applyClientFilter();
+      return true;
+    }
+
+    async function loadRegistry() {
+      const tbody = document.getElementById('registryRows');
+      syncDepartmentFilter();
+      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading registry…</td></tr>`;
+      const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
+      if (!data) {
+        const detail = (StaffApi._lastPlacementsFetchError || '').trim();
+        const msg = detail
+          ? esc(detail)
+          : 'Could not load registry. Sign in as staff and try again.';
+        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-danger p-4 text-center">${msg}</td></tr>`;
+        if (detail && typeof toast === 'function') toast(detail, 'error');
+        return;
+      }
+      applyRegistryPayload(data);
     }
 
     async function onScopeFilterChange(changed) {
