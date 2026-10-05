@@ -21,7 +21,7 @@
         <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">The grid reads <code>student_placements</code> for your filters (fast). Use <strong>Sync from AES</strong> to pull the full class roster and placement fields from live AES into that table, then the grid refreshes. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">The grid lists students for your department, branch, and batch filters by merging <code>student_placements</code>, the AES class roster, and local student profiles. <strong>Sync from AES</strong> saves roster + placement fields into <code>student_placements</code> for faster reloads. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
           <button type="button" class="btn btn-outline-primary btn-sm flex-shrink-0" id="btnSyncPlacementsFromAes" title="Fetch placement and higher-education data from AES into student_placements">
             <i class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></i>Sync from AES
@@ -658,7 +658,6 @@
     }
 
     function currentFilters() {
-      alignProgramWithBatchSelection();
       return {
         departmentId: effectiveDepartmentId(),
         program: filterProgram,
@@ -838,18 +837,6 @@
       return b.includes(p) || b.startsWith(p);
     }
 
-    function alignProgramWithBatchSelection() {
-      if (!filterBatch) return;
-      const inferred = programFromBatch(filterBatch);
-      if (!inferred) return;
-      if (filterProgram && batchLooksLikeProgramme(filterBatch, filterProgram)) return;
-      filterProgram = inferred;
-      const programEl = document.getElementById('filterProgram');
-      if (programEl && [...programEl.options].some(o => o.value === inferred)) {
-        programEl.value = inferred;
-      }
-    }
-
     function pickPreferredBatch(batches, program) {
       const list = (batches || []).map(v => String(v || '').trim()).filter(Boolean);
       const assigned = assignedBatches();
@@ -861,10 +848,6 @@
         : pool;
       if (assignedForProgram.length) return assignedForProgram[0];
       if (pool.length) return pool[0];
-      const listForProgram = program
-        ? list.filter(b => batchLooksLikeProgramme(b, program))
-        : list;
-      if (listForProgram.length) return listForProgram[0];
       if (list.length === 1) return list[0];
       return '';
     }
@@ -881,12 +864,6 @@
     function pickPreferredProgram(programs) {
       const list = (programs || []).map(v => String(v || '').trim()).filter(Boolean);
       const assigned = assignedBatches();
-      for (const batch of assigned) {
-        const inferred = programFromBatch(batch);
-        if (inferred && (list.length === 0 || list.some(p => p === inferred))) {
-          return inferred;
-        }
-      }
       if (list.length) {
         for (const batch of assigned) {
           for (const program of list) {
@@ -894,6 +871,10 @@
           }
         }
         if (list.length === 1) return list[0];
+      }
+      for (const batch of assigned) {
+        const inferred = programFromBatch(batch);
+        if (inferred) return inferred;
       }
       return '';
     }
@@ -935,13 +916,6 @@
 
       applyScopeFromFiltersApi(data);
       fillDepartmentSelect(data.departments || [], filterDepartmentId || scopeDepartmentId);
-      if (!filterDepartmentId && scopeDepartmentId) {
-        const deptEl = document.getElementById('filterDepartment');
-        if (deptEl && [...deptEl.options].some(o => o.value === scopeDepartmentId)) {
-          deptEl.value = scopeDepartmentId;
-          syncDepartmentFilter();
-        }
-      }
 
       let programs = data.programs || [];
       let batches = data.batches || [];
@@ -965,7 +939,6 @@
 
       fillSelect('filterBatch', batches, 'All batches', filterBatch, false);
       filterBatch = document.getElementById('filterBatch')?.value || '';
-      alignProgramWithBatchSelection();
       // Do not clear canEditSelectedBatch here — loadRegistry() sets it from the
       // server (CT/CoCT). Resetting it made co-class teachers look "view only".
       if (!canEditSelectedBatch && filterBatch) {
@@ -1457,7 +1430,6 @@
         await loadPlacementFilters();
       } else if (changed === 'filterBatch') {
         filterBatch = document.getElementById('filterBatch')?.value || '';
-        alignProgramWithBatchSelection();
       }
 
       await loadRegistry();
@@ -1552,10 +1524,8 @@
         const u = Auth.user() || {};
         apiAssignedBatches = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
       }
-      await Promise.all([
-        loadPlacementFilters(),
-        loadRegistry(),
-      ]);
+      await loadPlacementFilters();
+      await loadRegistry();
     });
   </script>
 </body>

@@ -365,7 +365,7 @@ final class StaffController
     /** GET /api/staff/placement-filters */
     public function placementFilters(): void
     {
-        @set_time_limit(max(30, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 60)));
+        PlacementFilterService::clearScopedRowsCache();
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
@@ -373,12 +373,8 @@ final class StaffController
         $branch = trim((string) ($_GET['branch'] ?? ''));
         $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'all')));
         $registrySvc = new StaffPlacementRegistryService();
-        $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
-        if ($departmentId === '' && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
-            $departmentId = trim((string) $ctx['departmentId']);
-        }
         $filterPayload = [
-            'departmentId' => $departmentId,
+            'departmentId' => (string) ($_GET['departmentId'] ?? ''),
             'program'      => $program,
             'branch'       => $branch,
             'studRole'     => $studRole !== '' ? $studRole : 'all',
@@ -386,7 +382,7 @@ final class StaffController
         $filterCtx = $registrySvc->placementFilterContext($ctx, $filterPayload);
         $svc = new PlacementFilterService();
         $assigned = StaffContext::assignedClassBatches($filterCtx);
-        if ($assigned === [] && $this->staffPlacementRefreshCtFromAesEnabled()) {
+        if ($assigned === []) {
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
         Response::success(DocumentHelper::jsonSafe([
@@ -402,23 +398,17 @@ final class StaffController
     /** GET /api/staff/placements-higher-education */
     public function placementsHigherEducation(): void
     {
-        @set_time_limit(max(60, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 90)));
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
-        $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
-        if ($departmentId === '' && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
-            $departmentId = trim((string) $ctx['departmentId']);
-        }
         $filters = [
-            'departmentId' => $departmentId,
+            'departmentId' => (string) ($_GET['departmentId'] ?? ''),
             'program'      => (string) ($_GET['program'] ?? ''),
             'branch'       => (string) ($_GET['branch'] ?? ''),
             'batch'        => (string) ($_GET['batch'] ?? ''),
             'studRole'     => (string) ($_GET['studRole'] ?? 'all'),
             'type'         => (string) ($_GET['type'] ?? ''),
             'q'            => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
-            'omitFilterOptions' => filter_var($_GET['omitFilters'] ?? '1', FILTER_VALIDATE_BOOLEAN),
         ];
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->list($ctx, $filters)
@@ -428,8 +418,6 @@ final class StaffController
     /** POST /api/staff/placements-higher-education/sync-from-aes */
     public function syncPlacementsFromAes(): void
     {
-        @ini_set('max_execution_time', (string) max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 600)));
-        @set_time_limit(max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 600)));
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
@@ -1156,12 +1144,5 @@ final class StaffController
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         }
-    }
-
-    private function staffPlacementRefreshCtFromAesEnabled(): bool
-    {
-        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REFRESH_CT_FROM_AES'] ?? '0')));
-
-        return in_array($v, ['1', 'true', 'yes', 'on'], true);
     }
 }

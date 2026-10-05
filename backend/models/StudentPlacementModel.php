@@ -332,71 +332,6 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
-     * Full roster-shaped rows keyed for registry overlay (student_placements payload).
-     *
-     * @param list<string> $studentIds
-     * @param list<string> $registerNumbers
-     * @return array{byId: array<string, array<string, mixed>>, byReg: array<string, array<string, mixed>>}
-     */
-    public function findRosterMapsByKeys(array $studentIds, array $registerNumbers): array
-    {
-        $byId = [];
-        $byReg = [];
-        if (!$this->bootstrapTable()) {
-            return ['byId' => $byId, 'byReg' => $byReg];
-        }
-
-        $idClean = [];
-        foreach ($studentIds as $id) {
-            $id = trim((string) $id);
-            if ($id !== '') {
-                $idClean[$id] = true;
-            }
-        }
-        $regClean = [];
-        foreach ($registerNumbers as $reg) {
-            $reg = strtoupper(trim((string) $reg));
-            if ($reg !== '') {
-                $regClean[$reg] = true;
-            }
-        }
-
-        if ($idClean !== []) {
-            foreach (array_chunk(array_keys($idClean), 300) as $chunk) {
-                foreach ($this->findAll(['studentId' => ['$in' => $chunk]], count($chunk)) as $doc) {
-                    $row = self::rosterRowFromDocument($doc);
-                    $sid = trim((string) ($row['studentId'] ?? ''));
-                    if ($sid !== '') {
-                        $byId[$sid] = $row;
-                    }
-                    $reg = strtoupper(trim((string) ($row['registerNumber'] ?? '')));
-                    if ($reg !== '') {
-                        $byReg[$reg] = $row;
-                    }
-                }
-            }
-        }
-
-        if ($regClean !== []) {
-            foreach (array_chunk(array_keys($regClean), 300) as $chunk) {
-                foreach ($this->findAll(['registerNumber' => ['$in' => $chunk]], count($chunk)) as $doc) {
-                    $row = self::rosterRowFromDocument($doc);
-                    $reg = strtoupper(trim((string) ($row['registerNumber'] ?? '')));
-                    if ($reg !== '') {
-                        $byReg[$reg] = $row;
-                    }
-                    $sid = trim((string) ($row['studentId'] ?? ''));
-                    if ($sid !== '') {
-                        $byId[$sid] = $row;
-                    }
-                }
-            }
-        }
-
-        return ['byId' => $byId, 'byReg' => $byReg];
-    }
-
-    /**
      * @param array<string, mixed> $placement Same shape as students.placement
      * @param array<string, mixed> $rosterMeta classBatch, programme, branch, studentName, …
      */
@@ -526,16 +461,6 @@ class StudentPlacementModel extends BaseModel
         if ($batchFilter !== []) {
             $filter = $filter === [] ? $batchFilter : ['$and' => [$filter, $batchFilter]];
         }
-        if ($program !== '' && $batch === '') {
-            $programFilter = self::registryProgrammeFilter($program);
-            if ($programFilter !== []) {
-                $filter = $filter === [] ? $programFilter : ['$and' => [$filter, $programFilter]];
-            }
-        }
-
-        if ($filter === [] && $departmentId === '') {
-            return [];
-        }
 
         $rows = [];
         foreach ($this->findAll($filter, $limit, 0, ['studentName' => 1]) as $doc) {
@@ -549,43 +474,6 @@ class StudentPlacementModel extends BaseModel
         }
 
         return $rows;
-    }
-
-    /**
-     * SQL pre-filter for programme when batch is not selected (narrows student_placements scan).
-     *
-     * @return array<string, mixed>
-     */
-    public static function registryProgrammeFilter(string $program): array
-    {
-        $want = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($program));
-        if ($want === '') {
-            return [];
-        }
-
-        $branches = [
-            ['programme' => $want],
-        ];
-        foreach (DepartmentProgrammeCatalog::aesCourseParamTokens($want) as $token) {
-            $token = trim($token);
-            if ($token !== '' && strcasecmp($token, $want) !== 0) {
-                $branches[] = ['programme' => $token];
-            }
-        }
-
-        if ($want === 'INMCA') {
-            foreach (['%MCAINT%', '%INMCA%', '%INTMCA%', '%IMCA%'] as $pattern) {
-                $branches[] = ['classBatch' => ['$regex' => $pattern]];
-            }
-        } elseif ($want === 'MCA') {
-            foreach (['%MCAR%', '%MCALE%', '%MCA%'] as $pattern) {
-                $branches[] = ['classBatch' => ['$regex' => $pattern]];
-            }
-        } elseif ($want === 'BCA') {
-            $branches[] = ['classBatch' => ['$regex' => '%BCA%']];
-        }
-
-        return ['$or' => $branches];
     }
 
     /**

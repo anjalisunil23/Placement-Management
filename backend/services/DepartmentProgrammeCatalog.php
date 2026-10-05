@@ -18,7 +18,7 @@ final class DepartmentProgrammeCatalog
             [
                 'parent' => 'Computer Applications',
                 'programmes' => [
-                    ['code' => 'MCA', 'label' => 'MCA', 'aliases' => ['MCAR', 'MCAREG', 'MCAREGULAR', 'MCALE']],
+                    ['code' => 'MCA', 'label' => 'MCA', 'aliases' => ['MCAR', 'MCAREG', 'MCAREGULAR']],
                     ['code' => 'BCA', 'label' => 'BCA', 'aliases' => ['BCAH', 'BCAHONS']],
                     ['code' => 'INMCA', 'label' => 'Integrated MCA', 'aliases' => ['INTMCA', 'IMCA', 'DDMCA', 'MCAINT', 'MCA INT', 'INT MCA', 'DD MCA']],
                 ],
@@ -333,53 +333,5 @@ final class DepartmentProgrammeCatalog
         }
 
         return str_contains($norm, $want);
-    }
-
-    /**
-     * Infer programme code from AES stud_class / batch label (MCALE2016-18 → MCA, MCAINT… → INMCA).
-     */
-    public static function programmeInferredFromBatchLabel(string $batchLabel): string
-    {
-        $batchLabel = trim($batchLabel);
-        if ($batchLabel === '') {
-            return '';
-        }
-        $norm = self::normalizeCode($batchLabel);
-        if ($norm === '') {
-            return '';
-        }
-        if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA') || str_contains($norm, 'INTMCA')) {
-            return 'INMCA';
-        }
-        if (str_starts_with($norm, 'MCA') && !str_contains($norm, 'BCA')) {
-            return 'MCA';
-        }
-        if (str_contains($norm, 'BCA')) {
-            return 'BCA';
-        }
-
-        return self::resolveProgrammeCode($batchLabel);
-    }
-
-    /**
-     * When UI branch (program) disagrees with the batch label, prefer the batch hint for AES/sync.
-     */
-    public static function reconcileProgramWithBatch(string $program, string $batchLabel): string
-    {
-        $program = trim($program);
-        $batchLabel = trim($batchLabel);
-        if ($batchLabel === '') {
-            return self::resolveProgrammeCode($program);
-        }
-        $fromBatch = self::programmeInferredFromBatchLabel($batchLabel);
-        if ($fromBatch === '') {
-            return self::resolveProgrammeCode($program);
-        }
-        $want = self::resolveProgrammeCode($program);
-        if ($want === '' || self::batchHintMatchesProgramme($batchLabel, $want)) {
-            return $want !== '' ? $want : $fromBatch;
-        }
-
-        return $fromBatch;
     }
 }
