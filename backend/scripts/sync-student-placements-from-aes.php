@@ -91,6 +91,8 @@ $alumni = (int) ($result['alumniSynced'] ?? 0);
 
 echo "AES roster fetched: {$aesFetched}" . PHP_EOL;
 echo "Rows upserted: {$saved} (studying {$studying}, alumni {$alumni})" . PHP_EOL;
+echo 'AES profile backfill updated: ' . (int) ($result['backfillUpdated'] ?? 0)
+    . ' (' . (int) ($result['profilesFetched'] ?? 0) . " profile lookups)\n";
 
 $model = new StudentPlacementModel();
 $tableRows = $model->listRosterRowsForRegistryScope(

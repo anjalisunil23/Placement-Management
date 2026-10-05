@@ -434,6 +434,8 @@ final class StaffController
         $studying = (int) ($result['studyingSynced'] ?? 0);
         $alumni = (int) ($result['alumniSynced'] ?? 0);
         $aesFetched = (int) ($result['aesRosterFetched'] ?? 0);
+        $backfillUpdated = (int) ($result['backfillUpdated'] ?? 0);
+        $profilesFetched = (int) ($result['profilesFetched'] ?? 0);
         $syncError = trim((string) ($result['syncError'] ?? ''));
         $scope = $registrySvc->resolvedRegistryScope($ctx, $filters);
         if ($filters['departmentId'] === '' && $scope['departmentId'] !== '') {
@@ -453,13 +455,15 @@ final class StaffController
         $result['rowsInTable'] = $inTable;
         $result['registry'] = $registry;
         $result['scope'] = $scope;
-        $message = $syncError !== ''
+        $message = ($syncError !== '' && $inTable === 0)
             ? $syncError
-            : ($aesFetched > 0
-                ? "Fetched {$aesFetched} student(s) from AES; saved {$count} to student_placements ({$studying} studying, {$alumni} alumni). Grid shows {$inTable} row(s) for these filters."
+            : ($syncError !== '' && $inTable > 0
+                ? "AES returned no new roster for this sync pass. Grid shows {$inTable} existing row(s) — check batch label or run sync again after deploy."
+                : ($aesFetched > 0 || $backfillUpdated > 0
+                ? "Fetched {$aesFetched} roster row(s) from AES; saved {$count}; backfilled {$backfillUpdated} row(s) from AES profiles ({$profilesFetched} lookups). Grid shows {$inTable} row(s)."
                 : ($inTable > 0
-                    ? 'AES returned no roster for these filters. Grid shows existing student_placements rows only — try a specific batch (e.g. INMCA) or check AES from the server.'
-                    : 'AES returned no roster to import. Pick department, branch, and batch (Integrated MCA / INMCA) or verify AES is reachable from the server.'));
+                    ? 'AES returned no roster for these filters. Grid shows existing student_placements rows only — try Sync from AES again or check AES from the server.'
+                    : 'AES returned no roster to import. Pick department, branch, and batch (Integrated MCA / INMCA) or verify AES is reachable from the server.')));
         Response::success(
             DocumentHelper::jsonSafe($result),
             $message
