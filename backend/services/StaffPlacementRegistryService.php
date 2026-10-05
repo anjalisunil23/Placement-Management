@@ -145,24 +145,19 @@ final class StaffPlacementRegistryService
             );
         } else {
             if ($program !== '') {
-                $directoryRows = $isAlumni
-                    ? $this->officerData->listAlumniProgrammeStudents($directoryCtx, $program)
-                    : $this->officerData->listAesProgrammeStudents($directoryCtx, $program);
+                // Per-class AES only — dept directory pulls every programme and pollutes student_placements.
                 $classBatchRows = $this->syncRosterViaProgrammeClassBatches($classCtx, $program, $isAlumni);
+                $classRows = $this->filterRosterByPlacementStudRole($classBatchRows, $studRole);
+            } else {
                 $classRows = $this->filterRosterByPlacementStudRole(
-                    $this->mergeUniqueRosterRows($directoryRows, $classBatchRows),
+                    $this->syncRosterViaDepartmentClassBatches($classCtx, $isAlumni),
                     $studRole
                 );
-            } else {
-                $aesRows = $isAlumni
-                    ? $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx)
-                    : $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
-                $classRows = $this->filterRosterByPlacementStudRole($aesRows, $studRole);
                 if ($classRows === []) {
-                    $classRows = $this->filterRosterByPlacementStudRole(
-                        $this->syncRosterViaDepartmentClassBatches($classCtx, $isAlumni),
-                        $studRole
-                    );
+                    $aesRows = $isAlumni
+                        ? $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx)
+                        : $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
+                    $classRows = $this->filterRosterByPlacementStudRole($aesRows, $studRole);
                 }
             }
             if ($classRows !== []) {
@@ -317,8 +312,17 @@ final class StaffPlacementRegistryService
     private function listFromStudentPlacements(array $listCtx, array $filters): array
     {
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
+        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
 
-        $tableRows = (new StudentPlacementModel())->listAllRosterRows(5000);
+        $tableRows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
+            $departmentId,
+            $program,
+            $batch,
+            5000,
+            $batch !== ''
+        );
 
         if ($studRole !== 'all') {
             $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
@@ -1508,8 +1512,10 @@ final class StaffPlacementRegistryService
             }
             if ($departmentId !== '') {
                 $rowDept = trim((string) ($row['departmentId'] ?? ''));
-                $narrowScope = ($program !== '' || $batch !== '');
-                if ($rowDept !== '' && strcasecmp($rowDept, $departmentId) !== 0 && !$narrowScope) {
+                if ($rowDept !== '' && strcasecmp($rowDept, $departmentId) !== 0) {
+                    return false;
+                }
+                if ($rowDept === '' && $batch === '' && $program === '') {
                     return false;
                 }
             }

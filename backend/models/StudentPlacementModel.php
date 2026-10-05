@@ -423,36 +423,48 @@ class StudentPlacementModel extends BaseModel
      */
     public function listRosterRowsForDepartment(string $departmentId, int $limit = 5000): array
     {
+        return $this->listRosterRowsForRegistryScope($departmentId, '', '', $limit, true);
+    }
+
+    public function listRosterRowsForClass(string $departmentId, string $program, string $batch, int $limit = 5000): array
+    {
+        return $this->listRosterRowsForRegistryScope($departmentId, $program, $batch, $limit, true);
+    }
+
+    /**
+     * Scoped load for staff registry — avoids scanning the first N rows campus-wide.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listRosterRowsForRegistryScope(
+        string $departmentId,
+        string $program,
+        string $batch,
+        int $limit = 5000,
+        bool $includeLegacyBlankDept = false
+    ): array {
         if (!$this->bootstrapTable()) {
             return [];
         }
 
         $departmentId = trim($departmentId);
-        $filter = $departmentId !== '' ? $this->registryDepartmentFilter($departmentId) : [];
-        $rows = [];
-        foreach ($this->findAll($filter, max(1, min($limit, 5000))) as $doc) {
-            $rows[] = self::rosterRowFromDocument($doc);
+        $program = trim($program);
+        $batch = trim($batch);
+        $limit = max(1, min($limit, 5000));
+
+        $filter = $this->registryScopeFilter($departmentId, $batch, $includeLegacyBlankDept);
+        $batchFilter = $batch !== '' ? $this->registryClassBatchFilter($batch) : [];
+        if ($batchFilter !== []) {
+            $filter = $filter === [] ? $batchFilter : ['$and' => [$filter, $batchFilter]];
         }
 
-        return $rows;
-    }
-
-    public function listRosterRowsForClass(string $departmentId, string $program, string $batch, int $limit = 5000): array
-    {
-        if (!$this->bootstrapTable() || trim($batch) === '') {
-            return [];
-        }
-
-        // Class batch (+ programme) identifies the roster; ignore departmentId so rows
-        // from an earlier sync with a blank/other dept still appear for class teachers.
         $rows = [];
-        foreach ($this->findAll([], max(1, min($limit, 5000))) as $doc) {
-            $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
-            if ($rowBatch === '' || !self::batchMatchesSelection($rowBatch, $batch)) {
-                continue;
-            }
-            if ($program !== '' && !self::programmeMatchesBatch($program, $rowBatch, (string) ($doc['programme'] ?? ''))) {
-                continue;
+        foreach ($this->findAll($filter, $limit, 0, ['studentName' => 1]) as $doc) {
+            if ($program !== '' && $batch === '') {
+                $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
+                if (!self::programmeMatchesBatch($program, $rowBatch, (string) ($doc['programme'] ?? ''))) {
+                    continue;
+                }
             }
             $rows[] = self::rosterRowFromDocument($doc);
         }
@@ -582,11 +594,15 @@ class StudentPlacementModel extends BaseModel
      *
      * @return array<string, mixed>
      */
-    private function registryDepartmentFilter(string $departmentId): array
+    private function registryDepartmentFilter(string $departmentId, bool $includeLegacyBlank = true): array
     {
         $departmentId = trim($departmentId);
         if ($departmentId === '') {
             return [];
+        }
+
+        if (!$includeLegacyBlank) {
+            return ['departmentId' => $departmentId];
         }
 
         return [
@@ -595,6 +611,47 @@ class StudentPlacementModel extends BaseModel
                 ['departmentId' => ''],
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function registryScopeFilter(string $departmentId, string $batch, bool $includeLegacyBlankDept): array
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return [];
+        }
+
+        return $this->registryDepartmentFilter($departmentId, $includeLegacyBlankDept || $batch !== '');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function registryClassBatchFilter(string $wantBatch): array
+    {
+        $wantBatch = trim($wantBatch);
+        if ($wantBatch === '') {
+            return [];
+        }
+
+        $labels = array_values(array_unique(array_filter([
+            $wantBatch,
+            ClassInchargeRegistry::batchLabelWithoutSemester($wantBatch),
+        ], static fn (string $v): bool => $v !== '')));
+
+        $cohort = ClassInchargeRegistry::cohortKey($wantBatch);
+        if ($cohort !== '' && !in_array($cohort, $labels, true)) {
+            $labels[] = $cohort;
+        }
+
+        $branches = [['classBatch' => ['$in' => $labels]]];
+        if ($cohort !== '' && !in_array($cohort, $labels, true)) {
+            $branches[] = ['classBatch' => ['$regex' => $cohort . '%']];
+        }
+
+        return count($branches) === 1 ? $branches[0] : ['$or' => $branches];
     }
 
     public static function matchesClassBatchSelection(string $rowBatch, string $wantBatch): bool
