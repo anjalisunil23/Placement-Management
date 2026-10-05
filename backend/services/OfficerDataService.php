@@ -38,6 +38,13 @@ final class OfficerDataService
     /** @var array<string, list<array<string, mixed>>> */
     private static array $aesAlumniDirectoryCache = [];
 
+    /** Clear in-request AES directory caches before a manual placement registry sync. */
+    public static function clearPlacementSyncCaches(): void
+    {
+        self::$aesDirectoryCache = [];
+        self::$aesAlumniDirectoryCache = [];
+    }
+
     /**
      * @return array{user: array<string, mixed>, ctx: array<string, mixed>}
      */

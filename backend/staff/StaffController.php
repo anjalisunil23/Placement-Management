@@ -425,11 +425,13 @@ final class StaffController
             'program'      => (string) ($_GET['program'] ?? $_POST['program'] ?? ''),
             'branch'       => (string) ($_GET['branch'] ?? $_POST['branch'] ?? ''),
             'batch'        => (string) ($_GET['batch'] ?? $_POST['batch'] ?? ''),
-            'studRole'     => (string) ($_GET['studRole'] ?? $_POST['studRole'] ?? 'all'),
+            'studRole'     => 'all',
         ];
         $registrySvc = new StaffPlacementRegistryService();
         $result = $registrySvc->syncFromAes($ctx, $filters);
         $count = (int) ($result['studentsSynced'] ?? 0);
+        $studying = (int) ($result['studyingSynced'] ?? 0);
+        $alumni = (int) ($result['alumniSynced'] ?? 0);
         $listFilters = [
             'departmentId' => (string) ($filters['departmentId'] ?? ''),
             'program'      => (string) ($filters['program'] ?? ''),
@@ -442,7 +444,7 @@ final class StaffController
         $inTable = (int) (($registrySvc->list($ctx, $listFilters)['totals']['all'] ?? 0));
         $result['rowsInTable'] = $inTable;
         $message = $count > 0
-            ? "Synced {$count} record(s) from AES into student_placements."
+            ? "Synced {$count} record(s) from AES ({$studying} studying, {$alumni} alumni) into student_placements."
             : ($inTable > 0
                 ? "AES added no new rows; showing {$inTable} record(s) already in student_placements for these filters."
                 : 'No rows in student_placements for these filters yet. AES returned no roster to import — try a specific batch or check AES connectivity.');

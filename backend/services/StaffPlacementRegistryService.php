@@ -75,24 +75,27 @@ final class StaffPlacementRegistryService
     public function syncFromAes(array $staffCtx, array $filters = []): array
     {
         StaffContext::requireDepartmentScope($staffCtx);
-        $role = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
-        if ($role === 'all') {
-            $student = $this->syncFromAesForStudRole(
-                $staffCtx,
-                array_merge($filters, ['studRole' => 'student'])
-            );
-            $alumni = $this->syncFromAesForStudRole(
-                $staffCtx,
-                array_merge($filters, ['studRole' => 'alumni'])
-            );
+        PlacementFilterService::clearScopedRowsCache();
+        OfficerDataService::clearPlacementSyncCaches();
 
-            return [
-                'studentsSynced' => (int) ($student['studentsSynced'] ?? 0) + (int) ($alumni['studentsSynced'] ?? 0),
-                'scope'          => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
-            ];
-        }
+        $filters['studRole'] = 'all';
+        $student = $this->syncFromAesForStudRole(
+            $staffCtx,
+            array_merge($filters, ['studRole' => 'student'])
+        );
+        $alumni = $this->syncFromAesForStudRole(
+            $staffCtx,
+            array_merge($filters, ['studRole' => 'alumni'])
+        );
+        $studyingCount = (int) ($student['studentsSynced'] ?? 0);
+        $alumniCount = (int) ($alumni['studentsSynced'] ?? 0);
 
-        return $this->syncFromAesForStudRole($staffCtx, array_merge($filters, ['studRole' => $role]));
+        return [
+            'studentsSynced' => $studyingCount + $alumniCount,
+            'studyingSynced' => $studyingCount,
+            'alumniSynced'   => $alumniCount,
+            'scope'          => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
+        ];
     }
 
     /**
@@ -151,11 +154,18 @@ final class StaffPlacementRegistryService
                 $aesRows = $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
             }
             $classRows = $this->filterRosterByPlacementStudRole($aesRows, $studRole);
-            if ($classRows === [] && $program !== '') {
-                $classRows = $this->filterRosterByPlacementStudRole(
-                    $this->syncRosterViaProgrammeClassBatches($classCtx, $program, $isAlumni),
-                    $studRole
-                );
+            if ($classRows === []) {
+                if ($program !== '') {
+                    $classRows = $this->filterRosterByPlacementStudRole(
+                        $this->syncRosterViaProgrammeClassBatches($classCtx, $program, $isAlumni),
+                        $studRole
+                    );
+                } else {
+                    $classRows = $this->filterRosterByPlacementStudRole(
+                        $this->syncRosterViaDepartmentClassBatches($classCtx, $isAlumni),
+                        $studRole
+                    );
+                }
             }
             if ($classRows !== []) {
                 $studentsSynced += $this->syncAesDirectoryRowsToStudentPlacements(
@@ -208,6 +218,39 @@ final class StaffPlacementRegistryService
                 ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $batchLabel, true)
                 : $this->officerData->listAesClassStudents($classCtx, $program, $batchLabel, true);
             foreach ($chunk as $row) {
+                $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $classCtx
+     * @return list<array<string, mixed>>
+     */
+    private function syncRosterViaDepartmentClassBatches(array $classCtx, bool $isAlumni): array
+    {
+        $filterCtx = array_merge($classCtx, [
+            'filterMode'                    => true,
+            'placementStaffRegistryFilters' => true,
+            'placementStudRole'             => $isAlumni ? 'alumni' : 'student',
+        ]);
+        $programs = (new PlacementFilterService())->fetchProgramOptions($filterCtx);
+        $rows = [];
+        $seen = [];
+
+        foreach ($programs as $program) {
+            $program = trim((string) $program);
+            if ($program === '') {
+                continue;
+            }
+            foreach ($this->syncRosterViaProgrammeClassBatches($classCtx, $program, $isAlumni) as $row) {
                 $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
                 if ($key === '' || isset($seen[$key])) {
                     continue;
