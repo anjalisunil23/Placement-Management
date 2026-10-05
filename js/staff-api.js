@@ -291,6 +291,9 @@ const StaffApi = {
 
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
+    if (params.scoped) {
+      qs.set('scoped', '1');
+    }
     ['departmentId', 'program', 'branch', 'batch', 'type', 'q'].forEach(k => {
       if (params[k]) qs.set(k, params[k]);
     });

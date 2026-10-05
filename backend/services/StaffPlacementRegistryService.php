@@ -1640,6 +1640,43 @@ final class StaffPlacementRegistryService
      */
     private function applyFilters(array $rows, array $filters): array
     {
+        if (!empty($filters['allFromTable'])) {
+            $rows = $this->applyOptionalRegistrySearchFilters($rows, $filters);
+            if ($this->hasRegistryScopeFilters($filters)) {
+                return $this->applyScopedRegistryFilters($rows, $filters);
+            }
+
+            return $rows;
+        }
+
+        return $this->applyScopedRegistryFilters($rows, $filters);
+    }
+
+    /**
+     * @param array<string, string> $filters
+     */
+    private function hasRegistryScopeFilters(array $filters): bool
+    {
+        if ($this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all')) !== 'all') {
+            return true;
+        }
+
+        foreach (['departmentId', 'program', 'branch', 'batch'] as $key) {
+            if (trim((string) ($filters[$key] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, string> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    private function applyScopedRegistryFilters(array $rows, array $filters): array
+    {
         $program = trim((string) ($filters['program'] ?? ''));
         $branch = trim((string) ($filters['branch'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
