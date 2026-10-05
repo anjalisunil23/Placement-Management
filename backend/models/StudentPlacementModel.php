@@ -15,6 +15,9 @@ use PMS\Utils\Security;
  */
 class StudentPlacementModel extends BaseModel
 {
+    /** Max rows returned for staff full-table registry (campus-wide student_placements). */
+    public const REGISTRY_TABLE_LIST_MAX = 10000;
+
     /** Columns BaseModel SELECT/INSERT/ORDER BY require. */
     private const BASE_TABLE_COLUMNS = ['payload', 'created_at', 'updated_at'];
 
@@ -402,14 +405,15 @@ class StudentPlacementModel extends BaseModel
      *
      * @return array<int, array<string, mixed>>
      */
-    public function listAllRosterRows(int $limit = 5000): array
+    public function listAllRosterRows(int $limit = self::REGISTRY_TABLE_LIST_MAX): array
     {
         if (!$this->bootstrapTable()) {
             return [];
         }
 
+        $cap = max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX));
         $rows = [];
-        foreach ($this->findAll([], max(1, min($limit, 5000))) as $doc) {
+        foreach ($this->findAll([], $cap) as $doc) {
             $rows[] = self::rosterRowFromDocument($doc);
         }
 
@@ -450,7 +454,7 @@ class StudentPlacementModel extends BaseModel
         $departmentId = trim($departmentId);
         $program = trim($program);
         $batch = trim($batch);
-        $limit = max(1, min($limit, 5000));
+        $limit = max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX));
 
         $filter = $this->registryScopeFilter($departmentId, $batch, $includeLegacyBlankDept);
         $batchFilter = $batch !== '' ? $this->registryClassBatchFilter($batch) : [];

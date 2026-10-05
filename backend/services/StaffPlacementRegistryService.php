@@ -416,7 +416,7 @@ final class StaffPlacementRegistryService
         $model = new StudentPlacementModel();
 
         if ($allFromTable) {
-            $tableRows = $model->listAllRosterRows(5000);
+            $tableRows = $model->listAllRosterRows(StudentPlacementModel::REGISTRY_TABLE_LIST_MAX);
             $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows, false);
         } else {
             $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
@@ -426,7 +426,7 @@ final class StaffPlacementRegistryService
                 $departmentId,
                 $program,
                 $batch,
-                5000,
+                StudentPlacementModel::REGISTRY_TABLE_LIST_MAX,
                 $batch !== ''
             );
             $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
