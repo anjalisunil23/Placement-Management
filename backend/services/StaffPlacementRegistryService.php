@@ -323,12 +323,85 @@ final class StaffPlacementRegistryService
             5000,
             $batch !== ''
         );
+        $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
 
         if ($studRole !== 'all') {
             $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
         }
 
         return $this->registryEntriesFromRoster($tableRows, true);
+    }
+
+    /**
+     * Fill snapshot gaps when student_placements has ids but AES keys were not normalized on save.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function enrichRosterRowsFromLocalStudents(array $rows): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+
+        $needIds = [];
+        foreach ($rows as $idx => $row) {
+            if ($this->rosterRowHasSnapshot($row)) {
+                continue;
+            }
+            $id = trim((string) ($row['studentId'] ?? $row['id'] ?? $row['_id'] ?? ''));
+            if ($id !== '' && Security::isValidId($id)) {
+                $needIds[$id][] = $idx;
+            }
+        }
+        if ($needIds === []) {
+            return $rows;
+        }
+
+        $students = (new StudentModel())->findByIds(array_keys($needIds));
+        foreach ($needIds as $id => $indexes) {
+            $student = $students[$id] ?? null;
+            if (!is_array($student)) {
+                continue;
+            }
+            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+            $patch = [
+                'displayName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+                'studentName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+                'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
+                'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
+                'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
+                'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+                'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+            ];
+            foreach ($indexes as $idx) {
+                foreach ($patch as $key => $value) {
+                    if ($value === '') {
+                        continue;
+                    }
+                    $existing = trim((string) ($rows[$idx][$key] ?? ''));
+                    if ($existing === '') {
+                        $rows[$idx][$key] = $value;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_filter(
+            $rows,
+            fn (array $row): bool => $this->rosterRowHasSnapshot($row)
+        ));
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function rosterRowHasSnapshot(array $row): bool
+    {
+        $name = trim((string) ($row['studentName'] ?? $row['displayName'] ?? ''));
+        $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+
+        return $name !== '' || $register !== '';
     }
 
     /**
@@ -677,7 +750,12 @@ final class StaffPlacementRegistryService
         }
 
         $placed = ($row['placed'] ?? false) === true;
-        $studentName = trim((string) ($row['displayName'] ?? $row['user']['name'] ?? ''));
+        $studentName = trim((string) (
+            $row['studentName']
+            ?? $row['displayName']
+            ?? $row['user']['name']
+            ?? ''
+        ));
         $register = strtoupper(trim((string) ($row['registerNumber'] ?? '')));
         $phone = trim((string) ($row['phone'] ?? $row['personal']['phone'] ?? ''));
         $email = trim((string) ($row['collegeEmail'] ?? $row['personalEmail'] ?? $row['email'] ?? ''));
@@ -980,6 +1058,11 @@ final class StaffPlacementRegistryService
             $row['type'] = $recordType;
         }
 
+        $row['studentName'] = trim((string) (
+            $row['studentName']
+            ?? $row['displayName']
+            ?? ''
+        ));
         $row['registerNumber'] = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admissionNo'] ?? '')));
         $row['classBatch'] = trim((string) ($row['classBatch'] ?? $row['batch'] ?? ''));
         $row['programme'] = trim((string) ($row['programme'] ?? $row['program'] ?? ''));

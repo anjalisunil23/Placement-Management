@@ -478,37 +478,109 @@ class StudentPlacementModel extends BaseModel
     public static function rosterRowFromDocument(array $doc): array
     {
         $studentId = trim((string) ($doc['studentId'] ?? $doc['_id'] ?? ''));
-        $register = strtoupper(trim((string) ($doc['registerNumber'] ?? '')));
         $placement = self::placementFieldsFromDoc($doc);
-        $personal = [
-            'fullName' => trim((string) ($doc['studentName'] ?? '')),
-            'phone'    => trim((string) ($doc['phone'] ?? '')),
-            'collegeEmail' => trim((string) ($doc['email'] ?? '')),
-        ];
+        $snapshot = self::rosterSnapshotFromPayload($doc, $placement);
 
         return [
             '_id'            => $studentId,
             'id'             => $studentId,
             'studentId'      => $studentId,
-            'registerNumber' => $register,
-            'admno'          => trim((string) ($doc['admissionNo'] ?? $register)),
-            'displayName'    => $personal['fullName'],
-            'personal'       => $personal,
-            'phone'          => $personal['phone'],
-            'collegeEmail'   => $personal['collegeEmail'],
-            'email'          => $personal['email'] ?? $personal['collegeEmail'],
-            'classBatch'     => trim((string) ($doc['classBatch'] ?? '')),
-            'stud_class'     => trim((string) ($doc['classBatch'] ?? '')),
-            'programme'      => trim((string) ($doc['programme'] ?? '')),
-            'branch'         => trim((string) ($doc['branch'] ?? '')),
-            'courseId'       => trim((string) ($doc['courseId'] ?? '')),
-            'branchId'       => trim((string) ($doc['branchId'] ?? '')),
-            'departmentId'   => trim((string) ($doc['departmentId'] ?? '')),
+            'studentName'    => $snapshot['studentName'],
+            'registerNumber' => $snapshot['registerNumber'],
+            'admno'          => $snapshot['admissionNo'],
+            'displayName'    => $snapshot['studentName'],
+            'personal'       => [
+                'fullName'     => $snapshot['studentName'],
+                'phone'        => $snapshot['phone'],
+                'collegeEmail' => $snapshot['email'],
+            ],
+            'phone'          => $snapshot['phone'],
+            'collegeEmail'   => $snapshot['email'],
+            'email'          => $snapshot['email'],
+            'classBatch'     => $snapshot['classBatch'],
+            'stud_class'     => $snapshot['classBatch'],
+            'programme'      => $snapshot['programme'],
+            'stud_course'    => $snapshot['programme'],
+            'branch'         => $snapshot['branch'],
+            'courseId'       => $snapshot['courseId'],
+            'branchId'       => $snapshot['branchId'],
+            'departmentId'   => $snapshot['departmentId'],
             'placement'      => $placement,
             'placed'         => trim((string) ($placement['company'] ?? '')) !== '',
             'source'         => 'student_placements',
             'studRole'       => self::studRoleFromDocument($doc),
             'stud_role'      => trim((string) ($doc['stud_role'] ?? '')),
+        ];
+    }
+
+    /**
+     * Resolve grid columns from flat payload and leftover AES/placement keys.
+     *
+     * @param array<string, mixed> $doc
+     * @param array<string, mixed> $placementFields
+     * @return array{
+     *   studentName:string,
+     *   registerNumber:string,
+     *   admissionNo:string,
+     *   phone:string,
+     *   email:string,
+     *   classBatch:string,
+     *   programme:string,
+     *   branch:string,
+     *   courseId:string,
+     *   branchId:string,
+     *   departmentId:string
+     * }
+     */
+    public static function rosterSnapshotFromPayload(array $doc, array $placementFields = []): array
+    {
+        $personal = is_array($doc['personal'] ?? null) ? $doc['personal'] : [];
+        $pick = static function (array $sources, string ...$keys): string {
+            foreach ($sources as $source) {
+                if (!is_array($source)) {
+                    continue;
+                }
+                foreach ($keys as $key) {
+                    $value = trim((string) ($source[$key] ?? ''));
+                    if ($value !== '') {
+                        return $value;
+                    }
+                }
+            }
+
+            return '';
+        };
+
+        $name = $pick([$doc, $personal, $placementFields], 'studentName', 'displayName', 'stud_name', 'name', 'fullName');
+        $register = strtoupper($pick([$doc, $placementFields], 'registerNumber', 'registerno', 'register_number', 'admno', 'stud_admno', 'admissionNo'));
+        $phone = $pick([$doc, $personal, $placementFields], 'phone', 'mobile', 'stud_mobile', 'contactPhone');
+        $email = $pick([$doc, $personal, $placementFields], 'email', 'collegeEmail', 'personalEmail', 'stud_email');
+        $classBatch = $pick([$doc, $placementFields], 'classBatch', 'stud_class', 'batch');
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($pick(
+            [$doc, $placementFields],
+            'programme',
+            'program',
+            'stud_course',
+            'stud_cource_short',
+            'course'
+        ));
+        if ($programme === '' && $classBatch !== '') {
+            $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($classBatch);
+        }
+        $branch = $pick([$doc, $placementFields], 'branch', 'stud_branch', 'branchName', 'branch_name');
+
+        return [
+            'studentName'    => $name,
+            'registerNumber' => $register,
+            'admissionNo'    => $pick([$doc, $placementFields], 'admissionNo', 'admno', 'stud_admno') ?: $register,
+            'phone'          => $phone,
+            'email'          => $email,
+            'classBatch'     => $classBatch,
+            'programme'      => $programme,
+            'branch'         => $branch,
+            'courseId'       => $pick([$doc, $placementFields], 'courseId', 'course_id', 'stud_courseid'),
+            'branchId'       => $pick([$doc, $placementFields], 'branchId', 'branch_id', 'stud_branchid'),
+            'departmentId'   => trim((string) ($doc['departmentId'] ?? '')),
         ];
     }
 
@@ -540,12 +612,12 @@ class StudentPlacementModel extends BaseModel
             'classBatch'  => ['classBatch', 'stud_class', 'batch'],
             'programme'   => ['programme', 'program', 'stud_course'],
             'branch'      => ['branch', 'stud_branch'],
-            'studentName' => ['studentName', 'displayName', 'name'],
+            'studentName' => ['studentName', 'displayName', 'stud_name', 'name', 'fullName'],
             'courseId'    => ['courseId', 'course_id'],
             'branchId'    => ['branchId', 'branch_id'],
             'phone'       => ['phone'],
             'email'       => ['email', 'collegeEmail', 'personalEmail'],
-            'admissionNo' => ['admissionNo', 'admno', 'registerNumber'],
+            'admissionNo' => ['admissionNo', 'admno', 'stud_admno', 'registerNumber', 'registerno'],
         ];
         foreach ($map as $target => $keys) {
             foreach ($keys as $key) {
@@ -651,7 +723,14 @@ class StudentPlacementModel extends BaseModel
             $branches[] = ['classBatch' => ['$regex' => $cohort . '%']];
         }
 
-        return count($branches) === 1 ? $branches[0] : ['$or' => $branches];
+        $batchMatch = count($branches) === 1 ? $branches[0] : ['$or' => $branches];
+
+        return [
+            '$and' => [
+                ['classBatch' => ['$ne' => '']],
+                $batchMatch,
+            ],
+        ];
     }
 
     public static function matchesClassBatchSelection(string $rowBatch, string $wantBatch): bool
