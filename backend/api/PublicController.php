@@ -19,7 +19,10 @@ use PMS\Services\CodingTestCaseChecker;
 use PMS\Services\ObjectStorageService;
 use PMS\Services\OfficerDataService;
 use PMS\Services\PcaOfferLetterService;
+use PMS\Services\PlacementFilterService;
 use PMS\Services\PlacementOfficerContext;
+use PMS\Models\StudentPlacementModel;
+use PMS\Services\AesApiService;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Response;
 use PMS\Utils\Security;
@@ -123,7 +126,70 @@ final class PublicController
                 'eligibilityRules' => $legacyPolicyRules ? 'legacy-policy-required' : 'v2-resume-only',
             ],
             'codingExec' => array_merge($codingExec, ['smoke' => self::codingExecSmoke()]),
+            'placementRegistry' => self::placementRegistrySmoke($db['ok']),
         ], $db['ok'] ? 'OK' : 'Database unavailable', $db['ok'] ? 200 : 503);
+    }
+
+    /** @return array<string, mixed> */
+    private static function placementRegistrySmoke(bool $dbOk): array
+    {
+        $out = [
+            'studentPlacementsTable' => ['exists' => false, 'rows' => 0],
+            'aesComputerApplicationsMca' => ['ok' => false],
+        ];
+        if (!$dbOk) {
+            return $out;
+        }
+
+        try {
+            $tables = Database::pdo()->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
+            $name = Collections::STUDENT_PLACEMENTS;
+            $out['studentPlacementsTable']['exists'] = in_array($name, $tables, true);
+            if ($out['studentPlacementsTable']['exists']) {
+                $out['studentPlacementsTable']['rows'] = (int) Database::pdo()->query(
+                    'SELECT COUNT(*) FROM `' . $name . '`'
+                )->fetchColumn();
+            }
+        } catch (\Throwable $e) {
+            $out['studentPlacementsTable']['error'] = $e->getMessage();
+        }
+
+        try {
+            $ctx = [
+                'department' => [
+                    'name' => 'Computer Applications',
+                    'code' => 'MCA',
+                ],
+            ];
+            $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+            $out['aesComputerApplicationsMca']['deptAesId'] = $deptAesId;
+            if ($deptAesId === '') {
+                $out['aesComputerApplicationsMca']['reason'] = 'dept_aes_id_unresolved';
+
+                return $out;
+            }
+            $aes = new AesApiService();
+            $batches = $aes->fetchPlacementClassBatches($deptAesId, 'MCA');
+            $out['aesComputerApplicationsMca']['batchCount'] = count($batches);
+            $sampleBatch = trim((string) ($batches[0] ?? ''));
+            $out['aesComputerApplicationsMca']['sampleBatch'] = $sampleBatch;
+            $sampleCount = 0;
+            if ($sampleBatch !== '') {
+                $sampleCount = count($aes->fetchClassStudInfo4Placement($deptAesId, 'MCA', $sampleBatch, true));
+            }
+            $out['aesComputerApplicationsMca']['sampleBatchStudentCount'] = $sampleCount;
+            $uiBatch = 'MCA-2023-25';
+            $out['aesComputerApplicationsMca']['uiBatchProbe'] = $uiBatch;
+            $out['aesComputerApplicationsMca']['uiBatchStudentCount'] = count(
+                $aes->fetchClassStudInfo4Placement($deptAesId, 'MCA', $uiBatch, true)
+            );
+            $out['aesComputerApplicationsMca']['ok'] = count($batches) > 0
+                && ($sampleCount > 0 || $out['aesComputerApplicationsMca']['uiBatchStudentCount'] > 0);
+        } catch (\Throwable $e) {
+            $out['aesComputerApplicationsMca']['error'] = $e->getMessage();
+        }
+
+        return $out;
     }
 
     /** @return array<string, mixed> */
