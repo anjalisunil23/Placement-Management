@@ -447,7 +447,7 @@ final class StaffController
             ? "Synced {$count} record(s) from AES ({$studying} studying, {$alumni} alumni) into student_placements."
             : ($inTable > 0
                 ? "AES added no new rows; showing {$inTable} record(s) already in student_placements for these filters."
-                : 'No rows in student_placements for these filters yet. AES returned no roster to import — try a specific batch or check AES connectivity.');
+                : 'No rows in student_placements for these filters yet. AES returned no roster to import — pick a specific batch (Integrated MCA / INMCA) or verify AES is reachable from the server.');
         Response::success(
             DocumentHelper::jsonSafe($result),
             $message
