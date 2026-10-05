@@ -176,7 +176,7 @@ final class StaffPlacementRegistryService
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
 
         $model = new StudentPlacementModel();
-        if ($program !== '' && $batch !== '') {
+        if ($batch !== '') {
             $tableRows = $model->listRosterRowsForClass($deptId, $program, $batch);
         } else {
             $tableRows = $model->listRosterRowsForDepartment($deptId);
@@ -1369,12 +1369,7 @@ final class StaffPlacementRegistryService
             }
             if ($batch !== '') {
                 $rowBatch = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
-                $batchOk = strcasecmp($rowBatch, $batch) === 0
-                    || strcasecmp(
-                        DepartmentProgrammeCatalog::normalizeCode($rowBatch),
-                        DepartmentProgrammeCatalog::normalizeCode($batch)
-                    ) === 0
-                    || ($wantCohort !== '' && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0);
+                $batchOk = StudentPlacementModel::matchesClassBatchSelection($rowBatch, $batch);
                 if (!$batchOk) {
                     return false;
                 }

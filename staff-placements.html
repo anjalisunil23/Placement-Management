@@ -899,7 +899,11 @@
 
       const colSpan = registryColspan();
       if (!slice.length) {
-        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students or alumni match the current filters.</td></tr>`;
+        const batchSel = (document.getElementById('filterBatch')?.value || '').trim();
+        const hint = batchSel
+          ? ' No rows in <code>student_placements</code> for this class yet — use <strong>Sync from AES</strong> with the same filters.'
+          : '';
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students or alumni match the current filters.${hint}</td></tr>`;
         return;
       }
 
