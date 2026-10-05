@@ -25,6 +25,15 @@ final class AptitudeManualQuestionParser
         }
 
         $passageForQuestion = $this->mapDirectionPassages($text);
+        $dataSufficiency = $this->parseDataSufficiencySections($text);
+        $parsedDsNums = [];
+        foreach ($dataSufficiency as $dsq) {
+            $n = (int) ($dsq['questionNumber'] ?? 0);
+            if ($n > 0) {
+                $parsedDsNums[$n] = true;
+            }
+        }
+
         $blocks = $this->splitQuestionBlocks($text);
         $out = [];
         foreach ($blocks as $block) {
@@ -35,12 +44,18 @@ final class AptitudeManualQuestionParser
             if (preg_match('/^Directions\s*\(\d+\s*-\s*\d+\)\s*:/iu', $trim)) {
                 continue;
             }
+            if (preg_match('/^Directions\s*:/iu', $trim)) {
+                continue;
+            }
+            $qNum = $this->leadingQuestionNumber($trim);
+            if ($qNum !== null && isset($parsedDsNums[$qNum])) {
+                continue;
+            }
             if (!preg_match('/\([a-eA-E]\)/', $trim)
                 && !preg_match('/(?:^|[\s])[a-eA-E]\)/u', $trim)
                 && !preg_match('/[A-Da-d][\.\):]/u', $trim)) {
                 continue;
             }
-            $qNum = $this->leadingQuestionNumber($trim);
             if ($qNum !== null && isset($passageForQuestion[$qNum])) {
                 $trim = $passageForQuestion[$qNum] . "\n\n" . $trim;
             }
@@ -48,6 +63,19 @@ final class AptitudeManualQuestionParser
             if ($parsed !== null) {
                 $out[] = $parsed;
             }
+        }
+
+        if ($dataSufficiency !== []) {
+            $out = array_merge($out, $dataSufficiency);
+            usort($out, static function (array $a, array $b): int {
+                $na = (int) ($a['questionNumber'] ?? 0);
+                $nb = (int) ($b['questionNumber'] ?? 0);
+                if ($na > 0 && $nb > 0) {
+                    return $na <=> $nb;
+                }
+
+                return 0;
+            });
         }
 
         return $out;
@@ -90,7 +118,7 @@ final class AptitudeManualQuestionParser
     {
         $patterns = [
             '/(?=\n\s*\d{1,3}\)\s+\S)/u',
-            '/(?=\n\s*Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu',
+            '/(?=\n\s*Directions\s*(?:\(\d+\s*-\s*\d+\)\s*|:))/iu',
             '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+)/iu',
             '/(?=\n\s*\d{1,4}\s*[\.\):]\s+\S)/u',
             '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}\s*[:\-]\s+\S)/iu',
@@ -188,6 +216,8 @@ final class AptitudeManualQuestionParser
             return null;
         }
 
+        $questionNumber = $this->leadingQuestionNumber($block);
+
         $block = $this->stripTrailingDirectionsTail($block);
 
         $block = preg_replace('/^\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s*/iu', '', $block) ?? $block;
@@ -247,7 +277,7 @@ final class AptitudeManualQuestionParser
         }
         $correctIndex = max(0, min(count($optionList) - 1, $correctIndex));
 
-        return [
+        $row = [
             'prompt' => $prompt,
             'options' => $optionList,
             'correctIndex' => $correctIndex,
@@ -255,7 +285,13 @@ final class AptitudeManualQuestionParser
             'category' => 'General Aptitude',
             'difficulty' => 'Medium',
             'source' => 'MANUAL_UPLOAD',
+            'answerKnown' => $answerLetter !== null,
         ];
+        if ($questionNumber !== null && $questionNumber > 0) {
+            $row['questionNumber'] = $questionNumber;
+        }
+
+        return $row;
     }
 
     /**
@@ -386,9 +422,136 @@ final class AptitudeManualQuestionParser
 
     private function stripTrailingDirectionsTail(string $block): string
     {
+        if (preg_match('/\([a-eA-E]\)|[a-eA-E]\)/u', $block)
+            && preg_match('/\s+Directions\s*:/iu', $block, $dm, PREG_OFFSET_CAPTURE)) {
+            $block = trim(substr($block, 0, (int) $dm[0][1]));
+        }
         $stripped = preg_replace('/\s+Directions\s*\(\d+\s*-\s*\d+\)\s*:.*$/isu', '', $block);
+        $stripped = preg_replace('/\s+Directions\s*:[\s\S]*$/iu', '', $stripped ?? $block);
 
         return trim($stripped ?? $block);
+    }
+
+    /**
+     * Data sufficiency sets: shared Directions with (1)–(5) answers and per-question (i)/(ii) statements.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function parseDataSufficiencySections(string $text): array
+    {
+        if (!preg_match('/Directions\s*:[\s\S]*?statement\s*\(\s*i\s*\)/iu', $text)
+            && !preg_match('/Directions\s*:[\s\S]*?\(\s*1\s*\)/iu', $text)) {
+            return [];
+        }
+
+        $out = [];
+        if (!preg_match_all(
+            '/Directions\s*(?!\(\s*\d+\s*-)\s*:([\s\S]*?)(?=\n\s*\d{1,3}\)\s+\S)/iu',
+            $text,
+            $dirMatches,
+            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+        )) {
+            return [];
+        }
+
+        foreach ($dirMatches as $dirMatch) {
+            $body = trim((string) ($dirMatch[1][0] ?? ''));
+            if ($body === '' || !preg_match('/statement\s*\(\s*i\s*\)|data in statement|\(\s*1\s*\)/iu', $body)) {
+                continue;
+            }
+            $options = $this->extractDataSufficiencyOptions($body);
+            if (count($options) < 2) {
+                continue;
+            }
+            $dirEnd = (int) ($dirMatch[0][1] ?? 0) + strlen((string) ($dirMatch[0][0] ?? ''));
+            $tail = substr($text, $dirEnd);
+            if (!is_string($tail) || trim($tail) === '') {
+                continue;
+            }
+            $tail = preg_split('/(?=\n\s*Directions\s*(?:\(\d+\s*-|:))/iu', $tail, 2)[0] ?? $tail;
+            $chunks = preg_split('/(?=\n\s*\d{1,3}\)\s+\S)/u', "\n" . trim($tail), -1, PREG_SPLIT_NO_EMPTY);
+            if (!is_array($chunks)) {
+                continue;
+            }
+            $directionsPrefix = 'Directions: ' . trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
+
+            foreach ($chunks as $chunk) {
+                $chunk = trim($chunk);
+                if ($chunk === '' || !preg_match('/^\s*(\d{1,3})\)\s+/u', $chunk, $qm)) {
+                    continue;
+                }
+                $qNum = (int) $qm[1];
+                if (!preg_match('/\bi\)/iu', $chunk) || !preg_match('/\bii\)/iu', $chunk)) {
+                    continue;
+                }
+                if (preg_match('/\([a-eA-E]\)|(?:^|[\s])[a-eA-E]\)/u', $chunk)) {
+                    continue;
+                }
+
+                $promptBody = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $chunk) ?? $chunk;
+                $promptBody = trim($promptBody);
+                if ($promptBody === '') {
+                    continue;
+                }
+
+                $prompt = $directionsPrefix . "\n\n" . $qNum . ') ' . $promptBody;
+                $optionList = array_slice(array_values($options), 0, 5);
+                while (count($optionList) < 4) {
+                    $optionList[] = '—';
+                }
+
+                $out[] = [
+                    'prompt' => $prompt,
+                    'options' => $optionList,
+                    'correctIndex' => 0,
+                    'explanation' => '',
+                    'category' => 'Data Sufficiency',
+                    'difficulty' => 'Medium',
+                    'source' => 'MANUAL_UPLOAD',
+                    'questionNumber' => $qNum,
+                    'section' => 'Data Sufficiency',
+                    'questionType' => 'DATA_SUFFICIENCY',
+                    'directionsBlock' => $directionsPrefix,
+                    'answerKnown' => false,
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<int, string> 1-based option index => label
+     */
+    private function extractDataSufficiencyOptions(string $directionsBody): array
+    {
+        $opts = [];
+        if (preg_match_all(
+            '/\(\s*([1-5])\s*\)\s*(.+?)(?=\(\s*[1-5]\s*\)|$)/su',
+            $directionsBody,
+            $hits,
+            PREG_SET_ORDER
+        )) {
+            foreach ($hits as $hit) {
+                $label = trim(preg_replace('/\s+/u', ' ', $hit[2]) ?? $hit[2]);
+                if ($label !== '') {
+                    $opts[(int) $hit[1]] = $label;
+                }
+            }
+        }
+        if (count($opts) >= 4) {
+            ksort($opts);
+
+            return $opts;
+        }
+
+        return [
+            1 => 'If the data in statement (i) alone are sufficient to answer the question, while data in statement (ii) alone are not sufficient to answer the question.',
+            2 => 'If the data in statement (ii) alone are sufficient to answer the question, while data in statement (i) alone are not sufficient to answer the question.',
+            3 => 'If the data either in statement (i) alone or in statement (ii) alone are sufficient to answer the question.',
+            4 => 'If the data given in both statements (i) and (ii) together are not sufficient to answer the question.',
+            5 => 'If the data given in both statements (i) and (ii) together are necessary to answer the question.',
+        ];
     }
 
     private function cleanOptionText(string $text): string

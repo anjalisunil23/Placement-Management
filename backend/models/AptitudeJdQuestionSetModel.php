@@ -285,7 +285,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             }
             $norm['id'] = 'jdq-' . ($i + 1) . '-' . bin2hex(random_bytes(4));
             $norm['source'] = 'MANUAL_UPLOAD';
-            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'directionsBlock'] as $metaKey) {
+            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'directionsBlock', 'questionType'] as $metaKey) {
                 if (array_key_exists($metaKey, $q)) {
                     $norm[$metaKey] = $q[$metaKey];
                 }

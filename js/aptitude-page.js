@@ -1989,7 +1989,8 @@
       ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
       : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
     const metaParts = [];
-    if (manualPreview && q.section) metaParts.push(String(q.section));
+    if (manualPreview && q.questionType === 'DATA_SUFFICIENCY') metaParts.push('Data sufficiency');
+    else if (manualPreview && q.section) metaParts.push(String(q.section));
     else if (q.topic) metaParts.push(String(q.topic));
     else if (q.category) metaParts.push(String(q.category));
     if (q.difficulty) metaParts.push(String(q.difficulty));

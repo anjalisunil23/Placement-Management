@@ -108,6 +108,7 @@ Rules:
 - containsImage: true if the question depends on a diagram/graph/table image not fully described in text.
 - confidence: 0.0–1.0 for extraction certainty.
 - Skip non-MCQ content. Do not merge the entire paper into one question.
+- Data sufficiency: when Directions define (1)–(5) for statement (i)/(ii) items, use those five as options; put the question plus (i) and (ii) in prompt; set questionType to DATA_SUFFICIENCY and section from the paper.
 SYS;
 
         $user = "Default page if no marker: {$defaultPage}\n\nExtract MCQs from this text:\n\n" . $text;

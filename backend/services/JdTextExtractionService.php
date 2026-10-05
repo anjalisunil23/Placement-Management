@@ -140,6 +140,7 @@ final class JdTextExtractionService
         // Flat OCR blobs: "… hour? a) 6% b) 2% … 2) Find …"
         $text = preg_replace('/(\s)(\d{1,3}\)\s+(?=[A-Za-z(]))/u', "\n$2", $text) ?? $text;
         $text = preg_replace('/(\s)(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "\n\n$2", $text) ?? $text;
+        $text = preg_replace('/(\s)(Directions\s*:)/iu', "\n\n$2", $text) ?? $text;
         // Option line glued to a directions block (e.g. "e) 17 Directions (7 - 11):").
         $text = preg_replace('/(\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
         $text = preg_replace('/(\d{1,3}\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
