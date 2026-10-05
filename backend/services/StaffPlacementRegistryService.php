@@ -412,18 +412,25 @@ final class StaffPlacementRegistryService
     private function listFromStudentPlacements(array $listCtx, array $filters): array
     {
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
-        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
-        $program = trim((string) ($filters['program'] ?? ''));
-        $batch = trim((string) ($filters['batch'] ?? ''));
+        $allFromTable = !empty($filters['allFromTable']);
+        $model = new StudentPlacementModel();
 
-        $tableRows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
-            $departmentId,
-            $program,
-            $batch,
-            5000,
-            $batch !== ''
-        );
-        $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
+        if ($allFromTable) {
+            $tableRows = $model->listAllRosterRows(5000);
+            $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows, false);
+        } else {
+            $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+            $program = trim((string) ($filters['program'] ?? ''));
+            $batch = trim((string) ($filters['batch'] ?? ''));
+            $tableRows = $model->listRosterRowsForRegistryScope(
+                $departmentId,
+                $program,
+                $batch,
+                5000,
+                $batch !== ''
+            );
+            $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
+        }
 
         if ($studRole !== 'all') {
             $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
@@ -438,7 +445,7 @@ final class StaffPlacementRegistryService
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */
-    private function enrichRosterRowsFromLocalStudents(array $rows): array
+    private function enrichRosterRowsFromLocalStudents(array $rows, bool $dropIncomplete = true): array
     {
         if ($rows === []) {
             return [];
@@ -485,6 +492,10 @@ final class StaffPlacementRegistryService
                     }
                 }
             }
+        }
+
+        if (!$dropIncomplete) {
+            return $rows;
         }
 
         return array_values(array_filter(
@@ -545,6 +556,8 @@ final class StaffPlacementRegistryService
             'filters' => $filterOptions,
             'columns' => self::registryTableColumns(),
             'rows'    => $filtered,
+            'allFromTable' => !empty($filters['allFromTable']),
+            'staffDepartmentId' => trim((string) ($staffCtx['departmentId'] ?? '')),
             'canEditBatch' => $batch !== '' && StaffContext::canEditClassBatch($staffCtx, $batch),
             'assignedClassBatches' => StaffContext::assignedClassBatches($staffCtx),
             'totals'  => [
@@ -1675,12 +1688,62 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * Full student_placements table — optional type/search only (no dept/programme/batch scope).
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, string> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    private function applyOptionalRegistrySearchFilters(array $rows, array $filters): array
+    {
+        $type = trim((string) ($filters['type'] ?? ''));
+        $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
+        if ($type === '' && $q === '') {
+            return $rows;
+        }
+
+        return array_values(array_filter($rows, function (array $row) use ($type, $q): bool {
+            if ($type !== '') {
+                $want = match ($type) {
+                    'higher_education' => 'Higher Education',
+                    'research' => 'Research',
+                    default => 'Placement',
+                };
+                $employer = trim((string) ($row['employer'] ?? $row['company'] ?? ''));
+                if ($employer !== '' && (string) ($row['type'] ?? $row['recordType'] ?? '') !== $want) {
+                    return false;
+                }
+            }
+            if ($q === '') {
+                return true;
+            }
+            $hay = strtolower(implode(' ', [
+                (string) ($row['studentName'] ?? ''),
+                (string) ($row['registerNumber'] ?? ''),
+                (string) ($row['classBatch'] ?? ''),
+                (string) ($row['programme'] ?? ''),
+                (string) ($row['phone'] ?? ''),
+                (string) ($row['email'] ?? ''),
+                (string) ($row['company'] ?? ''),
+                (string) ($row['employer'] ?? ''),
+                (string) ($row['recordType'] ?? ''),
+            ]));
+
+            return str_contains($hay, $q);
+        }));
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $rows
      * @param array<string, string> $filters
      * @return array<int, array<string, mixed>>
      */
     private function applyFilters(array $rows, array $filters): array
     {
+        if (!empty($filters['allFromTable'])) {
+            return $this->applyOptionalRegistrySearchFilters($rows, $filters);
+        }
+
         $program = trim((string) ($filters['program'] ?? ''));
         $branch = trim((string) ($filters['branch'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));

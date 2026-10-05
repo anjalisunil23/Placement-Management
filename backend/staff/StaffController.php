@@ -404,6 +404,7 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
+        $scoped = (string) ($_GET['scoped'] ?? '') === '1';
         $filters = [
             'departmentId' => (string) ($_GET['departmentId'] ?? ''),
             'program'      => (string) ($_GET['program'] ?? ''),
@@ -412,6 +413,7 @@ final class StaffController
             'studRole'     => (string) ($_GET['studRole'] ?? 'all'),
             'type'         => (string) ($_GET['type'] ?? ''),
             'q'            => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+            'allFromTable' => !$scoped,
         ];
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->list($ctx, $filters)
@@ -447,6 +449,7 @@ final class StaffController
             'studRole'     => (string) ($filters['studRole'] ?? 'all'),
             'type'         => '',
             'q'            => '',
+            'allFromTable' => true,
         ];
         $registry = $registrySvc->list($ctx, $listFilters);
         $inTable = (int) ($registry['totals']['all'] ?? 0);
