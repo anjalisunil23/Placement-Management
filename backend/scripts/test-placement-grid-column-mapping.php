@@ -154,6 +154,109 @@ foreach ($legacyChecks as $col => $want) {
         $pass++;
     } else {
         $fail++;
+        echo "       expected: {$want}\n";
+    }
+}
+
+// Full legacy SQL row (all placement-relevant columns filled) → grid must match DB values.
+$fullLegacySql = [
+    'id'        => '2',
+    'payload'   => '{}',
+    'student'   => 'Afif Chettuparambil Asharaf',
+    'studentId' => '5459',
+    'cno'       => '9876501234',
+    'email'     => 'afifcasharaf@gmail.com',
+    'year'      => '2020-2021',
+    'courseId'  => '1001',
+    'branchId'  => '35',
+    'employer'  => 'TCS',
+    'empcno'    => '0481-1234567',
+    'empadr'    => 'Infopark Kochi',
+    'payscale'  => '3.36 LPA',
+];
+$fullDoc = StudentPlacementModel::mergeLegacyFlatRowIntoDoc($fullLegacySql, []);
+$fullRoster = StudentPlacementModel::rosterRowFromDocument(array_merge($fullDoc, ['_id' => '5459']));
+// Simulate empty AES profile overlay — must not wipe SQL values.
+$fullRoster = StudentPlacementModel::mergePreserveFilled($fullRoster, [
+    'phone' => '',
+    'email' => null,
+    'company' => '',
+    'package' => null,
+    'placement' => [
+        'company' => '',
+        'package' => null,
+        'address' => '',
+        'employerContact' => '',
+        'placementStatus' => null,
+    ],
+]);
+$fullRoster = $hydrate->invoke($svc, $fullRoster);
+$fullGrid = $extract->invoke($svc, $fullRoster, false, true);
+$fullEntry = $fullGrid[0] ?? [];
+
+$dbToGrid = [
+    'studentName'      => ['db' => 'student', 'want' => 'Afif Chettuparambil Asharaf'],
+    'phone'            => ['db' => 'cno', 'want' => '9876501234'],
+    'email'            => ['db' => 'email', 'want' => 'afifcasharaf@gmail.com'],
+    'classBatch'       => ['db' => 'year', 'want' => '2020-2021'],
+    'courseId'         => ['db' => 'courseId', 'want' => '1001'],
+    'branchId'         => ['db' => 'branchId', 'want' => '35'],
+    'company'          => ['db' => 'employer', 'want' => 'TCS'],
+    'employerContact'  => ['db' => 'empcno', 'want' => '0481-1234567'],
+    'address'          => ['db' => 'empadr', 'want' => 'Infopark Kochi'],
+    'package'          => ['db' => 'payscale', 'want' => '3.36 LPA'],
+    'placementStatus'  => ['db' => '(derived)', 'want' => 'Placed'],
+];
+
+echo "\n=== All legacy SQL columns → grid (after empty AES merge) ===\n\n";
+foreach ($dbToGrid as $gridCol => $meta) {
+    $got = trim((string) ($fullEntry[$gridCol] ?? ''));
+    if ($gridCol === 'company' && $got === '') {
+        $got = trim((string) ($fullEntry['employer'] ?? ''));
+    }
+    $want = $meta['want'];
+    $ok = strcasecmp($got, $want) === 0 || ($want !== '' && str_contains($got, $want));
+    echo ($ok ? 'PASS' : 'FAIL') . "  {$meta['db']} → {$gridCol}: "
+        . ($got !== '' ? $got : '(empty)') . "\n";
+    if ($ok) {
+        $pass++;
+    } else {
+        $fail++;
+        echo "       expected: {$want}\n";
+    }
+}
+
+// Third screenshot-style row with multi-employer + package.
+$row3Sql = [
+    'id' => '4', 'payload' => '{}',
+    'student' => 'Ajesh', 'studentId' => '5461',
+    'cno' => '9000012345', 'email' => 'ajeshmokavoor@gmail.com',
+    'year' => '2020-2021', 'courseId' => '1001', 'branchId' => '35',
+    'employer' => 'Infosys Experion', 'empcno' => 'hr@infosys.com',
+    'empadr' => 'Trivandrum', 'payscale' => '3.6 LPA',
+];
+$row3Doc = StudentPlacementModel::mergeLegacyFlatRowIntoDoc($row3Sql, []);
+$row3Roster = StudentPlacementModel::rosterRowFromDocument(array_merge($row3Doc, ['_id' => '5461']));
+$row3Grid = $extract->invoke($svc, $hydrate->invoke($svc, $row3Roster), false, true);
+$row3 = $row3Grid[0] ?? [];
+$row3Checks = [
+    'studentName' => 'Ajesh',
+    'phone' => '9000012345',
+    'email' => 'ajeshmokavoor@gmail.com',
+    'company' => 'Infosys Experion',
+    'employerContact' => 'hr@infosys.com',
+    'address' => 'Trivandrum',
+    'package' => '3.6 LPA',
+];
+echo "\n=== Screenshot-style row (Ajesh) ===\n\n";
+foreach ($row3Checks as $col => $want) {
+    $got = trim((string) ($row3[$col] ?? ($col === 'company' ? ($row3['employer'] ?? '') : '')));
+    $ok = strcasecmp($got, $want) === 0 || str_contains($got, $want);
+    echo ($ok ? 'PASS' : 'FAIL') . "  {$col}: " . ($got !== '' ? $got : '(empty)') . "\n";
+    if ($ok) {
+        $pass++;
+    } else {
+        $fail++;
     }
 }
 
@@ -176,4 +279,5 @@ foreach ($legacyBatchCases as [$want, $row, $expect]) {
     }
 }
 
+echo "\nTOTAL: {$pass} passed, {$fail} failed\n";
 exit($fail > 0 ? 1 : 0);
