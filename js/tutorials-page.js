@@ -401,12 +401,22 @@
     if (match) select.value = match.value;
   }
 
+  function setAiCourseSavedVisible(visible) {
+    document.getElementById('aiCourseSaved').classList.toggle('d-none', !visible);
+    const top = document.getElementById('aiCourseOpenSavedTop');
+    if (top) top.classList.toggle('d-none', !visible);
+  }
+
+  function openSavedAiCourse() {
+    if (state.aiSavedTutorialId) openModules(state.aiSavedTutorialId).catch(fail);
+  }
+
   function openAiCourseScreen() {
     state.aiCourse = null;
     state.aiSavedTutorialId = '';
     setAiError('aiCourseError', '');
     document.getElementById('aiCoursePreview').classList.add('d-none');
-    document.getElementById('aiCourseSaved').classList.add('d-none');
+    setAiCourseSavedVisible(false);
     document.getElementById('aiCourseLoading').classList.add('d-none');
     showStaffScreen('aiCourse');
   }
@@ -665,7 +675,7 @@
     const topic = document.getElementById('aiCourseTopic').value.trim();
     const moduleCount = Number(document.getElementById('aiCourseModuleCount').value);
     setAiError('aiCourseError', '');
-    document.getElementById('aiCourseSaved').classList.add('d-none');
+    setAiCourseSavedVisible(false);
     if (!topic) {
       setAiError('aiCourseError', 'Topic is required.');
       return;
@@ -751,7 +761,7 @@
         },
       });
       state.aiSavedTutorialId = (saved && saved.tutorial && saved.tutorial.id) || '';
-      document.getElementById('aiCourseSaved').classList.remove('d-none');
+      setAiCourseSavedVisible(true);
       if (saveState) saveState.textContent = 'Saved as draft.';
       toast('Course saved as draft.', 'success');
       await refreshList();
@@ -2968,9 +2978,9 @@
     });
     document.getElementById('aiCourseRegenerateBtn').addEventListener('click', () => { regenerateAiCourse().catch(fail); });
     document.getElementById('aiCourseSaveBtn').addEventListener('click', () => { saveAiCourseDraft().catch(fail); });
-    document.getElementById('aiCourseOpenSaved').addEventListener('click', () => {
-      if (state.aiSavedTutorialId) openModules(state.aiSavedTutorialId).catch(fail);
-    });
+    document.getElementById('aiCourseOpenSaved').addEventListener('click', openSavedAiCourse);
+    const openSavedTop = document.getElementById('aiCourseOpenSavedTop');
+    if (openSavedTop) openSavedTop.addEventListener('click', openSavedAiCourse);
     document.getElementById('generateModuleAiBtn').addEventListener('click', toggleAiModulePane);
     document.getElementById('aiModuleGenerateBtn').addEventListener('click', () => { generateAiModule().catch(fail); });
     document.getElementById('aiModuleSaveBtn').addEventListener('click', () => { saveAiModuleDraft().catch(fail); });
