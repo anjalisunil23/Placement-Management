@@ -122,71 +122,16 @@ final class StaffPlacementRegistryService
             }
         }
 
-        $backfill = $this->backfillStudentPlacementsFromAes($staffCtx, $filters);
-        $backfillUpdated = (int) ($backfill['rowsUpdated'] ?? 0);
-        if ($backfillUpdated > 0 && $syncError !== '') {
-            $syncError = '';
-        }
+        $profilesBackfilled = $this->backfillStudentPlacementsFromAesProfiles($staffCtx, $filters);
 
         return [
-            'studentsSynced'    => $studyingCount + $alumniCount,
-            'studyingSynced'    => $studyingCount,
-            'alumniSynced'      => $alumniCount,
-            'aesRosterFetched'  => $aesFetched,
-            'profilesFetched'   => (int) ($backfill['profilesFetched'] ?? 0),
-            'backfillUpdated'   => $backfillUpdated,
-            'syncError'         => $syncError,
-            'scope'             => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
-        ];
-    }
-
-    /**
-     * Fetch full getStudInfo4Placement for each row in student_placements (current filters) and upsert.
-     *
-     * @param array<string, mixed> $staffCtx
-     * @param array<string, string> $filters
-     * @return array{profilesFetched:int, rowsUpdated:int}
-     */
-    public function backfillStudentPlacementsFromAes(array $staffCtx, array $filters): array
-    {
-        @set_time_limit(max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 600)));
-
-        $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
-        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
-        $program = trim((string) ($filters['program'] ?? ''));
-        $batch = trim((string) ($filters['batch'] ?? ''));
-
-        $rows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
-            $departmentId,
-            $program,
-            $batch,
-            StudentPlacementModel::REGISTRY_TABLE_LIST_MAX,
-            true
-        );
-        if ($rows === []) {
-            return ['profilesFetched' => 0, 'rowsUpdated' => 0];
-        }
-
-        $programCode = $program !== ''
-            ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
-            : '';
-        $max = $this->aesProfileEnrichMaxForSync();
-        $profilesFetched = 0;
-        $rowsUpdated = 0;
-
-        foreach ($rows as $row) {
-            if ($profilesFetched >= $max) {
-                break;
-            }
-            $profilesFetched++;
-            if ($this->upsertRosterRowToStudentPlacements($row, $departmentId, $programCode, $batch)) {
-                $rowsUpdated++;
-            }
-        }
-
-        return [
-            'profilesFetched' => $profilesFetched,
-            'rowsUpdated'     => $rowsUpdated,
+            'studentsSynced'      => $studyingCount + $alumniCount,
+            'studyingSynced'      => $studyingCount,
+            'alumniSynced'        => $alumniCount,
+            'aesRosterFetched'    => $aesFetched,
+            'profilesBackfilled'  => $profilesBackfilled,
+            'syncError'           => $syncError,
+            'scope'               => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
         ];
     }
 
@@ -356,14 +301,6 @@ final class StaffPlacementRegistryService
         $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_LIVE_AES'] ?? '0')));
 
         return in_array($v, ['1', 'true', 'yes', 'on'], true);
-    }
-
-    /** Grid GET reads student_placements only (no AES/local merge, no live profile lookups). */
-    private function registryListTableOnly(): bool
-    {
-        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_TABLE_ONLY'] ?? '1')));
-
-        return !in_array($v, ['0', 'false', 'no', 'off'], true);
     }
 
     /**
@@ -732,25 +669,20 @@ final class StaffPlacementRegistryService
             5000,
             $batch !== ''
         );
-        $tableOnly = $this->registryListTableOnly();
-        if (!$tableOnly) {
-            $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
-            if ($aesRows !== []) {
-                $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
-            }
-            $localRows = $this->fetchLocalRosterForRegistryFilters($listCtx, $filters);
-            if ($localRows !== []) {
-                $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
-            }
+        $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
+        if ($aesRows !== []) {
+            $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
+        }
+        $localRows = $this->fetchLocalRosterForRegistryFilters($listCtx, $filters);
+        if ($localRows !== []) {
+            $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
         }
         $tableRows = array_map(
             fn (array $row): array => $this->hydrateRosterRowFromAesKeys($row),
             $tableRows
         );
-        if (!$tableOnly) {
-            $tableRows = $this->enrichRosterRowsFromAesProfiles($tableRows, $this->aesProfileEnrichMaxForList());
-            $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
-        }
+        $tableRows = $this->enrichRosterRowsFromAesProfiles($tableRows, $this->enrichProfileMaxForList());
+        $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
 
         if ($studRole !== 'all') {
             $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
@@ -1166,28 +1098,19 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * @param array<string, mixed> $row
-     * @return array<string, mixed>
+     * Max per-student getStudInfo4Placement calls on grid load (0 = unlimited).
      */
-    /**
-     * @param array<int, array<string, mixed>> $rows
-     * @return array<int, array<string, mixed>>
-     */
-    private function aesProfileEnrichMaxForSync(): int
+    private function enrichProfileMaxForList(): int
     {
-        $max = (int) ($_ENV['STAFF_PLACEMENT_AES_BACKFILL_MAX'] ?? 10000);
+        $raw = trim((string) ($_ENV['STAFF_PLACEMENT_ENRICH_AES_PROFILE_MAX'] ?? '500'));
+        if ($raw === '' || $raw === '0') {
+            return 0;
+        }
 
-        return max(1, min($max, StudentPlacementModel::REGISTRY_TABLE_LIST_MAX));
+        return max(0, (int) $raw);
     }
 
-    private function aesProfileEnrichMaxForList(): int
-    {
-        $max = (int) ($_ENV['STAFF_PLACEMENT_ENRICH_AES_PROFILE_LIST_MAX'] ?? 500);
-
-        return max(1, min($max, StudentPlacementModel::REGISTRY_TABLE_LIST_MAX));
-    }
-
-    private function aesProfileEnrichEnabled(): bool
+    private function enrichAesProfilesEnabled(): bool
     {
         $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_ENRICH_AES_PROFILE'] ?? '1')));
 
@@ -1196,114 +1119,143 @@ final class StaffPlacementRegistryService
 
     /**
      * @param array<string, mixed> $row
+     */
+    private function rosterRowNeedsAesProfile(array $row): bool
+    {
+        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        if (trim((string) ($row['studentName'] ?? $row['displayName'] ?? '')) === '') {
+            return true;
+        }
+        if (trim((string) ($row['phone'] ?? '')) === '' || trim((string) ($row['email'] ?? '')) === '') {
+            return true;
+        }
+        foreach (['company', 'role', 'package', 'address', 'employerContact', 'placementStatus'] as $key) {
+            if (trim((string) ($placement[$key] ?? '')) !== '') {
+                return false;
+            }
+        }
+
+        return trim((string) ($placement['company'] ?? '')) === '';
+    }
+
+    /**
+     * Live getStudInfo4Placement merge (contact + placement fields).
+     *
+     * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function mergeRowWithAesPlacementProfile(array $row, bool $alwaysFetch = false): array
+    private function mergeAesProfileIntoRosterRow(array $row): array
     {
-        $row = $this->hydrateRosterRowFromAesKeys($row);
-        if (!$this->aesProfileEnrichEnabled()) {
+        $keys = [];
+        foreach (['registerNumber', 'admno', 'registerno', 'admissionNo'] as $field) {
+            $v = strtoupper(trim((string) ($row[$field] ?? '')));
+            if ($v !== '') {
+                $keys[$v] = true;
+            }
+        }
+        if ($keys === []) {
             return $row;
         }
 
-        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-        $needsContact = trim((string) ($row['phone'] ?? '')) === ''
-            || trim((string) ($row['email'] ?? '')) === '';
-        $needsPlacement = trim((string) ($placement['company'] ?? '')) === '';
-        if (!$alwaysFetch && !$needsContact && !$needsPlacement) {
-            return $row;
+        $api = new AesApiService();
+        foreach (array_keys($keys) as $reg) {
+            $attempts = [['admno' => $reg]];
+            if (!ctype_digit($reg)) {
+                $attempts[] = ['registerno' => $reg, 'registerNumber' => $reg];
+            }
+            foreach ($attempts as $params) {
+                try {
+                    $profile = $api->fetchStudentPlacementProfile($params);
+                } catch (\Throwable) {
+                    $profile = [];
+                }
+                if ($profile !== []) {
+                    return $this->hydrateRosterRowFromAesKeys(array_merge($row, $profile));
+                }
+            }
         }
 
-        $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
-        if ($register === '') {
-            return $row;
-        }
-
-        try {
-            $profile = (new AesApiService())->fetchStudentPlacementProfile(['admno' => $register]);
-        } catch (\Throwable) {
-            return $row;
-        }
-        if ($profile === []) {
-            return $row;
-        }
-
-        return $this->hydrateRosterRowFromAesKeys(array_merge($row, $profile));
+        return $row;
     }
 
     /**
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */
-    private function enrichRosterRowsFromAesProfiles(array $rows, int $maxLookups = 40): array
+    private function enrichRosterRowsFromAesProfiles(array $rows, int $maxLookups = 0): array
     {
-        if ($rows === [] || !$this->aesProfileEnrichEnabled()) {
+        if ($rows === [] || !$this->enrichAesProfilesEnabled()) {
             return $rows;
         }
 
         $lookups = 0;
         foreach ($rows as $idx => $row) {
-            if ($lookups >= $maxLookups) {
+            if ($maxLookups > 0 && $lookups >= $maxLookups) {
                 break;
             }
-            $merged = $this->mergeRowWithAesPlacementProfile($row, false);
+            if (!$this->rosterRowNeedsAesProfile($row)) {
+                continue;
+            }
+            $merged = $this->mergeAesProfileIntoRosterRow($row);
             if ($merged !== $row) {
                 $lookups++;
+                $rows[$idx] = $merged;
             }
-            $rows[$idx] = $merged;
         }
 
         return $rows;
     }
 
     /**
-     * @param array<string, mixed> $row
+     * After roster sync, fill every in-scope student_placements row from live AES profiles.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
      */
-    private function upsertRosterRowToStudentPlacements(
-        array $row,
-        string $departmentId,
-        string $programCode,
-        string $batchLabel
-    ): bool {
-        $row = $this->mergeRowWithAesPlacementProfile($row, true);
-        $studentId = $this->registryStudentId($row);
-        $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
-        if ($studentId === '' || $register === '') {
-            return false;
+    private function backfillStudentPlacementsFromAesProfiles(array $staffCtx, array $filters): int
+    {
+        if (!$this->enrichAesProfilesEnabled()) {
+            return 0;
         }
 
-        $role = AesApiService::normalizeStudRole($row) ?? 'student';
-        $roleTag = $role === 'alumni' ? 'alumni' : 'student';
-        $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-        $fromDirectory = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
-            array_merge($row, $embedded)
+        @set_time_limit(max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 900)));
+
+        $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
+        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+
+        $rows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
+            $departmentId,
+            $program,
+            $batch,
+            StudentPlacementModel::REGISTRY_TABLE_LIST_MAX,
+            $batch !== ''
         );
-        $placement = $this->placementFieldsForAesSync(array_merge($embedded, $fromDirectory));
-        $meta = StudentPlacementModel::normalizeRosterMeta(array_merge(
-            $row,
-            $this->rosterStudRoleFieldsForSync($row, $roleTag),
-            [
-                'classBatch' => trim($batchLabel) !== ''
-                    ? trim($batchLabel)
-                    : trim((string) ($row['classBatch'] ?? $row['stud_class'] ?? '')),
-                'programme'  => $programCode !== ''
-                    ? $programCode
-                    : trim((string) ($row['programme'] ?? $row['stud_course'] ?? '')),
-            ]
-        ));
-
-        try {
-            (new StudentPlacementModel())->upsertForStudent(
-                $studentId,
-                $register,
-                $placement,
-                trim($departmentId) !== '' ? trim($departmentId) : null,
-                $meta
-            );
-
-            return true;
-        } catch (\Throwable) {
-            return false;
+        if ($rows === []) {
+            return 0;
         }
+
+        $updated = 0;
+        foreach ($rows as $row) {
+            $row = $this->mergeAesProfileIntoRosterRow($row);
+            $batchLabel = trim((string) ($row['classBatch'] ?? $row['stud_class'] ?? $batch));
+            $programCode = DepartmentProgrammeCatalog::resolveProgrammeCode(trim((string) (
+                $row['programme'] ?? $row['stud_course'] ?? $program
+            )));
+            $role = AesApiService::normalizeStudRole($row) ?? 'student';
+            if ($this->upsertAesRosterRowToStudentPlacements(
+                $row,
+                $departmentId,
+                $programCode !== '' ? $programCode : $program,
+                $batchLabel !== '' ? $batchLabel : $batch,
+                $role === 'alumni' ? 'alumni' : 'student'
+            )) {
+                $updated++;
+            }
+        }
+
+        return $updated;
     }
 
     private function hydrateRosterRowFromAesKeys(array $row): array
@@ -1760,12 +1712,71 @@ final class StaffPlacementRegistryService
         $synced = 0;
 
         foreach ($classRows as $row) {
-            if ($this->upsertRosterRowToStudentPlacements($row, $deptId, $programCode, $batchLabel)) {
+            $row = $this->mergeAesProfileIntoRosterRow($this->hydrateRosterRowFromAesKeys($row));
+            if ($this->upsertAesRosterRowToStudentPlacements(
+                $row,
+                $deptId,
+                $programCode,
+                $batchLabel,
+                $placementStudRole
+            )) {
                 $synced++;
             }
         }
 
         return $synced;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function upsertAesRosterRowToStudentPlacements(
+        array $row,
+        string $departmentId,
+        string $program,
+        string $batch,
+        string $placementStudRole = 'student'
+    ): bool {
+        $row = $this->hydrateRosterRowFromAesKeys($row);
+        $studentId = $this->registryStudentId($row);
+        $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+        if ($studentId === '' || $register === '') {
+            return false;
+        }
+
+        $programCode = $program !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
+            : '';
+        $batchLabel = trim($batch);
+        $deptId = trim($departmentId);
+
+        $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $fromDirectory = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
+            array_merge($row, $embedded)
+        );
+        $placement = $this->placementFieldsForAesSync(array_merge($embedded, $fromDirectory));
+        $meta = StudentPlacementModel::normalizeRosterMeta(array_merge(
+            $row,
+            $this->rosterStudRoleFieldsForSync($row, $placementStudRole),
+            [
+                'classBatch' => $batchLabel !== '' ? $batchLabel : ($row['classBatch'] ?? $row['stud_class'] ?? ''),
+                'programme'  => $programCode !== '' ? $programCode : ($row['programme'] ?? $row['stud_course'] ?? ''),
+            ]
+        ));
+
+        try {
+            (new StudentPlacementModel())->upsertForStudent(
+                $studentId,
+                $register,
+                $placement,
+                $deptId !== '' ? $deptId : null,
+                $meta
+            );
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**

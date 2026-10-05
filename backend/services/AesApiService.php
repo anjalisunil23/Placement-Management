@@ -617,13 +617,15 @@ final class AesApiService
         ]);
         $package = $this->firstNonEmptyString($record, [
             'package', 'salary', 'ctc', 'monthly_salary', 'monthlySalary', 'pay', 'compensation',
-            'stud_salary', 'placed_package',
+            'stud_salary', 'placed_package', 'payscale', 'pay_scale',
         ]);
         $address = $this->firstNonEmptyString($record, [
             'company_address', 'employer_address', 'address', 'org_address', 'office_address',
+            'empadr', 'emp_adr',
         ]);
         $contact = $this->firstNonEmptyString($record, [
             'employer_contact', 'company_contact', 'contact', 'hr_contact', 'phone_office',
+            'empcno', 'emp_cno',
         ]);
         $joinDate = $this->firstNonEmptyString($record, [
             'join_date', 'joinDate', 'date_of_joining', 'placed_date', 'placement_date',

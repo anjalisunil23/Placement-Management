@@ -13,6 +13,7 @@ require $root . '/vendor/autoload.php';
 require_once dirname(__DIR__) . '/bootstrap-services.php';
 pms_load_backend_services(dirname(__DIR__));
 
+use PMS\Models\StudentPlacementModel;
 use PMS\Services\AesApiService;
 use PMS\Services\StaffPlacementRegistryService;
 
@@ -112,6 +113,48 @@ if (!$slimOk) {
     $fail++;
 } else {
     $pass++;
+}
+
+// Legacy phpMyAdmin flat columns (empty JSON payload).
+$legacySqlRow = [
+    'id'        => '1',
+    'payload'   => '{}',
+    'student'   => 'Adithya Anil',
+    'studentId' => '5458',
+    'cno'       => '',
+    'email'     => 'anil.adithya99@gmail.com',
+    'year'      => '2020-2021',
+    'courseId'  => '1001',
+    'branchId'  => '35',
+    'employer'  => 'Infosys Accenture Innovature',
+    'empcno'    => '',
+    'empadr'    => '',
+    'payscale'  => '3.6 LPA',
+];
+$legacyDoc = StudentPlacementModel::mergeLegacyFlatRowIntoDoc($legacySqlRow, []);
+$legacyRoster = StudentPlacementModel::rosterRowFromDocument(array_merge($legacyDoc, ['_id' => '5458']));
+$legacyGrid = $extract->invoke($svc, $legacyRoster, false, true);
+$legacyEntry = $legacyGrid[0] ?? [];
+$legacyChecks = [
+    'studentName' => 'Adithya Anil',
+    'email'       => 'anil.adithya99@gmail.com',
+    'company'     => 'Infosys Accenture Innovature',
+    'package'     => '3.6 LPA',
+    'classBatch'  => '2020-2021',
+];
+echo "\n=== Legacy flat student_placements row ===\n\n";
+foreach ($legacyChecks as $col => $want) {
+    $got = trim((string) ($legacyEntry[$col] ?? $legacyEntry['employer'] ?? ''));
+    if ($col === 'company' && $got === '') {
+        $got = trim((string) ($legacyEntry['employer'] ?? ''));
+    }
+    $ok = strcasecmp($got, $want) === 0 || str_contains($got, $want);
+    echo ($ok ? 'PASS' : 'FAIL') . "  {$col}: " . ($got !== '' ? $got : '(empty)') . "\n";
+    if ($ok) {
+        $pass++;
+    } else {
+        $fail++;
+    }
 }
 
 exit($fail > 0 ? 1 : 0);
