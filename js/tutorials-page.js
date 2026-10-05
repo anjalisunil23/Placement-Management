@@ -3419,7 +3419,8 @@
     root.innerHTML = modules.map((module, index) => {
       const expanded = learn.expandedModules[module.id] !== false && (learn.expandedModules[module.id] === true || index === learn.moduleIndex);
       const lessons = lessonOutlineFor(module, index);
-      const moduleReady = ((learn.progress && learn.progress.workspace && learn.progress.workspace.readyModuleIds) || []).includes(module.id);
+      const markedIds = (learn.progress && learn.progress.completedModuleIds) || [];
+      const moduleReady = markedIds.includes(module.id) || ((learn.progress && learn.progress.workspace && learn.progress.workspace.readyModuleIds) || []).includes(module.id);
       const lessonButtons = expanded ? `<div class="student-lessons">${lessons.map((lesson, lessonIndex) => {
         const active = index === learn.moduleIndex && lessonIndex === learn.lessonIndex;
         const done = lessonIsComplete(module.id, lesson.id);
@@ -3489,13 +3490,20 @@
     prev.textContent = 'Previous lesson';
     next.textContent = !atLast && lastLesson && learn.moduleIndex < modules.length - 1 ? 'Continue to next module' : 'Next lesson';
     const markLesson = document.getElementById('studentMarkLesson');
+    const module = modules[learn.moduleIndex];
+    const lesson = lessons[learn.lessonIndex];
     if (markLesson) {
-      const module = modules[learn.moduleIndex];
-      const lesson = lessons[learn.lessonIndex];
       const hasPractice = (learn.practiceQuestions || []).length > 0;
       const done = module && lesson ? lessonIsComplete(module.id, lesson.id) : false;
-      markLesson.disabled = !module || !lesson || hasPractice || done;
-      markLesson.textContent = done ? 'Lesson complete' : (hasPractice ? 'Answer the practice questions' : 'Mark lesson complete');
+      markLesson.classList.toggle('d-none', hasPractice);
+      markLesson.disabled = !module || !lesson || done;
+      markLesson.textContent = done ? 'Lesson complete' : 'Mark lesson complete';
+    }
+    const finishModule = document.getElementById('studentFinishModule');
+    if (finishModule) {
+      const marked = module && ((learn.progress && learn.progress.completedModuleIds) || []).includes(module.id);
+      finishModule.disabled = !module || marked;
+      finishModule.textContent = marked ? 'Module complete' : 'Finish module';
     }
   }
 
@@ -4673,7 +4681,7 @@
   function paintProgress() {
     const progress = learn.progress || { status: 'NOT_STARTED', progressPercent: 0, completedModules: 0, totalModules: 0, completed: false, completedModuleIds: [] };
     const workspace = progress.workspace || {};
-    const percent = workspace.percent != null ? workspace.percent : (progress.progressPercent || 0);
+    const percent = progress.progressPercent != null ? progress.progressPercent : (workspace.percent || 0);
     const label = document.getElementById('studentProgressLabel');
     const bar = document.getElementById('studentProgressBar');
     const stats = document.getElementById('studentProgressStats');
@@ -4685,7 +4693,7 @@
     }
     if (stats) {
       stats.innerHTML = [
-        `<span><strong>${workspace.completedModules || 0}</strong> / ${workspace.totalModules || progress.totalModules || 0} modules</span>`,
+        `<span><strong>${progress.completedModules || 0}</strong> / ${progress.totalModules || workspace.totalModules || 0} modules</span>`,
         `<span><strong>${workspace.completedLessons || 0}</strong> / ${workspace.totalLessons || 0} lessons</span>`,
         `<span><strong>${workspace.completedExercises || 0}</strong> / ${workspace.totalExercises || 0} practice questions</span>`,
       ].join('');
@@ -4768,6 +4776,21 @@
         if (panel) panel.classList.add('d-none');
       });
     }
+    const finishModuleBtn = document.getElementById('studentFinishModule');
+    if (finishModuleBtn) finishModuleBtn.addEventListener('click', async () => {
+      const current = ((learn.detail && learn.detail.modules) || [])[learn.moduleIndex];
+      if (!current || !learn.detail) return;
+      const button = document.getElementById('studentFinishModule');
+      if (button) button.disabled = true;
+      try {
+        learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(current.id)}/progress`, { method: 'POST', body: {} });
+        paintProgress();
+        toast('Module marked complete.', 'success');
+      } catch (err) {
+        if (button) button.disabled = false;
+        fail(err);
+      }
+    });
     document.getElementById('studentMarkLesson').addEventListener('click', async () => {
       const current = ((learn.detail && learn.detail.modules) || [])[learn.moduleIndex];
       const lesson = (learn.lessons || [])[learn.lessonIndex];
