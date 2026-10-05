@@ -1545,8 +1545,10 @@
         const u = Auth.user() || {};
         apiAssignedBatches = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
       }
-      await loadPlacementFilters();
-      await loadRegistry();
+      await Promise.all([
+        loadPlacementFilters(),
+        loadRegistry(),
+      ]);
     });
   </script>
 </body>

@@ -365,7 +365,6 @@ final class StaffController
     /** GET /api/staff/placement-filters */
     public function placementFilters(): void
     {
-        PlacementFilterService::clearScopedRowsCache();
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
@@ -382,7 +381,7 @@ final class StaffController
         $filterCtx = $registrySvc->placementFilterContext($ctx, $filterPayload);
         $svc = new PlacementFilterService();
         $assigned = StaffContext::assignedClassBatches($filterCtx);
-        if ($assigned === []) {
+        if ($assigned === [] && $this->staffPlacementRefreshCtFromAesEnabled()) {
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
         Response::success(DocumentHelper::jsonSafe([
@@ -410,6 +409,7 @@ final class StaffController
             'studRole'     => (string) ($_GET['studRole'] ?? 'all'),
             'type'         => (string) ($_GET['type'] ?? ''),
             'q'            => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+            'omitFilterOptions' => filter_var($_GET['omitFilters'] ?? '1', FILTER_VALIDATE_BOOLEAN),
         ];
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->list($ctx, $filters)
@@ -1147,5 +1147,12 @@ final class StaffController
         } catch (\InvalidArgumentException $e) {
             Response::error($e->getMessage(), 422);
         }
+    }
+
+    private function staffPlacementRefreshCtFromAesEnabled(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REFRESH_CT_FROM_AES'] ?? '0')));
+
+        return in_array($v, ['1', 'true', 'yes', 'on'], true);
     }
 }

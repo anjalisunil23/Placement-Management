@@ -697,8 +697,12 @@ final class StaffPlacementRegistryService
             if ($localRows !== []) {
                 $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
             }
+            $tableRows = $this->attachRegistryPlacements($tableRows, $departmentId, $program, $batch);
+        } else {
+            foreach ($tableRows as $idx => $row) {
+                $tableRows[$idx] = $this->promoteContactFieldsFromPlacement($row);
+            }
         }
-        $tableRows = $this->attachRegistryPlacements($tableRows, $departmentId, $program, $batch);
         $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
 
         if ($studRole !== 'all') {
@@ -795,7 +799,12 @@ final class StaffPlacementRegistryService
     ): array {
         $batch = trim((string) ($filters['batch'] ?? ''));
         $filtered = $this->applyFilters($registry, $filters);
-        $filterOptions = $this->buildLiteFilterOptions($listCtx, $filters, $filtered);
+        $omitFilterOptions = !empty($filters['omitFilterOptions']);
+        $filterOptions = $omitFilterOptions
+            ? ['programs' => [], 'branches' => [], 'batches' => [], 'departments' => []]
+            : ($this->registryListLiteFiltersEnabled()
+                ? $this->buildTableOnlyFilterOptions($listCtx, $filters, $filtered)
+                : $this->buildLiteFilterOptions($listCtx, $filters, $filtered));
 
         $placementCount = 0;
         $higherCount = 0;
@@ -1639,6 +1648,105 @@ final class StaffPlacementRegistryService
         }
 
         return $id;
+    }
+
+    private function registryListLiteFiltersEnabled(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_LIST_LITE_FILTERS'] ?? '1')));
+
+        return !in_array($v, ['0', 'false', 'no', 'off'], true);
+    }
+
+    /**
+     * Filter dropdowns from DB + CT assignment only (no live AES on grid GET).
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
+     * @param array<int, array<string, mixed>> $rows
+     * @return array{programs: string[], branches: string[], batches: string[], departments: array<int, array{id:string,code:string,name:string}>}
+     */
+    private function buildTableOnlyFilterOptions(array $staffCtx, array $filters, array $rows): array
+    {
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+        $departmentId = trim((string) ($filters['departmentId'] ?? $staffCtx['departmentId'] ?? ''));
+        $programs = [];
+        $batches = [];
+
+        foreach (StaffContext::assignedClassBatches($staffCtx) as $assigned) {
+            $assigned = ClassInchargeRegistry::batchLabelWithoutSemester(trim((string) $assigned));
+            if ($assigned === '') {
+                continue;
+            }
+            $batches[] = $assigned;
+            $hint = DepartmentProgrammeCatalog::programmeInferredFromBatchLabel($assigned);
+            if ($hint !== '') {
+                $programs[] = $hint;
+            }
+        }
+
+        foreach ($rows as $row) {
+            $p = trim((string) ($row['program'] ?? $row['programme'] ?? ''));
+            $b = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
+            if ($p !== '') {
+                $programs[] = $p;
+            }
+            if ($b !== '') {
+                $batches[] = $b;
+            }
+        }
+
+        if ($program !== '') {
+            $programs[] = $program;
+        }
+        if ($batch !== '') {
+            $batches[] = $batch;
+        }
+
+        $dept = is_array($staffCtx['department'] ?? null) ? $staffCtx['department'] : null;
+        $group = $dept !== null
+            ? DepartmentProgrammeCatalog::findGroupForDepartment(
+                (string) ($dept['code'] ?? ''),
+                (string) ($dept['name'] ?? '')
+            )
+            : null;
+        if ($group !== null) {
+            foreach (DepartmentProgrammeCatalog::programmeCodesForGroup($group) as $code) {
+                $code = trim($code);
+                if ($code !== '') {
+                    $programs[] = $code;
+                }
+            }
+        }
+
+        if ($departmentId !== '' && $batch === '') {
+            try {
+                $placementModel = new StudentPlacementModel();
+                $batches = array_merge(
+                    $batches,
+                    $placementModel->findDistinctClassBatches($departmentId, $program, 800)
+                );
+            } catch (\Throwable) {
+                // optional table
+            }
+        }
+
+        $programs = array_values(array_unique(array_filter($programs)));
+        $batches = array_values(array_unique(array_filter($batches)));
+        sort($programs, SORT_STRING);
+        sort($batches, SORT_STRING);
+
+        $branches = [];
+        if ($program !== '') {
+            $branches = ['Regular'];
+        }
+
+        return [
+            'programs'    => $programs,
+            'branches'    => $branches,
+            'batches'     => $batches,
+            'departments' => $this->departmentFilterOptions(),
+        ];
     }
 
     /**
