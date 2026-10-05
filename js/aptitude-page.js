@@ -2028,8 +2028,176 @@
     </div>`;
   }
 
+  function jdQuestionOptionLetters(q) {
+    return q.questionType === 'DATA_SUFFICIENCY' ? ['1', '2', '3', '4', '5'] : ['A', 'B', 'C', 'D', 'E'];
+  }
+
+  function jdQuestionEditOptionCount(q) {
+    if (q.questionType === 'DATA_SUFFICIENCY' || q.questionType === 'STATEMENTS_CONCLUSIONS') return 5;
+    return Math.max(4, Math.min(5, (q.options || []).length || 4));
+  }
+
+  function renderJdQuestionEditFormHtml(q, qIndex, setId) {
+    const letters = jdQuestionOptionLetters(q);
+    const optCount = jdQuestionEditOptionCount(q);
+    const opts = (q.options || []).slice(0, optCount);
+    while (opts.length < optCount) opts.push('');
+    const correct = Math.max(0, Math.min(optCount - 1, Number(q.correctIndex ?? 0)));
+    const qLabel = q.questionNumber ? `Q${q.questionNumber}` : `Q${qIndex + 1}`;
+    const qid = esc(String(q.id || ''));
+    return `<div class="border rounded-2 p-3 bg-white" data-jd-q-card="${qIndex}" data-jd-q-id="${qid}">
+      <div class="fw-semibold mb-2">Edit ${esc(qLabel)}</div>
+      <label class="form-label small mb-1">Question</label>
+      <textarea class="form-control form-control-sm mb-2" rows="4" data-jd-q-field="prompt">${esc(String(q.prompt || ''))}</textarea>
+      ${Array.from({ length: optCount }, (_, oi) => {
+        const lab = letters[oi] || String(oi + 1);
+        const prefix = q.questionType === 'DATA_SUFFICIENCY' ? `Option (${lab})` : `Option ${lab}`;
+        return `<label class="form-label small mb-1">${esc(prefix)}</label><input class="form-control form-control-sm mb-2" data-jd-q-field="opt${oi}" value="${esc(String(opts[oi] || ''))}"/>`;
+      }).join('')}
+      <div class="mb-2">
+        <label class="form-label small mb-1">Correct answer</label>
+        <select class="form-select form-select-sm" data-jd-q-field="correct">${Array.from({ length: optCount }, (_, oi) => {
+          const lab = letters[oi] || String(oi + 1);
+          return `<option value="${oi}" ${correct === oi ? 'selected' : ''}>${esc(lab)} — ${esc(String(opts[oi] || '').slice(0, 60))}</option>`;
+        }).join('')}</select>
+      </div>
+      <label class="form-label small mb-1">Explanation</label>
+      <textarea class="form-control form-control-sm mb-2" rows="2" data-jd-q-field="explanation">${esc(String(q.explanation || ''))}</textarea>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="jd-q-answer-known-${qIndex}" data-jd-q-field="answerKnown" ${q.answerKnown !== false && q.answerKnown !== 0 ? 'checked' : ''}/>
+        <label class="form-check-label small" for="jd-q-answer-known-${qIndex}">Answer is known (show correct option in preview)</label>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-primary" data-jd-q-save="${qIndex}" data-jd-set-id="${esc(setId)}" data-jd-q-id="${qid}">Save</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-jd-q-cancel="${qIndex}">Cancel</button>
+      </div>
+    </div>`;
+  }
+
   function renderJdQuestionDetailHtml(q, index, opts = {}) {
-    return renderMcqPickDetailHtml(q, index, { ...opts, manualPreview: true });
+    const editable = !!opts.editable;
+    const setId = String(opts.setId || '');
+    const qIndex = opts.qIndex != null ? opts.qIndex : index;
+    if (editable && q._editing) {
+      return renderJdQuestionEditFormHtml(q, qIndex, setId);
+    }
+    const body = renderMcqPickDetailHtml(q, index, { ...opts, manualPreview: true });
+    if (!editable || !setId) return body;
+    return `<div data-jd-q-card="${qIndex}">
+      ${body}
+      <div class="mt-2 pt-2 border-top">
+        <button type="button" class="btn btn-sm btn-outline-primary" data-jd-q-edit="${qIndex}">Edit</button>
+      </div>
+    </div>`;
+  }
+
+  async function persistJdSetQuestionEdit(setId, questionId, patch) {
+    const id = String(setId || '');
+    const qid = String(questionId || '');
+    if (!id || !qid) throw new Error('Missing set or question id.');
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}/questions/${encodeURIComponent(qid)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+      if (!res?.success) throw new Error(res?.message || 'Could not save question.');
+      jdSetDetailsCache[id] = res.data;
+      return res.data;
+    }
+    if (!Auth.isDemo() || !access.canManage) {
+      throw new Error('Saving requires a live session.');
+    }
+    const store = loadDemoJdStore();
+    const idx = store.findIndex((s) => String(s.id) === id);
+    if (idx < 0) throw new Error('Set not found.');
+    const qs = Array.isArray(store[idx].questions) ? store[idx].questions : [];
+    const qi = qs.findIndex((q) => String(q.id) === qid);
+    if (qi < 0) throw new Error('Question not found.');
+    qs[qi] = { ...qs[qi], ...patch, lockCorrectIndex: true };
+    store[idx] = { ...store[idx], questions: qs, questionCount: qs.length };
+    saveDemoJdStore(store);
+    jdSetDetailsCache[id] = store[idx];
+    return store[idx];
+  }
+
+  function readJdQuestionEditPatch(card, q) {
+    const optCount = jdQuestionEditOptionCount(q);
+    const options = Array.from({ length: optCount }, (_, oi) => String(card.querySelector(`[data-jd-q-field="opt${oi}"]`)?.value || '').trim());
+    return {
+      prompt: String(card.querySelector('[data-jd-q-field="prompt"]')?.value || '').trim(),
+      options,
+      correctIndex: Number(card.querySelector('[data-jd-q-field="correct"]')?.value || 0),
+      explanation: String(card.querySelector('[data-jd-q-field="explanation"]')?.value || '').trim(),
+      answerKnown: !!card.querySelector('[data-jd-q-field="answerKnown"]')?.checked,
+    };
+  }
+
+  function bindManualQuestionEditEvents(panel) {
+    if (!panel || panel.dataset.jdQEditBound === '1') return;
+    panel.dataset.jdQEditBound = '1';
+    const hostEl = () => panel.closest('[data-jd-questions]') || panel.parentElement;
+    const rerender = (detail) => {
+      const setId = String(panel.getAttribute('data-jd-set-id') || detail?.id || '');
+      const host = hostEl();
+      if (!host) return;
+      host.innerHTML = renderManualQuestionsPanel(detail || {}, { setId, editable: access.canManage });
+      bindManualQuestionEditEvents(host.querySelector('[data-jd-questions-panel]'));
+    };
+    panel.addEventListener('click', async (e) => {
+      const setId = String(panel.getAttribute('data-jd-set-id') || '');
+      if (!setId) return;
+
+      const editBtn = e.target.closest('[data-jd-q-edit]');
+      if (editBtn) {
+        e.preventDefault();
+        const qIndex = Number(editBtn.getAttribute('data-jd-q-edit'));
+        const detail = jdSetDetailsCache[setId] || (await getJdSetDetail(setId));
+        if (!detail?.questions?.[qIndex]) return;
+        detail.questions.forEach((item, i) => {
+          if (item && i !== qIndex) delete item._editing;
+        });
+        detail.questions[qIndex]._editing = true;
+        jdSetDetailsCache[setId] = detail;
+        rerender(detail);
+        return;
+      }
+
+      const cancelBtn = e.target.closest('[data-jd-q-cancel]');
+      if (cancelBtn) {
+        e.preventDefault();
+        const qIndex = Number(cancelBtn.getAttribute('data-jd-q-cancel'));
+        const detail = jdSetDetailsCache[setId];
+        if (detail?.questions?.[qIndex]) delete detail.questions[qIndex]._editing;
+        rerender(detail || {});
+        return;
+      }
+
+      const saveBtn = e.target.closest('[data-jd-q-save]');
+      if (saveBtn) {
+        e.preventDefault();
+        const qIndex = Number(saveBtn.getAttribute('data-jd-q-save'));
+        const qid = saveBtn.getAttribute('data-jd-q-id') || '';
+        const card = panel.querySelector(`[data-jd-q-card="${qIndex}"]`);
+        const detail = jdSetDetailsCache[setId] || (await getJdSetDetail(setId));
+        const q = detail?.questions?.[qIndex];
+        if (!card || !q) return;
+        const patch = readJdQuestionEditPatch(card, q);
+        if (!patch.prompt || patch.options.filter((o) => o).length < 2) {
+          toast('Enter the question and at least two options.', 'error');
+          return;
+        }
+        saveBtn.setAttribute('disabled', 'disabled');
+        try {
+          const updated = await persistJdSetQuestionEdit(setId, qid, patch);
+          rerender(updated);
+          toast('Question saved.', 'success');
+        } catch (err) {
+          toast(err?.message || 'Could not save question.', 'error');
+        } finally {
+          saveBtn.removeAttribute('disabled');
+        }
+      }
+    });
   }
 
   function splitManualTextIntoBlocks(text) {
@@ -2052,7 +2220,9 @@
     });
   }
 
-  function renderManualQuestionsPanel(detail) {
+  function renderManualQuestionsPanel(detail, panelOpts = {}) {
+    const setId = String(panelOpts.setId || detail?.id || '');
+    const editable = panelOpts.editable != null ? !!panelOpts.editable : !!access.canManage;
     const qs = Array.isArray(detail?.questions) ? detail.questions : [];
     if (qs.length) {
       const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};
@@ -2076,9 +2246,9 @@
         } else if (!dir) {
           lastDirections = null;
         }
-        return header + renderJdQuestionDetailHtml(q, i);
+        return header + renderJdQuestionDetailHtml(q, i, { setId, editable, qIndex: i });
       });
-      return summary + `<div class="d-flex flex-column gap-3">${cards.join('')}</div>`;
+      return summary + `<div class="d-flex flex-column gap-3" data-jd-questions-panel data-jd-set-id="${esc(setId)}">${cards.join('')}</div>`;
     }
     const text = String(detail?.manualText || '').trim();
     const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};
@@ -2239,7 +2409,8 @@
           return;
         }
         const detail = await getDetail(id);
-        panel.innerHTML = renderManualQuestionsPanel(detail || {});
+        panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
+        bindManualQuestionEditEvents(panel.querySelector('[data-jd-questions-panel]'));
         panel.classList.remove('d-none');
         btn.textContent = 'Hide';
       });

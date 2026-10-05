@@ -1041,6 +1041,34 @@ final class AptitudeService
 
     /**
      * @param array<string, mixed> $admin
+     * @param array<string, mixed> $patch
+     * @return array<string, mixed>
+     */
+    public function updateJdQuestionSetQuestion(array $admin, string $setId, string $questionId, array $patch): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($setId)) {
+            Response::notFound('JD question set not found.');
+        }
+        $questionId = trim($questionId);
+        if ($questionId === '') {
+            Response::error('Question id is required.', 400);
+        }
+
+        try {
+            $detail = (new \PMS\Models\AptitudeJdQuestionSetModel())->updateQuestion($setId, $questionId, $patch);
+        } catch (\InvalidArgumentException $e) {
+            Response::error($e->getMessage(), 422);
+        }
+        if ($detail === null) {
+            Response::notFound('Question not found in this set.');
+        }
+
+        return $detail;
+    }
+
+    /**
+     * @param array<string, mixed> $admin
      */
     public function streamJdQuestionSetDocument(array $admin, string $id): void
     {
