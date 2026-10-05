@@ -112,44 +112,56 @@ final class StaffPlacementRegistryService
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'student'));
         $isAlumni = $studRole === 'alumni';
         $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
-        $wideCtx = array_merge($officerCtx, [
+        $campusWide = $deptId === '' || !empty($listCtx['campusWide']);
+        $roleTag = $isAlumni ? 'alumni' : 'student';
+        $directoryCtx = array_merge($officerCtx, [
             'placementRegistryWide' => true,
-            'placementStudRole'     => $isAlumni ? 'alumni' : 'student',
-            'campusWide'            => $deptId === '' || !empty($listCtx['campusWide']),
+            'placementStudRole'     => $roleTag,
+            'campusWide'            => $campusWide,
+        ]);
+        // Class-scoped AES (getStudInfo4Placement per batch) — required for INMCA / MCA cohorts.
+        $classCtx = array_merge($officerCtx, [
+            'placementRegistryWide' => false,
+            'placementStudRole'     => $roleTag,
+            'campusWide'            => $campusWide,
         ]);
 
         $studentsSynced = 0;
 
         if ($program !== '' && $batch !== '') {
             $aesClassRows = $isAlumni
-                ? $this->officerData->listAesAlumniClassStudents($wideCtx, $program, $batch, true)
-                : $this->officerData->listAesClassStudents($wideCtx, $program, $batch, true);
-            $classRows = $aesClassRows;
-            $classRows = $this->filterRosterByPlacementStudRole($classRows, $studRole);
+                ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $batch, true)
+                : $this->officerData->listAesClassStudents($classCtx, $program, $batch, true);
+            $classRows = $this->filterRosterByPlacementStudRole($aesClassRows, $studRole);
             $studentsSynced += $this->syncClassRowsToStudentPlacements(
                 $classRows,
                 $deptId,
                 $program,
                 $batch,
-                $isAlumni ? 'alumni' : 'student'
+                $roleTag
             );
         } else {
             if ($isAlumni) {
                 $aesRows = $program !== ''
-                    ? $this->officerData->listAlumniProgrammeStudents($wideCtx, $program)
-                    : $this->officerData->listAlumniStudentsForPlacementRegistry($wideCtx);
+                    ? $this->officerData->listAlumniProgrammeStudents($directoryCtx, $program)
+                    : $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx);
             } elseif ($program !== '') {
-                $aesRows = $this->officerData->listAesProgrammeStudents($wideCtx, $program);
+                $aesRows = $this->officerData->listAesProgrammeStudents($directoryCtx, $program);
             } else {
-                $aesRows = $this->officerData->listStudyingStudentsForPlacementRegistry($wideCtx);
+                $aesRows = $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
             }
-            $classRows = $aesRows;
-            $classRows = $this->filterRosterByPlacementStudRole($classRows, $studRole);
+            $classRows = $this->filterRosterByPlacementStudRole($aesRows, $studRole);
+            if ($classRows === [] && $program !== '') {
+                $classRows = $this->filterRosterByPlacementStudRole(
+                    $this->syncRosterViaProgrammeClassBatches($classCtx, $program, $isAlumni),
+                    $studRole
+                );
+            }
             if ($classRows !== []) {
                 $studentsSynced += $this->syncAesDirectoryRowsToStudentPlacements(
                     $classRows,
                     $deptId,
-                    $isAlumni ? 'alumni' : 'student'
+                    $roleTag
                 );
             }
         }
@@ -163,6 +175,49 @@ final class StaffPlacementRegistryService
                 'studRole'     => $isAlumni ? 'alumni' : 'student',
             ],
         ];
+    }
+
+    /**
+     * When dept-wide directory fetch is empty, pull each known class batch via AES class API.
+     *
+     * @param array<string, mixed> $classCtx
+     * @return list<array<string, mixed>>
+     */
+    private function syncRosterViaProgrammeClassBatches(array $classCtx, string $program, bool $isAlumni): array
+    {
+        $program = trim($program);
+        if ($program === '') {
+            return [];
+        }
+
+        $filterCtx = array_merge($classCtx, [
+            'filterMode'                    => true,
+            'placementStaffRegistryFilters' => true,
+            'placementStudRole'             => $isAlumni ? 'alumni' : 'student',
+        ]);
+        $batches = (new PlacementFilterService())->fetchBatchOptions($filterCtx, $program, '', false);
+        $rows = [];
+        $seen = [];
+
+        foreach ($batches as $batchLabel) {
+            $batchLabel = trim((string) $batchLabel);
+            if ($batchLabel === '') {
+                continue;
+            }
+            $chunk = $isAlumni
+                ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $batchLabel, true)
+                : $this->officerData->listAesClassStudents($classCtx, $program, $batchLabel, true);
+            foreach ($chunk as $row) {
+                $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
     }
 
     /**
