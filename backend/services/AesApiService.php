@@ -3080,34 +3080,43 @@ final class AesApiService
             ? $this->placementCourseParamVariants($programmeCode)
             : [[]];
 
-        foreach ($courseVariants as $courseParams) {
-            foreach ($classVariants as $classLabel) {
-                $params = array_merge(
-                    ['stud_deptcode' => $deptAesId, 'stud_class' => $classLabel],
-                    $courseParams
-                );
-                try {
-                    $result = $this->callPlacementFilterApi('getStudInfo4Placement', $params);
-                } catch (\Throwable) {
+        $appendFromParams = function (array $params) use (&$merged, &$seen): void {
+            try {
+                $result = $this->callPlacementFilterApi('getStudInfo4Placement', $params);
+            } catch (\Throwable) {
+                return;
+            }
+            foreach ($this->extractStudInfoRecords($result) as $record) {
+                if (!is_array($record)) {
                     continue;
                 }
-                foreach ($this->extractStudInfoRecords($result) as $record) {
-                    if (!is_array($record)) {
-                        continue;
-                    }
-                    $key = strtoupper(trim((string) (
-                        $record['admno']
-                        ?? $record['stud_admno']
-                        ?? $record['registerNumber']
-                        ?? $record['registerno']
-                        ?? ''
-                    )));
-                    if ($key === '' || isset($seen[$key])) {
-                        continue;
-                    }
-                    $seen[$key] = true;
-                    $merged[] = $record;
+                $key = strtoupper(trim((string) (
+                    $record['admno']
+                    ?? $record['stud_admno']
+                    ?? $record['registerNumber']
+                    ?? $record['registerno']
+                    ?? ''
+                )));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
                 }
+                $seen[$key] = true;
+                $merged[] = $record;
+            }
+        };
+
+        foreach ($courseVariants as $courseParams) {
+            foreach ($classVariants as $classLabel) {
+                $appendFromParams(array_merge(
+                    ['stud_deptcode' => $deptAesId, 'stud_class' => $classLabel],
+                    $courseParams
+                ));
+            }
+        }
+
+        if ($merged === []) {
+            foreach ($classVariants as $classLabel) {
+                $appendFromParams(['stud_deptcode' => $deptAesId, 'stud_class' => $classLabel]);
             }
         }
 
@@ -3211,20 +3220,23 @@ final class AesApiService
             return [[]];
         }
 
-        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($programmeCode);
         $variants = [];
         $seen = [];
-        foreach ([$programmeCode, $resolved] as $candidate) {
-            $candidate = trim($candidate);
-            if ($candidate === '' || isset($seen[$candidate])) {
+        foreach (DepartmentProgrammeCatalog::aesCourseParamTokens($programmeCode) as $token) {
+            $token = trim($token);
+            if ($token === '') {
                 continue;
             }
-            $seen[$candidate] = true;
-            $variants[] = ['stud_course' => $candidate];
-            $variants[] = ['stud_cource_short' => $candidate];
+            $key = 'c:' . DepartmentProgrammeCatalog::normalizeCode($token);
+            if (isset($seen[$key . ':course'])) {
+                continue;
+            }
+            $seen[$key . ':course'] = true;
+            $variants[] = ['stud_course' => $token];
+            $variants[] = ['stud_cource_short' => $token];
         }
 
-        return $variants;
+        return $variants !== [] ? $variants : [[]];
     }
 
     /**

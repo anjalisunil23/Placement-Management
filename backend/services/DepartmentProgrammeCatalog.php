@@ -256,4 +256,82 @@ final class DepartmentProgrammeCatalog
 
         return array_values(array_unique($codes));
     }
+
+    /**
+     * Labels AES accepts for stud_course / stud_cource_short (canonical + aliases).
+     *
+     * @return list<string>
+     */
+    public static function aesCourseParamTokens(string $codeOrAlias): array
+    {
+        $canonical = self::resolveProgrammeCode($codeOrAlias);
+        if ($canonical === '') {
+            $canonical = self::normalizeCode($codeOrAlias);
+        }
+        if ($canonical === '') {
+            return [];
+        }
+
+        $tokens = [];
+        $seen = [];
+        $add = static function (string $value) use (&$tokens, &$seen): void {
+            $value = trim($value);
+            if ($value === '') {
+                return;
+            }
+            $key = self::normalizeCode($value);
+            if ($key === '' || isset($seen[$key])) {
+                return;
+            }
+            $seen[$key] = true;
+            $tokens[] = $value;
+        };
+
+        $add($codeOrAlias);
+        $add($canonical);
+        foreach (self::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                if (self::normalizeCode($programme['code']) !== $canonical) {
+                    continue;
+                }
+                $add((string) $programme['code']);
+                $add((string) ($programme['label'] ?? ''));
+                foreach ($programme['aliases'] as $alias) {
+                    $add((string) $alias);
+                }
+            }
+        }
+
+        return $tokens;
+    }
+
+    public static function batchHintMatchesProgramme(string $batchLabel, string $programmeCode): bool
+    {
+        $batchLabel = trim($batchLabel);
+        $want = self::resolveProgrammeCode($programmeCode);
+        if ($batchLabel === '' || $want === '') {
+            return false;
+        }
+        $norm = self::normalizeCode($batchLabel);
+        if ($norm === '') {
+            return false;
+        }
+        if (self::resolveProgrammeCode($batchLabel) === $want) {
+            return true;
+        }
+        if ($want === 'INMCA') {
+            return str_contains($norm, 'MCAINT')
+                || str_contains($norm, 'INMCA')
+                || str_contains($norm, 'INTMCA')
+                || str_contains($norm, 'IMCA');
+        }
+        if ($want === 'MCA') {
+            return str_starts_with($norm, 'MCA')
+                && !str_contains($norm, 'MCAINT')
+                && !str_contains($norm, 'INMCA')
+                && !str_contains($norm, 'BCA');
+        }
+
+        return str_contains($norm, $want);
+    }
 }

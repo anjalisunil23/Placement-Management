@@ -206,10 +206,26 @@ final class StaffPlacementRegistryService
         ]);
         $filterSvc = new PlacementFilterService();
         $batches = $filterSvc->fetchBatchOptions($filterCtx, $program, '', false);
-        if ($batches === []) {
-            $deptAesId = $filterSvc->resolveParentDeptAesId($classCtx);
-            if ($deptAesId !== '') {
-                $batches = (new AesApiService())->fetchPlacementClassBatches($deptAesId, $program);
+        $deptAesId = $filterSvc->resolveParentDeptAesId($classCtx);
+        if ($batches === [] && $deptAesId !== '') {
+            $batches = (new AesApiService())->fetchPlacementClassBatches($deptAesId, $program);
+        }
+        if ($batches === [] && $deptAesId !== '') {
+            $deptWide = (new AesApiService())->fetchPlacementClassBatches($deptAesId, '');
+            $scoped = array_values(array_filter(
+                $deptWide,
+                static fn (string $label): bool => DepartmentProgrammeCatalog::batchHintMatchesProgramme($label, $program)
+            ));
+            if ($scoped !== []) {
+                $batches = $scoped;
+            }
+        } elseif ($program !== '') {
+            $scoped = array_values(array_filter(
+                $batches,
+                static fn (string $label): bool => DepartmentProgrammeCatalog::batchHintMatchesProgramme($label, $program)
+            ));
+            if ($scoped !== []) {
+                $batches = $scoped;
             }
         }
         $rows = [];
