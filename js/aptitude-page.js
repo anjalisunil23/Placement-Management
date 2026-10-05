@@ -1991,6 +1991,7 @@
       : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
     const metaParts = [];
     if (manualPreview && q.questionType === 'DATA_SUFFICIENCY') metaParts.push('Data sufficiency');
+    else if (manualPreview && q.questionType === 'STATEMENTS_CONCLUSIONS') metaParts.push('Statements & conclusions');
     else if (manualPreview && q.section) metaParts.push(String(q.section));
     else if (q.topic) metaParts.push(String(q.topic));
     else if (q.category) metaParts.push(String(q.category));
@@ -2065,13 +2066,19 @@
         <div>Questions detected: <strong>${qs.length}</strong>${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
         ${sections.length ? `<div class="mt-1">Sections: ${sections.map((s) => esc(s)).join(', ')}</div>` : ''}
       </div>`;
-      const dsBlock = qs.find((q) => q.questionType === 'DATA_SUFFICIENCY' && String(q.directionsBlock || '').trim());
-      const dsDirections = dsBlock ? String(dsBlock.directionsBlock || '').trim() : '';
-      const dsHeader = dsDirections
-        ? `<div class="border rounded-2 p-3 bg-light mb-3 small apt-q-card-text" style="white-space:pre-wrap">${esc(dsDirections)}</div>`
-        : '';
-      return summary + dsHeader
-        + `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderJdQuestionDetailHtml(q, i)).join('')}</div>`;
+      let lastDirections = null;
+      const cards = qs.map((q, i) => {
+        const dir = String(q.directionsBlock || '').trim();
+        let header = '';
+        if (dir && dir !== lastDirections) {
+          header = `<div class="border rounded-2 p-3 bg-light mb-1 small apt-q-card-text" style="white-space:pre-wrap">${esc(dir)}</div>`;
+          lastDirections = dir;
+        } else if (!dir) {
+          lastDirections = null;
+        }
+        return header + renderJdQuestionDetailHtml(q, i);
+      });
+      return summary + `<div class="d-flex flex-column gap-3">${cards.join('')}</div>`;
     }
     const text = String(detail?.manualText || '').trim();
     const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};

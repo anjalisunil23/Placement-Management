@@ -34,6 +34,15 @@ final class AptitudeManualQuestionParser
             }
         }
 
+        $statementsConclusions = $this->parseStatementsConclusionsSections($text);
+        $parsedScNums = [];
+        foreach ($statementsConclusions as $scq) {
+            $n = (int) ($scq['questionNumber'] ?? 0);
+            if ($n > 0) {
+                $parsedScNums[$n] = true;
+            }
+        }
+
         $blocks = $this->splitQuestionBlocks($text);
         $out = [];
         foreach ($blocks as $block) {
@@ -48,7 +57,7 @@ final class AptitudeManualQuestionParser
                 continue;
             }
             $qNum = $this->leadingQuestionNumber($trim);
-            if ($qNum !== null && isset($parsedDsNums[$qNum])) {
+            if ($qNum !== null && (isset($parsedDsNums[$qNum]) || isset($parsedScNums[$qNum]))) {
                 continue;
             }
             if (!preg_match('/\([a-eA-E]\)/', $trim)
@@ -65,8 +74,9 @@ final class AptitudeManualQuestionParser
             }
         }
 
-        if ($dataSufficiency !== []) {
-            $out = array_merge($out, $dataSufficiency);
+        $special = array_merge($dataSufficiency, $statementsConclusions);
+        if ($special !== []) {
+            $out = array_merge($out, $special);
             usort($out, static function (array $a, array $b): int {
                 $na = (int) ($a['questionNumber'] ?? 0);
                 $nb = (int) ($b['questionNumber'] ?? 0);
@@ -535,6 +545,197 @@ final class AptitudeManualQuestionParser
         $hasIi = preg_match('/(?:^|[\n\r]\s*|\s)\(?ii\)?[\.\):]\s+\S/iu', $chunk) === 1;
 
         return $hasI && $hasIi;
+    }
+
+    /**
+     * Syllogism-style sets: shared Directions with A–E conclusion rules and per-item Statements + Conclusions I/II.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function parseStatementsConclusionsSections(string $text): array
+    {
+        if (!preg_match('/Directions\s*:[\s\S]*?\bconclusions?\b/iu', $text)) {
+            return [];
+        }
+
+        $out = [];
+        $offsets = [];
+        if (preg_match_all('/Directions\s*(?!\(\s*\d+\s*-)\s*:/iu', $text, $starts, PREG_OFFSET_CAPTURE)) {
+            foreach ($starts[0] as $st) {
+                $offsets[] = (int) ($st[1] ?? 0);
+            }
+        }
+        if ($offsets === []) {
+            return [];
+        }
+
+        foreach ($offsets as $oi => $startPos) {
+            $nextDir = $offsets[$oi + 1] ?? strlen($text);
+            $section = substr($text, $startPos, $nextDir - $startPos);
+            if (!is_string($section) || trim($section) === '') {
+                continue;
+            }
+            if (!preg_match('/Directions\s*(?!\(\s*\d+\s*-)\s*:\s*(.*)$/isu', $section, $secMatch)) {
+                continue;
+            }
+            $afterColon = (string) ($secMatch[1] ?? '');
+            if (!$this->isStatementsConclusionsDirections($afterColon)) {
+                continue;
+            }
+            $qStart = $this->findStatementsConclusionsQuestionsStart($afterColon);
+            if ($qStart === null) {
+                continue;
+            }
+            $body = trim(substr($afterColon, 0, $qStart));
+            if ($body === '') {
+                continue;
+            }
+            $options = $this->extractSharedConclusionOptions($body);
+            if (count($options) < 2) {
+                continue;
+            }
+            $tail = trim(substr($afterColon, $qStart));
+            $directionsPrefix = 'Directions: ' . trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
+
+            $chunks = $this->splitStatementsConclusionsQuestionChunks($tail);
+            if ($chunks === []) {
+                continue;
+            }
+
+            foreach ($chunks as $chunk) {
+                $chunk = trim($chunk);
+                if ($chunk === '' || !preg_match('/^\s*(\d{1,3})\)\s*/u', $chunk, $qNumMatch)) {
+                    continue;
+                }
+                $qNum = (int) $qNumMatch[1];
+                if (!$this->chunkHasStatementsConclusions($chunk)) {
+                    continue;
+                }
+
+                $promptBody = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $chunk) ?? $chunk;
+                $promptBody = trim($promptBody);
+                if ($promptBody === '') {
+                    continue;
+                }
+
+                $prompt = $qNum . ') ' . $promptBody;
+                $optionList = [];
+                foreach (['A', 'B', 'C', 'D', 'E'] as $letter) {
+                    if (isset($options[$letter])) {
+                        $optionList[] = $options[$letter];
+                    }
+                }
+                while (count($optionList) < 4) {
+                    $optionList[] = '—';
+                }
+                $optionList = array_slice($optionList, 0, 5);
+
+                $out[] = [
+                    'prompt' => $prompt,
+                    'options' => $optionList,
+                    'correctIndex' => 0,
+                    'explanation' => '',
+                    'category' => 'Logical Reasoning',
+                    'difficulty' => 'Medium',
+                    'source' => 'MANUAL_UPLOAD',
+                    'questionNumber' => $qNum,
+                    'section' => 'Statements & Conclusions',
+                    'questionType' => 'STATEMENTS_CONCLUSIONS',
+                    'directionsBlock' => $directionsPrefix,
+                    'answerKnown' => false,
+                ];
+            }
+        }
+
+        return $out;
+    }
+
+    private function isStatementsConclusionsDirections(string $body): bool
+    {
+        if (preg_match('/statement\s*\(\s*i\s*\)/iu', $body)
+            && preg_match('/Mark\s+your\s+answer\s+as\s*\(\s*1\s*\)/iu', $body)) {
+            return false;
+        }
+        if (!preg_match('/\bconclusions?\b/iu', $body)) {
+            return false;
+        }
+
+        return preg_match('/\bA\)\s*If\s+(?:only|either|both|neither)/iu', $body) === 1
+            || preg_match('/\banswer\s*\(\s*[A-E]\s*\)/iu', $body) === 1;
+    }
+
+    private function chunkHasStatementsConclusions(string $chunk): bool
+    {
+        if (preg_match('/\bStatements\b/iu', $chunk) !== 1) {
+            return false;
+        }
+        if (preg_match('/\bConclusions\b/iu', $chunk) !== 1) {
+            return false;
+        }
+
+        return preg_match('/(?:^|[\n\r]\s*)I\)\s+\S/u', $chunk) === 1
+            && preg_match('/(?:^|[\n\r]\s*)II\)\s+\S/u', $chunk) === 1;
+    }
+
+    private function findStatementsConclusionsQuestionsStart(string $text): ?int
+    {
+        if (preg_match('/(?<![0-9])(\d{1,3})\)\s+Statements\b/iu', $text, $m, PREG_OFFSET_CAPTURE)) {
+            return (int) ($m[0][1] ?? 0);
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function splitStatementsConclusionsQuestionChunks(string $tail): array
+    {
+        $chunks = [];
+        $pos = 0;
+        $len = strlen($tail);
+        while ($pos < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+Statements\b/iu', $tail, $m, PREG_OFFSET_CAPTURE, $pos)) {
+            $at = (int) ($m[0][1] ?? 0);
+            $end = $len;
+            $scan = $at + 1;
+            while ($scan < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+Statements\b/iu', $tail, $m2, PREG_OFFSET_CAPTURE, $scan)) {
+                $at2 = (int) ($m2[0][1] ?? 0);
+                $end = $at2;
+                break;
+            }
+            $chunk = trim(substr($tail, $at, $end - $at));
+            if ($chunk !== '' && $this->chunkHasStatementsConclusions($chunk)) {
+                $chunks[] = $chunk;
+            }
+            $pos = $end > $at ? $end : $at + 1;
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function extractSharedConclusionOptions(string $directionsBody): array
+    {
+        $raw = $this->extractOptionsFromBlock($directionsBody);
+        $out = [];
+        foreach (['A', 'B', 'C', 'D', 'E'] as $letter) {
+            if (isset($raw[$letter]) && trim($raw[$letter]) !== '') {
+                $out[$letter] = $raw[$letter];
+            }
+        }
+        if (count($out) >= 2) {
+            return $out;
+        }
+
+        return [
+            'A' => 'If only conclusion I follows',
+            'B' => 'If only conclusion II follows',
+            'C' => 'If either conclusion I or conclusion II follows',
+            'D' => 'If neither conclusion I nor conclusion II follows',
+            'E' => 'If both conclusions I and II follow',
+        ];
     }
 
     /**

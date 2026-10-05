@@ -109,6 +109,7 @@ Rules:
 - confidence: 0.0–1.0 for extraction certainty.
 - Skip non-MCQ content. Do not merge the entire paper into one question.
 - Data sufficiency: when Directions define (1)–(5) for statement (i)/(ii) items, use those five as options; put the question plus (i) and (ii) in prompt; set questionType to DATA_SUFFICIENCY and section from the paper.
+- Statements & conclusions: when Directions define A–E for conclusion I/II items, use those five as options; put Statements plus Conclusions I and II in prompt; set questionType to STATEMENTS_CONCLUSIONS and store shared Directions in directionsBlock once per group.
 SYS;
 
         $user = "Default page if no marker: {$defaultPage}\n\nExtract MCQs from this text:\n\n" . $text;
