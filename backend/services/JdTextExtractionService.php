@@ -20,6 +20,14 @@ final class JdTextExtractionService
     /** @var list<string> */
     private const MANUAL_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'txt'];
 
+    private const MANUAL_APTITUDE_OCR_PROMPT =
+        'Transcribe this aptitude test page as plain text only (no markdown). '
+        . 'Include every question number, all option labels (a) b) c) … or A. B. …), and marked answers if visible. '
+        . 'For letter/number/symbol arrangement lines, copy each character exactly as printed, preserving spaces between tokens. '
+        . 'Use the exact symbols printed (© # $ ₹ % @ & * ( ) + − =, etc.) and every letter/digit — do not substitute look-alikes '
+        . '(for example do not replace © with @, or guess a currency symbol). '
+        . 'Preserve "Directions (N - M):" blocks and line breaks between questions. No commentary.';
+
     public function __construct(
         private ?OpenAIService $openai = null
     ) {
@@ -135,6 +143,7 @@ final class JdTextExtractionService
         // Option line glued to a directions block (e.g. "e) 17 Directions (7 - 11):").
         $text = preg_replace('/(\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
         $text = preg_replace('/(\d{1,3}\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
+        $text = self::repairCommonPdfMojibake($text);
         if (self::isGarbledExtract($text)) {
             return '';
         }
@@ -172,6 +181,116 @@ final class JdTextExtractionService
         return false;
     }
 
+    /** PDF text for aptitude manuals — prefers vision OCR when font encoding corrupts symbols. */
+    public function extractPdfTextForManual(string $path): array
+    {
+        $viaShell = $this->extractPdfViaPdftotext($path, true);
+        $viaShell = self::repairCommonPdfMojibake($viaShell);
+        $shellOk = $viaShell !== '' && !self::isGarbledExtract($viaShell);
+
+        $needsOcr = !$shellOk
+            || self::hasLikelyFontEncodingIssues($viaShell)
+            || self::symbolArrangementNeedsOcr($viaShell);
+
+        $viaOcr = '';
+        if ($needsOcr && $this->openai->isConfigured()) {
+            $viaOcr = self::repairCommonPdfMojibake($this->extractPdfViaVisionOcr($path, 200));
+        }
+
+        $ocrOk = $viaOcr !== '' && !self::isGarbledExtract($viaOcr);
+        if ($ocrOk && (!$shellOk || self::manualExtractQuality($viaOcr) > self::manualExtractQuality($viaShell))) {
+            return ['text' => $viaOcr, 'method' => 'pdf_ocr'];
+        }
+        if ($shellOk) {
+            return ['text' => $viaShell, 'method' => 'pdf'];
+        }
+        if ($ocrOk) {
+            return ['text' => $viaOcr, 'method' => 'pdf_ocr'];
+        }
+
+        return ['text' => $viaShell, 'method' => $viaShell !== '' ? 'pdf' : 'pdf'];
+    }
+
+    public static function hasLikelyFontEncodingIssues(string $text): bool
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return false;
+        }
+        if (preg_match('/[\x{FFFD}]/u', $text) === 1) {
+            return true;
+        }
+        if (preg_match('/â(?:\s*[=□◻]|\x{FFFD})/u', $text) === 1) {
+            return true;
+        }
+        if (preg_match_all('/[âÃÂ]/u', $text, $m) >= 3) {
+            return true;
+        }
+        // pdftotext often maps © and # to @ when fonts use custom encodings.
+        if (preg_match('/\b@\s+[0-9A-D]\s+@\s+/u', $text) === 1 && preg_match('/©|#|\$|₹/u', $text) !== 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Symbol-sequence sets often lose © # and other glyphs when extracted with broken font maps.
+     */
+    public static function symbolArrangementNeedsOcr(string $text): bool
+    {
+        if (!preg_match('/letter[\s\/]*number[\s\/]*symbol\s+arrangement/iu', $text)) {
+            return false;
+        }
+        if (self::hasLikelyFontEncodingIssues($text)) {
+            return true;
+        }
+        if (preg_match('/(?:^|\n)((?:[\p{L}\p{N}@#%©$₹*]\s+){8,}[\p{L}\p{N}@#%©$₹*])/mu', $text, $m) !== 1) {
+            return false;
+        }
+        $line = (string) ($m[1] ?? '');
+        $atCount = substr_count($line, '@');
+        $hasCopyright = str_contains($line, '©') || str_contains($text, '©');
+
+        return $atCount >= 2 && !$hasCopyright;
+    }
+
+    public static function manualExtractQuality(string $text): int
+    {
+        $score = mb_strlen(trim($text));
+        if (self::hasLikelyFontEncodingIssues($text)) {
+            $score -= 800;
+        }
+        if (preg_match('/©/u', $text)) {
+            $score += 120;
+        }
+        if (preg_match('/#/u', $text)) {
+            $score += 80;
+        }
+        if (preg_match('/[#$₹*]/u', $text)) {
+            $score += 40;
+        }
+        preg_match_all('/[\p{L}]{4,}/u', $text, $words);
+
+        return $score + count($words[0] ?? []) * 3;
+    }
+
+    public static function repairCommonPdfMojibake(string $text): string
+    {
+        if ($text === '' || !preg_match('/[âÃÂ]/u', $text)) {
+            return $text;
+        }
+        $fixed = @iconv('UTF-8', 'ISO-8859-1//IGNORE', $text);
+        if (is_string($fixed) && $fixed !== '' && mb_strlen($fixed) > 0) {
+            if (!self::hasLikelyFontEncodingIssues($fixed)
+                || self::manualExtractQuality($fixed) > self::manualExtractQuality($text)) {
+                return $fixed;
+            }
+        }
+
+        return $text;
+    }
+
     private function extractPdfText(string $path): string
     {
         $viaShell = $this->extractPdfViaPdftotext($path);
@@ -179,7 +298,7 @@ final class JdTextExtractionService
             return $viaShell;
         }
 
-        $viaOcr = $this->extractPdfViaVisionOcr($path);
+        $viaOcr = $this->extractPdfViaVisionOcr($path, 144);
         if ($viaOcr !== '') {
             return $viaOcr;
         }
@@ -192,11 +311,13 @@ final class JdTextExtractionService
         return $viaShell !== '' && !self::isGarbledExtract($viaShell) ? $viaShell : '';
     }
 
-    private function extractPdfViaVisionOcr(string $path): string
+    private function extractPdfViaVisionOcr(string $path, int $dpi = 144): string
     {
         if (!$this->openai->isConfigured() || !function_exists('exec')) {
             return '';
         }
+
+        $dpi = max(96, min(300, $dpi));
 
         $tmpdir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_pdf_' . bin2hex(random_bytes(4));
         if (!@mkdir($tmpdir) && !is_dir($tmpdir)) {
@@ -208,8 +329,8 @@ final class JdTextExtractionService
         $executed = false;
 
         $commands = [
-            'pdftoppm -png -r 144 ' . escapeshellarg($path) . ' ' . escapeshellarg($prefix),
-            'pdftocairo -png -r 144 ' . escapeshellarg($path) . ' ' . escapeshellarg($prefix),
+            'pdftoppm -png -r ' . $dpi . ' ' . escapeshellarg($path) . ' ' . escapeshellarg($prefix),
+            'pdftocairo -png -r ' . $dpi . ' ' . escapeshellarg($path) . ' ' . escapeshellarg($prefix),
         ];
         foreach ($commands as $cmd) {
             exec($cmd . ' 2>&1', $out, $code);
@@ -221,7 +342,7 @@ final class JdTextExtractionService
 
         if (!$executed) {
             $gsOut = $prefix . '-%d.png';
-            $gsCmd = 'gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r144 -dFirstPage=1 -dLastPage=8 '
+            $gsCmd = 'gs -dNOPAUSE -dBATCH -sDEVICE=png16m -r' . $dpi . ' -dFirstPage=1 -dLastPage=8 '
                 . '-sOutputFile=' . escapeshellarg($gsOut) . ' ' . escapeshellarg($path);
             exec($gsCmd . ' 2>&1', $gsOutLines, $gsCode);
             if ($gsCode !== 0 || glob($pngPattern) === []) {
@@ -263,7 +384,7 @@ final class JdTextExtractionService
         @rmdir($dir);
     }
 
-    private function extractPdfViaPdftotext(string $path): string
+    private function extractPdfViaPdftotext(string $path, bool $layout = false): string
     {
         if (!function_exists('exec')) {
             return '';
@@ -275,7 +396,11 @@ final class JdTextExtractionService
         $txtPath = $out . '.txt';
         @unlink($out);
 
-        $cmd = 'pdftotext ' . escapeshellarg($path) . ' ' . escapeshellarg($txtPath) . ' 2>&1';
+        $flags = '-enc UTF-8';
+        if ($layout) {
+            $flags .= ' -layout';
+        }
+        $cmd = 'pdftotext ' . $flags . ' ' . escapeshellarg($path) . ' ' . escapeshellarg($txtPath) . ' 2>&1';
         exec($cmd, $output, $code);
         if ($code !== 0 || !is_readable($txtPath)) {
             @unlink($txtPath);
@@ -410,9 +535,7 @@ final class JdTextExtractionService
         return $this->openai->extractTextFromImageWithPrompt(
             base64_encode($bytes),
             $mime,
-            'Extract all text from this aptitude question manual image. Include every question, '
-            . 'all option labels (A B C D or 1 2 3 4), and any marked answers. Return plain text only, '
-            . 'preserving question order and line breaks where helpful. No commentary.'
+            self::MANUAL_APTITUDE_OCR_PROMPT
         );
     }
 
@@ -449,11 +572,12 @@ final class JdTextExtractionService
             $text = $this->sanitizeManualText($raw !== false ? (string) $raw : '');
             $method = 'text';
         } elseif ($ext === 'pdf') {
-            $rawPdf = $this->extractPdfText($tmp);
+            $pdfExtract = $this->extractPdfTextForManual($tmp);
+            $rawPdf = (string) ($pdfExtract['text'] ?? '');
             $text = $this->sanitizeManualText($rawPdf);
-            $method = $text !== '' ? 'pdf' : ($this->openai->isConfigured() ? 'pdf_ocr' : 'pdf');
-            if ($text === '' && $rawPdf !== '' && self::isGarbledExtract($rawPdf)) {
-                $method = 'pdf_unreadable';
+            $method = (string) ($pdfExtract['method'] ?? 'pdf');
+            if ($text === '') {
+                $method = $rawPdf !== '' && self::isGarbledExtract($rawPdf) ? 'pdf_unreadable' : $method;
             }
         } else {
             try {
