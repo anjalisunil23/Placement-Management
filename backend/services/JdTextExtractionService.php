@@ -22,6 +22,7 @@ final class JdTextExtractionService
 
     private const MANUAL_APTITUDE_OCR_PROMPT =
         'Transcribe this aptitude test page as plain text only (no markdown). '
+        . 'Do not include page headers, footers, watermarks, branding lines, website URLs, or page numbers. '
         . 'Include every question number, all option labels (a) b) c) … or A. B. …), and marked answers if visible. '
         . 'For letter/number/symbol arrangement lines, copy each character exactly as printed, preserving spaces between tokens. '
         . 'Use the exact symbols printed (© # $ ₹ % @ & * ( ) + − =, etc.) and every letter/digit — do not substitute look-alikes '
@@ -134,6 +135,7 @@ final class JdTextExtractionService
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $text) ?? $text;
         $text = str_replace(["\r\n", "\r"], "\n", $text);
+        $text = self::stripManualPageHeaderFooter($text);
         $text = preg_replace('/[^\S\n]+/u', ' ', $text) ?? $text;
         $text = preg_replace('/\n{3,}/u', "\n\n", $text) ?? $text;
         $text = trim($text);
@@ -153,6 +155,145 @@ final class JdTextExtractionService
         }
 
         return $text;
+    }
+
+    /**
+     * Drop repeated PDF/OCR header and footer lines (branding, URLs, page numbers) before MCQ parsing.
+     */
+    public static function stripManualPageHeaderFooter(string $text): string
+    {
+        $text = str_replace(["\r\n", "\r"], "\n", trim($text));
+        if ($text === '') {
+            return '';
+        }
+
+        $pages = self::splitManualTextIntoPages($text);
+        if ($pages === []) {
+            return $text;
+        }
+
+        $lineCounts = [];
+        foreach ($pages as $pb) {
+            $seenOnPage = [];
+            foreach (preg_split('/\n/u', $pb) ?: [] as $line) {
+                $trim = trim($line);
+                if ($trim === '' || self::isProtectedManualContentLine($trim)) {
+                    continue;
+                }
+                $norm = self::normalizeHeaderFooterLineKey($trim);
+                if ($norm === '' || mb_strlen($norm) > 120) {
+                    continue;
+                }
+                if (!isset($seenOnPage[$norm])) {
+                    $seenOnPage[$norm] = true;
+                    $lineCounts[$norm] = ($lineCounts[$norm] ?? 0) + 1;
+                }
+            }
+        }
+
+        $pageCount = count($pages);
+        $repeatThreshold = max(2, (int) ceil($pageCount * 0.5));
+        $repeatedLines = [];
+        foreach ($lineCounts as $norm => $cnt) {
+            if ($cnt >= $repeatThreshold) {
+                $repeatedLines[$norm] = true;
+            }
+        }
+
+        $outPages = [];
+        foreach ($pages as $pb) {
+            $filtered = [];
+            foreach (preg_split('/\n/u', $pb) ?: [] as $line) {
+                $trim = trim($line);
+                if ($trim === '') {
+                    continue;
+                }
+                if (self::isManualHeaderFooterLine($trim)) {
+                    continue;
+                }
+                $norm = self::normalizeHeaderFooterLineKey($trim);
+                if ($norm !== '' && isset($repeatedLines[$norm]) && !self::isProtectedManualContentLine($trim)) {
+                    continue;
+                }
+                $filtered[] = $trim;
+            }
+            $joined = trim(implode("\n", $filtered));
+            if ($joined !== '') {
+                $outPages[] = $joined;
+            }
+        }
+
+        return trim(implode("\n\n", $outPages));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function splitManualTextIntoPages(string $text): array
+    {
+        $normalized = preg_replace('/---\s*PAGE\s+\d+\s*---\n?/iu', "\f", $text) ?? $text;
+        if (!str_contains($normalized, "\f")) {
+            $normalized = preg_replace('/\f/u', "\f", $normalized) ?? $normalized;
+        }
+        $parts = preg_split('/\f/u', $normalized) ?: [];
+        $pages = [];
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ($part !== '') {
+                $pages[] = $part;
+            }
+        }
+
+        return $pages !== [] ? $pages : [trim($text)];
+    }
+
+    private static function normalizeHeaderFooterLineKey(string $line): string
+    {
+        $line = trim(preg_replace('/\s+/u', ' ', $line) ?? $line);
+
+        return mb_strtolower($line);
+    }
+
+    private static function isManualHeaderFooterLine(string $line): bool
+    {
+        if (preg_match('/^page\s+\d+\s*$/iu', $line)) {
+            return true;
+        }
+        if (preg_match('/^-\s*\d+\s*-$/u', $line)) {
+            return true;
+        }
+        if (preg_match('/^https?:\/\//iu', $line) || preg_match('/^www\./iu', $line)) {
+            return true;
+        }
+        if (preg_match('/^\d{1,4}\s*$/u', $line)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static function isProtectedManualContentLine(string $line): bool
+    {
+        if (preg_match('/Directions\s*[:(]/iu', $line)) {
+            return true;
+        }
+        if (preg_match('/Mark\s+your\s+answer/iu', $line)) {
+            return true;
+        }
+        if (preg_match('/^\s*(?<![0-9])(\d{1,3})\)\s+\S/u', $line)) {
+            return true;
+        }
+        if (preg_match('/^\s*[a-eA-E][\.\)]\s+\S/u', $line)) {
+            return true;
+        }
+        if (preg_match('/^\s*\(?i{1,2}\)?[\.\):]\s+\S/iu', $line)) {
+            return true;
+        }
+        if (str_contains($line, '?')) {
+            return true;
+        }
+
+        return false;
     }
 
     public static function isGarbledExtract(string $text): bool
@@ -224,7 +365,7 @@ final class JdTextExtractionService
     /** PDF text for aptitude manuals — OCR when text layer is missing or low quality. */
     public function extractPdfTextForManual(string $path): array
     {
-        $viaShell = $this->extractPdfViaPdftotext($path, true);
+        $viaShell = $this->extractPdfViaPdftotext($path, true, true);
         $viaShell = self::repairCommonPdfMojibake($viaShell);
         $shellSufficient = $viaShell !== ''
             && !self::isGarbledExtract($viaShell)
@@ -507,7 +648,7 @@ final class JdTextExtractionService
         @rmdir($dir);
     }
 
-    private function extractPdfViaPdftotext(string $path, bool $layout = false): string
+    private function extractPdfViaPdftotext(string $path, bool $layout = false, bool $cropHeaderFooter = false): string
     {
         if (!function_exists('exec')) {
             return '';
@@ -522,6 +663,10 @@ final class JdTextExtractionService
         $flags = '-enc UTF-8';
         if ($layout) {
             $flags .= ' -layout';
+        }
+        if ($cropHeaderFooter) {
+            // Ignore typical letterhead/footer bands (points, 72 pt ≈ 1 inch).
+            $flags .= ' -margint 72 -marginb 54 -marginl 36 -marginr 36';
         }
         $cmd = 'pdftotext ' . $flags . ' ' . escapeshellarg($path) . ' ' . escapeshellarg($txtPath) . ' 2>&1';
         exec($cmd, $output, $code);

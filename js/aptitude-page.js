@@ -1978,7 +1978,8 @@
   }
 
   function renderMcqPickDetailHtml(q, index, { compact = false, manualPreview = false } = {}) {
-    const letters = ['A', 'B', 'C', 'D', 'E'];
+    const isDs = q.questionType === 'DATA_SUFFICIENCY';
+    const letters = isDs ? ['1', '2', '3', '4', '5'] : ['A', 'B', 'C', 'D', 'E'];
     const opts = (q.options || []).filter((o) => String(o || '').trim() && String(o).trim() !== '—').slice(0, 5);
     const pad = opts.length ? opts : (q.options || []).slice(0, 5);
     const displayOpts = pad.length ? pad : [];
@@ -2004,9 +2005,10 @@
       srcPage > 0 ? `<div class="small text-muted-2">Source: Page ${srcPage}${q.containsImage ? ' · contains image/diagram' : ''}</div>` : (q.containsImage ? '<div class="small text-muted-2">Source: diagram/image question</div>' : ''),
       conf != null && !Number.isNaN(conf) ? `<div class="small text-muted-2">Confidence: ${conf}%</div>` : '',
     ].filter(Boolean).join('') : '';
+    const answerLabel = letters[correct] || (isDs ? String(correct + 1) : String.fromCharCode(65 + correct));
     const answerLine = manualPreview && !answerKnown
       ? '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>'
-      : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${letters[correct] || String.fromCharCode(65 + correct)}. ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
+      : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : `${esc(answerLabel)}.`} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
     return `<div class="${shellCls}">
       <div class="fw-semibold mb-2">${esc(qLabel)}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
       ${promptBlock}
@@ -2014,7 +2016,9 @@
         ? displayOpts.map((o, oi) => {
           const label = esc(stripHtml(String(o || '')) || String(o || ''));
           const isCorrect = answerKnown && oi === correct;
-          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${letters[oi] || String.fromCharCode(65 + oi)}. ${label}${isCorrect ? ' ✓' : ''}</div>`;
+          const optLabel = letters[oi] || (isDs ? String(oi + 1) : String.fromCharCode(65 + oi));
+          const optPrefix = isDs ? `(${optLabel})` : `${optLabel}.`;
+          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${optPrefix} ${label}${isCorrect ? ' ✓' : ''}</div>`;
         }).join('')
         : '<div class="text-muted-2">No options</div>'}</div>
       ${answerLine}
@@ -2061,7 +2065,12 @@
         <div>Questions detected: <strong>${qs.length}</strong>${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
         ${sections.length ? `<div class="mt-1">Sections: ${sections.map((s) => esc(s)).join(', ')}</div>` : ''}
       </div>`;
-      return summary
+      const dsBlock = qs.find((q) => q.questionType === 'DATA_SUFFICIENCY' && String(q.directionsBlock || '').trim());
+      const dsDirections = dsBlock ? String(dsBlock.directionsBlock || '').trim() : '';
+      const dsHeader = dsDirections
+        ? `<div class="border rounded-2 p-3 bg-light mb-3 small apt-q-card-text" style="white-space:pre-wrap">${esc(dsDirections)}</div>`
+        : '';
+      return summary + dsHeader
         + `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderJdQuestionDetailHtml(q, i)).join('')}</div>`;
     }
     const text = String(detail?.manualText || '').trim();

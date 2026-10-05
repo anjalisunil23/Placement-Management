@@ -439,52 +439,61 @@ final class AptitudeManualQuestionParser
      */
     private function parseDataSufficiencySections(string $text): array
     {
-        if (!preg_match('/Directions\s*:[\s\S]*?statement\s*\(\s*i\s*\)/iu', $text)
-            && !preg_match('/Directions\s*:[\s\S]*?\(\s*1\s*\)/iu', $text)) {
+        if (!preg_match('/Directions\s*:[\s\S]*?(?:statement\s*\(\s*i\s*\)|Mark\s+your\s+answer\s+as\s*\(\s*1\s*\)|data\s+in\s+statement)/iu', $text)) {
             return [];
         }
 
         $out = [];
-        if (!preg_match_all(
-            '/Directions\s*(?!\(\s*\d+\s*-)\s*:([\s\S]*?)(?=\n\s*\d{1,3}\)\s+\S)/iu',
-            $text,
-            $dirMatches,
-            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
-        )) {
+        $offsets = [];
+        if (preg_match_all('/Directions\s*(?!\(\s*\d+\s*-)\s*:/iu', $text, $starts, PREG_OFFSET_CAPTURE)) {
+            foreach ($starts[0] as $st) {
+                $offsets[] = (int) ($st[1] ?? 0);
+            }
+        }
+        if ($offsets === []) {
             return [];
         }
 
-        foreach ($dirMatches as $dirMatch) {
-            $body = trim((string) ($dirMatch[1][0] ?? ''));
-            if ($body === '' || !preg_match('/statement\s*\(\s*i\s*\)|data in statement|\(\s*1\s*\)/iu', $body)) {
+        foreach ($offsets as $oi => $startPos) {
+            $nextDir = $offsets[$oi + 1] ?? strlen($text);
+            $section = substr($text, $startPos, $nextDir - $startPos);
+            if (!is_string($section) || trim($section) === '') {
+                continue;
+            }
+            if (!preg_match('/Directions\s*(?!\(\s*\d+\s*-)\s*:\s*(.*)$/isu', $section, $secMatch)) {
+                continue;
+            }
+            $afterColon = (string) ($secMatch[1] ?? '');
+            if (!preg_match('/(?:statement\s*\(\s*i\s*\)|Mark\s+your\s+answer|\(\s*1\s*\)\s*if)/iu', $afterColon)) {
+                continue;
+            }
+            $qStart = $this->findDataSufficiencyQuestionsStart($afterColon);
+            if ($qStart === null) {
+                continue;
+            }
+            $body = trim(substr($afterColon, 0, $qStart));
+            if ($body === '') {
                 continue;
             }
             $options = $this->extractDataSufficiencyOptions($body);
             if (count($options) < 2) {
                 continue;
             }
-            $dirEnd = (int) ($dirMatch[0][1] ?? 0) + strlen((string) ($dirMatch[0][0] ?? ''));
-            $tail = substr($text, $dirEnd);
-            if (!is_string($tail) || trim($tail) === '') {
-                continue;
-            }
-            $tail = preg_split('/(?=\n\s*Directions\s*(?:\(\d+\s*-|:))/iu', $tail, 2)[0] ?? $tail;
-            $chunks = preg_split('/(?=\n\s*\d{1,3}\)\s+\S)/u', "\n" . trim($tail), -1, PREG_SPLIT_NO_EMPTY);
-            if (!is_array($chunks)) {
-                continue;
-            }
+            $tail = trim(substr($afterColon, $qStart));
             $directionsPrefix = 'Directions: ' . trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
+
+            $chunks = $this->splitDataSufficiencyQuestionChunks($tail);
+            if ($chunks === []) {
+                continue;
+            }
 
             foreach ($chunks as $chunk) {
                 $chunk = trim($chunk);
-                if ($chunk === '' || !preg_match('/^\s*(\d{1,3})\)\s+/u', $chunk, $qm)) {
+                if ($chunk === '' || !preg_match('/^\s*(\d{1,3})\)\s*/u', $chunk, $qNumMatch)) {
                     continue;
                 }
-                $qNum = (int) $qm[1];
-                if (!preg_match('/\bi\)/iu', $chunk) || !preg_match('/\bii\)/iu', $chunk)) {
-                    continue;
-                }
-                if (preg_match('/\([a-eA-E]\)|(?:^|[\s])[a-eA-E]\)/u', $chunk)) {
+                $qNum = (int) $qNumMatch[1];
+                if (!$this->chunkHasDataSufficiencyStatements($chunk)) {
                     continue;
                 }
 
@@ -494,7 +503,7 @@ final class AptitudeManualQuestionParser
                     continue;
                 }
 
-                $prompt = $directionsPrefix . "\n\n" . $qNum . ') ' . $promptBody;
+                $prompt = $qNum . ') ' . $promptBody;
                 $optionList = array_slice(array_values($options), 0, 5);
                 while (count($optionList) < 4) {
                     $optionList[] = '—';
@@ -520,6 +529,85 @@ final class AptitudeManualQuestionParser
         return $out;
     }
 
+    private function chunkHasDataSufficiencyStatements(string $chunk): bool
+    {
+        $hasI = preg_match('/(?:^|[\n\r]\s*|\s)\(?i\)?[\.\):]\s+\S/iu', $chunk) === 1;
+        $hasIi = preg_match('/(?:^|[\n\r]\s*|\s)\(?ii\)?[\.\):]\s+\S/iu', $chunk) === 1;
+
+        return $hasI && $hasIi;
+    }
+
+    /**
+     * First real question line — skip "(1) if the data…" answer-key markers inside Directions.
+     */
+    private function findDataSufficiencyQuestionsStart(string $text): ?int
+    {
+        $pos = 0;
+        $len = strlen($text);
+        while ($pos < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+[A-Za-z(]/u', $text, $m, PREG_OFFSET_CAPTURE, $pos)) {
+            $at = (int) ($m[0][1] ?? 0);
+            if ($this->isDataSufficiencyAnswerKeyMarker($text, $at, (string) ($m[0][0] ?? ''))) {
+                $pos = $at + 1;
+                continue;
+            }
+            $peek = substr($text, $at, min(1600, $len - $at));
+            if (!$this->chunkHasDataSufficiencyStatements($peek)) {
+                $pos = $at + 1;
+                continue;
+            }
+
+            return $at;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function splitDataSufficiencyQuestionChunks(string $tail): array
+    {
+        $chunks = [];
+        $pos = 0;
+        $len = strlen($tail);
+        while ($pos < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+[A-Za-z(]/u', $tail, $m, PREG_OFFSET_CAPTURE, $pos)) {
+            $at = (int) ($m[0][1] ?? 0);
+            $marker = (string) ($m[0][0] ?? '');
+            if ($this->isDataSufficiencyAnswerKeyMarker($tail, $at, $marker)) {
+                $pos = $at + 1;
+                continue;
+            }
+            $end = $len;
+            $scan = $at + 1;
+            while ($scan < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+[A-Za-z(]/u', $tail, $m2, PREG_OFFSET_CAPTURE, $scan)) {
+                $at2 = (int) ($m2[0][1] ?? 0);
+                if ($this->isDataSufficiencyAnswerKeyMarker($tail, $at2, (string) ($m2[0][0] ?? ''))) {
+                    $scan = $at2 + 1;
+                    continue;
+                }
+                $end = $at2;
+                break;
+            }
+            $chunk = trim(substr($tail, $at, $end - $at));
+            if ($chunk !== '' && $this->chunkHasDataSufficiencyStatements($chunk)) {
+                $chunks[] = $chunk;
+            }
+            $pos = $end > $at ? $end : $at + 1;
+        }
+
+        return $chunks;
+    }
+
+    private function isDataSufficiencyAnswerKeyMarker(string $text, int $at, string $marker): bool
+    {
+        if ($at > 0 && $text[$at - 1] === '(') {
+            return true;
+        }
+        $after = substr($text, $at + strlen($marker));
+
+        return preg_match('/^if\s+(?:the\s+data|either|data)/iu', $after) === 1;
+    }
+
     /**
      * @return array<int, string> 1-based option index => label
      */
@@ -527,7 +615,7 @@ final class AptitudeManualQuestionParser
     {
         $opts = [];
         if (preg_match_all(
-            '/\(\s*([1-5])\s*\)\s*(.+?)(?=\(\s*[1-5]\s*\)|$)/su',
+            '/Mark\s+your\s+answer\s+as\s*\(\s*([1-5])\s*\)\s*(.+?)(?=Mark\s+your\s+answer\s+as\s*\(\s*[1-5]\s*\)|$)/isu',
             $directionsBody,
             $hits,
             PREG_SET_ORDER
@@ -535,6 +623,19 @@ final class AptitudeManualQuestionParser
             foreach ($hits as $hit) {
                 $label = trim(preg_replace('/\s+/u', ' ', $hit[2]) ?? $hit[2]);
                 if ($label !== '') {
+                    $opts[(int) $hit[1]] = $label;
+                }
+            }
+        }
+        if ($opts === [] && preg_match_all(
+            '/\(\s*([1-5])\s*\)\s*(.+?)(?=\(\s*[1-5]\s*\)|$)/su',
+            $directionsBody,
+            $hits,
+            PREG_SET_ORDER
+        )) {
+            foreach ($hits as $hit) {
+                $label = trim(preg_replace('/\s+/u', ' ', $hit[2]) ?? $hit[2]);
+                if ($label !== '' && mb_strlen($label) > 12) {
                     $opts[(int) $hit[1]] = $label;
                 }
             }

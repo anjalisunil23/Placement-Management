@@ -599,6 +599,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 'containsImage' => !empty($q['containsImage']),
                 'answerKnown' => !empty($q['answerKnown']),
                 'directionsBlock' => (string) ($q['directionsBlock'] ?? ''),
+                'questionType' => (string) ($q['questionType'] ?? ''),
             ];
         }
 
