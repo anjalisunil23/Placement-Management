@@ -662,20 +662,64 @@ final class StaffPlacementRegistryService
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
 
-        $tableRows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
+        $placementModel = new StudentPlacementModel();
+        $legacyFlat = $placementModel->hasLegacyFlatPlacementColumns();
+
+        // Legacy flat tables key rows by placement year, not AES stud_class — do not
+        // batch-filter them on list load (would always return []). Overlay / AES merge
+        // keeps the selected class when AES has the roster; otherwise show dept table.
+        $tableBatch = ($legacyFlat && $batch !== '') ? '' : $batch;
+        $tableRows = $placementModel->listRosterRowsForRegistryScope(
             $departmentId,
             $program,
-            $batch,
+            $tableBatch,
             5000,
             $batch !== ''
         );
         $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
         if ($aesRows !== []) {
-            $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
+            // Prefer AES class roster as the student list; legacy rows supply placement fields.
+            if ($legacyFlat) {
+                $tableRows = $this->mergeCompleteClassRoster($aesRows, []);
+                $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
+            } else {
+                $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
+            }
         }
         $localRows = $this->fetchLocalRosterForRegistryFilters($listCtx, $filters);
         if ($localRows !== []) {
             $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
+        }
+
+        if ($tableRows === [] && $batch !== '' && $program !== '') {
+            $liveCtx = array_merge(StaffContext::officerCompatible($listCtx), [
+                'placementForceLiveAes' => true,
+                'placementRegistryWide' => false,
+            ]);
+            $retryAes = $this->mergeUniqueRosterRows(
+                $this->officerData->listAesAlumniClassStudents($liveCtx, $program, $batch, true),
+                $this->officerData->listAesClassStudents($liveCtx, $program, $batch, true)
+            );
+            if ($retryAes !== []) {
+                $tableRows = $this->mergeCompleteClassRoster($retryAes, []);
+                if ($legacyFlat) {
+                    $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
+                }
+            }
+        }
+
+        // AES empty for this batch — still show legacy student_placements for the department.
+        if ($tableRows === [] && $legacyFlat) {
+            $tableRows = $placementModel->listLegacyFlatRosterRows($departmentId, $program);
+            if ($departmentId !== '') {
+                foreach ($tableRows as $idx => $row) {
+                    if (trim((string) ($row['departmentId'] ?? '')) === '') {
+                        $tableRows[$idx]['departmentId'] = $departmentId;
+                    }
+                }
+            }
+        } elseif (!$legacyFlat || $aesRows === []) {
+            $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
         }
         $tableRows = array_map(
             fn (array $row): array => $this->hydrateRosterRowFromAesKeys($row),
@@ -746,10 +790,105 @@ final class StaffPlacementRegistryService
             }
         }
 
-        return array_values(array_filter(
-            $rows,
-            fn (array $row): bool => $this->rosterRowHasSnapshot($row)
-        ));
+        $drop = [];
+        foreach ($needIds as $indexes) {
+            foreach ($indexes as $idx) {
+                if (!$this->rosterRowHasSnapshot($rows[$idx])) {
+                    $drop[$idx] = true;
+                }
+            }
+        }
+        if ($drop === []) {
+            return $rows;
+        }
+
+        $out = [];
+        foreach ($rows as $idx => $row) {
+            if (!isset($drop[$idx])) {
+                $out[] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function overlayLegacyFlatPlacements(array $rows, string $departmentId, string $program): array
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return $rows;
+        }
+
+        $legacyRows = (new StudentPlacementModel())->listLegacyFlatRosterRows($departmentId, $program);
+        if ($legacyRows === []) {
+            return $rows;
+        }
+
+        $byStudentId = [];
+        $byName = [];
+        foreach ($legacyRows as $legacy) {
+            $sid = trim((string) ($legacy['studentId'] ?? ''));
+            if ($sid !== '' && ctype_digit($sid)) {
+                $byStudentId[ltrim($sid, '0') ?: '0'] = $legacy;
+            }
+            $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($legacy['studentName'] ?? ''))) ?? '');
+            if ($nameKey !== '') {
+                $byName[$nameKey] = $legacy;
+            }
+        }
+
+        foreach ($rows as $idx => $row) {
+            $legacy = null;
+            $aesSid = trim((string) ($row['aesStudentId'] ?? $row['stud_id'] ?? ''));
+            if ($aesSid !== '' && ctype_digit($aesSid)) {
+                $legacy = $byStudentId[ltrim($aesSid, '0') ?: '0'] ?? null;
+            }
+            if ($legacy === null) {
+                $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($row['studentName'] ?? $row['displayName'] ?? ''))) ?? '');
+                if ($nameKey !== '') {
+                    $legacy = $byName[$nameKey] ?? null;
+                }
+            }
+            if ($legacy === null) {
+                continue;
+            }
+            $rows[$idx] = $this->mergeLegacyPlacementIntoRosterRow($row, $legacy);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $legacy
+     * @return array<string, mixed>
+     */
+    private function mergeLegacyPlacementIntoRosterRow(array $row, array $legacy): array
+    {
+        $row = $this->mergeRosterStudentRows($row, $legacy);
+        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $legacyPlacement = is_array($legacy['placement'] ?? null) ? $legacy['placement'] : [];
+        foreach ($legacyPlacement as $key => $value) {
+            if (!is_scalar($value) && $value !== null) {
+                continue;
+            }
+            if (trim((string) ($placement[$key] ?? '')) === '' && trim((string) $value) !== '') {
+                $placement[$key] = $value;
+            }
+        }
+        $row['placement'] = $placement;
+        $company = trim((string) ($placement['company'] ?? $legacy['company'] ?? $legacy['employer'] ?? ''));
+        if ($company !== '') {
+            $row['company'] = $company;
+            $row['employer'] = $company;
+            $row['placed'] = true;
+        }
+
+        return $row;
     }
 
     /**
@@ -2243,7 +2382,8 @@ final class StaffPlacementRegistryService
             }
             if ($batch !== '') {
                 $rowBatch = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
-                $batchOk = StudentPlacementModel::matchesClassBatchSelection($rowBatch, $batch);
+                // Legacy flat rows use placement year (2020-2021); AES UI uses MCALE2016-18.
+                $batchOk = StudentPlacementModel::legacyBatchFilterMatches($batch, $rowBatch);
                 if (!$batchOk) {
                     return false;
                 }

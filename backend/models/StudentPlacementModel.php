@@ -29,7 +29,7 @@ class StudentPlacementModel extends BaseModel
 
     /** Legacy phpMyAdmin / AES export tables (flat columns + empty JSON payload). */
     private const LEGACY_FLAT_COLUMN_CANDIDATES = [
-        'student', 'studentId', 'cno', 'email', 'year', 'courseId', 'branchId',
+        'student', 'studentId', 'cno', 'email', 'year', 'stud_class', 'courseId', 'branchId',
         'employer', 'empcno', 'empadr', 'payscale',
     ];
 
@@ -276,6 +276,7 @@ class StudentPlacementModel extends BaseModel
         $address = trim((string) ($row['empadr'] ?? ''));
         $package = trim((string) ($row['payscale'] ?? ''));
         $year = trim((string) ($row['year'] ?? ''));
+        $studClass = trim((string) ($row['stud_class'] ?? ''));
         $courseId = trim((string) ($row['courseId'] ?? ''));
         $branchId = trim((string) ($row['branchId'] ?? ''));
 
@@ -298,7 +299,10 @@ class StudentPlacementModel extends BaseModel
             $doc['email'] = $email;
             $doc['collegeEmail'] = $email;
         }
-        if ($year !== '') {
+        if ($studClass !== '') {
+            $doc['classBatch'] = $studClass;
+            $doc['stud_class'] = $studClass;
+        } elseif ($year !== '') {
             $doc['classBatch'] = $year;
             $doc['stud_class'] = $year;
             $doc['placementYear'] = $year;
@@ -752,6 +756,9 @@ class StudentPlacementModel extends BaseModel
         if ($this->hasLegacyFlatPlacementColumns()) {
             $rows = [];
             foreach ($this->fetchLegacyFlatRows($departmentId, $program, $batch, $limit) as $doc) {
+                if ($departmentId !== '' && trim((string) ($doc['departmentId'] ?? '')) === '') {
+                    $doc['departmentId'] = $departmentId;
+                }
                 $rows[] = self::rosterRowFromDocument($doc);
             }
 
@@ -1065,6 +1072,52 @@ class StudentPlacementModel extends BaseModel
     public static function matchesClassBatchSelection(string $rowBatch, string $wantBatch): bool
     {
         return self::batchMatchesSelection($rowBatch, $wantBatch);
+    }
+
+    /**
+     * Legacy SQL rows store placement year (2020-2021) in `year`, not AES stud_class labels
+     * (e.g. MCALE2016-18). Treat year rows as in-scope for AES class-batch filters so the
+     * grid is not emptied when department/programme already scoped the query.
+     */
+    public static function legacyBatchFilterMatches(string $wantBatch, string $rowBatch): bool
+    {
+        $wantBatch = trim($wantBatch);
+        $rowBatch = trim($rowBatch);
+        if ($wantBatch === '' || $rowBatch === '') {
+            return true;
+        }
+        if (strcasecmp($rowBatch, $wantBatch) === 0) {
+            return true;
+        }
+        if (self::matchesClassBatchSelection($rowBatch, $wantBatch)) {
+            return true;
+        }
+        // Placement-year rows vs AES admission / LE batch labels.
+        if (preg_match('/^\d{4}\s*[-–]\s*\d{2,4}$/', $rowBatch) === 1
+            && preg_match('/\b(LE|INT|MCA|BCA|MBA|B\.?\s*TECH|M\.?\s*TECH)/i', $wantBatch) === 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * All legacy flat rows for a department (ignores batch — used to overlay placement onto AES roster).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listLegacyFlatRosterRows(string $departmentId, string $program = '', int $limit = self::REGISTRY_TABLE_LIST_MAX): array
+    {
+        if (!$this->bootstrapTable() || !$this->hasLegacyFlatPlacementColumns()) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($this->fetchLegacyFlatRows($departmentId, $program, '', max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX))) as $doc) {
+            $rows[] = self::rosterRowFromDocument($doc);
+        }
+
+        return $rows;
     }
 
     private static function batchSelectionKey(string $batch): string

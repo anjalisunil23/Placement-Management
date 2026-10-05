@@ -157,4 +157,23 @@ foreach ($legacyChecks as $col => $want) {
     }
 }
 
+echo "\n=== Legacy batch year vs AES class label ===\n\n";
+$legacyBatchCases = [
+    ['MCALE2016-18', '2020-2021', true],
+    ['MCA LE2016-18', '2019-2020', true],
+    ['MCALE2016-18', 'MCALE2016-18', true],
+    ['MCALE2016-18', 'MCAINT2016-21', false],
+];
+foreach ($legacyBatchCases as [$want, $row, $expect]) {
+    $got = StudentPlacementModel::legacyBatchFilterMatches($want, $row);
+    $ok = $got === $expect;
+    echo ($ok ? 'PASS' : 'FAIL') . "  legacyBatchFilterMatches({$want}, {$row}) => "
+        . ($got ? 'true' : 'false') . " (want " . ($expect ? 'true' : 'false') . ")\n";
+    if ($ok) {
+        $pass++;
+    } else {
+        $fail++;
+    }
+}
+
 exit($fail > 0 ? 1 : 0);
