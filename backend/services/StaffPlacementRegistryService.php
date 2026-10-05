@@ -1378,8 +1378,8 @@ final class StaffPlacementRegistryService
                 // Class batch already scopes the roster; do not drop late-fee /
                 // local classmates whose programme label is blank or dept-coded.
             } elseif ($program !== '') {
-                $rowProgram = (string) ($row['program'] ?? '');
-                $rowBatch = trim((string) ($row['batch'] ?? ''));
+                $rowProgram = (string) ($row['program'] ?? $row['programme'] ?? '');
+                $rowBatch = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
                 $fromBatch = $rowBatch !== ''
                     ? DepartmentProgrammeCatalog::resolveProgrammeCode($rowBatch)
                     : '';
