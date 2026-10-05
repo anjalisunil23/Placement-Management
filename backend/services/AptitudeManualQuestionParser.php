@@ -117,6 +117,7 @@ final class AptitudeManualQuestionParser
             return '';
         }
         $text = preg_replace("/(\w)-\n(\w)/u", '$1$2', $text) ?? $text;
+        $text = preg_replace('/(?<![0-9])(\d{1,3})\s+\.\s+(?=[A-Za-z(])/u', '$1) ', $text) ?? $text;
 
         return trim($text);
     }
@@ -499,7 +500,7 @@ final class AptitudeManualQuestionParser
 
             foreach ($chunks as $chunk) {
                 $chunk = trim($chunk);
-                if ($chunk === '' || !preg_match('/^\s*(\d{1,3})\)\s*/u', $chunk, $qNumMatch)) {
+                if ($chunk === '' || !preg_match('/^\s*(\d{1,3})[\.\)]\s*/u', $chunk, $qNumMatch)) {
                     continue;
                 }
                 $qNum = (int) $qNumMatch[1];
@@ -507,7 +508,7 @@ final class AptitudeManualQuestionParser
                     continue;
                 }
 
-                $promptBody = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $chunk) ?? $chunk;
+                $promptBody = preg_replace('/^\s*\d{1,3}[\.\)]\s*/u', '', $chunk) ?? $chunk;
                 $promptBody = trim($promptBody);
                 if ($promptBody === '') {
                     continue;
@@ -541,8 +542,8 @@ final class AptitudeManualQuestionParser
 
     private function chunkHasDataSufficiencyStatements(string $chunk): bool
     {
-        $hasI = preg_match('/(?:^|[\n\r]\s*|\s)\(?i\)?[\.\):]\s+\S/iu', $chunk) === 1;
-        $hasIi = preg_match('/(?:^|[\n\r]\s*|\s)\(?ii\)?[\.\):]\s+\S/iu', $chunk) === 1;
+        $hasI = preg_match('/(?:^|[\n\r]\s*|\s)\(?\s*i\s*\)?\s*[\.\):]\s+\S/iu', $chunk) === 1;
+        $hasIi = preg_match('/(?:^|[\n\r]\s*|\s)\(?\s*ii\s*\)?\s*[\.\):]\s+\S/iu', $chunk) === 1;
 
         return $hasI && $hasIi;
     }
@@ -745,13 +746,13 @@ final class AptitudeManualQuestionParser
     {
         $pos = 0;
         $len = strlen($text);
-        while ($pos < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+[A-Za-z(]/u', $text, $m, PREG_OFFSET_CAPTURE, $pos)) {
+        while ($pos < $len && preg_match('/(?<![0-9])(\d{1,3})[\.\)]\s+[A-Za-z(]/u', $text, $m, PREG_OFFSET_CAPTURE, $pos)) {
             $at = (int) ($m[0][1] ?? 0);
             if ($this->isDataSufficiencyAnswerKeyMarker($text, $at, (string) ($m[0][0] ?? ''))) {
                 $pos = $at + 1;
                 continue;
             }
-            $peek = substr($text, $at, min(1600, $len - $at));
+            $peek = substr($text, $at, min(2400, $len - $at));
             if (!$this->chunkHasDataSufficiencyStatements($peek)) {
                 $pos = $at + 1;
                 continue;
@@ -771,7 +772,7 @@ final class AptitudeManualQuestionParser
         $chunks = [];
         $pos = 0;
         $len = strlen($tail);
-        while ($pos < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+[A-Za-z(]/u', $tail, $m, PREG_OFFSET_CAPTURE, $pos)) {
+        while ($pos < $len && preg_match('/(?<![0-9])(\d{1,3})[\.\)]\s+[A-Za-z(]/u', $tail, $m, PREG_OFFSET_CAPTURE, $pos)) {
             $at = (int) ($m[0][1] ?? 0);
             $marker = (string) ($m[0][0] ?? '');
             if ($this->isDataSufficiencyAnswerKeyMarker($tail, $at, $marker)) {
@@ -780,7 +781,7 @@ final class AptitudeManualQuestionParser
             }
             $end = $len;
             $scan = $at + 1;
-            while ($scan < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+[A-Za-z(]/u', $tail, $m2, PREG_OFFSET_CAPTURE, $scan)) {
+            while ($scan < $len && preg_match('/(?<![0-9])(\d{1,3})[\.\)]\s+[A-Za-z(]/u', $tail, $m2, PREG_OFFSET_CAPTURE, $scan)) {
                 $at2 = (int) ($m2[0][1] ?? 0);
                 if ($this->isDataSufficiencyAnswerKeyMarker($tail, $at2, (string) ($m2[0][0] ?? ''))) {
                     $scan = $at2 + 1;
@@ -806,7 +807,8 @@ final class AptitudeManualQuestionParser
         }
         $after = substr($text, $at + strlen($marker));
 
-        return preg_match('/^if\s+(?:the\s+data|either|data)/iu', $after) === 1;
+        return preg_match('/^if\s+(?:the\s+data|either|data)/iu', $after) === 1
+            || preg_match('/^if\s+statement/iu', $after) === 1;
     }
 
     /**

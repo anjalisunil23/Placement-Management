@@ -817,11 +817,13 @@ final class AptitudeService
         $final = $local;
         if ($useAi) {
             $aiParsed = (new AptitudeManualQuestionAiParser())->parse($extracted);
-            if (count($aiParsed) > count($final)) {
+            $merged = $this->mergeManualUploadParse($local, $aiParsed);
+            if ($merged !== []) {
+                $final = $merged;
+            } elseif ($aiParsed !== []) {
                 $final = $aiParsed;
-                $parseMethod = 'ai';
-            } elseif ($final === [] && $aiParsed !== []) {
-                $final = $aiParsed;
+            }
+            if ($aiParsed !== []) {
                 $parseMethod = 'ai';
             }
         }
@@ -843,6 +845,80 @@ final class AptitudeService
             'parseMethod' => $parseMethod,
             'sections' => $sections,
         ];
+    }
+
+    /**
+     * Keep local data-sufficiency / statements-conclusions items when AI returns more plain MCQs.
+     *
+     * @param list<array<string, mixed>> $local
+     * @param list<array<string, mixed>> $ai
+     * @return list<array<string, mixed>>
+     */
+    private function mergeManualUploadParse(array $local, array $ai): array
+    {
+        if ($ai === []) {
+            return $local;
+        }
+        if ($local === []) {
+            return $ai;
+        }
+
+        $byNum = [];
+        $extras = [];
+
+        $ingest = static function (array $q, bool $localWinsTie) use (&$byNum, &$extras): void {
+            $n = (int) ($q['questionNumber'] ?? 0);
+            if ($n <= 0) {
+                $extras[] = $q;
+
+                return;
+            }
+            $type = strtoupper(trim((string) ($q['questionType'] ?? '')));
+            $special = in_array($type, ['DATA_SUFFICIENCY', 'STATEMENTS_CONCLUSIONS'], true);
+            if (!isset($byNum[$n])) {
+                $byNum[$n] = $q;
+
+                return;
+            }
+            $cur = $byNum[$n];
+            $curType = strtoupper(trim((string) ($cur['questionType'] ?? '')));
+            $curSpecial = in_array($curType, ['DATA_SUFFICIENCY', 'STATEMENTS_CONCLUSIONS'], true);
+            if ($special && !$curSpecial) {
+                $byNum[$n] = $q;
+
+                return;
+            }
+            if ($localWinsTie && $special && $curSpecial) {
+                $byNum[$n] = $q;
+
+                return;
+            }
+            if ($localWinsTie && !$special && !$curSpecial) {
+                $byNum[$n] = $q;
+            }
+        };
+
+        foreach ($ai as $q) {
+            if (is_array($q)) {
+                $ingest($q, false);
+            }
+        }
+        foreach ($local as $q) {
+            if (is_array($q)) {
+                $ingest($q, true);
+            }
+        }
+
+        $merged = array_values($byNum);
+        usort($merged, static function (array $a, array $b): int {
+            return ((int) ($a['questionNumber'] ?? 0)) <=> ((int) ($b['questionNumber'] ?? 0));
+        });
+
+        foreach ($extras as $q) {
+            $merged[] = $q;
+        }
+
+        return $merged;
     }
 
     private function estimateMcqCountInText(string $text): int
