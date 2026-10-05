@@ -452,6 +452,7 @@ final class StaffPlacementRegistryService
         }
 
         $needIds = [];
+        $needRegisters = [];
         foreach ($rows as $idx => $row) {
             if ($this->rosterRowHasSnapshot($row)) {
                 continue;
@@ -460,36 +461,40 @@ final class StaffPlacementRegistryService
             if ($id !== '' && Security::isValidId($id)) {
                 $needIds[$id][] = $idx;
             }
-        }
-        if ($needIds === []) {
-            return $rows;
+            $register = $this->resolveRegisterFromRosterRow($row);
+            if ($register !== '') {
+                $needRegisters[$register][] = $idx;
+            }
         }
 
-        $students = (new StudentModel())->findByIds(array_keys($needIds));
-        foreach ($needIds as $id => $indexes) {
-            $student = $students[$id] ?? null;
-            if (!is_array($student)) {
-                continue;
+        if ($needIds !== []) {
+            $students = (new StudentModel())->findByIds(array_keys($needIds));
+            foreach ($needIds as $id => $indexes) {
+                $student = $students[$id] ?? null;
+                if (!is_array($student)) {
+                    continue;
+                }
+                $this->applyStudentProfilePatchToRosterIndexes($rows, $indexes, $student);
             }
-            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
-            $patch = [
-                'displayName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
-                'studentName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
-                'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
-                'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
-                'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
-                'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
-                'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
-            ];
-            foreach ($indexes as $idx) {
-                foreach ($patch as $key => $value) {
-                    if ($value === '') {
+        }
+
+        if ($needRegisters !== []) {
+            $studentModel = new StudentModel();
+            foreach (array_chunk(array_keys($needRegisters), 300) as $chunk) {
+                $found = $studentModel->findAll(['registerNumber' => ['$in' => $chunk]], count($chunk));
+                $byRegister = [];
+                foreach ($found as $student) {
+                    $reg = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
+                    if ($reg !== '') {
+                        $byRegister[$reg] = $student;
+                    }
+                }
+                foreach ($chunk as $register) {
+                    $student = $byRegister[strtoupper($register)] ?? null;
+                    if (!is_array($student)) {
                         continue;
                     }
-                    $existing = trim((string) ($rows[$idx][$key] ?? ''));
-                    if ($existing === '') {
-                        $rows[$idx][$key] = $value;
-                    }
+                    $this->applyStudentProfilePatchToRosterIndexes($rows, $needRegisters[$register] ?? [], $student);
                 }
             }
         }
@@ -509,10 +514,91 @@ final class StaffPlacementRegistryService
      */
     private function rosterRowHasSnapshot(array $row): bool
     {
-        $name = trim((string) ($row['studentName'] ?? $row['displayName'] ?? ''));
-        $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+        $name = trim((string) ($row['studentName'] ?? $row['displayName'] ?? $row['stud_name'] ?? ''));
+        $register = $this->resolveRegisterFromRosterRow($row);
 
         return $name !== '' || $register !== '';
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function resolveRegisterFromRosterRow(array $row): string
+    {
+        $register = strtoupper($this->pickRowString(
+            $row,
+            'registerNumber',
+            'admissionNo',
+            'admno',
+            'registerno',
+            'stud_admno'
+        ));
+        if ($register !== '') {
+            return $register;
+        }
+        $studentId = trim((string) ($row['studentId'] ?? $row['id'] ?? $row['_id'] ?? ''));
+        if ($studentId !== '' && !Security::isValidId($studentId)) {
+            return strtoupper($studentId);
+        }
+
+        return '';
+    }
+
+    /**
+     * First non-empty string among keys (treats "" as missing — unlike ??).
+     *
+     * @param array<string, mixed> $row
+     */
+    private function pickRowString(array $row, string ...$keys): string
+    {
+        foreach ($keys as $key) {
+            $value = trim((string) ($row[$key] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+        $personal = is_array($row['personal'] ?? null) ? $row['personal'] : [];
+        foreach (['fullName', 'name'] as $key) {
+            $value = trim((string) ($personal[$key] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<int, int> $indexes
+     * @param array<string, mixed> $student
+     */
+    private function applyStudentProfilePatchToRosterIndexes(array &$rows, array $indexes, array $student): void
+    {
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $patch = [
+            'displayName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+            'studentName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+            'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
+            'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
+            'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
+            'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+            'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+        ];
+        foreach ($indexes as $idx) {
+            if (!isset($rows[$idx]) || !is_array($rows[$idx])) {
+                continue;
+            }
+            foreach ($patch as $key => $value) {
+                if ($value === '') {
+                    continue;
+                }
+                $existing = trim((string) ($rows[$idx][$key] ?? ''));
+                if ($existing === '') {
+                    $rows[$idx][$key] = $value;
+                }
+            }
+        }
     }
 
     /**
@@ -863,15 +949,27 @@ final class StaffPlacementRegistryService
         }
 
         $placed = ($row['placed'] ?? false) === true;
-        $studentName = trim((string) (
-            $row['studentName']
-            ?? $row['displayName']
-            ?? $row['user']['name']
-            ?? ''
-        ));
-        $register = strtoupper(trim((string) ($row['registerNumber'] ?? '')));
-        $phone = trim((string) ($row['phone'] ?? $row['personal']['phone'] ?? ''));
-        $email = trim((string) ($row['collegeEmail'] ?? $row['personalEmail'] ?? $row['email'] ?? ''));
+        $studentName = $this->pickRowString(
+            $row,
+            'studentName',
+            'displayName',
+            'stud_name',
+            'name',
+            'fullName'
+        );
+        if ($studentName === '' && is_array($row['user'] ?? null)) {
+            $studentName = trim((string) ($row['user']['name'] ?? ''));
+        }
+        $register = $this->resolveRegisterFromRosterRow($row);
+        $personal = is_array($row['personal'] ?? null) ? $row['personal'] : [];
+        $phone = $this->pickRowString($row, 'phone', 'mobile', 'stud_mobile');
+        if ($phone === '') {
+            $phone = trim((string) ($personal['phone'] ?? ''));
+        }
+        $email = $this->pickRowString($row, 'email', 'collegeEmail', 'personalEmail', 'stud_email');
+        if ($email === '') {
+            $email = trim((string) ($personal['collegeEmail'] ?? $personal['email'] ?? ''));
+        }
         $contact = $this->formatContact($phone, $email);
 
         $deptObj = is_array($row['department'] ?? null) ? $row['department'] : null;
@@ -906,6 +1004,12 @@ final class StaffPlacementRegistryService
         $seen = [];
 
         $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        if ((string) ($placement['company'] ?? '') === '') {
+            $rootCompany = trim((string) ($row['company'] ?? $row['companyName'] ?? $row['employer'] ?? ''));
+            if ($rootCompany !== '') {
+                $placement['company'] = $rootCompany;
+            }
+        }
         if ((string) ($placement['company'] ?? '') !== '') {
             $entries[] = $this->buildEntry($meta, [
                 'id'               => $studentId . ':placement',
@@ -1171,12 +1275,15 @@ final class StaffPlacementRegistryService
             $row['type'] = $recordType;
         }
 
-        $row['studentName'] = trim((string) (
-            $row['studentName']
-            ?? $row['displayName']
-            ?? ''
-        ));
-        $row['registerNumber'] = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admissionNo'] ?? '')));
+        $row['studentName'] = $this->pickRowString(
+            $row,
+            'studentName',
+            'displayName',
+            'stud_name',
+            'name',
+            'fullName'
+        );
+        $row['registerNumber'] = $this->resolveRegisterFromRosterRow($row);
         $row['classBatch'] = trim((string) ($row['classBatch'] ?? $row['batch'] ?? ''));
         $row['programme'] = trim((string) ($row['programme'] ?? $row['program'] ?? ''));
         $row['phone'] = trim((string) ($row['phone'] ?? ''));

@@ -481,6 +481,7 @@ class StudentPlacementModel extends BaseModel
      */
     public static function rosterRowFromDocument(array $doc): array
     {
+        $doc = array_merge($doc, self::normalizeRosterMeta($doc));
         $studentId = trim((string) ($doc['studentId'] ?? $doc['_id'] ?? ''));
         $placement = self::placementFieldsFromDoc($doc);
         $snapshot = self::rosterSnapshotFromPayload($doc, $placement);
@@ -539,6 +540,7 @@ class StudentPlacementModel extends BaseModel
     public static function rosterSnapshotFromPayload(array $doc, array $placementFields = []): array
     {
         $personal = is_array($doc['personal'] ?? null) ? $doc['personal'] : [];
+        $roster = is_array($doc['roster'] ?? null) ? $doc['roster'] : [];
         $pick = static function (array $sources, string ...$keys): string {
             foreach ($sources as $source) {
                 if (!is_array($source)) {
@@ -555,13 +557,34 @@ class StudentPlacementModel extends BaseModel
             return '';
         };
 
-        $name = $pick([$doc, $personal, $placementFields], 'studentName', 'displayName', 'stud_name', 'name', 'fullName');
-        $register = strtoupper($pick([$doc, $placementFields], 'registerNumber', 'registerno', 'register_number', 'admno', 'stud_admno', 'admissionNo'));
-        $phone = $pick([$doc, $personal, $placementFields], 'phone', 'mobile', 'stud_mobile', 'contactPhone');
-        $email = $pick([$doc, $personal, $placementFields], 'email', 'collegeEmail', 'personalEmail', 'stud_email');
-        $classBatch = $pick([$doc, $placementFields], 'classBatch', 'stud_class', 'batch');
+        $name = $pick(
+            [$doc, $roster, $personal, $placementFields],
+            'studentName',
+            'displayName',
+            'stud_name',
+            'name',
+            'fullName'
+        );
+        $register = strtoupper($pick(
+            [$doc, $roster, $placementFields],
+            'registerNumber',
+            'registerno',
+            'register_number',
+            'admno',
+            'stud_admno',
+            'admissionNo'
+        ));
+        if ($register === '') {
+            $studentId = trim((string) ($doc['studentId'] ?? ''));
+            if ($studentId !== '' && !Security::isValidId($studentId)) {
+                $register = strtoupper($studentId);
+            }
+        }
+        $phone = $pick([$doc, $roster, $personal, $placementFields], 'phone', 'mobile', 'stud_mobile', 'contactPhone');
+        $email = $pick([$doc, $roster, $personal, $placementFields], 'email', 'collegeEmail', 'personalEmail', 'stud_email');
+        $classBatch = $pick([$doc, $roster, $placementFields], 'classBatch', 'stud_class', 'batch');
         $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($pick(
-            [$doc, $placementFields],
+            [$doc, $roster, $placementFields],
             'programme',
             'program',
             'stud_course',
@@ -571,7 +594,7 @@ class StudentPlacementModel extends BaseModel
         if ($programme === '' && $classBatch !== '') {
             $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($classBatch);
         }
-        $branch = $pick([$doc, $placementFields], 'branch', 'stud_branch', 'branchName', 'branch_name');
+        $branch = $pick([$doc, $roster, $placementFields], 'branch', 'stud_branch', 'branchName', 'branch_name');
 
         return [
             'studentName'    => $name,
