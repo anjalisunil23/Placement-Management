@@ -21,7 +21,7 @@
         <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">This page reads from <code>student_placements</code> only (no live AES load). Use <strong>Sync from AES</strong> when you need to refresh roster shells and placement / higher-education fields from AES for the current filters. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">The table lists rows from <code>student_placements</code> (local registry). <strong>Sync from AES</strong> imports/updates that table from AES for the current filters, then reloads the grid. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
           <button type="button" class="btn btn-outline-primary btn-sm flex-shrink-0" id="btnSyncPlacementsFromAes" title="Fetch placement and higher-education data from AES into student_placements">
             <i class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></i>Sync from AES
@@ -1255,7 +1255,9 @@
           return;
         }
         const n = res?.data?.studentsSynced;
-        toast(res.message || (typeof n === 'number' ? `Synced ${n} record(s).` : 'Sync complete.'), 'success');
+        const inTable = res?.data?.rowsInTable;
+        const tone = (typeof n === 'number' && n > 0) ? 'success' : ((typeof inTable === 'number' && inTable > 0) ? 'info' : 'warn');
+        toast(res.message || (typeof n === 'number' ? `Synced ${n} record(s).` : 'Sync complete.'), tone);
         await loadRegistry();
       } catch (_) {
         toast('AES sync failed.', 'error');

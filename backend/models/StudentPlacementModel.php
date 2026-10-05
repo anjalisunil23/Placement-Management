@@ -398,6 +398,25 @@ class StudentPlacementModel extends BaseModel
      * @return array<int, array<string, mixed>>
      */
     /**
+     * All roster-shaped rows stored in student_placements (filters applied by registry service).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAllRosterRows(int $limit = 5000): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($this->findAll([], max(1, min($limit, 5000))) as $doc) {
+            $rows[] = self::rosterRowFromDocument($doc);
+        }
+
+        return $rows;
+    }
+
+    /**
      * All roster rows in student_placements for a department (optional filters applied client-side).
      *
      * @return array<int, array<string, mixed>>

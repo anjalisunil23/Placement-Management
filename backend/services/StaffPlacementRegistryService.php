@@ -55,6 +55,8 @@ final class StaffPlacementRegistryService
         $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
         $batch = trim((string) ($filters['batch'] ?? ''));
 
+        $filters['departmentId'] = trim((string) ($listCtx['departmentId'] ?? $filters['departmentId'] ?? ''));
+
         return $this->buildRegistryResponse(
             $staffCtx,
             $listCtx,
@@ -170,17 +172,9 @@ final class StaffPlacementRegistryService
      */
     private function listFromStudentPlacements(array $listCtx, array $filters): array
     {
-        $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
-        $program = trim((string) ($filters['program'] ?? ''));
-        $batch = trim((string) ($filters['batch'] ?? ''));
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
 
-        $model = new StudentPlacementModel();
-        if ($batch !== '') {
-            $tableRows = $model->listRosterRowsForClass($deptId, $program, $batch);
-        } else {
-            $tableRows = $model->listRosterRowsForDepartment($deptId);
-        }
+        $tableRows = (new StudentPlacementModel())->listAllRosterRows(5000);
 
         if ($studRole !== 'all') {
             $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
@@ -1355,6 +1349,7 @@ final class StaffPlacementRegistryService
         $branch = trim((string) ($filters['branch'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
         $type = trim((string) ($filters['type'] ?? ''));
+        $departmentId = trim((string) ($filters['departmentId'] ?? ''));
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
 
@@ -1363,9 +1358,16 @@ final class StaffPlacementRegistryService
             ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
             : '';
 
-        return array_values(array_filter($rows, function (array $row) use ($program, $wantProgram, $branch, $batch, $wantCohort, $type, $studRole, $q): bool {
+        return array_values(array_filter($rows, function (array $row) use ($program, $wantProgram, $branch, $batch, $wantCohort, $type, $departmentId, $studRole, $q): bool {
             if (!$this->registryRowMatchesStudRole($row, $studRole)) {
                 return false;
+            }
+            if ($departmentId !== '') {
+                $rowDept = trim((string) ($row['departmentId'] ?? ''));
+                $narrowScope = ($program !== '' || $batch !== '');
+                if ($rowDept !== '' && strcasecmp($rowDept, $departmentId) !== 0 && !$narrowScope) {
+                    return false;
+                }
             }
             if ($batch !== '') {
                 $rowBatch = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
