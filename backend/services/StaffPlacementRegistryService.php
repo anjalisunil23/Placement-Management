@@ -19,6 +19,9 @@ final class StaffPlacementRegistryService
 {
     private OfficerDataService $officerData;
 
+    /** @var array<string, array<string, array<string, mixed>>> */
+    private array $placementsIndexCache = [];
+
     public function __construct()
     {
         $this->officerData = new OfficerDataService();
@@ -671,7 +674,7 @@ final class StaffPlacementRegistryService
         if ($localRows !== []) {
             $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
         }
-        $tableRows = $this->attachRegistryPlacements($tableRows);
+        $tableRows = $this->attachRegistryPlacements($tableRows, $departmentId);
         $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
 
         if ($studRole !== 'all') {
@@ -1141,8 +1144,8 @@ final class StaffPlacementRegistryService
         $entries = [];
         $seen = [];
 
-        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-        if ((string) ($placement['company'] ?? '') !== '') {
+        $placement = $this->mergedPlacementPayloadForRow($row);
+        if ((string) ($placement['company'] ?? $placement['companyName'] ?? '') !== '') {
             $entries[] = $this->buildEntry($meta, [
                 'id'               => $studentId . ':placement',
                 'employer'         => (string) $placement['company'],
@@ -2431,42 +2434,19 @@ final class StaffPlacementRegistryService
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */
-    private function attachRegistryPlacements(array $rows): array
+    private function attachRegistryPlacements(array $rows, string $departmentId = ''): array
     {
         if ($rows === []) {
             return [];
         }
 
-        $ids = [];
-        $registers = [];
-        foreach ($rows as $row) {
-            $id = trim((string) ($row['id'] ?? $row['_id'] ?? $row['studentId'] ?? ''));
-            if ($id !== '') {
-                $ids[] = $id;
-            }
-            $reg = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
-            if ($reg !== '') {
-                $registers[] = $reg;
-            }
-        }
-
+        $index = $this->departmentPlacementsIndex($departmentId);
         $model = new StudentPlacementModel();
-        try {
-            $maps = $model->findRosterMapsByKeys($ids, $registers);
-        } catch (\Throwable) {
-            $maps = ['byId' => [], 'byReg' => []];
-        }
 
         $out = [];
         foreach ($rows as $row) {
-            $id = trim((string) ($row['id'] ?? $row['_id'] ?? $row['studentId'] ?? ''));
             $reg = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
-            $tableRow = null;
-            if ($id !== '' && isset($maps['byId'][$id])) {
-                $tableRow = $maps['byId'][$id];
-            } elseif ($reg !== '' && isset($maps['byReg'][$reg])) {
-                $tableRow = $maps['byReg'][$reg];
-            }
+            $tableRow = $this->resolveTableRosterRow($row, $index);
 
             if (is_array($tableRow)) {
                 $row = $this->mergeRosterStudentRows($tableRow, $row);
@@ -2483,12 +2463,127 @@ final class StaffPlacementRegistryService
                 }
             }
 
+            $row = $this->promoteContactFieldsFromPlacement($row);
             $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
             $row['placed'] = trim((string) ($placement['company'] ?? $placement['companyName'] ?? '')) !== '';
             $out[] = $row;
         }
 
         return $out;
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function departmentPlacementsIndex(string $departmentId): array
+    {
+        $cacheKey = $departmentId !== '' ? $departmentId : '__campus__';
+        if (isset($this->placementsIndexCache[$cacheKey])) {
+            return $this->placementsIndexCache[$cacheKey];
+        }
+
+        $model = new StudentPlacementModel();
+        try {
+            $source = $departmentId !== ''
+                ? $model->listRosterRowsForDepartment($departmentId, StudentPlacementModel::REGISTRY_TABLE_LIST_MAX)
+                : $model->listAllRosterRows(StudentPlacementModel::REGISTRY_TABLE_LIST_MAX);
+        } catch (\Throwable) {
+            $source = [];
+        }
+
+        $index = [];
+        foreach ($source as $tableRow) {
+            if (!is_array($tableRow)) {
+                continue;
+            }
+            foreach ($this->placementsIndexKeys($tableRow) as $alias) {
+                $index[$alias] = $tableRow;
+            }
+        }
+
+        $this->placementsIndexCache[$cacheKey] = $index;
+
+        return $index;
+    }
+
+    /**
+     * @param array<string, mixed> $tableRow
+     * @return list<string>
+     */
+    private function placementsIndexKeys(array $tableRow): array
+    {
+        $keys = [];
+        $rowKey = $this->studentRowKey($tableRow);
+        if ($rowKey !== '') {
+            $keys[] = $rowKey;
+        }
+        foreach (['studentId', 'id', '_id', 'registerNumber', 'admno', 'pairKey'] as $field) {
+            $value = strtoupper(trim((string) ($tableRow[$field] ?? '')));
+            if ($value === '') {
+                continue;
+            }
+            $keys[] = $value;
+            if (preg_match('/^\d+$/', $value) === 1) {
+                $keys[] = ltrim($value, '0') ?: '0';
+            }
+        }
+
+        return array_values(array_unique($keys));
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, array<string, mixed>> $index
+     */
+    private function resolveTableRosterRow(array $row, array $index): ?array
+    {
+        foreach ($this->placementsIndexKeys($row) as $alias) {
+            if (isset($index[$alias])) {
+                return $index[$alias];
+            }
+        }
+
+        $rowKey = $this->studentRowKey($row);
+        if ($rowKey !== '' && isset($index[$rowKey])) {
+            return $index[$rowKey];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function mergedPlacementPayloadForRow(array $row): array
+    {
+        $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $fromAes = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord($row);
+
+        return array_merge($fromAes, $embedded);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function promoteContactFieldsFromPlacement(array $row): array
+    {
+        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        if (trim((string) ($row['phone'] ?? '')) === '' && trim((string) ($placement['phone'] ?? '')) !== '') {
+            $row['phone'] = (string) $placement['phone'];
+        }
+        $email = trim((string) ($placement['email'] ?? ''));
+        if ($email !== '') {
+            if (trim((string) ($row['email'] ?? '')) === '') {
+                $row['email'] = $email;
+            }
+            if (trim((string) ($row['collegeEmail'] ?? '')) === '') {
+                $row['collegeEmail'] = $email;
+            }
+        }
+
+        return $row;
     }
 
     /**

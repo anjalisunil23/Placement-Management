@@ -605,9 +605,6 @@ final class AesApiService
             'job_company', 'firm', 'firm_name', 'institution', 'stud_institution',
             'higher_education_institution', 'university', 'college_name', 'companyname',
         ]);
-        if ($company === '') {
-            return [];
-        }
 
         $role = $this->firstNonEmptyString($record, [
             'job_role', 'jobrole', 'role', 'designation', 'job_title', 'jobTitle', 'stud_designation',
@@ -639,6 +636,18 @@ final class AesApiService
             }
         }
 
+        $phone = $this->firstNonEmptyString($record, [
+            'stud_mobiles', 'phone', 'mobile', 'stud_mobile', 'contact_phone', 'student_phone',
+        ]);
+        $email = $this->firstNonEmptyString($record, [
+            'stud_ajce_mails', 'collegeEmail', 'email', 'stud_email', 'personalEmail', 'stud_personal_mails',
+        ]);
+        $fordvv = $this->firstNonEmptyString($record, ['fordvv', 'for_dvv', 'stud_fordvv']);
+        $includedvv = $this->firstNonEmptyString($record, ['includedvv', 'included_dvv', 'stud_includedvv']);
+        $placementStatus = $this->firstNonEmptyString($record, [
+            'placement_status', 'placementStatus', 'placed_status', 'stud_placement_status',
+        ]);
+
         $out = array_filter([
             'company'         => $company,
             'role'            => $role,
@@ -647,6 +656,11 @@ final class AesApiService
             'employerContact' => $contact,
             'joinDate'        => $joinDate,
             'recordType'      => $recordType,
+            'phone'           => $phone,
+            'email'           => $email,
+            'fordvv'          => $fordvv,
+            'includedvv'      => $includedvv,
+            'placementStatus' => $placementStatus,
             'source'          => 'aes_getAllStudInfo4Placement',
         ], static fn (string $v): bool => trim($v) !== '');
 
