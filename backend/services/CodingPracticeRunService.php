@@ -190,6 +190,7 @@ final class CodingPracticeRunService
         int $timeLimitMs,
         ?array $testCase = null
     ): array {
+        $stdin = str_replace("\r\n", "\n", str_replace("\r", "\n", $stdin));
         $exec = $this->executor->run($language, $source, $stdin, $timeLimitMs);
         $expected = $this->resolveExpected($problem, $stdin, $testCase);
         $stdout = CodingTestCaseChecker::normalize((string) ($exec['stdout'] ?? ''));
@@ -230,10 +231,13 @@ final class CodingPracticeRunService
      */
     private function resolveExpected(array $problem, string $stdin, ?array $testCase = null): string
     {
-        if ($testCase !== null && array_key_exists('expected', $testCase)) {
-            $fromCase = trim((string) $testCase['expected']);
-            if ($fromCase !== '' || $testCase['expected'] === 0 || $testCase['expected'] === '0') {
-                return CodingTestCaseChecker::normalize($fromCase);
+        if ($testCase !== null) {
+            $raw = $testCase['expected'] ?? $testCase['output'] ?? null;
+            if ($raw !== null && $raw !== '') {
+                return CodingTestCaseChecker::normalize((string) $raw);
+            }
+            if ($raw === 0 || $raw === '0') {
+                return '0';
             }
         }
 

@@ -17,12 +17,9 @@ pms_load_backend_services(dirname(__DIR__));
 
 use PMS\Models\CodingProblemBankModel;
 use PMS\Services\CodingPracticeRunService;
+use PMS\Utils\CodingProblemTestRepair;
 
-$canonical = [
-    ['id' => 's1', 'label' => 'Sample Test Case', 'sample' => true, 'input' => "4\n1 4 3 2", 'expected' => '4'],
-    ['id' => 'h1', 'label' => 'Hidden Test Case 1', 'sample' => false, 'input' => "2\n1 2 3 4", 'expected' => '4'],
-    ['id' => 'h2', 'label' => 'Hidden Test Case 2', 'sample' => false, 'input' => "3\n-5 -2 0 4 7 9", 'expected' => '2'],
-];
+$canonical = CodingProblemTestRepair::arrayPartitionTestCases();
 
 $solution = <<<'PY'
 n = int(input())
