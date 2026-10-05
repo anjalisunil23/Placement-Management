@@ -46,6 +46,7 @@
     activityBusy: false,
     activityAiPreview: null,
     aiCourse: null,
+    aiYears: [],
     aiModule: null,
     aiSavedTutorialId: '',
     reviewTutorialId: '',
@@ -133,9 +134,16 @@
       await DepartmentStore.fetch({ force: true });
       state.departments = DepartmentStore.all() || [];
     }
-    document.getElementById('departmentChecks').innerHTML = state.departments.map((row) => (
+    const checks = state.departments.map((row) => (
       `<label class="form-check"><input class="form-check-input" type="checkbox" value="${esc(row.id)}" data-dept/> <span class="form-check-label">${esc(row.name || row.code)} <span class="text-muted-2">${esc(row.code || '')}</span></span></label>`
     )).join('') || '<p class="text-muted-2 mb-0">No departments are available.</p>';
+    document.getElementById('departmentChecks').innerHTML = checks;
+    const aiChecks = document.getElementById('aiDepartmentChecks');
+    if (aiChecks) {
+      aiChecks.innerHTML = state.departments.map((row) => (
+        `<label class="form-check"><input class="form-check-input" type="checkbox" value="${esc(row.id)}" data-ai-dept/> <span class="form-check-label">${esc(row.name || row.code)} <span class="text-muted-2">${esc(row.code || '')}</span></span></label>`
+      )).join('') || '<p class="text-muted-2 mb-0">No departments are available.</p>';
+    }
   }
 
   function selectedDepartments() {
@@ -170,6 +178,52 @@
     const mode = visibilityMode();
     document.getElementById('departmentAudience').classList.toggle('d-none', mode !== 'departments' && mode !== 'both');
     document.getElementById('yearAudience').classList.toggle('d-none', mode !== 'years' && mode !== 'both');
+  }
+
+  function aiVisibilityMode() {
+    const picked = document.querySelector('input[name="aiCourseVisibility"]:checked');
+    return picked ? picked.value : 'all';
+  }
+
+  function syncAiAudience() {
+    const mode = aiVisibilityMode();
+    const departments = document.getElementById('aiDepartmentAudience');
+    const years = document.getElementById('aiYearAudience');
+    if (departments) departments.classList.toggle('d-none', mode !== 'departments' && mode !== 'both');
+    if (years) years.classList.toggle('d-none', mode !== 'years' && mode !== 'both');
+  }
+
+  function selectedAiDepartments() {
+    return [...document.querySelectorAll('[data-ai-dept]:checked')].map((input) => input.value);
+  }
+
+  function renderAiYears() {
+    const host = document.getElementById('aiYearChips');
+    if (!host) return;
+    host.innerHTML = state.aiYears.map((year) => (
+      `<button type="button" class="btn btn-sm btn-outline-secondary" data-ai-remove-year="${esc(year)}">${esc(year)} <i class="bi bi-x"></i></button>`
+    )).join('');
+    host.querySelectorAll('[data-ai-remove-year]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.aiYears = state.aiYears.filter((year) => year !== btn.getAttribute('data-ai-remove-year'));
+        renderAiYears();
+      });
+    });
+  }
+
+  function aiAudiencePayload() {
+    const mode = aiVisibilityMode();
+    if ((mode === 'departments' || mode === 'both') && !selectedAiDepartments().length) {
+      throw new Error('Choose at least one department.');
+    }
+    if ((mode === 'years' || mode === 'both') && !state.aiYears.length) {
+      throw new Error('Add at least one passing year.');
+    }
+    return {
+      visibility: mode === 'all' ? 'all' : 'scoped',
+      departmentIds: mode === 'departments' || mode === 'both' ? selectedAiDepartments() : [],
+      passingYears: mode === 'years' || mode === 'both' ? state.aiYears.slice() : [],
+    };
   }
 
   function renderTutorials() {
@@ -414,6 +468,14 @@
   function openAiCourseScreen() {
     state.aiCourse = null;
     state.aiSavedTutorialId = '';
+    state.aiYears = [];
+    const allStudents = document.getElementById('aiVisibilityAll');
+    if (allStudents) allStudents.checked = true;
+    document.querySelectorAll('[data-ai-dept]').forEach((input) => { input.checked = false; });
+    const yearInput = document.getElementById('aiYearInput');
+    if (yearInput) yearInput.value = '';
+    renderAiYears();
+    syncAiAudience();
     setAiError('aiCourseError', '');
     document.getElementById('aiCoursePreview').classList.add('d-none');
     setAiCourseSavedVisible(false);
@@ -740,6 +802,13 @@
       setAiError('aiCourseError', 'Choose a category before saving the generated course.');
       return;
     }
+    let audience;
+    try {
+      audience = aiAudiencePayload();
+    } catch (err) {
+      setAiError('aiCourseError', err && err.message ? err.message : 'Choose who can learn this course.');
+      return;
+    }
     const btn = document.getElementById('aiCourseSaveBtn');
     const regen = document.getElementById('aiCourseRegenerateBtn');
     const saveState = document.getElementById('aiCourseSaveState');
@@ -751,7 +820,9 @@
         method: 'POST',
         body: {
           categoryId,
-          visibility: 'all',
+          visibility: audience.visibility,
+          departmentIds: audience.departmentIds,
+          passingYears: audience.passingYears,
           topic: state.aiCourse.course.topic || document.getElementById('aiCourseTopic').value.trim(),
           academicField: state.aiCourse.course.academicField || document.getElementById('aiCourseField').value,
           difficulty: state.aiCourse.course.difficulty || document.getElementById('aiCourseDifficulty').value,
@@ -1006,9 +1077,11 @@
         <div class="d-flex flex-wrap gap-1">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-up="${esc(module.id)}" ${index === 0 ? 'disabled' : ''} aria-label="Move module up">Up</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" data-down="${esc(module.id)}" ${index === modules.length - 1 ? 'disabled' : ''} aria-label="Move module down">Down</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-practice-module="${esc(module.id)}">Practice questions</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" data-select-module="${esc(module.id)}">Edit</button>
           <button type="button" class="btn btn-sm btn-outline-danger" data-delete-module="${esc(module.id)}">Delete</button>
         </div>
+        <div class="d-none mt-2" data-practice-panel="${esc(module.id)}"></div>
       </div>`;
     }).join('');
     const draft = state.creatingModule
@@ -1019,6 +1092,48 @@
     root.querySelectorAll('[data-delete-module]').forEach((btn) => btn.addEventListener('click', () => deleteModule(btn.getAttribute('data-delete-module'))));
     root.querySelectorAll('[data-up]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-up'), -1)));
     root.querySelectorAll('[data-down]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-down'), 1)));
+    root.querySelectorAll('[data-practice-module]').forEach((btn) => btn.addEventListener('click', () => {
+      toggleModulePractice(btn.getAttribute('data-practice-module')).catch(fail);
+    }));
+  }
+
+  function renderStaffPractice(data) {
+    const lessons = (data && data.lessons) || [];
+    const questions = lessons.reduce((sum, lesson) => sum + ((lesson.questions || []).length), 0);
+    if (!questions) {
+      return '<p class="small text-muted-2 mb-0">No practice questions are saved for this module.</p>';
+    }
+    const body = lessons.map((lesson) => {
+      const rows = lesson.questions || [];
+      if (!rows.length) return '';
+      const cards = rows.map((question, index) => {
+        const options = (question.options || []).map((option, optionIndex) => {
+          const correct = optionIndex === Number(question.correctIndex);
+          return `<div class="small${correct ? ' fw-semibold' : ''}">${String.fromCharCode(65 + optionIndex)}. ${esc(option)}${correct ? ' <span class="badge text-bg-success">Correct</span>' : ''}</div>`;
+        }).join('');
+        return `<div class="border rounded p-2 mb-2 bg-white">
+          <div class="small fw-semibold mb-1">${index + 1}. ${esc(question.question || '')}</div>
+          ${options}
+          ${question.explanation ? `<div class="small text-muted-2 mt-1">${esc(question.explanation)}</div>` : ''}
+        </div>`;
+      }).join('');
+      return `<div class="mb-2"><div class="small fw-semibold mb-1">${esc(lesson.title || 'Lesson')}</div>${cards}</div>`;
+    }).join('');
+    return `<div class="small text-muted-2 mb-2">Students see these questions beside the lesson. The correct answer is shown here for staff.</div>${body}`;
+  }
+
+  async function toggleModulePractice(moduleId) {
+    if (!state.active || !moduleId) return;
+    const panel = document.querySelector(`[data-practice-panel="${CSS.escape(moduleId)}"]`);
+    if (!panel) return;
+    const closing = !panel.classList.contains('d-none');
+    document.querySelectorAll('[data-practice-panel]').forEach((item) => item.classList.add('d-none'));
+    if (closing) return;
+    panel.classList.remove('d-none');
+    panel.innerHTML = '<p class="small text-muted-2 mb-0">Loading practice questions…</p>';
+    const data = await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/${encodeURIComponent(moduleId)}/lesson-questions`);
+    if (!panel.isConnected) return;
+    panel.innerHTML = renderStaffPractice(data);
   }
 
   function renderModuleExercises() {
@@ -3119,6 +3234,22 @@
       try { await refreshList(); } catch (err) { fail(err); }
     });
     document.querySelectorAll('input[name="tutorialVisibility"]').forEach((input) => input.addEventListener('change', syncAudience));
+    document.querySelectorAll('input[name="aiCourseVisibility"]').forEach((input) => input.addEventListener('change', syncAiAudience));
+    const aiAddYear = document.getElementById('aiAddYearBtn');
+    if (aiAddYear) {
+      aiAddYear.addEventListener('click', () => {
+        const input = document.getElementById('aiYearInput');
+        const year = input ? input.value.trim() : '';
+        if (!/^(19|20)\d{2}$/.test(year)) {
+          toast('Enter a four-digit year such as 2027.', 'error');
+          return;
+        }
+        if (!state.aiYears.includes(year)) state.aiYears.push(year);
+        if (input) input.value = '';
+        renderAiYears();
+      });
+    }
+    syncAiAudience();
     document.getElementById('addYearBtn').addEventListener('click', () => {
       const year = document.getElementById('yearInput').value.trim();
       if (!/^(19|20)\d{2}$/.test(year)) {

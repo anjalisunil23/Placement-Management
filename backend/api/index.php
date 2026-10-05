@@ -650,6 +650,7 @@ $routes = [
     ['POST',   '/tutorials/manage/{tutorialId}/ai/save-module', [TutorialController::class, 'aiSaveModule']],
     ['POST',   '/tutorials/manage/{tutorialId}/modules/{moduleId}/assessment/generate', [TutorialController::class, 'assessmentGenerate']],
     ['POST',   '/tutorials/manage/{tutorialId}/modules/{moduleId}/assessment/save-generated', [TutorialController::class, 'assessmentSaveGenerated']],
+    ['GET',    '/tutorials/manage/{tutorialId}/modules/{moduleId}/lesson-questions', [TutorialController::class, 'lessonQuestionsManage']],
     ['GET',    '/tutorials/manage/{tutorialId}/modules/{moduleId}/assessment', [TutorialController::class, 'assessmentManageGet']],
     ['POST',   '/tutorials/manage/{tutorialId}/modules/{moduleId}/assessment/save', [TutorialController::class, 'assessmentManageSave']],
     ['GET',    '/tutorials/manage/{tutorialId}/modules/{moduleId}/activities', [TutorialController::class, 'activitiesManageList']],

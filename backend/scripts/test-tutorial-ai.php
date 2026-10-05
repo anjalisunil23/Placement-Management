@@ -523,6 +523,18 @@ try {
         && !str_contains($varsJson, 'This option matches the lesson.'),
         'lesson practice lists only that lesson and hides the answer'
     );
+    $staffQuestions = $service->lessonQuestionsForStaff($staff, $practiceTutorialId, $firstModuleId);
+    $staffQuestion = $staffQuestions['lessons'][0]['questions'][0] ?? [];
+    $check(
+        ($staffQuestions['questionCount'] ?? 0) === 1
+        && ($staffQuestion['question'] ?? '') === 'Store a student name'
+        && ($staffQuestion['correctIndex'] ?? -1) === 1
+        && str_contains((string) ($staffQuestion['explanation'] ?? ''), 'matches the lesson'),
+        'staff can review saved lesson questions with the correct answer'
+    );
+    $throws(static function () use ($service, $student, $practiceTutorialId, $firstModuleId): void {
+        $service->lessonQuestionsForStaff($student, $practiceTutorialId, $firstModuleId);
+    }, 'students cannot open the staff question review');
     $loopsPractice = $service->lessonPracticeForStudent($student, $practiceTutorialId, $secondModuleId, 'loops');
     $check(
         ($loopsPractice['questionCount'] ?? 0) === 1

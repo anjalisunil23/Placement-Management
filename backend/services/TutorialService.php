@@ -651,6 +651,57 @@ final class TutorialService
     }
 
     /**
+     * Saved lesson MCQs for staff review, including the correct option and explanation.
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function lessonQuestionsForStaff(array $user, string $tutorialId, string $moduleId): array
+    {
+        $this->ownedTutorial($user, $tutorialId);
+        $module = $this->moduleOnTutorial($tutorialId, $moduleId);
+        $lessons = $this->buildStudentLessons(
+            $this->lessonContentString($module['content'] ?? ''),
+            (string) ($module['title'] ?? 'Lesson')
+        );
+        $grouped = [];
+        foreach ($lessons as $lesson) {
+            $id = (string) ($lesson['id'] ?? '');
+            $grouped[$id] = [
+                'id' => $id,
+                'title' => (string) ($lesson['title'] ?? 'Lesson'),
+                'questions' => [],
+            ];
+        }
+        $count = 0;
+        foreach ((new TutorialLessonQuestionModel())->listByModule($moduleId) as $question) {
+            $lessonId = (string) ($question['lessonBlockId'] ?? '');
+            if (!isset($grouped[$lessonId])) {
+                $grouped[$lessonId] = [
+                    'id' => $lessonId,
+                    'title' => 'Other questions',
+                    'questions' => [],
+                ];
+            }
+            $grouped[$lessonId]['questions'][] = [
+                'id' => (string) ($question['_id'] ?? ''),
+                'question' => (string) ($question['question'] ?? ''),
+                'options' => array_values((array) ($question['options'] ?? [])),
+                'correctIndex' => (int) ($question['correctIndex'] ?? -1),
+                'explanation' => (string) ($question['explanation'] ?? ''),
+                'difficulty' => (string) ($question['difficulty'] ?? 'beginner'),
+            ];
+            $count++;
+        }
+
+        return [
+            'moduleId' => $moduleId,
+            'lessons' => array_values($grouped),
+            'questionCount' => $count,
+        ];
+    }
+
+    /**
      * Score one selected option. The client cannot supply the result.
      *
      * @param array<string, mixed> $user

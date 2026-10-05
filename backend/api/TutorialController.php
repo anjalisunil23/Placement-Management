@@ -214,6 +214,12 @@ final class TutorialController
         );
     }
 
+    public function lessonQuestionsManage(string $tutorialId, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->lessonQuestionsForStaff($user, $tutorialId, $moduleId));
+    }
+
     public function lessonPractice(string $tutorialId, string $moduleId, string $lessonId): void
     {
         $user = AuthMiddleware::authenticate();
