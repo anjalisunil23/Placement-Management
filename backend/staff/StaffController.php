@@ -427,13 +427,28 @@ final class StaffController
             'batch'        => (string) ($_GET['batch'] ?? $_POST['batch'] ?? ''),
             'studRole'     => (string) ($_GET['studRole'] ?? $_POST['studRole'] ?? 'all'),
         ];
-        $result = (new StaffPlacementRegistryService())->syncFromAes($ctx, $filters);
+        $registrySvc = new StaffPlacementRegistryService();
+        $result = $registrySvc->syncFromAes($ctx, $filters);
         $count = (int) ($result['studentsSynced'] ?? 0);
+        $listFilters = [
+            'departmentId' => (string) ($filters['departmentId'] ?? ''),
+            'program'      => (string) ($filters['program'] ?? ''),
+            'branch'       => (string) ($filters['branch'] ?? ''),
+            'batch'        => (string) ($filters['batch'] ?? ''),
+            'studRole'     => (string) ($filters['studRole'] ?? 'all'),
+            'type'         => '',
+            'q'            => '',
+        ];
+        $inTable = (int) (($registrySvc->list($ctx, $listFilters)['totals']['all'] ?? 0));
+        $result['rowsInTable'] = $inTable;
+        $message = $count > 0
+            ? "Synced {$count} record(s) from AES into student_placements."
+            : ($inTable > 0
+                ? "AES added no new rows; showing {$inTable} record(s) already in student_placements for these filters."
+                : 'No rows in student_placements for these filters yet. AES returned no roster to import — try a specific batch or check AES connectivity.');
         Response::success(
             DocumentHelper::jsonSafe($result),
-            $count > 0
-                ? "Synced {$count} student placement record(s) from AES."
-                : 'AES sync completed (no new rows in the current scope).'
+            $message
         );
     }
 

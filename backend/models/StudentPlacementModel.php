@@ -398,6 +398,25 @@ class StudentPlacementModel extends BaseModel
      * @return array<int, array<string, mixed>>
      */
     /**
+     * All roster-shaped rows stored in student_placements (filters applied by registry service).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAllRosterRows(int $limit = 5000): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($this->findAll([], max(1, min($limit, 5000))) as $doc) {
+            $rows[] = self::rosterRowFromDocument($doc);
+        }
+
+        return $rows;
+    }
+
+    /**
      * All roster rows in student_placements for a department (optional filters applied client-side).
      *
      * @return array<int, array<string, mixed>>
@@ -418,15 +437,16 @@ class StudentPlacementModel extends BaseModel
         return $rows;
     }
 
-    public function listRosterRowsForClass(string $departmentId, string $program, string $batch, int $limit = 500): array
+    public function listRosterRowsForClass(string $departmentId, string $program, string $batch, int $limit = 5000): array
     {
         if (!$this->bootstrapTable() || trim($batch) === '') {
             return [];
         }
 
-        $filter = $this->registryDepartmentFilter($departmentId);
+        // Class batch (+ programme) identifies the roster; ignore departmentId so rows
+        // from an earlier sync with a blank/other dept still appear for class teachers.
         $rows = [];
-        foreach ($this->findAll($filter, max(1, min($limit, 5000))) as $doc) {
+        foreach ($this->findAll([], max(1, min($limit, 5000))) as $doc) {
             $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
             if ($rowBatch === '' || !self::batchMatchesSelection($rowBatch, $batch)) {
                 continue;
@@ -577,6 +597,18 @@ class StudentPlacementModel extends BaseModel
         ];
     }
 
+    public static function matchesClassBatchSelection(string $rowBatch, string $wantBatch): bool
+    {
+        return self::batchMatchesSelection($rowBatch, $wantBatch);
+    }
+
+    private static function batchSelectionKey(string $batch): string
+    {
+        $batch = ClassInchargeRegistry::batchLabelWithoutSemester(trim($batch));
+
+        return strtoupper(preg_replace('/\s+/', '', $batch) ?? '');
+    }
+
     private static function batchMatchesSelection(string $rowBatch, string $wantBatch): bool
     {
         $rowBatch = trim($rowBatch);
@@ -585,6 +617,9 @@ class StudentPlacementModel extends BaseModel
             return false;
         }
         if (strcasecmp($rowBatch, $wantBatch) === 0) {
+            return true;
+        }
+        if (self::batchSelectionKey($rowBatch) === self::batchSelectionKey($wantBatch)) {
             return true;
         }
         if (strcasecmp(
