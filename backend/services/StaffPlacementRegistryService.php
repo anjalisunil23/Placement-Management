@@ -671,6 +671,7 @@ final class StaffPlacementRegistryService
         if ($localRows !== []) {
             $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
         }
+        $tableRows = $this->attachRegistryPlacements($tableRows);
         $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
 
         if ($studRole !== 'all') {
@@ -1174,31 +1175,16 @@ final class StaffPlacementRegistryService
 
         if ($studentPlacementsTableOnly) {
             if ($entries === []) {
-                $blank = $this->buildRosterEntry($meta, [
-                    'id'               => $studentId . ':roster',
-                    'employer'         => '',
-                    'role'             => '',
-                    'address'          => '',
-                    'package'          => '',
-                    'employerContact'  => '',
-                    'joinDate'         => '',
-                    'endDate'          => '',
-                    'academicDuration' => '',
-                    'internshipDetails'=> '',
-                    'natureOfJob'      => '',
-                    'monthlySalary'    => '',
-                    'placementStatus'  => '',
-                    'offerLetterVerified' => false,
-                    'verificationDate' => '',
-                    'fordvv'           => $this->normalizeVvValue($placement['fordvv'] ?? '1'),
-                    'includedvv'       => $this->normalizeVvValue($placement['includedvv'] ?? '1'),
-                    'type'             => 'Placement',
-                    'source'           => 'class_roster',
-                    'hasOfferLetter'   => false,
-                    'hasJoiningLetter' => false,
-                    'hasCompanyIdDoc'  => false,
-                    'canVerify'        => false,
-                ]);
+                $shell = $this->registryShellFromPlacementPayload($placement);
+                $shell['id'] = $studentId . ':roster';
+                $shell['source'] = trim((string) ($shell['source'] ?? '')) !== ''
+                    ? (string) $shell['source']
+                    : 'student_placements';
+                $shell['hasOfferLetter'] = (string) ($placement['offerLetter'] ?? '') !== '';
+                $shell['hasJoiningLetter'] = (string) ($placement['joiningLetter'] ?? '') !== '';
+                $shell['hasCompanyIdDoc'] = (string) ($placement['companyIdDoc'] ?? '') !== '';
+                $shell['canVerify'] = false;
+                $blank = $this->buildRosterEntry($meta, $shell);
                 if ($blank !== null) {
                     $entries[] = $blank;
                 }
@@ -2447,6 +2433,10 @@ final class StaffPlacementRegistryService
      */
     private function attachRegistryPlacements(array $rows): array
     {
+        if ($rows === []) {
+            return [];
+        }
+
         $ids = [];
         $registers = [];
         foreach ($rows as $row) {
@@ -2462,34 +2452,79 @@ final class StaffPlacementRegistryService
 
         $model = new StudentPlacementModel();
         try {
-            $byId = $ids !== [] ? $model->findPlacementMapByStudentIds($ids) : [];
-            $byRegister = $registers !== [] ? $model->findPlacementMapByRegisterNumbers($registers) : [];
+            $maps = $model->findRosterMapsByKeys($ids, $registers);
         } catch (\Throwable) {
-            $byId = [];
-            $byRegister = [];
+            $maps = ['byId' => [], 'byReg' => []];
         }
 
         $out = [];
         foreach ($rows as $row) {
             $id = trim((string) ($row['id'] ?? $row['_id'] ?? $row['studentId'] ?? ''));
             $reg = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
-            $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-
-            $placement = [];
-            if ($id !== '' && isset($byId[$id])) {
-                $placement = $byId[$id];
-            } elseif ($reg !== '' && isset($byRegister[$reg])) {
-                $placement = $byRegister[$reg];
-            } elseif ($embedded !== [] && trim((string) ($embedded['company'] ?? '')) !== '') {
-                $placement = $this->migrateEmbeddedPlacementToTable($model, $row, $embedded, $reg);
+            $tableRow = null;
+            if ($id !== '' && isset($maps['byId'][$id])) {
+                $tableRow = $maps['byId'][$id];
+            } elseif ($reg !== '' && isset($maps['byReg'][$reg])) {
+                $tableRow = $maps['byReg'][$reg];
             }
 
-            $row['placement'] = $placement;
-            $row['placed'] = trim((string) ($placement['company'] ?? '')) !== '';
+            if (is_array($tableRow)) {
+                $row = $this->mergeRosterStudentRows($tableRow, $row);
+            }
+
+            $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+            if (is_array($tableRow)) {
+                $fromTable = is_array($tableRow['placement'] ?? null) ? $tableRow['placement'] : [];
+                $row['placement'] = array_merge($embedded, $fromTable);
+            } elseif ($embedded !== [] && trim((string) ($embedded['company'] ?? '')) !== '') {
+                $migrated = $this->migrateEmbeddedPlacementToTable($model, $row, $embedded, $reg);
+                if ($migrated !== []) {
+                    $row['placement'] = $migrated;
+                }
+            }
+
+            $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+            $row['placed'] = trim((string) ($placement['company'] ?? $placement['companyName'] ?? '')) !== '';
             $out[] = $row;
         }
 
         return $out;
+    }
+
+    /**
+     * Map flat student_placements JSON placement fields to registry row cells.
+     *
+     * @param array<string, mixed> $placement
+     * @return array<string, mixed>
+     */
+    private function registryShellFromPlacementPayload(array $placement): array
+    {
+        $company = trim((string) ($placement['company'] ?? $placement['companyName'] ?? ''));
+        $recordType = trim((string) ($placement['recordType'] ?? $placement['type'] ?? ''));
+        if ($recordType === '' && $company !== '') {
+            $recordType = 'Placement';
+        }
+
+        return [
+            'employer'            => $company,
+            'role'                => trim((string) ($placement['role'] ?? '')),
+            'address'             => trim((string) ($placement['address'] ?? '')),
+            'package'             => $this->normalizePackage($placement['package'] ?? ''),
+            'employerContact'     => trim((string) ($placement['employerContact'] ?? $placement['contact'] ?? '')),
+            'joinDate'            => trim((string) ($placement['joinDate'] ?? '')),
+            'endDate'             => trim((string) ($placement['endDate'] ?? '')),
+            'academicDuration'    => trim((string) ($placement['academicDuration'] ?? '')),
+            'internshipDetails'   => trim((string) ($placement['internshipDetails'] ?? '')),
+            'natureOfJob'         => trim((string) ($placement['natureOfJob'] ?? '')),
+            'monthlySalary'       => trim((string) ($placement['monthlySalary'] ?? '')),
+            'placementStatus'     => trim((string) ($placement['placementStatus'] ?? '')),
+            'offerLetterVerified' => (bool) ($placement['offerLetterVerified'] ?? false),
+            'verificationDate'    => trim((string) ($placement['verificationDate'] ?? '')),
+            'fordvv'              => $this->normalizeVvValue($placement['fordvv'] ?? '1'),
+            'includedvv'          => $this->normalizeVvValue($placement['includedvv'] ?? '1'),
+            'type'                => $recordType !== '' ? $recordType : 'Placement',
+            'recordType'          => $recordType,
+        ];
     }
 
     /**
