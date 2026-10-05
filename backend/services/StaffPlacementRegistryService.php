@@ -176,14 +176,17 @@ final class StaffPlacementRegistryService
             }
         }
 
+        $dept = is_array($listCtx['department'] ?? null) ? $listCtx['department'] : null;
+
         return [
             'studentsSynced'   => $studentsSynced,
             'aesRosterFetched' => $aesRosterFetched,
             'scope'          => [
-                'departmentId' => $deptId,
-                'program'      => $program,
-                'batch'        => $batch,
-                'studRole'     => $isAlumni ? 'alumni' : 'student',
+                'departmentId'   => $deptId,
+                'departmentName' => trim((string) ($dept['name'] ?? $dept['code'] ?? '')),
+                'program'        => $program,
+                'batch'          => $batch,
+                'studRole'       => $isAlumni ? 'alumni' : 'student',
             ],
         ];
     }
@@ -309,7 +312,96 @@ final class StaffPlacementRegistryService
             }
         }
 
+        if ($rows === []) {
+            foreach ($this->syncRosterViaDepartmentWideClassLabels($classCtx, $isAlumni) as $row) {
+                $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = $row;
+            }
+        }
+
         return $rows;
+    }
+
+    /**
+     * Dept-wide class list from AES stud_class labels (when programme dropdown is empty).
+     *
+     * @param array<string, mixed> $classCtx
+     * @return list<array<string, mixed>>
+     */
+    private function syncRosterViaDepartmentWideClassLabels(array $classCtx, bool $isAlumni): array
+    {
+        $filterSvc = new PlacementFilterService();
+        $deptAesId = $filterSvc->resolveParentDeptAesId($classCtx);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        $batches = (new AesApiService())->fetchPlacementClassBatches($deptAesId, '');
+        $rows = [];
+        $seen = [];
+
+        foreach ($batches as $batchLabel) {
+            $batchLabel = trim((string) $batchLabel);
+            if ($batchLabel === '') {
+                continue;
+            }
+            $program = $this->inferProgrammeCodeFromBatchLabel($batchLabel);
+            if ($program === '') {
+                continue;
+            }
+            $chunk = $isAlumni
+                ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $batchLabel, true)
+                : $this->officerData->listAesClassStudents($classCtx, $program, $batchLabel, true);
+            foreach ($chunk as $row) {
+                $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    private function inferProgrammeCodeFromBatchLabel(string $batchLabel): string
+    {
+        $batchLabel = trim($batchLabel);
+        if ($batchLabel === '') {
+            return '';
+        }
+
+        $fromBatch = DepartmentProgrammeCatalog::resolveProgrammeCode($batchLabel);
+        if ($fromBatch !== '') {
+            return $fromBatch;
+        }
+
+        $norm = DepartmentProgrammeCatalog::normalizeCode($batchLabel);
+        if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+            return 'INMCA';
+        }
+        if (str_starts_with($norm, 'MCA')) {
+            return 'MCA';
+        }
+        if (str_contains($norm, 'BCA')) {
+            return 'BCA';
+        }
+
+        foreach (DepartmentProgrammeCatalog::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                $code = DepartmentProgrammeCatalog::normalizeCode((string) ($programme['code'] ?? ''));
+                if ($code !== '' && str_contains($norm, $code)) {
+                    return (string) $programme['code'];
+                }
+            }
+        }
+
+        return '';
     }
 
     /**

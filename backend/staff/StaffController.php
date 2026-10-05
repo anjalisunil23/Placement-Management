@@ -385,12 +385,16 @@ final class StaffController
         if ($assigned === []) {
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
+        $staffDeptId = trim((string) ($ctx['departmentId'] ?? ''));
+        $staffDept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         Response::success(DocumentHelper::jsonSafe([
             'departments' => $registrySvc->departmentFilterOptions(),
             'programs' => $svc->fetchProgramOptions($filterCtx),
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
             'assignedClassBatches' => $assigned,
+            'staffDepartmentId' => $staffDeptId,
+            'staffDepartmentName' => trim((string) ($staffDept['name'] ?? $staffDept['code'] ?? '')),
         ]));
     }
 
@@ -417,6 +421,8 @@ final class StaffController
     /** POST /api/staff/placements-higher-education/sync-from-aes */
     public function syncPlacementsFromAes(): void
     {
+        @ini_set('memory_limit', trim((string) ($_ENV['AES_DIRECTORY_MEMORY_LIMIT'] ?? '512M')));
+        @set_time_limit(max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 600)));
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);

@@ -480,6 +480,8 @@
     let pageSize = 25;
     let searchDebounce = null;
     let filterDepartmentId = '';
+    let staffDefaultDepartmentId = '';
+    let staffDefaultDepartmentName = '';
     let filterProgram = '';
     let filterBatch = '';
     let sortKey = '';
@@ -659,6 +661,44 @@
       };
     }
 
+    function ensureDepartmentForSync() {
+      syncDepartmentFilter();
+      if (filterDepartmentId) {
+        return filterDepartmentId;
+      }
+      if (staffDefaultDepartmentId) {
+        filterDepartmentId = staffDefaultDepartmentId;
+        const el = document.getElementById('filterDepartment');
+        if (el && [...el.options].some(o => o.value === staffDefaultDepartmentId)) {
+          el.value = staffDefaultDepartmentId;
+        }
+      }
+      return filterDepartmentId;
+    }
+
+    function syncRequestFilters() {
+      const f = currentFilters();
+      const deptId = ensureDepartmentForSync();
+      if (deptId) f.departmentId = deptId;
+      return f;
+    }
+
+    function syncScopeSummary() {
+      syncDepartmentFilter();
+      const deptLabel = filterDepartmentId
+        ? (document.getElementById('filterDepartment')?.selectedOptions?.[0]?.textContent || 'selected').trim()
+        : (staffDefaultDepartmentName || staffDefaultDepartmentId
+          ? `${staffDefaultDepartmentName || 'your department'} (auto)`
+          : 'all departments');
+      const programLabel = filterProgram
+        ? (document.getElementById('filterProgram')?.selectedOptions?.[0]?.textContent || filterProgram).trim()
+        : 'all branches';
+      const batchLabel = filterBatch
+        ? filterBatch
+        : 'all batches';
+      return { deptLabel, programLabel, batchLabel };
+    }
+
     function fillSelect(id, values, allLabel, selected = '', autoPickSingle = false) {
       const el = document.getElementById(id);
       if (!el) return;
@@ -825,6 +865,12 @@
         studRole: 'all',
       });
       if (!data) return;
+
+      staffDefaultDepartmentId = String(data.staffDepartmentId || '').trim();
+      staffDefaultDepartmentName = String(data.staffDepartmentName || '').trim();
+      if (!filterDepartmentId && staffDefaultDepartmentId) {
+        filterDepartmentId = staffDefaultDepartmentId;
+      }
 
       if (Array.isArray(data.assignedClassBatches) && data.assignedClassBatches.length) {
         apiAssignedBatches = data.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
@@ -1225,17 +1271,20 @@
     }
 
     async function syncPlacementsFromAes() {
+      const scope = syncScopeSummary();
       const lines = [
-        'Sync placement and higher-education data from AES into student_placements for the current filters?',
+        'Pull roster data from live AES into student_placements for the scope below?',
         '',
-        'Only placement / higher-education registry fields are updated from AES (not a full student profile sync).',
-        'Both studying students and alumni in the current scope are fetched from AES.',
-        'Large scopes can take several minutes.',
+        'This is not a reload of the local table only — the server calls AES placement APIs, then saves rows and refreshes the grid.',
+        'Studying students and alumni are both imported. All branches + all batches can take several minutes (host timeout ~60–120s).',
         '',
-        filterDepartmentId ? 'Department: selected' : 'Department: all departments',
-        filterProgram ? `Branch: ${filterProgram}` : 'Branch: all branches',
-        filterBatch ? `Batch: ${filterBatch}` : 'Batch: all batches',
+        `Department: ${scope.deptLabel}`,
+        `Branch: ${scope.programLabel}`,
+        `Batch: ${scope.batchLabel}`,
       ];
+      if (!filterProgram && !filterBatch) {
+        lines.push('', 'Tip: choose Integrated MCA (INMCA) and one batch first for a faster, reliable sync.');
+      }
       if (!window.confirm(lines.join('\n'))) {
         return;
       }
@@ -1249,9 +1298,9 @@
         if (typeof StaffApi.clearPlacementsCache === 'function') {
           StaffApi.clearPlacementsCache();
         }
-        const res = await StaffApi.syncPlacementsFromAes(currentFilters());
+        const res = await StaffApi.syncPlacementsFromAes(syncRequestFilters());
         if (!res?.success) {
-          toast(res?.message || 'AES sync failed.', 'error');
+          toast(res?.message || 'AES sync failed (check server timeout or AES connectivity).', 'error');
           return;
         }
         const aesN = res?.data?.aesRosterFetched;
@@ -1263,8 +1312,8 @@
         } else {
           await loadRegistry();
         }
-      } catch (_) {
-        toast('AES sync failed.', 'error');
+      } catch (err) {
+        toast(String(err?.message || 'AES sync failed (network or server timeout).'), 'error');
       } finally {
         if (btn) {
           btn.disabled = false;
