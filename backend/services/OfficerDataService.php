@@ -1703,8 +1703,12 @@ final class OfficerDataService
             $wantCohort = ClassInchargeRegistry::cohortKey($wantBatch);
         }
 
-        return $wantCohort !== ''
-            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0;
+        if ($wantCohort !== ''
+            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0) {
+            return true;
+        }
+
+        return ClassInchargeRegistry::batchesSameAdmissionCohort($rowBatch, $wantBatch);
     }
 
     /**

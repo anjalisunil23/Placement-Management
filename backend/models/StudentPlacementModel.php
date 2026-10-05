@@ -792,9 +792,12 @@ class StudentPlacementModel extends BaseModel
             return true;
         }
         $wantCohort = ClassInchargeRegistry::cohortKey($wantBatch);
+        if ($wantCohort !== ''
+            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0) {
+            return true;
+        }
 
-        return $wantCohort !== ''
-            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0;
+        return ClassInchargeRegistry::batchesSameAdmissionCohort($rowBatch, $wantBatch);
     }
 
     private static function programmeMatchesBatch(string $wantProgram, string $batchLabel, string $rowProgramme): bool

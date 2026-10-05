@@ -183,6 +183,15 @@ final class StaffPlacementRegistryService
             $aesClassRows = $isAlumni
                 ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $batch, true)
                 : $this->officerData->listAesClassStudents($classCtx, $program, $batch, true);
+            if ($aesClassRows === [] && $deptAesId !== '') {
+                $aesClassRows = $this->syncRosterRowsForExpandedBatch(
+                    $classCtx,
+                    $deptAesId,
+                    $program,
+                    $batch,
+                    $isAlumni
+                );
+            }
             $classRows = $this->filterRosterByPlacementStudRole($aesClassRows, $studRole);
             $aesRosterFetched += count($classRows);
             $studentsSynced += $this->syncClassRowsToStudentPlacements(
@@ -237,6 +246,53 @@ final class StaffPlacementRegistryService
         }
 
         return $out;
+    }
+
+    /**
+     * When the selected batch label does not match AES stud_class literally (e.g. MCA-2023-25 vs MCAR2023-2025-S8).
+     *
+     * @param array<string, mixed> $classCtx
+     * @return list<array<string, mixed>>
+     */
+    private function syncRosterRowsForExpandedBatch(
+        array $classCtx,
+        string $deptAesId,
+        string $program,
+        string $batch,
+        bool $isAlumni
+    ): array {
+        try {
+            $known = (new AesApiService())->fetchPlacementClassBatches($deptAesId, $program);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $rows = [];
+        $seen = [];
+        foreach ($known as $label) {
+            $label = trim((string) $label);
+            if ($label === ''
+                || !ClassInchargeRegistry::batchesSameAdmissionCohort($label, $batch)
+                || !DepartmentProgrammeCatalog::batchHintMatchesProgramme($label, $program)) {
+                continue;
+            }
+            $chunk = $isAlumni
+                ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $label, true)
+                : $this->officerData->listAesClassStudents($classCtx, $program, $label, true);
+            foreach ($chunk as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
     }
 
     /**

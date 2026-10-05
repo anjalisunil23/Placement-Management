@@ -3064,6 +3064,52 @@ final class AesApiService
         }
     }
 
+    /**
+     * Map UI / filter batch labels to every AES stud_class that represents the same cohort.
+     *
+     * @return list<string>
+     */
+    private function expandStudClassVariantsForAes(string $deptAesId, string $programmeCode, string $studClass): array
+    {
+        $studClass = trim($studClass);
+        $variants = array_values(array_unique(array_filter([
+            $studClass,
+            ClassInchargeRegistry::batchLabelWithoutSemester($studClass),
+        ], static fn (string $v): bool => $v !== '')));
+
+        if ($deptAesId === '' || $studClass === '') {
+            return $variants;
+        }
+
+        $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($programmeCode));
+        try {
+            $known = $this->fetchPlacementClassBatches($deptAesId, $programmeCode);
+        } catch (\Throwable) {
+            $known = [];
+        }
+
+        foreach ($known as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate === '') {
+                continue;
+            }
+            if (\PMS\Models\StudentPlacementModel::matchesClassBatchSelection($candidate, $studClass)) {
+                $variants[] = $candidate;
+                continue;
+            }
+            if (!ClassInchargeRegistry::batchesSameAdmissionCohort($candidate, $studClass)) {
+                continue;
+            }
+            if ($programmeCode !== ''
+                && !DepartmentProgrammeCatalog::batchHintMatchesProgramme($candidate, $programmeCode)) {
+                continue;
+            }
+            $variants[] = $candidate;
+        }
+
+        return array_values(array_unique($variants));
+    }
+
     public function fetchClassStudInfo4Placement(
         string $deptAesId,
         string $programmeCode,
@@ -3085,10 +3131,7 @@ final class AesApiService
             }
         }
 
-        $classVariants = array_values(array_unique(array_filter([
-            $studClass,
-            ClassInchargeRegistry::batchLabelWithoutSemester($studClass),
-        ], static fn (string $v): bool => $v !== '')));
+        $classVariants = $this->expandStudClassVariantsForAes($deptAesId, $programmeCode, $studClass);
 
         $merged = [];
         $seen = [];

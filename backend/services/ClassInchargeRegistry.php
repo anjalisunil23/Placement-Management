@@ -125,6 +125,51 @@ final class ClassInchargeRegistry
         return $batch;
     }
 
+    /**
+     * Normalized admission span for cohort matching (MCA-2023-25 and MCAR2023-2025-S8 → 2023-2025).
+     */
+    public static function admissionYearSpanKey(string $batch): ?string
+    {
+        $batch = trim($batch);
+        if ($batch === '') {
+            return null;
+        }
+        if (preg_match('/(\d{4})-(\d{2,4})/', $batch, $m) === 1) {
+            $start = $m[1];
+            $endRaw = $m[2];
+            $end = strlen($endRaw) === 2
+                ? (substr($start, 0, 2) . $endRaw)
+                : $endRaw;
+
+            return $start . '-' . $end;
+        }
+        $digits = preg_replace('/\D/', '', $batch) ?? '';
+        if (preg_match('/(\d{4})(\d{4})/', $digits, $m) === 1) {
+            return $m[1] . '-' . $m[2];
+        }
+
+        return null;
+    }
+
+    public static function batchesSameAdmissionCohort(string $a, string $b): bool
+    {
+        $a = trim($a);
+        $b = trim($b);
+        if ($a === '' || $b === '') {
+            return false;
+        }
+        if (strcasecmp($a, $b) === 0) {
+            return true;
+        }
+        if (strcasecmp(self::cohortKey($a), self::cohortKey($b)) === 0) {
+            return true;
+        }
+        $sa = self::admissionYearSpanKey($a);
+        $sb = self::admissionYearSpanKey($b);
+
+        return $sa !== null && $sa === $sb;
+    }
+
     /** Display / filter label without semester markers (MCA2024-28-S8 → MCA2024-28). */
     public static function batchLabelWithoutSemester(string $batch): string
     {
