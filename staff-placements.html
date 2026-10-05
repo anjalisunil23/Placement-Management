@@ -39,13 +39,6 @@
               </select>
             </div>
             <div class="col-6 col-md-4 col-lg">
-              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterStudRole">Role</label>
-              <select class="form-select form-select-sm" id="filterStudRole">
-                <option value="student" selected>Student</option>
-                <option value="alumni">Alumni</option>
-              </select>
-            </div>
-            <div class="col-6 col-md-4 col-lg">
               <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterProgram">Branch</label>
               <select class="form-select form-select-sm" id="filterProgram">
                 <option value="">All branches</option>
@@ -489,7 +482,6 @@
     let filterDepartmentId = '';
     let filterProgram = '';
     let filterBatch = '';
-    let filterStudRole = 'student';
     let sortKey = '';
     let sortDir = 'asc';
     let canEditSelectedBatch = false;
@@ -661,7 +653,7 @@
         departmentId: filterDepartmentId,
         program: filterProgram,
         batch: filterBatch,
-        studRole: filterStudRole || 'student',
+        studRole: 'all',
         type: document.getElementById('filterType')?.value || '',
         q: document.getElementById('tableSearch')?.value?.trim() || '',
       };
@@ -826,12 +818,11 @@
       if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
 
       syncDepartmentFilter();
-      filterStudRole = document.getElementById('filterStudRole')?.value || filterStudRole || 'student';
       const initialProgram = filterProgram || '';
       const data = await StaffApi.fetchPlacementFilters({
         departmentId: filterDepartmentId,
         program: initialProgram || filterProgram,
-        studRole: filterStudRole,
+        studRole: 'all',
       });
       if (!data) return;
 
@@ -848,7 +839,7 @@
         const again = await StaffApi.fetchPlacementFilters({
           departmentId: filterDepartmentId,
           program: filterProgram,
-          studRole: filterStudRole,
+          studRole: 'all',
         });
         batches = again?.batches || [];
         if (Array.isArray(again?.assignedClassBatches) && again.assignedClassBatches.length) {
@@ -900,15 +891,15 @@
       }
 
       document.getElementById('rowCount').textContent = total
-        ? `${total} student${total === 1 ? '' : 's'}`
-        : 'No students';
+        ? `${total} student${total === 1 ? '' : 's'} & alumni`
+        : 'No records';
       document.getElementById('pageInfo').textContent = total
         ? `Showing ${start + 1}–${Math.min(start + pageSize, total)} of ${total}`
         : 'No entries to show';
 
       const colSpan = registryColspan();
       if (!slice.length) {
-        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students match the current filters.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students or alumni match the current filters.</td></tr>`;
         return;
       }
 
@@ -1230,14 +1221,13 @@
     }
 
     async function syncPlacementsFromAes() {
-      const roleLabel = filterStudRole === 'alumni' ? 'Alumni' : 'Student';
       const lines = [
         'Sync placement and higher-education data from AES into student_placements for the current filters?',
         '',
         'Only placement / higher-education registry fields are updated from AES (not a full student profile sync).',
+        'Students and alumni in the current scope are included.',
         'Large scopes can take several minutes.',
         '',
-        `Role: ${roleLabel}`,
         filterDepartmentId ? 'Department: selected' : 'Department: all departments',
         filterProgram ? `Branch: ${filterProgram}` : 'Branch: all branches',
         filterBatch ? `Batch: ${filterBatch}` : 'Batch: all batches',
@@ -1323,15 +1313,6 @@
         if (programEl) programEl.value = '';
         if (batchEl) batchEl.value = '';
         await loadPlacementFilters();
-      } else if (changed === 'filterStudRole') {
-        filterStudRole = document.getElementById('filterStudRole')?.value || 'student';
-        filterProgram = '';
-        filterBatch = '';
-        const programEl = document.getElementById('filterProgram');
-        const batchEl = document.getElementById('filterBatch');
-        if (programEl) programEl.value = '';
-        if (batchEl) batchEl.value = '';
-        await loadPlacementFilters();
       } else if (changed === 'filterProgram') {
         filterProgram = document.getElementById('filterProgram')?.value || '';
         filterBatch = '';
@@ -1366,7 +1347,7 @@
       syncPlacementsFromAes().catch(() => toast('AES sync failed.', 'error'));
     });
 
-    ['filterDepartment', 'filterStudRole', 'filterProgram', 'filterBatch'].forEach(id => {
+    ['filterDepartment', 'filterProgram', 'filterBatch'].forEach(id => {
       document.getElementById(id)?.addEventListener('change', () => {
         onScopeFilterChange(id).catch(() => loadRegistry());
       });
@@ -1434,7 +1415,6 @@
         const u = Auth.user() || {};
         apiAssignedBatches = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
       }
-      filterStudRole = document.getElementById('filterStudRole')?.value || 'student';
       await loadPlacementFilters();
       await loadRegistry();
     });
