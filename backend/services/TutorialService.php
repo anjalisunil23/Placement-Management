@@ -580,6 +580,40 @@ final class TutorialService
     }
 
     /**
+     * Lesson text used to create MCQs for a course that does not have them yet.
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, string>|null
+     */
+    public function lessonPracticeSource(array $user, string $tutorialId, string $moduleId, string $lessonId): ?array
+    {
+        if (preg_match('/^[A-Za-z0-9_-]{1,64}$/', $lessonId) !== 1) {
+            return null;
+        }
+        $tutorial = $this->publishedTutorialForStudent($user, $tutorialId);
+        $module = $this->moduleOnTutorial($tutorialId, $moduleId);
+        $lessons = $this->buildStudentLessons($this->lessonContentString($module['content'] ?? ''), (string) ($module['title'] ?? 'Lesson'));
+        foreach ($lessons as $lesson) {
+            if ((string) ($lesson['id'] ?? '') !== $lessonId) {
+                continue;
+            }
+            $text = trim(preg_replace('/\s+/', ' ', strip_tags((string) ($lesson['html'] ?? ''))) ?? '');
+
+            return [
+                'tutorialId' => $tutorialId,
+                'moduleId' => $moduleId,
+                'lessonBlockId' => $lessonId,
+                'lessonTitle' => (string) ($lesson['title'] ?? 'Lesson'),
+                'lessonText' => mb_substr($text, 0, 6000),
+                'topic' => (string) ($tutorial['topic'] ?? ''),
+                'courseTitle' => (string) ($tutorial['title'] ?? ''),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
      * Lesson MCQs for the selected lesson. Correct answers are omitted.
      *
      * @param array<string, mixed> $user
@@ -1866,15 +1900,6 @@ final class TutorialService
             $view['content'] = $this->presentLessonContent($rawContent);
             $view['lessons'] = $this->buildStudentLessons($rawContent, (string) ($module['title'] ?? 'Lesson'));
             $view['exercises'] = [];
-            foreach ($this->exercises->listByModule((string) ($module['_id'] ?? '')) as $exercise) {
-                $view['exercises'][] = [
-                    'id' => (string) ($exercise['_id'] ?? ''),
-                    'title' => (string) ($exercise['title'] ?? ''),
-                    'language' => (string) ($exercise['language'] ?? ''),
-                    'sortOrder' => (int) ($exercise['sortOrder'] ?? 0),
-                    'lessonBlockId' => (string) ($exercise['lessonBlockId'] ?? ''),
-                ];
-            }
         }
 
         return $view;

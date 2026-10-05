@@ -217,7 +217,19 @@ final class TutorialController
     public function lessonPractice(string $tutorialId, string $moduleId, string $lessonId): void
     {
         $user = AuthMiddleware::authenticate();
-        Response::success($this->service->lessonPracticeForStudent($user, $tutorialId, $moduleId, $lessonId));
+        $practice = $this->service->lessonPracticeForStudent($user, $tutorialId, $moduleId, $lessonId);
+        if ((int) ($practice['questionCount'] ?? 0) === 0) {
+            $source = $this->service->lessonPracticeSource($user, $tutorialId, $moduleId, $lessonId);
+            if (is_array($source) && trim($source['lessonText']) !== '') {
+                try {
+                    $this->ai->ensureLessonMcqs($source);
+                    $practice = $this->service->lessonPracticeForStudent($user, $tutorialId, $moduleId, $lessonId);
+                } catch (\Throwable $e) {
+                    error_log('[PMS Tutorial] lesson MCQ backfill failed: ' . $e->getMessage());
+                }
+            }
+        }
+        Response::success($practice);
     }
 
     public function checkLessonAnswer(string $id): void

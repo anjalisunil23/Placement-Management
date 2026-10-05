@@ -1063,6 +1063,123 @@ PROMPT;
     }
 
     /**
+     * Create lesson MCQs from stored lesson text when a course has none.
+     * Programming exercises are never created. Existing questions are left unchanged.
+     *
+     * @param array<string, string> $source
+     */
+    public function ensureLessonMcqs(array $source): int
+    {
+        $tutorialId = (string) ($source['tutorialId'] ?? '');
+        $moduleId = (string) ($source['moduleId'] ?? '');
+        $lessonBlockId = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($source['lessonBlockId'] ?? '')) ?? '';
+        $lessonTitle = mb_substr(trim(strip_tags((string) ($source['lessonTitle'] ?? 'Lesson'))), 0, 300);
+        $lessonText = mb_substr(trim(strip_tags((string) ($source['lessonText'] ?? ''))), 0, 6000);
+        if ($tutorialId === '' || $moduleId === '' || $lessonBlockId === '' || $lessonTitle === '' || mb_strlen($lessonText) < 40) {
+            return 0;
+        }
+        $questions = new TutorialLessonQuestionModel();
+        if ($this->lessonAlreadyHasQuestions($questions, $moduleId, $lessonBlockId)) {
+            return 0;
+        }
+        $this->assertAiConfigured();
+
+        $lockPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_lesson_mcq_' . hash('sha256', $moduleId . ':' . $lessonBlockId) . '.lock';
+        $lock = fopen($lockPath, 'c');
+        if ($lock === false || !flock($lock, \LOCK_EX)) {
+            return 0;
+        }
+        try {
+            if ($this->lessonAlreadyHasQuestions($questions, $moduleId, $lessonBlockId)) {
+                return 0;
+            }
+            @set_time_limit(180);
+            $topic = mb_substr(trim(strip_tags((string) ($source['topic'] ?? ''))), 0, self::MAX_TOPIC_CHARS);
+            $courseTitle = mb_substr(trim(strip_tags((string) ($source['courseTitle'] ?? ''))), 0, 160);
+            $field = $this->practiceField($courseTitle . ' ' . $topic, $lessonTitle, $lessonText);
+            $system = <<<SYSTEM
+You write four-option multiple-choice questions about one university lesson.
+Return ONLY valid JSON.
+Questions must test the subject actually taught in the lesson text.
+If that subject is accounting, business, engineering, or any other non-programming topic, every question must be about that subject.
+Do not ask the student to write, run, or debug a program.
+Do not include programming exercises, starter code, or test cases.
+A short code snippet is allowed only when the lesson text itself teaches programming, and the question must still be multiple choice.
+SYSTEM;
+            $userPrompt = <<<PROMPT
+Course: {$courseTitle}
+Topic: {$topic}
+Academic field: {$field}
+Lesson title: {$lessonTitle}
+Lesson text:
+{$lessonText}
+
+Return JSON:
+{
+  "lessonMcqs": [
+    {
+      "lessonTitle": "{$lessonTitle}",
+      "question": "string",
+      "options": ["A", "B", "C", "D"],
+      "correctAnswer": 0,
+      "explanation": "why the answer is correct",
+      "difficulty": "beginner"
+    }
+  ]
+}
+Produce exactly 3 questions about this lesson only.
+PROMPT;
+            $raw = $this->callGenerateJson($system, $userPrompt);
+            $list = is_array($raw['lessonMcqs'] ?? null) ? $raw['lessonMcqs'] : (is_array($raw['questions'] ?? null) ? $raw['questions'] : []);
+            $module = $this->attachLessonMcqs([
+                'title' => $lessonTitle,
+                'lessonDocument' => [
+                    'version' => 1,
+                    'blocks' => [
+                        ['id' => $lessonBlockId, 'type' => 'heading', 'level' => 2, 'text' => $lessonTitle],
+                        ['type' => 'paragraph', 'text' => $lessonText],
+                    ],
+                ],
+            ], $list);
+            $ready = is_array($module['lessonMcqs'] ?? null) ? $module['lessonMcqs'] : [];
+            if ($this->lessonAlreadyHasQuestions($questions, $moduleId, $lessonBlockId)) {
+                return 0;
+            }
+
+            return $this->persistLessonMcqs($tutorialId, $moduleId, $ready);
+        } finally {
+            flock($lock, \LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    private function lessonAlreadyHasQuestions(TutorialLessonQuestionModel $questions, string $moduleId, string $lessonBlockId): bool
+    {
+        foreach ($questions->listByModule($moduleId) as $question) {
+            if ((string) ($question['lessonBlockId'] ?? '') === $lessonBlockId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function practiceField(string $course, string $title, string $text): string
+    {
+        $hay = strtolower($course . ' ' . $title . ' ' . $text);
+        $subject = preg_match('/\b(account|debit|credit|ledger|journal|balance sheet|asset|liabilit|business|management|marketing|finance|engineering)\b/', $hay) === 1;
+        $programming = preg_match('/\b(python|javascript|java|algorithm|syntax|compiler|variable|function|loop|array)\b/', $hay) === 1;
+        if ($subject) {
+            return 'business_administration';
+        }
+        if ($programming) {
+            return 'computer_applications';
+        }
+
+        return 'other';
+    }
+
+    /**
      * @param list<mixed> $rawQuestions
      * @param list<array{id: string, text: string}> $lessons
      * @return list<array<string, mixed>>

@@ -212,8 +212,8 @@ try {
         ($afterVisit['workspace']['lessons'][(string) $moduleA['id'] . ':vars'] ?? true) === false
         && ($afterVisit['workspace']['completedLessons'] ?? 1) === 0
         && count($visited['lessons'] ?? []) === 2
-        && count(array_filter($visited['exercises'] ?? [], static fn (array $row): bool => ($row['lessonBlockId'] ?? '') === 'vars')) === 1,
-        'opening a lesson does not complete it and keeps its exercise'
+        && ($visited['exercises'] ?? null) === [],
+        'opening a lesson does not complete it and does not show programming exercises'
     );
 
     $ran = $service->runExercise($student, (string) $exercise['id'], [

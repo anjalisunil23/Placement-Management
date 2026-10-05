@@ -664,6 +664,38 @@ try {
         'Business Administration generation stays on business questions'
     );
 
+    $clearCooldown();
+    $ai->nextJson = [
+        'lessonMcqs' => [$mcq('What is Accounting?', 'Which entry increases the cash account?', 0)],
+        'exercises' => [[
+            'title' => 'Write a program',
+            'language' => 'python',
+            'boilerplate' => "cash = 0\n",
+        ]],
+    ];
+    $backfill = [
+        'tutorialId' => $practiceTutorialId,
+        'moduleId' => $firstModuleId,
+        'lessonBlockId' => 'types',
+        'lessonTitle' => 'What is Accounting?',
+        'lessonText' => 'Accounting is the systematic process of recording, measuring, and communicating financial information.',
+        'topic' => 'Accounting Basics',
+        'courseTitle' => 'Accounting Basics for Computer Applications',
+    ];
+    $created = $ai->ensureLessonMcqs($backfill);
+    $filled = $service->lessonPracticeForStudent($student, $practiceTutorialId, $firstModuleId, 'types');
+    $ai->nextError = new RuntimeException('A lesson that already has questions must not be generated again.');
+    $second = $ai->ensureLessonMcqs($backfill);
+    $ai->nextError = null;
+    $check(
+        $created === 1
+        && $second === 0
+        && str_contains((string) ($filled['questions'][0]['question'] ?? ''), 'cash account')
+        && !array_key_exists('correctIndex', $filled['questions'][0] ?? [])
+        && str_contains($ai->lastSystem, 'Do not ask the student to write, run, or debug a program'),
+        'a saved lesson without questions receives subject MCQs instead of a coding exercise'
+    );
+
     // 22 manual create still works
     $manual = $service->createTutorial($staff, [
         'title' => 'Manual Course ' . $suffix,
