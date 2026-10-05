@@ -24,6 +24,7 @@ final class AptitudeManualQuestionParser
             return $json;
         }
 
+        $passageForQuestion = $this->mapDirectionPassages($text);
         $blocks = $this->splitQuestionBlocks($text);
         $out = [];
         foreach ($blocks as $block) {
@@ -31,10 +32,17 @@ final class AptitudeManualQuestionParser
             if ($trim === '') {
                 continue;
             }
+            if (preg_match('/^Directions\s*\(\d+\s*-\s*\d+\)\s*:/iu', $trim)) {
+                continue;
+            }
             if (!preg_match('/\([a-eA-E]\)/', $trim)
                 && !preg_match('/(?:^|[\s])[a-eA-E]\)/u', $trim)
                 && !preg_match('/[A-Da-d][\.\):]/u', $trim)) {
                 continue;
+            }
+            $qNum = $this->leadingQuestionNumber($trim);
+            if ($qNum !== null && isset($passageForQuestion[$qNum])) {
+                $trim = $passageForQuestion[$qNum] . "\n\n" . $trim;
             }
             $parsed = $this->parseQuestionBlock($trim);
             if ($parsed !== null) {
@@ -82,6 +90,7 @@ final class AptitudeManualQuestionParser
     {
         $patterns = [
             '/(?=\n\s*\d{1,3}\)\s+\S)/u',
+            '/(?=\n\s*Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu',
             '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+)/iu',
             '/(?=\n\s*\d{1,4}\s*[\.\):]\s+\S)/u',
             '/(?=\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}\s*[:\-]\s+\S)/iu',
@@ -89,7 +98,8 @@ final class AptitudeManualQuestionParser
         foreach ($patterns as $pattern) {
             $blocks = preg_split($pattern, "\n" . $text, -1, PREG_SPLIT_NO_EMPTY);
             if (is_array($blocks) && count($blocks) > 1) {
-                return array_values(array_filter(array_map('trim', $blocks), static fn (string $b): bool => $b !== ''));
+                $blocks = array_values(array_filter(array_map('trim', $blocks), static fn (string $b): bool => $b !== ''));
+                return $this->refineQuestionBlocks($blocks);
             }
         }
         $inline = preg_split('/\s+(?=\d{1,3}\)\s+[A-Za-z(])/', $text, -1, PREG_SPLIT_NO_EMPTY);
@@ -100,8 +110,39 @@ final class AptitudeManualQuestionParser
         $blocks = preg_split('/\n\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s+/iu', $text, -1, PREG_SPLIT_NO_EMPTY);
 
         return is_array($blocks)
-            ? array_values(array_filter(array_map('trim', $blocks), static fn (string $b): bool => $b !== ''))
+            ? $this->refineQuestionBlocks(array_values(array_filter(array_map('trim', $blocks), static fn (string $b): bool => $b !== '')))
             : [];
+    }
+
+    /**
+     * Split blocks that still contain multiple numbered questions or a glued Directions section.
+     *
+     * @param list<string> $blocks
+     * @return list<string>
+     */
+    private function refineQuestionBlocks(array $blocks): array
+    {
+        $out = [];
+        $subSplit = '/(?=\n\s*\d{1,3}\)\s+\S)/u';
+        foreach ($blocks as $block) {
+            $trim = trim($block);
+            if ($trim === '') {
+                continue;
+            }
+            $parts = preg_split($subSplit, "\n" . $trim, -1, PREG_SPLIT_NO_EMPTY);
+            if (is_array($parts) && count($parts) > 1) {
+                foreach ($parts as $part) {
+                    $p = trim($part);
+                    if ($p !== '') {
+                        $out[] = $p;
+                    }
+                }
+                continue;
+            }
+            $out[] = $trim;
+        }
+
+        return $out;
     }
 
     /**
@@ -146,6 +187,8 @@ final class AptitudeManualQuestionParser
         if ($block === '') {
             return null;
         }
+
+        $block = $this->stripTrailingDirectionsTail($block);
 
         $block = preg_replace('/^\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s*/iu', '', $block) ?? $block;
         $block = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $block) ?? $block;
@@ -222,47 +265,47 @@ final class AptitudeManualQuestionParser
     {
         $options = [];
         if (preg_match_all(
-            '/(?:^|[\n\s])\(([a-eA-E])\)\s*(.+?)(?=(?:[\n\s]\([a-eA-E]\)|\s+\d{1,3}\)|$))/s',
+            '/(?:^|[\n\s])\(([a-eA-E])\)\s*(.+?)(?=(?:[\n\s]\([a-eA-E]\)|\s+\d{1,3}\)|\s+Directions\s*\(|$))/s',
             $block,
             $matches,
             PREG_SET_ORDER
         )) {
             foreach ($matches as $m) {
-                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+                $options[strtoupper($m[1])] = $this->cleanOptionText($m[2]);
             }
         }
         if ($options === [] && preg_match_all(
-            '/(?:^|[\n\s])([a-eA-E])\)\s*(.+?)(?=(?:[\n\s][a-eA-E]\)|\s+\d{1,3}\)|$))/su',
+            '/(?:^|[\n\s])([a-eA-E])\)\s*(.+?)(?=(?:[\n\s][a-eA-E]\)|\s+\d{1,3}\)|\s+Directions\s*\(|$))/su',
             $block,
             $matches,
             PREG_SET_ORDER
         )) {
             foreach ($matches as $m) {
-                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+                $options[strtoupper($m[1])] = $this->cleanOptionText($m[2]);
             }
         }
         if ($options === [] && preg_match_all(
-            '/(?:^|\n)\s*([A-Da-d])[\.\):]\s*(.+?)(?=\n\s*[A-Da-d][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\z)/s',
+            '/(?:^|\n)\s*([A-Da-d])[\.\):]\s*(.+?)(?=\n\s*[A-Da-d][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\s+Directions\s*\(|\z)/s',
             $block,
             $matches,
             PREG_SET_ORDER
         )) {
             foreach ($matches as $m) {
-                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+                $options[strtoupper($m[1])] = $this->cleanOptionText($m[2]);
             }
         }
         if ($options === [] && preg_match_all(
-            '/(?:^|\n|\s)\(([A-Da-d])\)\s*(.+?)(?=(?:^|\n|\s)\([A-Da-d]\)|\n\s*(?:Answer|Correct)|\z)/s',
+            '/(?:^|\n|\s)\(([A-Da-d])\)\s*(.+?)(?=(?:^|\n|\s)\([A-Da-d]\)|\n\s*(?:Answer|Correct)|\s+Directions\s*\(|\z)/s',
             $block,
             $matches,
             PREG_SET_ORDER
         )) {
             foreach ($matches as $m) {
-                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+                $options[strtoupper($m[1])] = $this->cleanOptionText($m[2]);
             }
         }
         if ($options === [] && preg_match_all(
-            '/(?:^|\n)\s*([1-4])[\.\):]\s*(.+?)(?=\n\s*[1-4][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\z)/s',
+            '/(?:^|\n)\s*([1-4])[\.\):]\s*(.+?)(?=\n\s*[1-4][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\s+Directions\s*\(|\z)/s',
             $block,
             $matches,
             PREG_SET_ORDER
@@ -271,7 +314,7 @@ final class AptitudeManualQuestionParser
             foreach ($matches as $m) {
                 $letter = $map[$m[1]] ?? '';
                 if ($letter !== '') {
-                    $options[$letter] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+                    $options[$letter] = $this->cleanOptionText($m[2]);
                 }
             }
         }
@@ -282,11 +325,79 @@ final class AptitudeManualQuestionParser
             PREG_SET_ORDER
         )) {
             foreach ($matches as $m) {
-                $options[strtoupper($m[1])] = trim(preg_replace('/\s+/u', ' ', $m[2]) ?? $m[2]);
+                $options[strtoupper($m[1])] = $this->cleanOptionText($m[2]);
+            }
+        }
+
+        foreach ($options as $letter => $label) {
+            $options[$letter] = $this->cleanOptionText($label);
+            if ($options[$letter] === '') {
+                unset($options[$letter]);
             }
         }
 
         return $options;
+    }
+
+    /**
+     * @return array<int, string> question number => directions + passage prefix
+     */
+    private function mapDirectionPassages(string $text): array
+    {
+        $map = [];
+        if (!preg_match_all(
+            '/Directions\s*\((\d+)\s*-\s*(\d+)\)\s*:([\s\S]*?)(?=\n\s*(?:\d{1,3}\)\s|\d{1,4}[\.\):]\s))/iu',
+            $text,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            return $map;
+        }
+        foreach ($matches as $m) {
+            $start = (int) $m[1];
+            $end = (int) $m[2];
+            if ($start <= 0 || $end < $start || $end - $start > 30) {
+                continue;
+            }
+            $body = trim(preg_replace('/\s+/u', ' ', $m[3]) ?? $m[3]);
+            if ($body === '') {
+                continue;
+            }
+            $prefix = 'Directions (' . $start . '–' . $end . '): ' . $body;
+            for ($q = $start; $q <= $end; $q++) {
+                $map[$q] = $prefix;
+            }
+        }
+
+        return $map;
+    }
+
+    private function leadingQuestionNumber(string $block): ?int
+    {
+        if (preg_match('/^\s*(?:Q(?:uestion)?\s*)?(\d{1,4})[\.\):]/iu', $block, $m)) {
+            return (int) $m[1];
+        }
+        if (preg_match('/^\s*(\d{1,3})\)\s/u', $block, $m)) {
+            return (int) $m[1];
+        }
+
+        return null;
+    }
+
+    private function stripTrailingDirectionsTail(string $block): string
+    {
+        $stripped = preg_replace('/\s+Directions\s*\(\d+\s*-\s*\d+\)\s*:.*$/isu', '', $block);
+
+        return trim($stripped ?? $block);
+    }
+
+    private function cleanOptionText(string $text): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+        $text = preg_replace('/\s+Directions\s*\(\d+\s*-\s*\d+\)\s*:.*$/iu', '', $text) ?? $text;
+        $text = preg_replace('/\s+\d{1,3}\)\s+Study\s+the\s+following.*$/iu', '', $text) ?? $text;
+
+        return trim($text);
     }
 
     /**
