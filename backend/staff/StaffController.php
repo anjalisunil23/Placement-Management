@@ -398,6 +398,7 @@ final class StaffController
     /** GET /api/staff/placements-higher-education */
     public function placementsHigherEducation(): void
     {
+        @set_time_limit(max(60, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 90)));
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
@@ -418,6 +419,8 @@ final class StaffController
     /** POST /api/staff/placements-higher-education/sync-from-aes */
     public function syncPlacementsFromAes(): void
     {
+        @ini_set('max_execution_time', (string) max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 600)));
+        @set_time_limit(max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 600)));
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
