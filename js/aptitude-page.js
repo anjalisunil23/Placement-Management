@@ -444,6 +444,7 @@
   let studentJdSelectedCompanyId = null;
   let studentJdBlockView = 'tests';
   let adminJdBlockView = 'tests';
+  const JD_BLOCK_VIEWS = ['tests', 'bank', 'local'];
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aptJdManualModal;
@@ -1768,14 +1769,16 @@
           questionCount: 0,
           questions: [],
           manualSaveTarget: 'bank',
+          manualSource: 'upload',
+          companyBankKind: 'local',
           showInCompanyBank: true,
         });
         saveDemoJdStore(store);
-        toast(`Saved manual to question bank (demo): ${companyName} · ${titleState.jdTitle}`, 'success');
+        toast(`Saved manual to local bank (demo): ${companyName} · ${titleState.jdTitle}`, 'success');
         aptJdManualModal?.hide();
         await loadJdLibrary();
         if (jdSelectedCompanyId) {
-          applyAdminJdBlockView('bank');
+          applyAdminJdBlockView('local');
           showJdCompanyDetail(jdSelectedCompanyId);
         }
         return;
@@ -1793,15 +1796,15 @@
       const count = res.data?.questionCount ?? 0;
       const viaAi = res.data?.parseMethod === 'ai';
       const msg = count > 0
-        ? `Saved ${count} question(s) to company question bank${viaAi ? ' (AI-read from manual)' : ''}.`
-        : 'Saved manual to company question bank (no MCQs detected in file).';
+        ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.`
+        : 'Saved manual to local bank (no MCQs detected in file).';
       toast(msg.trim(), 'success');
       delete jdSetDetailsCache[String(res.data?.id || '')];
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();
       await loadJdLibrary();
       if (jdSelectedCompanyId) {
-        applyAdminJdBlockView('bank');
+        applyAdminJdBlockView('local');
         showJdCompanyDetail(jdSelectedCompanyId);
         const newSetId = String(res.data?.id || '');
         if (newSetId) {
@@ -1926,6 +1929,8 @@
         hasDocument: !!(s.jdFileUrl || s.jdFileDataUrl),
         questionCount: Number(s.questionCount || s.questions?.length || 0),
         manualSaveTarget: String(s.manualSaveTarget || 'bank'),
+        manualSource: String(s.manualSource || 'upload'),
+        companyBankKind: String(s.companyBankKind || 'local'),
         showInCompanyBank: s.showInCompanyBank !== false,
       }));
       jdCompanyBlocks = groupJdSetsIntoBlocks(jdLibrarySets);
@@ -2186,8 +2191,15 @@
     });
   }
 
+  function jdSetCompanyBankKind(set) {
+    const kind = String(set?.companyBankKind || '').toLowerCase();
+    if (kind === 'local' || kind === 'question') return kind;
+    if (String(set?.manualSource || '').toLowerCase() === 'upload') return 'local';
+    return 'question';
+  }
+
   function applyAdminJdBlockView(view) {
-    adminJdBlockView = view === 'bank' ? 'bank' : 'tests';
+    adminJdBlockView = JD_BLOCK_VIEWS.includes(view) ? view : 'tests';
     syncAdminJdBlockViewNav();
     if (jdSelectedCompanyId) {
       showJdCompanyDetail(jdSelectedCompanyId);
@@ -2203,6 +2215,14 @@
 
   function companyQuestionBankSets(companyId) {
     return (companyJdBlockFor(companyId)?.sets || []).filter((s) => s.showInCompanyBank !== false);
+  }
+
+  function companyJdQuestionBankSets(companyId) {
+    return companyQuestionBankSets(companyId).filter((s) => jdSetCompanyBankKind(s) === 'question');
+  }
+
+  function companyLocalBankSets(companyId) {
+    return companyQuestionBankSets(companyId).filter((s) => jdSetCompanyBankKind(s) === 'local');
   }
 
   function companyProblemOnlyManualSets(companyId) {
@@ -2302,12 +2322,17 @@
       }
     } else {
       const list = document.getElementById('jdBlockSetsList');
-      const sets = companyQuestionBankSets(companyId);
+      const sets = adminJdBlockView === 'local'
+        ? companyLocalBankSets(companyId)
+        : companyJdQuestionBankSets(companyId);
       if (!list) return;
       const bulkBar = document.getElementById('jdBulkActions');
       if (!sets.length) {
         bulkBar?.classList.add('d-none');
-        list.innerHTML = '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+        const emptyMsg = adminJdBlockView === 'local'
+          ? 'No local bank manuals yet. Use Upload manual to add PDF or pasted MCQs.'
+          : 'No AI question bank sets yet. Use AI Generate for this company.';
+        list.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
         updateJdSelectionToolbar([]);
         return;
       }
@@ -2409,7 +2434,7 @@
   }
 
   function applyStudentJdBlockView(view) {
-    studentJdBlockView = view === 'bank' ? 'bank' : 'tests';
+    studentJdBlockView = JD_BLOCK_VIEWS.includes(view) ? view : 'tests';
     syncStudentJdBlockViewNav();
     if (studentJdSelectedCompanyId) {
       showStudentJdCompanyDetail(studentJdSelectedCompanyId);
@@ -2438,11 +2463,17 @@
       }
     } else {
       const list = document.getElementById('studentJdBlockSetsList');
-      const sets = block?.sets || [];
+      const allSets = (block?.sets || []).filter((s) => s.showInCompanyBank !== false);
+      const sets = studentJdBlockView === 'local'
+        ? allSets.filter((s) => jdSetCompanyBankKind(s) === 'local')
+        : allSets.filter((s) => jdSetCompanyBankKind(s) === 'question');
       if (!list) return;
+      const emptyMsg = studentJdBlockView === 'local'
+        ? 'No local bank content for this company yet.'
+        : 'No question bank sets for this company yet.';
       list.innerHTML = sets.length
         ? renderJdSetCardsHtml(sets, { allowDelete: false })
-        : '<p class="text-muted-2 mb-0">No JD question sets for this company yet.</p>';
+        : `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
       bindJdSetCardEvents(list, { getDetail: getStudentJdSetDetail, allowDelete: false });
     }
   }
@@ -4113,9 +4144,12 @@
             hasDocument: !!docUrl,
             questionCount: questions.length,
             questions,
+            manualSource: 'ai',
+            companyBankKind: 'question',
+            showInCompanyBank: true,
           });
           saveDemoJdStore(store);
-          toast(`Saved ${questions.length} question(s) to Company Block: ${companyName} · ${jdTitle}`, 'success');
+          toast(`Saved ${questions.length} question(s) to question bank: ${companyName} · ${jdTitle}`, 'success');
           await loadJdLibrary();
         } else {
           const bank = loadDemoBankStore();

@@ -198,6 +198,9 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questionCount' => count($normalized),
             'questions' => $normalized,
             'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
+            'manualSource' => 'ai',
+            'companyBankKind' => 'question',
+            'showInCompanyBank' => true,
         ];
         $filename = trim((string) ($jdFilename ?? ''));
         if ($filename !== '') {
@@ -303,6 +306,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questions' => $normalized,
             'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
             'manualSource' => 'upload',
+            'companyBankKind' => 'local',
             'manualSaveTarget' => $target,
             'showInCompanyBank' => $target !== 'problem',
         ];
@@ -505,6 +509,8 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'hasDocument' => $this->rowHasManualDocument($row),
             'questionCount' => (int) ($row['questionCount'] ?? count((array) ($row['questions'] ?? []))),
             'manualSaveTarget' => (string) ($row['manualSaveTarget'] ?? 'bank'),
+            'manualSource' => (string) ($row['manualSource'] ?? ''),
+            'companyBankKind' => self::resolveCompanyBankKind($row),
             'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
             'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
@@ -551,10 +557,28 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questions' => $questions,
             'manualText' => $this->manualTextForView($row),
             'manualSaveTarget' => (string) ($row['manualSaveTarget'] ?? 'bank'),
+            'manualSource' => (string) ($row['manualSource'] ?? ''),
+            'companyBankKind' => self::resolveCompanyBankKind($row),
             'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
             'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
         ], $row, $forStudent);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private static function resolveCompanyBankKind(array $row): string
+    {
+        $kind = strtolower(trim((string) ($row['companyBankKind'] ?? '')));
+        if ($kind === 'local' || $kind === 'question') {
+            return $kind;
+        }
+        if (strtolower(trim((string) ($row['manualSource'] ?? ''))) === 'upload') {
+            return 'local';
+        }
+
+        return 'question';
     }
 
     /**
