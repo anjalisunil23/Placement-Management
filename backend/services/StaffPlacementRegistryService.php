@@ -284,16 +284,16 @@ final class StaffPlacementRegistryService
 
     private function registryListMergeAesEnabled(): bool
     {
-        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_MERGE_AES'] ?? '0')));
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_MERGE_AES'] ?? '1')));
 
-        return in_array($v, ['1', 'true', 'yes', 'on'], true);
+        return !in_array($v, ['0', 'false', 'no', 'off'], true);
     }
 
     private function registryListMergeLocalEnabled(): bool
     {
-        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_MERGE_LOCAL'] ?? '0')));
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_MERGE_LOCAL'] ?? '1')));
 
-        return in_array($v, ['1', 'true', 'yes', 'on'], true);
+        return !in_array($v, ['0', 'false', 'no', 'off'], true);
     }
 
     private function registryListUsesLiveAes(): bool
@@ -662,43 +662,27 @@ final class StaffPlacementRegistryService
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
 
-        $placementModel = new StudentPlacementModel();
-        $legacyTable = $placementModel->hasLegacyFlatPlacementColumns();
-
-        $tableRows = $placementModel->listRosterRowsForRegistryScope(
+        $tableRows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
             $departmentId,
             $program,
             $batch,
             5000,
             $batch !== ''
         );
-
-        // Legacy SQL table already holds authoritative placement rows — skip slow AES/local merges on list.
-        $skipExternalRosterMerge = $legacyTable && $tableRows !== [];
-        if (!$skipExternalRosterMerge && $this->registryListMergeAesEnabled()) {
-            $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
-            if ($aesRows !== []) {
-                $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
-            }
+        $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
+        if ($aesRows !== []) {
+            $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
         }
-        if (!$skipExternalRosterMerge && $this->registryListMergeLocalEnabled()) {
-            $localRows = $this->fetchLocalRosterForRegistryFilters($listCtx, $filters);
-            if ($localRows !== []) {
-                $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
-            }
+        $localRows = $this->fetchLocalRosterForRegistryFilters($listCtx, $filters);
+        if ($localRows !== []) {
+            $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
         }
-
         $tableRows = array_map(
             fn (array $row): array => $this->hydrateRosterRowFromAesKeys($row),
             $tableRows
         );
-
-        if (!$skipExternalRosterMerge && $this->enrichAesProfilesEnabledOnList()) {
-            $tableRows = $this->enrichRosterRowsFromAesProfiles($tableRows, $this->enrichProfileMaxForList());
-        }
-        if (!$skipExternalRosterMerge) {
-            $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
-        }
+        $tableRows = $this->enrichRosterRowsFromAesProfiles($tableRows, $this->enrichProfileMaxForList());
+        $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
 
         if ($studRole !== 'all') {
             $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
@@ -762,7 +746,10 @@ final class StaffPlacementRegistryService
             }
         }
 
-        return $rows;
+        return array_values(array_filter(
+            $rows,
+            fn (array $row): bool => $this->rosterRowHasSnapshot($row)
+        ));
     }
 
     /**
@@ -1055,34 +1042,6 @@ final class StaffPlacementRegistryService
             $local['stud_class'] = $aesBatch;
         }
 
-        $localPlacement = is_array($local['placement'] ?? null) ? $local['placement'] : [];
-        $aesPlacement = is_array($aes['placement'] ?? null) ? $aes['placement'] : [];
-        $mergedPlacement = $localPlacement;
-        foreach ($aesPlacement as $key => $value) {
-            if (!is_scalar($value) && $value !== null) {
-                continue;
-            }
-            $existing = trim((string) ($mergedPlacement[$key] ?? ''));
-            $incoming = trim((string) $value);
-            if ($existing === '' && $incoming !== '') {
-                $mergedPlacement[$key] = $value;
-            }
-        }
-        foreach (['company', 'role', 'package', 'address', 'employerContact', 'placementStatus'] as $key) {
-            $localVal = trim((string) ($local[$key] ?? $localPlacement[$key] ?? ''));
-            if ($localVal !== '') {
-                $mergedPlacement[$key] = $local[$key] ?? $localPlacement[$key];
-            }
-        }
-        if ($mergedPlacement !== []) {
-            $local['placement'] = $mergedPlacement;
-            $company = trim((string) ($mergedPlacement['company'] ?? ''));
-            if ($company !== '') {
-                $local['company'] = $company;
-                $local['employer'] = $company;
-            }
-        }
-
         return $local;
     }
 
@@ -1106,63 +1065,15 @@ final class StaffPlacementRegistryService
                 $unique[$key] = $row;
                 continue;
             }
-            if ($this->registryRowRichnessScore($row) > $this->registryRowRichnessScore($unique[$key])) {
+            // Prefer the row that already has placement / HE details filled in.
+            $existingEmployer = trim((string) ($unique[$key]['employer'] ?? $unique[$key]['company'] ?? ''));
+            $newEmployer = trim((string) ($row['employer'] ?? $row['company'] ?? ''));
+            if ($existingEmployer === '' && $newEmployer !== '') {
                 $unique[$key] = $row;
             }
         }
 
-        $byName = [];
-        foreach ($unique as $row) {
-            $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($row['studentName'] ?? ''))) ?? '');
-            if ($nameKey === '') {
-                continue;
-            }
-            if (!isset($byName[$nameKey])) {
-                $byName[$nameKey] = $row;
-                continue;
-            }
-            if ($this->registryRowRichnessScore($row) > $this->registryRowRichnessScore($byName[$nameKey])) {
-                $byName[$nameKey] = $row;
-            }
-        }
-        if ($byName === []) {
-            return array_values($unique);
-        }
-
-        $seenNames = [];
-        $merged = [];
-        foreach ($unique as $row) {
-            $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($row['studentName'] ?? ''))) ?? '');
-            if ($nameKey !== '' && isset($byName[$nameKey])) {
-                if (isset($seenNames[$nameKey])) {
-                    continue;
-                }
-                $seenNames[$nameKey] = true;
-                $merged[] = $byName[$nameKey];
-                continue;
-            }
-            $merged[] = $row;
-        }
-
-        return $merged;
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function registryRowRichnessScore(array $row): int
-    {
-        $score = 0;
-        foreach ([
-            'studentName', 'registerNumber', 'phone', 'email',
-            'company', 'employer', 'role', 'package', 'address', 'employerContact',
-        ] as $field) {
-            if (trim((string) ($row[$field] ?? '')) !== '') {
-                $score++;
-            }
-        }
-
-        return $score;
+        return array_values($unique);
     }
 
     /**
@@ -1191,7 +1102,7 @@ final class StaffPlacementRegistryService
      */
     private function enrichProfileMaxForList(): int
     {
-        $raw = trim((string) ($_ENV['STAFF_PLACEMENT_ENRICH_AES_PROFILE_MAX'] ?? '50'));
+        $raw = trim((string) ($_ENV['STAFF_PLACEMENT_ENRICH_AES_PROFILE_MAX'] ?? '500'));
         if ($raw === '' || $raw === '0') {
             return 0;
         }
@@ -1206,45 +1117,25 @@ final class StaffPlacementRegistryService
         return !in_array($v, ['0', 'false', 'no', 'off'], true);
     }
 
-    private function enrichAesProfilesEnabledOnList(): bool
-    {
-        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_ENRICH_AES_PROFILE_ON_LIST'] ?? '0')));
-
-        return in_array($v, ['1', 'true', 'yes', 'on'], true);
-    }
-
     /**
      * @param array<string, mixed> $row
      */
     private function rosterRowNeedsAesProfile(array $row): bool
     {
-        if (!empty($row['legacyFlatRow'])) {
-            return false;
+        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        if (trim((string) ($row['studentName'] ?? $row['displayName'] ?? '')) === '') {
+            return true;
         }
-        if ($this->rosterRowHasPlacementGridData($row)) {
-            return false;
+        if (trim((string) ($row['phone'] ?? '')) === '' || trim((string) ($row['email'] ?? '')) === '') {
+            return true;
         }
-
-        $phone = trim((string) ($row['phone'] ?? ''));
-        $email = trim((string) ($row['email'] ?? ''));
-        $name = trim((string) ($row['studentName'] ?? $row['displayName'] ?? ''));
-
-        return $name === '' && $phone === '' && $email === '';
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function rosterRowHasPlacementGridData(array $row): bool
-    {
-        $placement = $this->rosterPlacementPayload($row);
         foreach (['company', 'role', 'package', 'address', 'employerContact', 'placementStatus'] as $key) {
             if (trim((string) ($placement[$key] ?? '')) !== '') {
-                return true;
+                return false;
             }
         }
 
-        return trim((string) ($row['company'] ?? $row['employer'] ?? '')) !== '';
+        return trim((string) ($placement['company'] ?? '')) === '';
     }
 
     /**

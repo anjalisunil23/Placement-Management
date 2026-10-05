@@ -389,7 +389,7 @@ class StudentPlacementModel extends BaseModel
                     }
                 }
             }
-            if ($batch !== '' && $rowBatch !== '' && !self::legacyBatchFilterMatches($batch, $rowBatch)) {
+            if ($batch !== '' && $rowBatch !== '' && !self::matchesClassBatchSelection($rowBatch, $batch)) {
                 continue;
             }
             $rows[] = $doc;
@@ -788,8 +788,6 @@ class StudentPlacementModel extends BaseModel
         $placement = self::placementFieldsFromDoc($doc);
         $snapshot = self::rosterSnapshotFromPayload($doc, $placement);
 
-        $company = trim((string) ($placement['company'] ?? $doc['employer'] ?? $doc['company'] ?? ''));
-
         return [
             '_id'            => $studentId,
             'id'             => $studentId,
@@ -814,19 +812,11 @@ class StudentPlacementModel extends BaseModel
             'courseId'       => $snapshot['courseId'],
             'branchId'       => $snapshot['branchId'],
             'departmentId'   => $snapshot['departmentId'],
-            'company'        => $company,
-            'employer'       => $company,
-            'role'           => trim((string) ($placement['role'] ?? '')),
-            'package'        => trim((string) ($placement['package'] ?? '')),
-            'address'        => trim((string) ($placement['address'] ?? '')),
-            'employerContact'=> trim((string) ($placement['employerContact'] ?? '')),
-            'placementStatus'=> trim((string) ($placement['placementStatus'] ?? '')),
             'placement'      => $placement,
-            'placed'         => $company !== '',
+            'placed'         => trim((string) ($placement['company'] ?? '')) !== '',
             'source'         => 'student_placements',
             'studRole'       => self::studRoleFromDocument($doc),
             'stud_role'      => trim((string) ($doc['stud_role'] ?? '')),
-            'legacyFlatRow'  => !empty($doc['legacyFlatRow']),
         ];
     }
 
@@ -1075,31 +1065,6 @@ class StudentPlacementModel extends BaseModel
     public static function matchesClassBatchSelection(string $rowBatch, string $wantBatch): bool
     {
         return self::batchMatchesSelection($rowBatch, $wantBatch);
-    }
-
-    /**
-     * Legacy rows store academic/placement year in `year`, not AES stud_class labels (e.g. MCA LE2016-18).
-     */
-    public static function legacyBatchFilterMatches(string $wantBatch, string $rowBatch): bool
-    {
-        $wantBatch = trim($wantBatch);
-        $rowBatch = trim($rowBatch);
-        if ($wantBatch === '' || $rowBatch === '') {
-            return true;
-        }
-        if (strcasecmp($rowBatch, $wantBatch) === 0) {
-            return true;
-        }
-        if (self::matchesClassBatchSelection($rowBatch, $wantBatch)) {
-            return true;
-        }
-        // Placement-year rows vs AES admission batch filter — keep dept/program scope only.
-        if (preg_match('/^\d{4}-\d{4}$/', $rowBatch) === 1
-            && preg_match('/\b(LE|INT|MCA|BCA|B\.?\s*TECH|MBA)/i', $wantBatch) === 1) {
-            return true;
-        }
-
-        return false;
     }
 
     private static function batchSelectionKey(string $batch): string
