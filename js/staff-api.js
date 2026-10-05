@@ -291,17 +291,12 @@ const StaffApi = {
 
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
-    if (params.scoped) {
-      qs.set('scoped', '1');
-      ['departmentId', 'program', 'branch', 'batch', 'type', 'q'].forEach(k => {
-        if (params[k]) qs.set(k, params[k]);
-      });
-    } else if (params.type) {
-      qs.set('type', params.type);
-    }
+    ['departmentId', 'program', 'branch', 'batch', 'type', 'q'].forEach(k => {
+      if (params[k]) qs.set(k, params[k]);
+    });
     qs.set('studRole', params.studRole || 'all');
     const q = qs.toString();
-    const cacheKey = 'ph_staff_placements_v6_all_' + q;
+    const cacheKey = 'ph_staff_placements_v4_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {

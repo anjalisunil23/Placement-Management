@@ -21,7 +21,7 @@
         <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">This table lists every row stored in <code>student_placements</code> (up to 10,000). Use search to narrow the list. <strong>Sync from AES</strong> still imports roster data from AES into that table. Class teachers can add or edit details for their assigned batches.</p>
+            <p class="text-muted-2 small mb-0 mt-1">The grid reads <code>student_placements</code> after you sync. <strong>Sync from AES</strong> calls the live AES placement APIs for your filters, writes roster rows into <code>student_placements</code>, then refreshes the table. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
           <button type="button" class="btn btn-outline-primary btn-sm flex-shrink-0" id="btnSyncPlacementsFromAes" title="Fetch placement and higher-education data from AES into student_placements">
             <i class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></i>Sync from AES
@@ -30,8 +30,39 @@
 
         <div id="classTeacherBanner" class="alert alert-warning py-2 px-3 mb-3 d-none" role="status"></div>
 
-        <div class="d-flex justify-content-end mb-2">
-          <span class="small text-muted-2" id="rowCount"></span>
+        <div class="card-surface p-3 p-md-4 mb-3">
+          <div class="row g-2 align-items-end">
+            <div class="col-6 col-md-4 col-lg">
+              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterDepartment">Department</label>
+              <select class="form-select form-select-sm" id="filterDepartment">
+                <option value="">All departments</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4 col-lg">
+              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterProgram">Branch</label>
+              <select class="form-select form-select-sm" id="filterProgram">
+                <option value="">All branches</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4 col-lg">
+              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterBatch">Batch</label>
+              <select class="form-select form-select-sm" id="filterBatch">
+                <option value="">All batches</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4 col-lg">
+              <label class="form-label small fw-semibold text-muted-2 mb-1" for="filterType">Type</label>
+              <select class="form-select form-select-sm" id="filterType">
+                <option value="">All types</option>
+                <option value="placement">Placement</option>
+                <option value="higher_education">Higher Education</option>
+                <option value="research">Research</option>
+              </select>
+            </div>
+          </div>
+          <div class="mt-2 text-end">
+            <span class="small text-muted-2" id="rowCount"></span>
+          </div>
         </div>
 
         <div class="card-surface">
@@ -434,7 +465,7 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261005snapshot"></script>
+  <script src="js/staff-api.js?v=20261005aesync"></script>
   <script src="js/api.js?v=20260724viewdept"></script>
   <script src="js/app.js?v=20261001mcqroles"></script>
   <script>
@@ -448,10 +479,16 @@
     let page = 1;
     let pageSize = 25;
     let searchDebounce = null;
-    let staffDefaultDepartmentId = '';
-    let staffDefaultDepartmentName = '';
+    let filterDepartmentId = '';
+    let filterProgram = '';
+    let filterBatch = '';
+    let scopeDepartmentId = '';
+    let scopeDepartmentName = '';
+    let lastFilterBatches = [];
+    let lastFilterPrograms = [];
     let sortKey = '';
     let sortDir = 'asc';
+    let canEditSelectedBatch = false;
     let apiAssignedBatches = [];
     let registryColumns = [];
 
@@ -615,29 +652,121 @@
       });
     }
 
+    function effectiveDepartmentId() {
+      syncDepartmentFilter();
+      return filterDepartmentId || scopeDepartmentId || '';
+    }
+
     function currentFilters() {
       return {
+        departmentId: effectiveDepartmentId(),
+        program: filterProgram,
+        batch: filterBatch,
         studRole: 'all',
-        scoped: false,
+        type: document.getElementById('filterType')?.value || '',
+        q: document.getElementById('tableSearch')?.value?.trim() || '',
       };
     }
 
-    function ensureDepartmentForSync() {
-      return staffDefaultDepartmentId || '';
+    function departmentScopeLabel() {
+      syncDepartmentFilter();
+      if (filterDepartmentId) {
+        const el = document.getElementById('filterDepartment');
+        const opt = el?.selectedOptions?.[0];
+        return opt ? String(opt.textContent || '').trim() : 'Selected department';
+      }
+      if (scopeDepartmentName) return scopeDepartmentName;
+      if (scopeDepartmentId) return 'Your department (auto)';
+      return 'All departments';
     }
 
-    function syncRequestFilters() {
-      const f = currentFilters();
-      const deptId = ensureDepartmentForSync();
-      if (deptId) f.departmentId = deptId;
-      return f;
+    function applyScopeFromFiltersApi(data) {
+      const scope = data?.scope;
+      if (!scope || typeof scope !== 'object') return;
+      scopeDepartmentId = String(scope.departmentId || '').trim();
+      scopeDepartmentName = String(scope.departmentName || scope.departmentCode || '').trim();
+      const deptEl = document.getElementById('filterDepartment');
+      if (deptEl && !filterDepartmentId && scopeDepartmentId) {
+        if ([...deptEl.options].some(o => o.value === scopeDepartmentId)) {
+          deptEl.value = scopeDepartmentId;
+          syncDepartmentFilter();
+        }
+      }
     }
 
-    function syncScopeSummary() {
-      const deptLabel = staffDefaultDepartmentName || staffDefaultDepartmentId
-        ? `${staffDefaultDepartmentName || staffDefaultDepartmentId} (your department)`
-        : 'your department (from staff profile)';
-      return { deptLabel, programLabel: 'all branches', batchLabel: 'all batches' };
+    async function prepareSyncFilters() {
+      syncDepartmentFilter();
+      if (!filterDepartmentId && scopeDepartmentId) {
+        const deptEl = document.getElementById('filterDepartment');
+        if (deptEl && [...deptEl.options].some(o => o.value === scopeDepartmentId)) {
+          deptEl.value = scopeDepartmentId;
+          syncDepartmentFilter();
+        }
+      }
+      if (!filterProgram) {
+        const picked = pickPreferredProgram(lastFilterPrograms);
+        if (picked) {
+          filterProgram = picked;
+          const programEl = document.getElementById('filterProgram');
+          if (programEl) programEl.value = picked;
+        }
+      }
+      if (!filterBatch) {
+        const picked = pickPreferredBatch(lastFilterBatches, filterProgram);
+        if (picked) {
+          filterBatch = picked;
+          const batchEl = document.getElementById('filterBatch');
+          if (batchEl) batchEl.value = picked;
+        }
+      }
+      if ((!filterProgram || !filterBatch) && typeof StaffApi.fetchPlacementFilters === 'function') {
+        const data = await StaffApi.fetchPlacementFilters({
+          departmentId: effectiveDepartmentId(),
+          program: filterProgram,
+          studRole: 'all',
+        });
+        if (data) {
+          applyScopeFromFiltersApi(data);
+          lastFilterPrograms = data.programs || lastFilterPrograms;
+          lastFilterBatches = data.batches || lastFilterBatches;
+          if (!filterProgram) {
+            filterProgram = pickPreferredProgram(lastFilterPrograms);
+            const programEl = document.getElementById('filterProgram');
+            if (programEl && filterProgram) programEl.value = filterProgram;
+          }
+          if (!filterBatch) {
+            filterBatch = pickPreferredBatch(lastFilterBatches, filterProgram);
+            const batchEl = document.getElementById('filterBatch');
+            if (batchEl && filterBatch) batchEl.value = filterBatch;
+          }
+        }
+      }
+    }
+
+    function fillSelect(id, values, allLabel, selected = '', autoPickSingle = false) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const current = selected || el.value;
+      const labelFor = (v) => {
+        const raw = String(v || '').trim();
+        if (!raw) return raw;
+        if (typeof courseLevelProgrammeLabel === 'function') {
+          const course = courseLevelProgrammeLabel(raw);
+          if (course) return course;
+        }
+        if (typeof resolveCollegeProgrammeLabel === 'function') {
+          const catalog = resolveCollegeProgrammeLabel(raw);
+          if (catalog) return catalog;
+        }
+        return raw;
+      };
+      el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => {
+        const value = String(v || '').trim();
+        return `<option value="${esc(value)}">${esc(labelFor(value))}</option>`;
+      }).join('');
+      if (current && [...el.options].some(o => o.value === current)) el.value = current;
+      else if (autoPickSingle && (values || []).length === 1) el.value = values[0];
+      else el.value = '';
     }
 
     function assignedBatches() {
@@ -661,16 +790,23 @@
       if (!assigned.length) {
         el.classList.remove('d-none');
         el.className = 'alert alert-warning py-2 px-3 mb-3';
-        el.textContent = 'No class-incharge assignment found. You can view all rows in student_placements, but cannot add or edit placement details.';
+        el.textContent = 'No class-incharge assignment found for your account. You can view classes, but cannot add or edit placement details.';
         return;
       }
-      el.classList.remove('d-none');
-      el.className = 'alert alert-info py-2 px-3 mb-3';
-      el.textContent = `Class incharge for ${assigned.join(', ')} — add/edit is enabled only for students in those batches.`;
-    }
-
-    function rowCanEdit(row) {
-      return batchIsAssigned(row?.classBatch || row?.batch || '');
+      if (filterBatch && !canEditSelectedBatch) {
+        el.classList.remove('d-none');
+        el.className = 'alert alert-warning py-2 px-3 mb-3';
+        el.textContent = `Only the class teacher / co-class teacher of ${filterBatch} can add or edit entries. Viewing only.`;
+        return;
+      }
+      if (filterBatch && canEditSelectedBatch) {
+        el.classList.remove('d-none');
+        el.className = 'alert alert-success py-2 px-3 mb-3';
+        el.textContent = `You are class incharge for ${filterBatch} — you can add and edit placement / higher-education details.`;
+        return;
+      }
+      el.classList.add('d-none');
+      el.textContent = '';
     }
 
     function cohortKey(batch) {
@@ -689,6 +825,127 @@
         return assigned.toLowerCase() === b.toLowerCase()
           || cohortKey(assigned) === want;
       });
+    }
+
+    function batchLooksLikeProgramme(batch, program) {
+      const b = String(batch || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const p = String(program || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!b || !p) return false;
+      if (p === 'INMCA') return b.includes('MCAINT') || b.includes('INMCA') || b.includes('INTMCA');
+      if (p === 'MCA') return b.startsWith('MCA') && !b.includes('MCAINT') && !b.includes('INMCA');
+      if (p === 'BCA') return b.includes('BCA');
+      return b.includes(p) || b.startsWith(p);
+    }
+
+    function pickPreferredBatch(batches, program) {
+      const list = (batches || []).map(v => String(v || '').trim()).filter(Boolean);
+      const assigned = assignedBatches();
+      const pool = list.length
+        ? assigned.filter(b => list.some(x => x.toLowerCase() === b.toLowerCase()))
+        : assigned.slice();
+      const assignedForProgram = program
+        ? pool.filter(b => batchLooksLikeProgramme(b, program))
+        : pool;
+      if (assignedForProgram.length) return assignedForProgram[0];
+      if (pool.length) return pool[0];
+      if (list.length === 1) return list[0];
+      return '';
+    }
+
+    function programFromBatch(batch) {
+      const b = String(batch || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!b) return '';
+      if (b.includes('MCAINT') || b.includes('INMCA') || b.includes('INTMCA')) return 'INMCA';
+      if (b.startsWith('MCA')) return 'MCA';
+      if (b.includes('BCA')) return 'BCA';
+      return '';
+    }
+
+    function pickPreferredProgram(programs) {
+      const list = (programs || []).map(v => String(v || '').trim()).filter(Boolean);
+      const assigned = assignedBatches();
+      if (list.length) {
+        for (const batch of assigned) {
+          for (const program of list) {
+            if (batchLooksLikeProgramme(batch, program)) return program;
+          }
+        }
+        if (list.length === 1) return list[0];
+      }
+      for (const batch of assigned) {
+        const inferred = programFromBatch(batch);
+        if (inferred) return inferred;
+      }
+      return '';
+    }
+
+    function syncDepartmentFilter() {
+      filterDepartmentId = document.getElementById('filterDepartment')?.value ?? '';
+    }
+
+    function fillDepartmentSelect(departments, selected = '') {
+      const el = document.getElementById('filterDepartment');
+      if (!el) return;
+      const current = selected || el.value || '';
+      el.innerHTML = '<option value="">All departments</option>' + (departments || []).map(d => {
+        const id = String(d.id || '').trim();
+        const label = String(d.name || d.code || id).trim();
+        if (!id) return '';
+        return `<option value="${esc(id)}">${esc(label)}</option>`;
+      }).join('');
+      if (current && [...el.options].some(o => o.value === current)) el.value = current;
+      else el.value = '';
+      syncDepartmentFilter();
+    }
+
+    async function loadPlacementFilters() {
+      if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
+
+      syncDepartmentFilter();
+      const initialProgram = filterProgram || '';
+      const data = await StaffApi.fetchPlacementFilters({
+        departmentId: filterDepartmentId,
+        program: initialProgram || filterProgram,
+        studRole: 'all',
+      });
+      if (!data) return;
+
+      if (Array.isArray(data.assignedClassBatches) && data.assignedClassBatches.length) {
+        apiAssignedBatches = data.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
+      }
+
+      applyScopeFromFiltersApi(data);
+      fillDepartmentSelect(data.departments || [], filterDepartmentId || scopeDepartmentId);
+
+      let programs = data.programs || [];
+      let batches = data.batches || [];
+      lastFilterPrograms = programs;
+      lastFilterBatches = batches;
+      // Only re-fetch batches when programme just became known and first payload had none.
+      if (filterProgram && !batches.length) {
+        const again = await StaffApi.fetchPlacementFilters({
+          departmentId: filterDepartmentId,
+          program: filterProgram,
+          studRole: 'all',
+        });
+        batches = again?.batches || [];
+        if (Array.isArray(again?.assignedClassBatches) && again.assignedClassBatches.length) {
+          apiAssignedBatches = again.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
+        }
+      }
+
+      fillSelect('filterProgram', programs, 'All branches', filterProgram, false);
+      filterProgram = document.getElementById('filterProgram')?.value || '';
+
+      fillSelect('filterBatch', batches, 'All batches', filterBatch, false);
+      filterBatch = document.getElementById('filterBatch')?.value || '';
+      // Do not clear canEditSelectedBatch here — loadRegistry() sets it from the
+      // server (CT/CoCT). Resetting it made co-class teachers look "view only".
+      if (!canEditSelectedBatch && filterBatch) {
+        canEditSelectedBatch = batchIsAssigned(filterBatch);
+      }
+      updateClassTeacherBanner();
+
     }
 
     function applyClientFilter() {
@@ -729,11 +986,11 @@
 
       const colSpan = registryColspan();
       if (!slice.length) {
-        const q = (document.getElementById('tableSearch')?.value || '').trim();
-        const hint = q
-          ? ' Try clearing the search box.'
-          : ' The table is empty — use <strong>Sync from AES</strong> to import roster rows into <code>student_placements</code>.';
-        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No records to show.${hint}</td></tr>`;
+        const batchSel = (document.getElementById('filterBatch')?.value || '').trim();
+        const hint = batchSel
+          ? ' No rows in <code>student_placements</code> for this class yet — use <strong>Sync from AES</strong> with the same filters.'
+          : '';
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students or alumni match the current filters.${hint}</td></tr>`;
         return;
       }
 
@@ -744,9 +1001,8 @@
         const hasDoc = !!(r.hasOfferLetter || r.hasJoiningLetter || r.hasCompanyIdDoc);
         const hasPlacement = rowHasPlacement(r);
         const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
-        const canEdit = rowCanEdit(r);
-        const detailsBtn = !canEdit
-          ? `<button type="button" class="registry-action-btn add" title="Only class incharge can add or edit this batch" disabled><i class="bi bi-lock-fill"></i></button>`
+        const detailsBtn = !canEditSelectedBatch
+          ? `<button type="button" class="registry-action-btn add" title="Only class incharge can add or edit" disabled><i class="bi bi-lock-fill"></i></button>`
           : (hasPlacement
             ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
             : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`);
@@ -877,13 +1133,13 @@
     }
 
     function openEditPlacement(studentId) {
+      if (!canEditSelectedBatch) {
+        toast('Only the class incharge (class teacher / co-class teacher) can add or edit entries for this batch.', 'warn');
+        return;
+      }
       const row = findRowByStudentId(studentId);
       if (!row) {
         toast('Record not found.', 'warn');
-        return;
-      }
-      if (!rowCanEdit(row)) {
-        toast('Only the class incharge (class teacher / co-class teacher) can add or edit entries for this batch.', 'warn');
         return;
       }
       document.getElementById('editStudentId').value = row.studentId || '';
@@ -935,12 +1191,11 @@
 
     async function saveEditPlacement(ev) {
       ev.preventDefault();
-      const studentId = document.getElementById('editStudentId').value;
-      const editRow = findRowByStudentId(studentId);
-      if (!editRow || !rowCanEdit(editRow)) {
+      if (!canEditSelectedBatch) {
         toast('Only the class incharge (class teacher / co-class teacher) can submit placement details for this batch.', 'warn');
         return;
       }
+      const studentId = document.getElementById('editStudentId').value;
       const payload = {
         employer: document.getElementById('editEmployer').value.trim(),
         role: document.getElementById('editRole').value.trim(),
@@ -1057,17 +1312,24 @@
     }
 
     async function syncPlacementsFromAes() {
-      const scope = syncScopeSummary();
+      await prepareSyncFilters();
+      const deptLabel = departmentScopeLabel();
+      const programLabel = filterProgram
+        ? (typeof courseLevelProgrammeLabel === 'function' ? (courseLevelProgrammeLabel(filterProgram) || filterProgram) : filterProgram)
+        : 'All branches (slower — scans every programme batch via AES)';
+      const batchLabel = filterBatch || 'All batches (each class cohort via AES)';
       const lines = [
         'Pull roster data from live AES into student_placements for the scope below?',
         '',
-        'This is not a reload of the local table only — the server calls AES placement APIs, then saves rows and refreshes the grid.',
-        'Studying students and alumni are both imported. All branches + all batches can take several minutes (host timeout ~60–120s).',
+        'This calls AES placement APIs (not a read of the grid only). Large scopes can take several minutes.',
         '',
-        `Department: ${scope.deptLabel}`,
-        `Branch: ${scope.programLabel}`,
-        `Batch: ${scope.batchLabel}`,
+        `Department: ${deptLabel}`,
+        `Branch: ${programLabel}`,
+        `Batch: ${batchLabel}`,
       ];
+      if (!filterProgram && !filterBatch) {
+        lines.push('', 'Tip: for Integrated MCA, pick branch INMCA and one batch (e.g. MCAINT…-S8) if sync returns no rows.');
+      }
       if (!window.confirm(lines.join('\n'))) {
         return;
       }
@@ -1081,22 +1343,23 @@
         if (typeof StaffApi.clearPlacementsCache === 'function') {
           StaffApi.clearPlacementsCache();
         }
-        const res = await StaffApi.syncPlacementsFromAes(syncRequestFilters());
+        const res = await StaffApi.syncPlacementsFromAes(currentFilters());
         if (!res?.success) {
-          toast(res?.message || 'AES sync failed (check server timeout or AES connectivity).', 'error');
+          toast(res?.message || 'AES sync failed.', 'error');
           return;
         }
         const aesN = res?.data?.aesRosterFetched;
         const saved = res?.data?.studentsSynced;
-        const tone = (typeof aesN === 'number' && aesN > 0) ? 'success' : 'warn';
-        toast(res.message || (typeof saved === 'number' ? `Saved ${saved} record(s) from AES.` : 'Sync complete.'), tone);
+        const syncErr = String(res?.data?.syncError || '').trim();
+        const tone = syncErr ? 'error' : ((typeof aesN === 'number' && aesN > 0) ? 'success' : 'warn');
+        toast(res.message || syncErr || (typeof saved === 'number' ? `Saved ${saved} record(s) from AES.` : 'Sync complete.'), tone);
         if (res?.data?.registry) {
           applyRegistryPayload(res.data.registry);
         } else {
           await loadRegistry();
         }
-      } catch (err) {
-        toast(String(err?.message || 'AES sync failed (network or server timeout).'), 'error');
+      } catch (_) {
+        toast('AES sync failed.', 'error');
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -1120,12 +1383,10 @@
           }
         } catch (_) { /* ignore */ }
       }
-      if (data.staffDepartmentId) {
-        staffDefaultDepartmentId = String(data.staffDepartmentId).trim();
+      if (data.filters && typeof data.filters === 'object' && Array.isArray(data.filters.departments)) {
+        fillDepartmentSelect(data.filters.departments, filterDepartmentId);
       }
-      if (data.staffDepartmentName) {
-        staffDefaultDepartmentName = String(data.staffDepartmentName).trim();
-      }
+      canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
       applyClientFilter();
       return true;
@@ -1133,7 +1394,8 @@
 
     async function loadRegistry() {
       const tbody = document.getElementById('registryRows');
-      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading student_placements…</td></tr>`;
+      syncDepartmentFilter();
+      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading registry…</td></tr>`;
       const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
         const detail = (StaffApi._lastPlacementsFetchError || '').trim();
@@ -1145,6 +1407,32 @@
         return;
       }
       applyRegistryPayload(data);
+    }
+
+    async function onScopeFilterChange(changed) {
+      if (typeof StaffApi.clearPlacementsCache === 'function') {
+        StaffApi.clearPlacementsCache();
+      }
+      if (changed === 'filterDepartment') {
+        syncDepartmentFilter();
+        filterProgram = '';
+        filterBatch = '';
+        const programEl = document.getElementById('filterProgram');
+        const batchEl = document.getElementById('filterBatch');
+        if (programEl) programEl.value = '';
+        if (batchEl) batchEl.value = '';
+        await loadPlacementFilters();
+      } else if (changed === 'filterProgram') {
+        filterProgram = document.getElementById('filterProgram')?.value || '';
+        filterBatch = '';
+        const batchEl = document.getElementById('filterBatch');
+        if (batchEl) batchEl.value = '';
+        await loadPlacementFilters();
+      } else if (changed === 'filterBatch') {
+        filterBatch = document.getElementById('filterBatch')?.value || '';
+      }
+
+      await loadRegistry();
     }
 
     async function downloadOffer(studentId) {
@@ -1168,6 +1456,14 @@
       syncPlacementsFromAes().catch(() => toast('AES sync failed.', 'error'));
     });
 
+    ['filterDepartment', 'filterProgram', 'filterBatch'].forEach(id => {
+      document.getElementById(id)?.addEventListener('change', () => {
+        onScopeFilterChange(id).catch(() => loadRegistry());
+      });
+    });
+    document.getElementById('filterType')?.addEventListener('change', () => {
+      loadRegistry();
+    });
     document.getElementById('tableSearch')?.addEventListener('input', () => {
       clearTimeout(searchDebounce);
       searchDebounce = setTimeout(applyClientFilter, 200);
@@ -1202,6 +1498,7 @@
         wireFilePickers('#editPlacementModal');
         wireFilePickers('#uploadPlacementModal');
       }
+      syncDepartmentFilter();
       setRegistryColumns([
         { key: '_sl', label: 'Sl#', sortable: true, sortKey: 'registerNumber', source: 'student_placements', group: 'snapshot' },
         { key: 'studentName', label: 'Student name', sortable: true, sortKey: 'studentName', source: 'student_placements', group: 'snapshot', payloadField: 'studentName' },
@@ -1227,6 +1524,7 @@
         const u = Auth.user() || {};
         apiAssignedBatches = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
       }
+      await loadPlacementFilters();
       await loadRegistry();
     });
   </script>

@@ -385,16 +385,13 @@ final class StaffController
         if ($assigned === []) {
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
-        $staffDeptId = trim((string) ($ctx['departmentId'] ?? ''));
-        $staffDept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         Response::success(DocumentHelper::jsonSafe([
             'departments' => $registrySvc->departmentFilterOptions(),
             'programs' => $svc->fetchProgramOptions($filterCtx),
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
             'assignedClassBatches' => $assigned,
-            'staffDepartmentId' => $staffDeptId,
-            'staffDepartmentName' => trim((string) ($staffDept['name'] ?? $staffDept['code'] ?? '')),
+            'scope'    => $registrySvc->resolvedRegistryScope($ctx, $filterPayload),
         ]));
     }
 
@@ -404,7 +401,6 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
-        $scoped = (string) ($_GET['scoped'] ?? '') === '1';
         $filters = [
             'departmentId' => (string) ($_GET['departmentId'] ?? ''),
             'program'      => (string) ($_GET['program'] ?? ''),
@@ -413,7 +409,6 @@ final class StaffController
             'studRole'     => (string) ($_GET['studRole'] ?? 'all'),
             'type'         => (string) ($_GET['type'] ?? ''),
             'q'            => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
-            'allFromTable' => !$scoped,
         ];
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->list($ctx, $filters)
@@ -423,8 +418,6 @@ final class StaffController
     /** POST /api/staff/placements-higher-education/sync-from-aes */
     public function syncPlacementsFromAes(): void
     {
-        @ini_set('memory_limit', trim((string) ($_ENV['AES_DIRECTORY_MEMORY_LIMIT'] ?? '512M')));
-        @set_time_limit(max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 600)));
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         StaffContext::requireDepartmentScope($ctx);
@@ -441,6 +434,11 @@ final class StaffController
         $studying = (int) ($result['studyingSynced'] ?? 0);
         $alumni = (int) ($result['alumniSynced'] ?? 0);
         $aesFetched = (int) ($result['aesRosterFetched'] ?? 0);
+        $syncError = trim((string) ($result['syncError'] ?? ''));
+        $scope = $registrySvc->resolvedRegistryScope($ctx, $filters);
+        if ($filters['departmentId'] === '' && $scope['departmentId'] !== '') {
+            $filters['departmentId'] = $scope['departmentId'];
+        }
         $listFilters = [
             'departmentId' => (string) ($filters['departmentId'] ?? ''),
             'program'      => (string) ($filters['program'] ?? ''),
@@ -449,17 +447,19 @@ final class StaffController
             'studRole'     => (string) ($filters['studRole'] ?? 'all'),
             'type'         => '',
             'q'            => '',
-            'allFromTable' => true,
         ];
         $registry = $registrySvc->list($ctx, $listFilters);
         $inTable = (int) ($registry['totals']['all'] ?? 0);
         $result['rowsInTable'] = $inTable;
         $result['registry'] = $registry;
-        $message = $aesFetched > 0
-            ? "Fetched {$aesFetched} student(s) from AES; saved {$count} to student_placements ({$studying} studying, {$alumni} alumni). Grid shows {$inTable} row(s) for these filters."
-            : ($inTable > 0
-                ? 'AES returned no roster for these filters. Grid shows existing student_placements rows only — try a specific batch (e.g. INMCA) or check AES from the server.'
-                : 'AES returned no roster to import. Pick department, branch, and batch (Integrated MCA / INMCA) or verify AES is reachable from the server.');
+        $result['scope'] = $scope;
+        $message = $syncError !== ''
+            ? $syncError
+            : ($aesFetched > 0
+                ? "Fetched {$aesFetched} student(s) from AES; saved {$count} to student_placements ({$studying} studying, {$alumni} alumni). Grid shows {$inTable} row(s) for these filters."
+                : ($inTable > 0
+                    ? 'AES returned no roster for these filters. Grid shows existing student_placements rows only — try a specific batch (e.g. INMCA) or check AES from the server.'
+                    : 'AES returned no roster to import. Pick department, branch, and batch (Integrated MCA / INMCA) or verify AES is reachable from the server.'));
         Response::success(
             DocumentHelper::jsonSafe($result),
             $message
