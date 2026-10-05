@@ -1188,6 +1188,172 @@ final class OfficerDataService
     }
 
     /**
+     * Class-scoped AES roster via getStudInfo4Placement (batch label variants included).
+     *
+     * @param array<string, mixed> $ctx
+     * @param array<string, mixed>|null $dept
+     * @param array<string, array<string, mixed>> $localByKey
+     * @param 'studying'|'alumni'|'any' $roleMode
+     * @return list<array<string, mixed>>
+     */
+    private function listAesClassPlacementRoster(
+        array $ctx,
+        string $programme,
+        string $batch,
+        ?array $dept,
+        string $deptCode,
+        string $deptName,
+        string $deptAesId,
+        array $localByKey,
+        bool $matchCohort,
+        string $roleMode = 'studying'
+    ): array {
+        $deptAesId = trim($deptAesId);
+        $batch = trim($batch);
+        if ($deptAesId === '' || $batch === '') {
+            return [];
+        }
+
+        $records = (new AesApiService())->fetchClassStudInfo4Placement(
+            $deptAesId,
+            $programme,
+            $batch,
+            !empty($ctx['placementForceLiveAes'])
+        );
+        if ($records === []) {
+            return [];
+        }
+
+        $wantCohort = ClassInchargeRegistry::cohortKey($batch);
+        $rows = [];
+        $seen = [];
+
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+
+            if ($roleMode === 'studying') {
+                if (!$this->isAesStudyingStudent($record)) {
+                    continue;
+                }
+            } elseif ($roleMode === 'alumni') {
+                $alumniRow = $this->recordQualifiesForAlumniTab($record)
+                    || $this->isAesAlumniDirectoryRecord($record);
+                if (!$alumniRow && $this->isAesStudyingStudent($record)) {
+                    continue;
+                }
+            }
+
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? ''
+            )));
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            $local = null;
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+                $normKey = $this->normalizeStudentAdmnoKey($key);
+                if ($normKey !== '' && isset($localByKey[$normKey])) {
+                    $local = $localByKey[$normKey];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            $rowBatch = trim((string) ($row['classBatch'] ?? $record['stud_class'] ?? $record['classBatch'] ?? ''));
+            if (!$this->classBatchMatchesSelection($rowBatch, $batch, $matchCohort, $wantCohort)) {
+                continue;
+            }
+
+            $key = $this->normalizeStudentAdmnoKey((string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = $row;
+        }
+
+        return $this->supplementAesClassRosterGaps(
+            $rows,
+            $seen,
+            $programme,
+            $batch,
+            $dept,
+            $deptCode,
+            $deptName,
+            $localByKey,
+            $matchCohort
+        );
+    }
+
+    /**
+     * Last-resort sync roster when role-specific filters drop every class API row.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<array<string, mixed>>
+     */
+    public function listAesClassStudentsFromClassApi(
+        array $ctx,
+        string $programme,
+        string $batch,
+        bool $matchCohort = false,
+        string $roleMode = 'any'
+    ): array {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        $batch = trim($batch);
+        if ($programme === '' || $batch === '') {
+            return [];
+        }
+
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        if ($campusWide) {
+            return [];
+        }
+
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
+        $mode = in_array($roleMode, ['studying', 'alumni', 'any'], true) ? $roleMode : 'any';
+
+        return $this->listAesClassPlacementRoster(
+            $ctx,
+            $programme,
+            $batch,
+            $dept,
+            $deptCode,
+            $deptName,
+            $deptAesId,
+            $localByKey,
+            $matchCohort,
+            $mode
+        );
+    }
+
+    /**
      * Alumni class roster for Placements &amp; Higher Ed (passed-out AES rows).
      *
      * @param array<string, mixed> $ctx
@@ -1216,6 +1382,24 @@ final class OfficerDataService
         $wantCohort = ClassInchargeRegistry::cohortKey($batch);
         $rows = [];
         $seen = [];
+
+        if (!$campusWide && $deptAesId !== '' && $batch !== '') {
+            $fromClass = $this->listAesClassPlacementRoster(
+                $ctx,
+                $programme,
+                $batch,
+                $dept,
+                $deptCode,
+                $deptName,
+                $deptAesId,
+                $localByKey,
+                true,
+                'alumni'
+            );
+            if ($fromClass !== []) {
+                return $fromClass;
+            }
+        }
 
         foreach ($this->listAlumniDirectoryRecordsForScope($ctx) as $record) {
             if (!$this->recordQualifiesForAlumniTab($record)) {

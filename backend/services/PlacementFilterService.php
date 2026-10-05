@@ -641,6 +641,13 @@ final class PlacementFilterService
             }
         }
 
+        foreach ($assigned as $label) {
+            $label = trim((string) $label);
+            if ($label !== '' && !in_array($label, $scoped, true)) {
+                $scoped[] = $label;
+            }
+        }
+
         return $this->sortLabels($this->dedupeBatchLabelsByCohort($scoped));
     }
 

@@ -80,6 +80,7 @@ final class StaffPlacementRegistryService
     {
         @set_time_limit(max(60, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 90)));
         StaffContext::requireDepartmentScope($staffCtx);
+        $filters = $this->normalizeRegistryScopeFilters($filters);
         $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
         $batch = trim((string) ($filters['batch'] ?? ''));
 
@@ -106,6 +107,7 @@ final class StaffPlacementRegistryService
         PlacementFilterService::clearScopedRowsCache();
         OfficerDataService::clearPlacementSyncCaches();
 
+        $filters = $this->normalizeRegistryScopeFilters($filters);
         $filters['studRole'] = 'all';
         $student = $this->syncFromAesForStudRole(
             $staffCtx,
@@ -118,9 +120,12 @@ final class StaffPlacementRegistryService
         $studyingCount = (int) ($student['studentsSynced'] ?? 0);
         $alumniCount = (int) ($alumni['studentsSynced'] ?? 0);
         $aesFetched = (int) ($student['aesRosterFetched'] ?? 0) + (int) ($alumni['aesRosterFetched'] ?? 0);
-        $syncError = trim((string) ($student['syncError'] ?? ''));
-        if ($syncError === '') {
-            $syncError = trim((string) ($alumni['syncError'] ?? ''));
+        $syncError = '';
+        if ($aesFetched === 0 && ($studyingCount + $alumniCount) === 0) {
+            $syncError = trim((string) ($student['syncError'] ?? ''));
+            if ($syncError === '') {
+                $syncError = trim((string) ($alumni['syncError'] ?? ''));
+            }
         }
 
         return [
@@ -204,9 +209,10 @@ final class StaffPlacementRegistryService
             ],
         ];
         if ($aesRosterFetched === 0 && $studentsSynced === 0) {
+            $hint = $deptAesId !== '' ? (' (AES dept ' . $deptAesId . ')') : '';
             $out['syncError'] = $program === '' && $batch === ''
                 ? 'AES returned no students for this department. Select Integrated MCA (INMCA) and a batch, then sync again.'
-                : 'AES returned no students for these filters. Try another batch or verify AES is reachable from the server.';
+                : 'AES returned no students for these filters' . $hint . '. Use Sync from AES, pick the batch from the dropdown, or verify AES_AUTH_KEY and server reachability to api.aesajce.in.';
         }
 
         return $out;
@@ -261,6 +267,15 @@ final class StaffPlacementRegistryService
                     $program,
                     $batch,
                     $isAlumni
+                );
+            }
+            if ($aesClassRows === [] && $deptAesId !== '') {
+                $aesClassRows = $this->officerData->listAesClassStudentsFromClassApi(
+                    $classCtx,
+                    $program,
+                    $batch,
+                    true,
+                    'any'
                 );
             }
 
@@ -1735,6 +1750,25 @@ final class StaffPlacementRegistryService
      * @param array<string, string> $filters
      * @return array<string, mixed>
      */
+    /**
+     * @param array<string, string> $filters
+     * @return array<string, string>
+     */
+    private function normalizeRegistryScopeFilters(array $filters): array
+    {
+        $batch = trim((string) ($filters['batch'] ?? ''));
+        if ($batch === '') {
+            return $filters;
+        }
+        $program = trim((string) ($filters['program'] ?? ''));
+        $reconciled = DepartmentProgrammeCatalog::reconcileProgramWithBatch($program, $batch);
+        if ($reconciled !== '' && strcasecmp($reconciled, $program) !== 0) {
+            $filters['program'] = $reconciled;
+        }
+
+        return $filters;
+    }
+
     private function resolveRegistryListContext(array $staffCtx, array $filters): array
     {
         $selectedDeptId = trim((string) ($filters['departmentId'] ?? ''));

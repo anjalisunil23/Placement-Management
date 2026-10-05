@@ -3121,6 +3121,34 @@ final class AesApiService
             $variants[] = $candidate;
         }
 
+        $span = ClassInchargeRegistry::admissionYearSpanKey($studClass);
+        if ($span !== null && preg_match('/^(\d{4})-(\d{4})$/', $span, $sm) === 1) {
+            $y0 = $sm[1];
+            $y1 = $sm[2];
+            $y1short = substr($y1, 2);
+            $prefixes = ['MCAR', 'MCA', 'MCALE'];
+            if ($programmeCode !== '') {
+                foreach (DepartmentProgrammeCatalog::aesCourseParamTokens($programmeCode) as $token) {
+                    $token = DepartmentProgrammeCatalog::normalizeCode($token);
+                    if ($token !== '' && str_starts_with($token, 'MCA')) {
+                        $prefixes[] = strtoupper($token);
+                    }
+                }
+            }
+            $prefixes = array_values(array_unique($prefixes));
+            foreach ($prefixes as $pfx) {
+                foreach ([
+                    $pfx . $y0 . '-' . $y1short,
+                    $pfx . $y0 . '-' . $y1,
+                    $pfx . $y0 . $y1,
+                    $pfx . $y0 . '-' . $y1short . '-S8',
+                    $pfx . $y0 . '-' . $y1 . '-S8',
+                ] as $syn) {
+                    $variants[] = $syn;
+                }
+            }
+        }
+
         return array_values(array_unique($variants));
     }
 
@@ -3133,6 +3161,7 @@ final class AesApiService
         $deptAesId = trim($deptAesId);
         $studClass = trim($studClass);
         $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($programmeCode));
+        $programmeCode = DepartmentProgrammeCatalog::reconcileProgramWithBatch($programmeCode, $studClass);
         if ($deptAesId === '' || $studClass === '') {
             return [];
         }
