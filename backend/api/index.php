@@ -644,6 +644,7 @@ $routes = [
     ['GET',    '/tutorials/manage/ai/status',        [TutorialController::class, 'aiStatus']],
     ['POST',   '/tutorials/manage/ai/generate-course', [TutorialController::class, 'aiGenerateCourse']],
     ['POST',   '/tutorials/manage/ai/save-course',   [TutorialController::class, 'aiSaveCourse']],
+    ['POST',   '/tutorials/manage/ai/generate-lesson-mcqs', [TutorialController::class, 'aiGenerateLessonExercises']],
     ['POST',   '/tutorials/manage/ai/generate-lesson-exercises', [TutorialController::class, 'aiGenerateLessonExercises']],
     ['POST',   '/tutorials/manage/{tutorialId}/ai/generate-module', [TutorialController::class, 'aiGenerateModule']],
     ['POST',   '/tutorials/manage/{tutorialId}/ai/save-module', [TutorialController::class, 'aiSaveModule']],
@@ -704,6 +705,8 @@ $routes = [
     ['GET',    '/tutorials/{id}/progress',          [TutorialController::class, 'progress']],
     ['POST',   '/tutorials/{id}/modules/{moduleId}/progress', [TutorialController::class, 'moduleProgress']],
     ['POST',   '/tutorials/{id}/complete',          [TutorialController::class, 'completeTutorial']],
+    ['GET',    '/tutorials/{tutorialId}/modules/{moduleId}/lesson-practice/{lessonId}', [TutorialController::class, 'lessonPractice']],
+    ['POST',   '/tutorials/lesson-questions/{id}/check', [TutorialController::class, 'checkLessonAnswer']],
     ['GET',    '/tutorials/{tutorialId}/modules/{moduleId}', [TutorialController::class, 'showModule']],
     ['GET',    '/tutorials/{id}',                   [TutorialController::class, 'show']],
 

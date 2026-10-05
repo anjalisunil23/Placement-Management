@@ -90,44 +90,8 @@
             <div class="fw-semibold mb-0">Practice</div>
             <span class="badge text-bg-light border" id="studentPracticeBadge">This lesson</span>
           </div>
-          <p class="small text-muted-2" id="studentPracticeHint">Exercises and activities for the selected lesson.</p>
-          <div class="fw-semibold small mb-2">Programming exercises</div>
-          <div id="studentExerciseList" class="d-flex flex-column gap-2 mb-3"></div>
-          <div id="studentExercisePanel" class="border rounded p-3 mb-3 d-none">
-            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-              <div>
-                <h3 class="h6 fw-bold mb-1" id="studentExerciseTitle"></h3>
-                <div class="small text-muted-2" id="studentExerciseMeta"></div>
-              </div>
-              <div class="d-flex gap-2">
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="studentEditorFullBtn">Full screen</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="studentExerciseCloseBtn">Close</button>
-              </div>
-            </div>
-            <div id="studentExerciseInstructions" class="tutorial-lesson small my-3"></div>
-            <div class="d-flex justify-content-between align-items-center gap-2">
-              <label class="form-label mb-1" for="studentCode">Your code</label>
-              <span class="small text-muted-2" id="studentDraftState">Saved</span>
-            </div>
-            <textarea class="form-control font-monospace" id="studentCode" rows="12" spellcheck="false"></textarea>
-            <div class="d-flex flex-wrap gap-2 mt-3">
-              <button type="button" class="btn btn-outline-primary" id="studentRunBtn">Run</button>
-              <button type="button" class="btn btn-primary" id="studentSubmitBtn">Submit</button>
-              <button type="button" class="btn btn-outline-secondary" id="studentResetCodeBtn">Reset code</button>
-            </div>
-            <p class="small text-muted-2 mt-2 mb-0" id="studentAttemptNote"></p>
-            <div class="mt-3">
-              <div class="fw-semibold small mb-1">Run output</div>
-              <pre class="student-output mb-0" id="studentRunOutput">Run your code to see the actual output.</pre>
-            </div>
-            <div id="studentExamples" class="mt-3"></div>
-            <div class="mt-3">
-              <div class="fw-semibold small mb-1">Submission results</div>
-              <div id="studentSubmitResults" class="small text-muted-2">Submit to grade this solution against the test cases.</div>
-            </div>
-            <div class="fw-semibold mt-3 mb-2">Previous submissions</div>
-            <div id="studentAttemptHistory" class="d-flex flex-column gap-2"></div>
-          </div>
+          <p class="small text-muted-2" id="studentPracticeHint">Questions for the selected lesson.</p>
+          <div id="studentPracticeQuestions" class="d-flex flex-column gap-2 mb-3"></div>
           <div id="studentActivitySection" class="d-none">
             <div class="fw-semibold small mb-2">Practical activities</div>
             <p class="small text-muted-2 mb-2">Responses are stored as text only — nothing is executed.</p>
@@ -188,7 +152,7 @@
   .student-course-tree .student-lesson.is-active{background:#1f7a3a;color:#fff;border-color:#1f7a3a}
   .student-workspace.is-nav-collapsed .student-course-nav{display:none}
   .student-workspace.is-nav-collapsed .student-nav-reopen{display:inline-flex}
-  #studentExercisePanel.is-fullscreen{position:fixed;inset:.75rem;z-index:1050;background:#fff;overflow:auto;box-shadow:0 16px 48px rgba(16,24,40,.2)}
+  .ai-course-actions{position:sticky;top:.5rem;z-index:30;background:#fff}
   @media (min-width:992px){
     .student-learn-panel,.student-practice-panel{max-height:calc(100vh - 12rem);overflow:auto}
   }
@@ -322,6 +286,14 @@
       </div>
     </div>
     <div id="aiCoursePreview" class="d-none">
+      <div class="ai-course-actions card-surface p-3 mb-3">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          <button type="button" class="btn btn-outline-secondary" id="aiCourseCancelBtn">Back</button>
+          <button type="button" class="btn btn-success" id="aiCourseSaveBtn">Save as Draft</button>
+          <button type="button" class="btn btn-outline-primary" id="aiCourseRegenerateBtn">Regenerate Course</button>
+          <span class="small text-muted-2" id="aiCourseSaveState"></span>
+        </div>
+      </div>
       <div class="card-surface p-3 mb-3">
         <div class="fw-semibold mb-2">Course preview</div>
         <div class="row g-2">
@@ -332,10 +304,7 @@
         <p class="small text-muted-2 mt-2 mb-0" id="aiPreviewMeta"></p>
       </div>
       <div id="aiPreviewModules" class="d-flex flex-column gap-2 mb-3"></div>
-      <div class="d-flex flex-wrap gap-2 align-items-center">
-        <button type="button" class="btn btn-success" id="aiCourseSaveBtn">Save as Draft</button>
-        <span class="small text-muted-2">Saved courses stay draft until you publish them.</span>
-      </div>
+      <p class="small text-muted-2">Saved courses stay draft until you publish them.</p>
       <div id="aiCourseSaved" class="alert alert-success py-2 mt-3 d-none">
         <div class="mb-2">Course saved as a draft.</div>
         <button type="button" class="btn btn-sm btn-primary" id="aiCourseOpenSaved">Open in Course Management</button>
@@ -398,7 +367,7 @@
             <div class="col-12"><div class="small fw-semibold mb-1">Lessons and practice</div><div id="aiModuleExercises"></div></div>
           </div>
           <button type="button" class="btn btn-sm btn-success mt-2" id="aiModuleSaveBtn">Save module to course</button>
-          <p class="small text-muted-2 mt-2 mb-0">The module and its lesson exercises are saved as draft content. Course publish status does not change.</p>
+          <p class="small text-muted-2 mt-2 mb-0">The module and its lesson questions are saved as draft content. Course publish status does not change.</p>
         </div>
       </div>
       <div id="moduleNav" class="d-flex flex-column gap-2"></div>
@@ -426,7 +395,6 @@
         <button type="button" data-insert="example">Code + Output</button>
         <button type="button" data-insert="image">Image</button>
         <button type="button" data-insert="divider">Divider</button>
-        <button type="button" data-insert="exercise">Exercise</button>
       </div>
     </form>
     <div id="moduleExercisePane" class="article-column d-none">
@@ -781,5 +749,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261004learnworkspace"></script>
+<script src="js/tutorials-page.js?v=20261004mcqpractice"></script>
 </body></html>

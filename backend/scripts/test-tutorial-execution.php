@@ -14,6 +14,7 @@ require dirname(__DIR__) . '/config/app.php';
 
 use PMS\Models\DepartmentModel;
 use PMS\Models\StudentModel;
+use PMS\Models\TutorialLessonQuestionModel;
 use PMS\Models\UserModel;
 use PMS\Services\TutorialsCodeExecutionService;
 use PMS\Services\TutorialsPistonClient;
@@ -268,9 +269,20 @@ try {
     );
     $history = $service->listAttempts($student, (string) $exercise['id']);
     $check(count($history) === 1 && ($history[0]['status'] ?? '') === 'FAILED', 'submission history is stored');
+    (new TutorialLessonQuestionModel())->createQuestion([
+        'tutorialId' => (string) $course['id'],
+        'moduleId' => (string) $moduleA['id'],
+        'lessonBlockId' => 'vars',
+        'question' => 'Which name can store a value in Python?',
+        'options' => ['total', '2total', 'total-sum', 'class'],
+        'correctIndex' => 0,
+        'explanation' => 'A variable name starts with a letter and is not a reserved word.',
+        'difficulty' => 'beginner',
+        'sortOrder' => 1,
+    ]);
     $throws(static function () use ($service, $student, $course, $moduleA): void {
         $service->markLessonReviewed($student, (string) $course['id'], (string) $moduleA['id'], 'vars');
-    }, 'a lesson with exercises cannot be marked complete by hand');
+    }, 'a lesson with practice questions cannot be marked complete by hand');
     $reviewed = $service->markLessonReviewed($student, (string) $course['id'], (string) $moduleA['id'], 'types');
     $check(
         ($reviewed['workspace']['lessons'][(string) $moduleA['id'] . ':types'] ?? false) === true

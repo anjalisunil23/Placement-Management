@@ -433,22 +433,42 @@
 
   function syncAiPractice(root, module) {
     if (!root || !module) return;
-    const exercises = module.exercises || [];
-    root.querySelectorAll('[data-ai-exercise]').forEach((card) => {
-      const exercise = exercises[Number(card.getAttribute('data-ai-exercise'))];
-      if (!exercise) return;
-      exercise.title = card.querySelector('[data-ai-ex-title]').value.trim();
-      exercise.instructions = card.querySelector('[data-ai-ex-instructions]').value.trim();
-      exercise.language = card.querySelector('[data-ai-ex-language]').value;
-      exercise.boilerplate = card.querySelector('[data-ai-ex-boilerplate]').value;
-      card.querySelectorAll('[data-ai-case]').forEach((caseCard) => {
-        const row = (exercise.testCases || [])[Number(caseCard.getAttribute('data-ai-case'))];
-        if (!row) return;
-        row.stdin = caseCard.querySelector('[data-ai-case-stdin]').value;
-        row.expectedOutput = caseCard.querySelector('[data-ai-case-output]').value;
-        row.sample = caseCard.querySelector('[data-ai-case-sample]').checked;
-      });
+    const questions = module.lessonMcqs || [];
+    root.querySelectorAll('[data-ai-mcq]').forEach((card) => {
+      const question = questions[Number(card.getAttribute('data-ai-mcq'))];
+      if (!question) return;
+      question.question = card.querySelector('[data-ai-mcq-question]').value.trim();
+      question.explanation = card.querySelector('[data-ai-mcq-explanation]').value.trim();
+      question.options = [0, 1, 2, 3].map((index) => card.querySelector(`[data-ai-mcq-option="${index}"]`).value.trim());
+      const selected = card.querySelector('input[data-ai-mcq-correct]:checked');
+      const correct = selected ? Number(selected.value) : 0;
+      question.correctIndex = correct;
+      question.correctAnswer = correct;
     });
+  }
+
+  function renderAiMcqEditor(question, questionIndex) {
+    const options = (question.options || ['', '', '', '']).slice(0, 4);
+    while (options.length < 4) options.push('');
+    const correct = Number(question.correctIndex != null ? question.correctIndex : question.correctAnswer || 0);
+    const group = String(question.tempId || `${question.lessonBlockId || 'q'}-${questionIndex}`).replace(/[^A-Za-z0-9_-]/g, '');
+    const optionFields = options.map((option, index) => (
+      `<label class="d-flex gap-2 align-items-start mb-1">
+        <input class="mt-2" type="radio" name="ai-mcq-${group}" data-ai-mcq-correct value="${index}" ${index === correct ? 'checked' : ''}/>
+        <input class="form-control form-control-sm" data-ai-mcq-option="${index}" value="${esc(option)}" maxlength="500"/>
+      </label>`
+    )).join('');
+    return `<div class="border rounded p-2 mb-2 bg-white" data-ai-mcq="${questionIndex}">
+      <div class="d-flex justify-content-between gap-2 mb-2">
+        <div class="small fw-semibold">Question</div>
+        <button type="button" class="btn btn-sm btn-outline-danger" data-ai-mcq-remove="${questionIndex}">Remove</button>
+      </div>
+      <textarea class="form-control form-control-sm mb-2" data-ai-mcq-question rows="2">${esc(question.question || '')}</textarea>
+      <div class="small text-muted-2 mb-1">Mark the correct option.</div>
+      ${optionFields}
+      <label class="form-label small mt-2">Explanation</label>
+      <textarea class="form-control form-control-sm" data-ai-mcq-explanation rows="2">${esc(question.explanation || '')}</textarea>
+    </div>`;
   }
 
   function renderAiExerciseEditor(exercise, exerciseIndex) {
@@ -488,19 +508,19 @@
 
   function renderAiLessonPractice(module) {
     const sections = lessonSections(module.lessonDocument);
-    const exercises = module.exercises || [];
+    const questions = module.lessonMcqs || [];
     if (!sections.length) {
       return '<p class="small text-muted-2 mb-0">No lessons were returned for this module.</p>';
     }
     return sections.map((section) => {
-      const cards = exercises.map((exercise, exerciseIndex) => ({ exercise, exerciseIndex }))
-        .filter((row) => String(row.exercise.lessonBlockId || '') === section.id)
-        .map((row) => renderAiExerciseEditor(row.exercise, row.exerciseIndex))
-        .join('') || '<p class="small text-muted-2">No exercises for this lesson yet.</p>';
+      const cards = questions.map((question, questionIndex) => ({ question, questionIndex }))
+        .filter((row) => String(row.question.lessonBlockId || '') === section.id)
+        .map((row) => renderAiMcqEditor(row.question, row.questionIndex))
+        .join('') || '<p class="small text-muted-2">No questions for this lesson yet.</p>';
       return `<div class="border rounded p-2 mt-2" data-ai-lesson="${esc(section.id)}">
         <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center mb-2">
           <div class="small fw-semibold">${esc(section.title)}</div>
-          <button type="button" class="btn btn-sm btn-outline-primary" data-ai-regen="${esc(section.id)}" ${section.id ? '' : 'disabled'}>Regenerate exercises</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-ai-regen="${esc(section.id)}" ${section.id ? '' : 'disabled'}>Regenerate questions</button>
         </div>
         <details class="mb-2"><summary class="small">Lesson content</summary><pre class="small mt-2 mb-0" style="white-space:pre-wrap">${esc(lessonBlocksText({ blocks: section.blocks }))}</pre></details>
         ${cards}
@@ -510,36 +530,12 @@
 
   function bindAiPractice(root, scope) {
     if (!root) return;
-    root.querySelectorAll('[data-ai-exercise-remove]').forEach((btn) => {
+    root.querySelectorAll('[data-ai-mcq-remove]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const module = aiPracticeModule(scope, root);
         if (!module) return;
         syncAiPractice(root, module);
-        module.exercises.splice(Number(btn.getAttribute('data-ai-exercise-remove')), 1);
-        refreshAiPractice(scope);
-      });
-    });
-    root.querySelectorAll('[data-ai-case-remove]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const module = aiPracticeModule(scope, root);
-        if (!module) return;
-        syncAiPractice(root, module);
-        const parts = String(btn.getAttribute('data-ai-case-remove') || '').split(':');
-        const exercise = (module.exercises || [])[Number(parts[0])];
-        if (!exercise || !Array.isArray(exercise.testCases)) return;
-        exercise.testCases.splice(Number(parts[1]), 1);
-        refreshAiPractice(scope);
-      });
-    });
-    root.querySelectorAll('[data-ai-case-add]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const module = aiPracticeModule(scope, root);
-        if (!module) return;
-        syncAiPractice(root, module);
-        const exercise = (module.exercises || [])[Number(btn.getAttribute('data-ai-case-add'))];
-        if (!exercise) return;
-        exercise.testCases = exercise.testCases || [];
-        exercise.testCases.push({ stdin: '', expectedOutput: '', sample: exercise.testCases.length === 0 });
+        module.lessonMcqs.splice(Number(btn.getAttribute('data-ai-mcq-remove')), 1);
         refreshAiPractice(scope);
       });
     });
@@ -547,7 +543,7 @@
       btn.addEventListener('click', () => {
         regenerateLessonExercises(scope, root, btn.getAttribute('data-ai-regen') || '').catch((err) => {
           const errorId = scope === 'module' ? 'aiModuleError' : 'aiCourseError';
-          setAiError(errorId, err && err.message ? err.message : 'Exercises could not be regenerated.');
+          setAiError(errorId, err && err.message ? err.message : 'Questions could not be regenerated.');
         });
       });
     });
@@ -628,7 +624,7 @@
     else syncAiPractice(document.getElementById('aiModulePreview'), module);
     const section = lessonSections(module.lessonDocument).find((row) => row.id === lessonId);
     if (!section || !section.id) {
-      throw new Error('This lesson cannot be linked to exercises.');
+      throw new Error('This lesson cannot be linked to questions.');
     }
     const errorId = scope === 'module' ? 'aiModuleError' : 'aiCourseError';
     setAiError(errorId, '');
@@ -640,7 +636,7 @@
     const difficultyInput = document.getElementById(scope === 'module' ? 'aiModuleDifficulty' : 'aiCourseDifficulty');
     const course = scope === 'course' && state.aiCourse ? state.aiCourse.course : null;
     try {
-      const data = await call('/tutorials/manage/ai/generate-lesson-exercises', {
+      const data = await call('/tutorials/manage/ai/generate-lesson-mcqs', {
         method: 'POST',
         body: {
           lessonBlockId: section.id,
@@ -652,10 +648,10 @@
           count: 3,
         },
       });
-      const next = Array.isArray(data && data.exercises) ? data.exercises : [];
-      module.exercises = (module.exercises || []).filter((row) => String(row.lessonBlockId || '') !== section.id).concat(next);
+      const next = Array.isArray(data && data.lessonMcqs) ? data.lessonMcqs : [];
+      module.lessonMcqs = (module.lessonMcqs || []).filter((row) => String(row.lessonBlockId || '') !== section.id).concat(next);
       refreshAiPractice(scope);
-      toast(next.length ? 'Exercises regenerated for this lesson.' : 'No exercises were returned for this lesson.', next.length ? 'success' : 'error');
+      toast(next.length ? 'Questions regenerated for this lesson.' : 'No questions were returned for this lesson.', next.length ? 'success' : 'error');
     } finally {
       if (root.isConnected) {
         root.querySelectorAll('[data-ai-regen]').forEach((button) => {
@@ -735,7 +731,11 @@
       return;
     }
     const btn = document.getElementById('aiCourseSaveBtn');
+    const regen = document.getElementById('aiCourseRegenerateBtn');
+    const saveState = document.getElementById('aiCourseSaveState');
     btn.disabled = true;
+    if (regen) regen.disabled = true;
+    if (saveState) saveState.textContent = 'Saving…';
     try {
       const saved = await call('/tutorials/manage/ai/save-course', {
         method: 'POST',
@@ -752,13 +752,43 @@
       });
       state.aiSavedTutorialId = (saved && saved.tutorial && saved.tutorial.id) || '';
       document.getElementById('aiCourseSaved').classList.remove('d-none');
+      if (saveState) saveState.textContent = 'Saved as draft.';
       toast('Course saved as draft.', 'success');
       await refreshList();
     } catch (err) {
+      if (saveState) saveState.textContent = 'Save failed.';
       setAiError('aiCourseError', err && err.message ? err.message : 'The course could not be saved.');
+      toast(err && err.message ? err.message : 'The course could not be saved.', 'error');
     } finally {
       btn.disabled = false;
+      if (regen) regen.disabled = false;
     }
+  }
+
+  async function regenerateAiCourse() {
+    if (state.aiCourse) {
+      const ok = await confirmAction({
+        title: 'Regenerate course?',
+        message: 'This replaces the current preview. Edits that have not been saved will be lost. Other saved courses are not changed.',
+        confirmText: 'Regenerate',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
+    await generateAiCourse();
+  }
+
+  async function leaveAiCourse() {
+    if (state.aiCourse && !state.aiSavedTutorialId) {
+      const ok = await confirmAction({
+        title: 'Leave this preview?',
+        message: 'This generated course has not been saved. Leave without saving?',
+        confirmText: 'Leave',
+        variant: 'danger',
+      });
+      if (!ok) return;
+    }
+    showStaffScreen('list');
   }
 
   function toggleAiModulePane() {
@@ -897,11 +927,8 @@
     document.getElementById('previewModuleTitle').textContent = module.title || '';
     if (module.content) setLessonHtml(document.getElementById('previewContent'), module.content);
     else document.getElementById('previewContent').textContent = 'This module has no lesson content yet.';
-    const exercises = module.exercises || [];
-    document.getElementById('previewExercises').innerHTML = exercises.length ? exercises.map((exercise) => {
-      const samples = (exercise.testCases || []).filter((item) => item.sample);
-      return `<div class="border rounded p-3 mb-2"><div class="fw-semibold">Challenge: ${esc(exercise.title)}</div><pre class="mt-2 mb-2">${esc(exercise.boilerplate || '')}</pre>${samples.map((item) => `<div class="small"><div>Input</div><pre>${esc(item.stdin)}</pre><div>Expected output</div><pre>${esc(item.expectedOutput)}</pre></div>`).join('') || '<p class="small text-muted-2 mb-0">No public sample tests.</p>'}</div>`;
-    }).join('') : '<p class="text-muted-2 mb-0">This module has no exercises.</p>';
+    const previewPractice = document.getElementById('previewExercises');
+    if (previewPractice) previewPractice.innerHTML = '';
   }
 
   function paintCourseHeader() {
@@ -961,13 +988,11 @@
       return;
     }
     const cards = modules.map((module, index) => {
-      const exercises = module.exercises || [];
       const active = !state.creatingModule && state.selectedModuleId === module.id;
       const excerpt = plainExcerpt(module.content) || 'No lesson text yet';
       return `<div class="border rounded p-2 ${active ? 'border-primary' : ''}">
         <button type="button" class="btn btn-sm p-0 fw-semibold" data-select-module="${esc(module.id)}">${active ? '●' : '○'} ${esc(index + 1)}. ${esc(module.title)}</button>
-        <div class="small text-muted-2">${esc(excerpt)}</div>
-        <div class="small mb-2">${esc(exercises.length)} exercise${exercises.length === 1 ? '' : 's'}</div>
+        <div class="small text-muted-2 mb-2">${esc(excerpt)}</div>
         <div class="d-flex flex-wrap gap-1">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-up="${esc(module.id)}" ${index === 0 ? 'disabled' : ''} aria-label="Move module up">Up</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" data-down="${esc(module.id)}" ${index === modules.length - 1 ? 'disabled' : ''} aria-label="Move module down">Down</button>
@@ -988,36 +1013,7 @@
 
   function renderModuleExercises() {
     const pane = document.getElementById('moduleExercisePane');
-    const list = document.getElementById('moduleExerciseList');
-    const module = (state.active && state.active.modules || []).find((row) => row.id === state.selectedModuleId);
-    if (!module || state.creatingModule) {
-      pane.classList.add('d-none');
-      return;
-    }
-    pane.classList.remove('d-none');
-    const exercises = module.exercises || [];
-    list.innerHTML = exercises.length ? exercises.map((exercise, exerciseIndex) => {
-      const cases = exercise.testCases || [];
-      const sampleCount = cases.filter((item) => item.sample).length;
-      return `<div class="border rounded p-2">
-        <div class="d-flex flex-wrap justify-content-between gap-2">
-          <div><div class="fw-semibold">${exerciseIndex + 1}. ${esc(exercise.title)}</div><div class="small text-muted-2">${esc(languageLabel(exercise.language))} · ${sampleCount} public sample${sampleCount === 1 ? '' : 's'}</div></div>
-          <div class="d-flex flex-wrap gap-1">
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-exercise-up="${esc(module.id)}" data-exercise="${esc(exercise.id)}" ${exerciseIndex === 0 ? 'disabled' : ''}>Up</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-exercise-down="${esc(module.id)}" data-exercise="${esc(exercise.id)}" ${exerciseIndex === exercises.length - 1 ? 'disabled' : ''}>Down</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-preview-exercise="${esc(module.id)}" data-exercise="${esc(exercise.id)}">Preview</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-edit-exercise="${esc(module.id)}" data-exercise="${esc(exercise.id)}">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-delete-exercise="${esc(module.id)}" data-exercise="${esc(exercise.id)}">Delete</button>
-          </div>
-        </div>
-        <div class="border rounded p-2 mt-2 d-none" data-exercise-preview="${esc(exercise.id)}"></div>
-      </div>`;
-    }).join('') : '<p class="small text-muted-2 mb-0">No exercises yet.</p>';
-    list.querySelectorAll('[data-edit-exercise]').forEach((btn) => btn.addEventListener('click', () => openExercise(btn.getAttribute('data-edit-exercise'), btn.getAttribute('data-exercise'))));
-    list.querySelectorAll('[data-delete-exercise]').forEach((btn) => btn.addEventListener('click', () => deleteExercise(btn.getAttribute('data-delete-exercise'), btn.getAttribute('data-exercise'))));
-    list.querySelectorAll('[data-exercise-up]').forEach((btn) => btn.addEventListener('click', () => moveExercise(btn.getAttribute('data-exercise-up'), btn.getAttribute('data-exercise'), -1)));
-    list.querySelectorAll('[data-exercise-down]').forEach((btn) => btn.addEventListener('click', () => moveExercise(btn.getAttribute('data-exercise-down'), btn.getAttribute('data-exercise'), 1)));
-    list.querySelectorAll('[data-preview-exercise]').forEach((btn) => btn.addEventListener('click', () => previewExercise(btn.getAttribute('data-preview-exercise'), btn.getAttribute('data-exercise'))));
+    if (pane) pane.classList.add('d-none');
   }
 
   async function moveExercise(moduleId, exerciseId, direction) {
@@ -2965,8 +2961,12 @@
   function bind() {
     document.getElementById('createTutorialBtn').addEventListener('click', () => { blankTutorialForm(); modal('tutorialModal').show(); });
     document.getElementById('generateCourseAiBtn').addEventListener('click', openAiCourseScreen);
-    document.getElementById('aiCourseBack').addEventListener('click', () => showStaffScreen('list'));
-    document.getElementById('aiCourseGenerateBtn').addEventListener('click', () => { generateAiCourse().catch(fail); });
+    document.getElementById('aiCourseBack').addEventListener('click', () => { leaveAiCourse().catch(fail); });
+    document.getElementById('aiCourseCancelBtn').addEventListener('click', () => { leaveAiCourse().catch(fail); });
+    document.getElementById('aiCourseGenerateBtn').addEventListener('click', () => {
+      (state.aiCourse ? regenerateAiCourse() : generateAiCourse()).catch(fail);
+    });
+    document.getElementById('aiCourseRegenerateBtn').addEventListener('click', () => { regenerateAiCourse().catch(fail); });
     document.getElementById('aiCourseSaveBtn').addEventListener('click', () => { saveAiCourseDraft().catch(fail); });
     document.getElementById('aiCourseOpenSaved').addEventListener('click', () => {
       if (state.aiSavedTutorialId) openModules(state.aiSavedTutorialId).catch(fail);
@@ -3139,6 +3139,10 @@
     progressById: {},
     continueIds: {},
     progress: null,
+    practiceQuestions: [],
+    practiceIndex: 0,
+    practiceSelection: {},
+    practiceFeedback: null,
     assessment: null,
     assessmentAttemptId: null,
     assessmentAnswers: {},
@@ -3299,7 +3303,7 @@
         <h2 class="h5 fw-bold mb-1">${esc(row.title)}</h2>
         <div class="small fw-semibold mb-2">${esc(row.topic || '')}</div>
         <p class="small text-muted-2 flex-grow-1">${esc(row.description || '')}</p>
-        <div class="small mb-2">${esc(count)} modules · ${esc(row.exerciseCount || 0)} exercises</div>
+        <div class="small mb-2">${esc(count)} module${count === 1 ? '' : 's'}</div>
         <div class="small mb-1">${esc(row.progress ? `${row.progress.completedModules || 0} / ${row.progress.totalModules || count} modules · ${row.progress.progressPercent || 0}%` : 'Not started')}</div>
         <div class="progress mb-3" style="height:.4rem" aria-hidden="true"><div class="progress-bar" style="width:${esc(row.progress ? row.progress.progressPercent || 0 : 0)}%"></div></div>
         <button type="button" class="btn btn-primary" data-start-tutorial="${esc(row.id)}">${esc(row.progress && row.progress.lastVisitedModuleId ? 'Continue Learning' : 'Start Course')}</button>
@@ -3350,7 +3354,7 @@
       document.getElementById('overviewTitle').textContent = detail.title || '';
       document.getElementById('overviewDescription').textContent = detail.description || '';
       document.getElementById('overviewModules').textContent = `${detail.moduleCount || (detail.modules || []).length} modules`;
-      document.getElementById('overviewExercises').textContent = `${detail.exerciseCount || 0} exercises`;
+      document.getElementById('overviewExercises').textContent = '';
       document.getElementById('overviewProgress').textContent = progress.completed
         ? 'Course complete'
         : `Progress: ${progress.progressPercent || 0}% · ${progress.completedModules || 0} of ${progress.totalModules || 0} modules completed`;
@@ -3488,17 +3492,14 @@
     if (markLesson) {
       const module = modules[learn.moduleIndex];
       const lesson = lessons[learn.lessonIndex];
-      const linked = ((learn.module && learn.module.exercises) || []).some((row) => String(row.lessonBlockId || '') === (lesson ? String(lesson.id || '') : ''));
+      const hasPractice = (learn.practiceQuestions || []).length > 0;
       const done = module && lesson ? lessonIsComplete(module.id, lesson.id) : false;
-      markLesson.disabled = !module || !lesson || linked || done;
-      markLesson.textContent = done ? 'Lesson complete' : (linked ? 'Finish the exercises' : 'Mark lesson complete');
+      markLesson.disabled = !module || !lesson || hasPractice || done;
+      markLesson.textContent = done ? 'Lesson complete' : (hasPractice ? 'Answer the practice questions' : 'Mark lesson complete');
     }
   }
 
   async function showStudentLesson(nextLessonIndex) {
-    const openId = currentExerciseId();
-    const codeBox = document.getElementById('studentCode');
-    if (openId && codeBox) rememberExerciseDraft(openId, codeBox.value, true);
     const courseNav = document.getElementById('studentCourseNav');
     const backdrop = document.getElementById('studentNavBackdrop');
     if (courseNav) courseNav.classList.remove('is-open');
@@ -3508,7 +3509,7 @@
       document.getElementById('studentLessonHeading').textContent = '';
       document.getElementById('studentModuleContent').textContent = 'This module does not have lesson content yet.';
       renderStudentLessonNav();
-      renderStudentPracticeForLesson();
+      await renderStudentPracticeForLesson();
       updateLessonNavButtons();
       return;
     }
@@ -3521,7 +3522,6 @@
     const content = document.getElementById('studentModuleContent');
     if (lesson.html) setLessonHtml(content, lesson.html);
     else content.textContent = 'This lesson does not have content yet.';
-    document.getElementById('studentExercisePanel').classList.add('d-none');
     if (learn.activity && !practiceMatchesLesson(learn.activity)) {
       learn.activity = null;
       learn.activityAttempt = null;
@@ -3531,32 +3531,126 @@
       const panel = document.getElementById('studentActivityPanel');
       if (panel) panel.classList.add('d-none');
     }
-    renderStudentPracticeForLesson();
+    await renderStudentPracticeForLesson();
     updateLessonNavButtons();
   }
 
-  function renderStudentPracticeForLesson() {
-    const exercises = ((learn.module && learn.module.exercises) || []).filter(practiceMatchesLesson);
-    const list = document.getElementById('studentExerciseList');
-    list.innerHTML = exercises.length
-      ? exercises.map((row) => `<button type="button" class="btn btn-outline-primary text-start" data-student-exercise="${esc(row.id)}">${esc(row.title)}</button>`).join('')
-      : '<p class="text-muted-2 mb-0">No programming exercises for this lesson.</p>';
-    list.querySelectorAll('[data-student-exercise]').forEach((btn) => {
-      btn.addEventListener('click', () => openStudentExercise(btn.getAttribute('data-student-exercise')));
-    });
-    renderStudentActivityList();
+  function syncPracticeEmpty(questionCount) {
     const activities = (learn.activities || []).filter(practiceMatchesLesson);
     const hasAssessment = !document.getElementById('studentAssessmentSection').classList.contains('d-none');
     const empty = document.getElementById('studentPracticeEmpty');
-    if (empty) {
-      empty.classList.toggle('d-none', !!(exercises.length || activities.length || hasAssessment));
-    }
+    if (empty) empty.classList.toggle('d-none', !!(questionCount || activities.length || hasAssessment));
     const hint = document.getElementById('studentPracticeHint');
     if (hint) {
       const lesson = (learn.lessons || [])[learn.lessonIndex];
       hint.textContent = lesson
-        ? `Practice for “${lesson.title || 'this lesson'}”. Unassigned items appear for every lesson in the module.`
-        : 'Exercises and activities for the selected lesson.';
+        ? `Practice for “${lesson.title || 'this lesson'}”.`
+        : 'Questions for the selected lesson.';
+    }
+  }
+
+  async function renderStudentPracticeForLesson() {
+    const host = document.getElementById('studentPracticeQuestions');
+    if (!host) return;
+    learn.practiceFeedback = null;
+    const module = learn.module;
+    const lesson = (learn.lessons || [])[learn.lessonIndex];
+    renderStudentActivityList();
+    if (!learn.detail || !module || !lesson) {
+      learn.practiceQuestions = [];
+      host.innerHTML = '<p class="text-muted-2 mb-0">Select a lesson to practise.</p>';
+      syncPracticeEmpty(0);
+      return;
+    }
+    const lessonId = String(lesson.id || '');
+    host.innerHTML = '<p class="text-muted-2 mb-0">Loading questions…</p>';
+    try {
+      const data = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(module.id)}/lesson-practice/${encodeURIComponent(lessonId)}`);
+      if (currentLessonId() !== lessonId) return;
+      learn.practiceQuestions = Array.isArray(data && data.questions) ? data.questions : [];
+      learn.practiceIndex = 0;
+      learn.practiceSelection = {};
+      paintPracticeQuestion();
+    } catch (err) {
+      if (currentLessonId() !== lessonId) return;
+      learn.practiceQuestions = [];
+      host.innerHTML = `<p class="text-muted-2 mb-0">${esc(err && err.message ? err.message : 'Questions could not be loaded.')}</p>`;
+    }
+    syncPracticeEmpty((learn.practiceQuestions || []).length);
+  }
+
+  function paintPracticeQuestion() {
+    const host = document.getElementById('studentPracticeQuestions');
+    const questions = learn.practiceQuestions || [];
+    if (!host) return;
+    if (!questions.length) {
+      host.innerHTML = '<p class="text-muted-2 mb-0">No questions for this lesson yet.</p>';
+      return;
+    }
+    const index = Math.max(0, Math.min(questions.length - 1, learn.practiceIndex || 0));
+    learn.practiceIndex = index;
+    const question = questions[index];
+    const selected = learn.practiceSelection[question.id];
+    const feedback = learn.practiceFeedback && learn.practiceFeedback.questionId === question.id ? learn.practiceFeedback : null;
+    const options = (question.options || []).map((option, optionIndex) => (
+      `<label class="d-flex gap-2 align-items-start border rounded p-2 mb-2">
+        <input class="mt-1" type="radio" name="lesson-practice-option" value="${optionIndex}" ${selected === optionIndex ? 'checked' : ''}/>
+        <span>${esc(option)}</span>
+      </label>`
+    )).join('');
+    const result = feedback
+      ? `<div class="alert ${feedback.correct ? 'alert-success' : 'alert-danger'} py-2 mt-2 mb-0"><div class="fw-semibold">${feedback.correct ? 'Correct' : 'Incorrect'}</div>${feedback.explanation ? `<div class="small mt-1">${esc(feedback.explanation)}</div>` : ''}</div>`
+      : (question.answeredCorrectly ? '<div class="small text-success mt-2">Answered correctly.</div>' : '');
+    host.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+        <div class="small text-muted-2">Question ${index + 1} of ${questions.length}</div>
+        <div class="d-flex gap-1">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-practice-prev ${index === 0 ? 'disabled' : ''}>Previous</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-practice-next ${index === questions.length - 1 ? 'disabled' : ''}>Next</button>
+        </div>
+      </div>
+      <div class="fw-semibold mb-2">${esc(question.question || '')}</div>
+      ${options}
+      <button type="button" class="btn btn-sm btn-primary" data-practice-check>Check answer</button>
+      ${result}
+    `;
+    host.querySelectorAll('input[name="lesson-practice-option"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        learn.practiceSelection[question.id] = Number(input.value);
+      });
+    });
+    const prev = host.querySelector('[data-practice-prev]');
+    const next = host.querySelector('[data-practice-next]');
+    if (prev) prev.addEventListener('click', () => { learn.practiceIndex -= 1; learn.practiceFeedback = null; paintPracticeQuestion(); });
+    if (next) next.addEventListener('click', () => { learn.practiceIndex += 1; learn.practiceFeedback = null; paintPracticeQuestion(); });
+    const check = host.querySelector('[data-practice-check]');
+    if (check) check.addEventListener('click', () => { submitPracticeAnswer(question.id).catch(fail); });
+  }
+
+  async function submitPracticeAnswer(questionId) {
+    const selected = learn.practiceSelection[questionId];
+    if (selected == null || Number.isNaN(Number(selected))) {
+      toast('Choose an answer first.', 'error');
+      return;
+    }
+    const button = document.querySelector('#studentPracticeQuestions [data-practice-check]');
+    if (button) button.disabled = true;
+    try {
+      const result = await call(`/tutorials/lesson-questions/${encodeURIComponent(questionId)}/check`, {
+        method: 'POST',
+        body: { selectedIndex: Number(selected) },
+      });
+      learn.practiceFeedback = result || null;
+      const row = (learn.practiceQuestions || []).find((item) => item.id === questionId);
+      if (row && result && result.correct) row.answeredCorrectly = true;
+      paintPracticeQuestion();
+      if (learn.detail) {
+        learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/progress`);
+        paintProgress();
+      }
+    } finally {
+      const again = document.querySelector('#studentPracticeQuestions [data-practice-check]');
+      if (again) again.disabled = false;
     }
   }
 
@@ -3615,7 +3709,6 @@
     }
     const modules = (learn.detail && learn.detail.modules) || [];
     renderStudentModuleNav();
-    document.getElementById('studentExercisePanel').classList.add('d-none');
     document.getElementById('studentAssessmentSection').classList.add('d-none');
     document.getElementById('studentAssessmentAttempt').classList.add('d-none');
     document.getElementById('studentAssessmentResults').classList.add('d-none');
@@ -3627,7 +3720,8 @@
       document.getElementById('studentModuleHeading').textContent = 'No modules yet';
       document.getElementById('studentLessonHeading').textContent = '';
       document.getElementById('studentModuleContent').textContent = 'This tutorial does not have any lessons yet.';
-      document.getElementById('studentExerciseList').innerHTML = '<p class="text-muted-2 mb-0">There are no exercises until a module is added.</p>';
+      const practiceHost = document.getElementById('studentPracticeQuestions');
+      if (practiceHost) practiceHost.innerHTML = '<p class="text-muted-2 mb-0">There are no questions until a module is added.</p>';
       const markLesson = document.getElementById('studentMarkLesson');
       if (markLesson) markLesson.disabled = true;
       renderStudentLessonNav();
@@ -3638,7 +3732,8 @@
     document.getElementById('studentModuleHeading').textContent = 'Loading…';
     document.getElementById('studentLessonHeading').textContent = '';
     document.getElementById('studentModuleContent').textContent = 'Loading lesson…';
-    document.getElementById('studentExerciseList').innerHTML = '<p class="text-muted-2 mb-0">Loading practice…</p>';
+    const loadingPractice = document.getElementById('studentPracticeQuestions');
+    if (loadingPractice) loadingPractice.innerHTML = '<p class="text-muted-2 mb-0">Loading practice…</p>';
     learn.module = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(summary.id)}`);
     try {
       learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/progress`);
@@ -4592,7 +4687,7 @@
       stats.innerHTML = [
         `<span><strong>${workspace.completedModules || 0}</strong> / ${workspace.totalModules || progress.totalModules || 0} modules</span>`,
         `<span><strong>${workspace.completedLessons || 0}</strong> / ${workspace.totalLessons || 0} lessons</span>`,
-        `<span><strong>${workspace.completedExercises || 0}</strong> / ${workspace.totalExercises || 0} exercises</span>`,
+        `<span><strong>${workspace.completedExercises || 0}</strong> / ${workspace.totalExercises || 0} practice questions</span>`,
       ].join('');
     }
     if (completeBtn) {
@@ -4669,7 +4764,8 @@
     const exerciseClose = document.getElementById('studentExerciseCloseBtn');
     if (exerciseClose) {
       exerciseClose.addEventListener('click', () => {
-        document.getElementById('studentExercisePanel').classList.add('d-none');
+        const panel = document.getElementById('studentExercisePanel');
+        if (panel) panel.classList.add('d-none');
       });
     }
     document.getElementById('studentMarkLesson').addEventListener('click', async () => {
@@ -4694,7 +4790,8 @@
         fail(err);
       }
     });
-    document.getElementById('studentRunBtn').addEventListener('click', async () => {
+    const runBtn = document.getElementById('studentRunBtn');
+    if (runBtn) runBtn.addEventListener('click', async () => {
       const exerciseId = currentExerciseId();
       if (!exerciseId) {
         toast('Open an exercise before running code.', 'error');
@@ -4717,7 +4814,8 @@
         button.disabled = false;
       }
     });
-    document.getElementById('studentSubmitBtn').addEventListener('click', async () => {
+    const submitBtn = document.getElementById('studentSubmitBtn');
+    if (submitBtn) submitBtn.addEventListener('click', async () => {
       const exerciseId = currentExerciseId();
       if (!exerciseId) {
         toast('Open an exercise before submitting.', 'error');
@@ -4747,7 +4845,8 @@
         button.disabled = false;
       }
     });
-    document.getElementById('studentResetCodeBtn').addEventListener('click', async () => {
+    const resetBtn = document.getElementById('studentResetCodeBtn');
+    if (resetBtn) resetBtn.addEventListener('click', async () => {
       const exerciseId = currentExerciseId();
       if (!exerciseId) return;
       const ok = await confirmAction({
@@ -4761,7 +4860,8 @@
       document.getElementById('studentCode').value = starter;
       rememberExerciseDraft(exerciseId, starter, true);
     });
-    document.getElementById('studentEditorFullBtn').addEventListener('click', () => {
+    const fullBtn = document.getElementById('studentEditorFullBtn');
+    if (fullBtn) fullBtn.addEventListener('click', () => {
       const panel = document.getElementById('studentExercisePanel');
       panel.classList.toggle('is-fullscreen');
       document.getElementById('studentEditorFullBtn').textContent = panel.classList.contains('is-fullscreen') ? 'Exit full screen' : 'Full screen';

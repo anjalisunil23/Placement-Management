@@ -69,6 +69,8 @@ final class Collections
     public const TUTORIAL_MODULE_ACTIVITIES = 'tutorial_module_activities';
     public const TUTORIAL_MODULE_ACTIVITY_SUBMISSIONS = 'tutorial_module_activity_submissions';
     public const TUTORIAL_MODULE_ACTIVITY_REVIEWS = 'tutorial_module_activity_reviews';
+    public const TUTORIAL_LESSON_QUESTIONS = 'tutorial_lesson_questions';
+    public const TUTORIAL_LESSON_QUESTION_ATTEMPTS = 'tutorial_lesson_question_attempts';
     public const RESUME_CAREER_OBJECTIVES = 'resume_career_objectives';
     public const RESUME_SKILLS = 'resume_skills';
     public const RESUME_PROJECTS = 'resume_projects';

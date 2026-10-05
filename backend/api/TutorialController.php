@@ -209,9 +209,21 @@ final class TutorialController
     {
         $user = AuthMiddleware::authenticate();
         Response::success(
-            $this->ai->generateLessonExercisesPreview($user, $this->body()),
-            'AI lesson exercises generated.'
+            $this->ai->generateLessonMcqPreview($user, $this->body()),
+            'AI lesson questions generated.'
         );
+    }
+
+    public function lessonPractice(string $tutorialId, string $moduleId, string $lessonId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->lessonPracticeForStudent($user, $tutorialId, $moduleId, $lessonId));
+    }
+
+    public function checkLessonAnswer(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->checkLessonAnswer($user, $id, $this->body()));
     }
 
     public function aiGenerateModule(string $tutorialId): void

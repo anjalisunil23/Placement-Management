@@ -7,6 +7,7 @@ namespace PMS\Services;
 use PMS\Config\Database;
 use PMS\Middleware\AuthMiddleware;
 use PMS\Models\TutorialExerciseModel;
+use PMS\Models\TutorialLessonQuestionModel;
 
 /**
  * AI tutorial course/module/MCQ/activity generation via existing OpenAIService.
@@ -176,6 +177,8 @@ class TutorialAIService
         $pdo = Database::pdo();
         $started = false;
         if (!$pdo->inTransaction()) {
+            // Create the lesson-question table before the transaction. DDL commits implicitly.
+            new TutorialLessonQuestionModel();
             $pdo->beginTransaction();
             $started = true;
         }
@@ -211,17 +214,16 @@ class TutorialAIService
                     'content' => $content,
                 ]);
                 $moduleId = (string) ($saved['id'] ?? '');
-                $exerciseCount = $this->persistGeneratedExercises(
-                    $user,
+                $questionCount = $this->persistLessonMcqs(
                     $tutorialId,
                     $moduleId,
-                    is_array($module['exercises'] ?? null) ? $module['exercises'] : []
+                    is_array($module['lessonMcqs'] ?? null) ? $module['lessonMcqs'] : []
                 );
                 $savedModules[] = [
                     'id' => $moduleId,
                     'title' => (string) ($saved['title'] ?? ''),
                     'sortOrder' => (int) ($saved['sortOrder'] ?? ($index + 1)),
-                    'exerciseCount' => $exerciseCount,
+                    'questionCount' => $questionCount,
                 ];
             }
 
@@ -273,9 +275,9 @@ class TutorialAIService
         }
 
         $modulePayload = is_array($raw['module'] ?? null) ? $raw['module'] : $raw;
-        $module = $this->attachLessonExercises(
+        $module = $this->attachLessonMcqs(
             $this->normalizeModule($modulePayload, $req['difficulty'], $req['academicField']),
-            is_array($modulePayload['exercises'] ?? null) ? $modulePayload['exercises'] : []
+            $this->rawLessonMcqs($modulePayload)
         );
         $previewId = 'module-' . bin2hex(random_bytes(6));
 
@@ -311,9 +313,9 @@ class TutorialAIService
         $moduleIn = is_array($input['module'] ?? null) ? $input['module'] : $input;
         $difficulty = $this->normalizeDifficulty((string) ($input['difficulty'] ?? 'beginner'));
         $field = $this->normalizeAcademicField((string) ($input['academicField'] ?? 'other'));
-        $module = $this->attachLessonExercises(
+        $module = $this->attachLessonMcqs(
             $this->normalizeModule($moduleIn, $difficulty, $field),
-            is_array($moduleIn['exercises'] ?? null) ? $moduleIn['exercises'] : []
+            $this->rawLessonMcqs($moduleIn)
         );
 
         $content = json_encode([
@@ -329,11 +331,10 @@ class TutorialAIService
             'subtitle' => (string) ($module['subtitle'] ?? ''),
             'content' => $content,
         ]);
-        $this->persistGeneratedExercises(
-            $user,
+        $this->persistLessonMcqs(
             $tutorialId,
             (string) ($saved['id'] ?? ''),
-            is_array($module['exercises'] ?? null) ? $module['exercises'] : []
+            is_array($module['lessonMcqs'] ?? null) ? $module['lessonMcqs'] : []
         );
 
         $fresh = $this->tutorials->showManaged($user, $tutorialId);
@@ -400,10 +401,7 @@ class TutorialAIService
                 continue;
             }
             $normalizedModule = $this->normalizeModule($module, (string) $req['difficulty'], (string) $req['academicField']);
-            $modules[] = $this->attachLessonExercises(
-                $normalizedModule,
-                is_array($module['exercises'] ?? null) ? $module['exercises'] : []
-            );
+            $modules[] = $this->attachLessonMcqs($normalizedModule, $this->rawLessonMcqs($module));
         }
         if ($modules === []) {
             throw new \InvalidArgumentException('Generated course has no valid modules.');
@@ -759,9 +757,9 @@ Return ONLY valid JSON (no markdown). Generate educational lesson content as str
 Do not invent image URLs. Do not include HTML. Do not execute or claim to run code.
 Code blocks are demonstrations only.
 {$fieldGuide}
-Also include programming exercises that practise the concepts in each level-2 lesson heading.
-Do not include mcqs or practicalActivities arrays. Use the exercises array only.
-Do not claim that code was executed.
+Also include lesson-specific multiple-choice questions for each level-2 lesson heading.
+Do not include programming exercises, starter code, test cases, compilers, or practicalActivities.
+Questions must match the academic subject. Do not turn a non-programming subject into a coding course.
 SYSTEM;
     }
 
@@ -775,8 +773,9 @@ Return ONLY valid JSON (no markdown) with one module object.
 Use structured lesson blocks compatible with: paragraph, heading, quote, code, divider.
 Do not invent image URLs. Do not include HTML. Do not duplicate existing modules.
 {$fieldGuide}
-Also include programming exercises linked to each level-2 lesson heading.
-Do not include mcqs or practicalActivities. Use the exercises array only.
+Also include lesson-specific multiple-choice questions for each level-2 lesson heading.
+Do not include programming exercises, starter code, test cases, or practicalActivities.
+Questions must match the academic subject.
 SYSTEM;
     }
 
@@ -784,9 +783,9 @@ SYSTEM;
     {
         return match ($academicField) {
             'engineering' => 'Academic field: Engineering. Prefer concept explanations, formulas, numerical examples, applications, and design thinking. Include code only when it clearly helps (e.g. IoT/cloud snippets).',
-            'computer_applications' => 'Academic field: Computer Applications. Prefer programming explanations, algorithms, SQL/web examples, and code demonstrations with optional exampleOutput.',
-            'business_administration' => 'Academic field: Business Administration. Prefer business concepts, cases, financial reasoning, and analytical explanations. Do NOT generate programming code blocks.',
-            default => 'Academic field: Other / general. Prefer clear explanations and examples appropriate to the topic. Use code blocks only if the topic is clearly technical.',
+            'computer_applications' => 'Academic field: Computer Applications. Teach concepts, algorithms, and short illustrative snippets. Practice must be multiple-choice, such as predicting output, choosing correct syntax, or spotting an error. Do not create executable programming tasks.',
+            'business_administration' => 'Academic field: Business Administration or a related subject such as accounting, finance, or management. Teach that subject. Practice must be subject MCQs. Do NOT generate programming exercises or code-writing tasks.',
+            default => 'Academic field: Other / general. Match the topic. Accounting, business, and engineering topics get questions about that subject. Use code only when the topic itself is programming, and then only as MCQ content.',
         };
     }
 
@@ -798,7 +797,7 @@ SYSTEM;
         $allowCode = $this->fieldAllowsCode((string) $req['academicField']) ? 'yes' : 'no';
         $syllabus = (string) $req['syllabusText'];
         $syllabusBlock = $syllabus !== '' ? "Reference syllabus/notes (use as guidance, do not copy verbatim):\n{$syllabus}\n" : '';
-        $prefs = 'Optional later MCQ preference (do not emit mcqs): mcqsPerModule='
+        $prefs = 'Include about 3 lesson MCQs for every level-2 lesson. Requested extra module-quiz count is not used here: '
             . (int) $req['mcqsPerModule'] . '.';
 
         return <<<PROMPT
@@ -839,17 +838,14 @@ Required JSON shape:
           {"type":"code","language":"python","source":"...","exampleOutput":"..."}
         ]
       },
-      "exercises": [
+      "lessonMcqs": [
         {
           "lessonTitle": "Python Variables",
-          "title": "Store a student name",
-          "instructions": "Write a program that stores a name and prints it.",
-          "language": "python",
-          "boilerplate": "name = \"\"\n",
-          "testCases": [
-            {"stdin": "", "expectedOutput": "Ada\n", "sample": true},
-            {"stdin": "", "expectedOutput": "Ada\n", "sample": false}
-          ]
+          "question": "Which name is a valid Python variable?",
+          "options": ["2total", "total", "total-sum", "class"],
+          "correctAnswer": 1,
+          "explanation": "A variable name may start with a letter and must not be a reserved word.",
+          "difficulty": "beginner"
         }
       ]
     }
@@ -859,12 +855,14 @@ Required JSON shape:
 Rules:
 - Produce exactly {$req['moduleCount']} modules. Each module needs at least two level-2 headings. Each heading is one lesson.
 - Under each level-2 lesson, include at least 4 teaching blocks (paragraph, quote, or code) that explain that lesson.
-- For every level-2 lesson, include 2 or 3 programming exercises whose lessonTitle exactly matches that heading text.
-- Exercises must practise only the concepts taught in that lesson.
-- Each exercise needs a title, instructions, language, optional boilerplate, one public sample test case (sample true) and one hidden test case (sample false).
-- Programming language must be one of: python, javascript, java, c, cpp, php, sql.
-- Lesson code-block language must be one of: auto, text, python, javascript, typescript, java, c, cpp, csharp, php, sql, html, css, json, bash, go.
-- If code blocks are not allowed, still write the lesson in paragraphs, and still include programming exercises only when the topic is clearly a programming topic; otherwise include exercises in python that print or calculate the lesson idea.
+- For every level-2 lesson, include 3 multiple-choice questions whose lessonTitle exactly matches that heading text.
+- Questions must practise only the concepts taught in that lesson and must fit the subject.
+- Computer Applications or an explicitly programming topic may use conceptual code MCQs: predict output, choose valid syntax, or find an error. They are still MCQs.
+- Accounting, Business Administration, Engineering, and other non-programming topics must not become programming exercises. Ask about that subject.
+- Each question needs exactly 4 options, correctAnswer as an index 0-3, and an explanation.
+- Do not emit exercises, boilerplate, languages, or test cases.
+- Lesson code-block language, when a short illustration is appropriate, must be one of: auto, text, python, javascript, typescript, java, c, cpp, csharp, php, sql, html, css, json, bash, go.
+- If code blocks are not allowed, use paragraphs and quotes only.
 PROMPT;
     }
 
@@ -895,7 +893,7 @@ Difficulty: {$req['difficulty']}
 Academic field: {$req['academicField']}
 Code blocks allowed: {$allowCode}
 Additional instructions: {$req['additionalInstructions']}
-Do not emit MCQs. Include programming exercises for each level-2 lesson.
+Include lesson-specific MCQs for each level-2 lesson. Do not emit programming exercises.
 
 Return JSON:
 {
@@ -911,25 +909,250 @@ Return JSON:
         {"type":"paragraph","text":"..."}
       ]
     },
-    "exercises": [
+    "lessonMcqs": [
       {
         "lessonTitle": "exact level-2 heading text",
-        "title": "string",
-        "instructions": "string",
-        "language": "python",
-        "boilerplate": "",
-        "testCases": [
-          {"stdin": "", "expectedOutput": "ok\n", "sample": true},
-          {"stdin": "", "expectedOutput": "ok\n", "sample": false}
-        ]
+        "question": "string",
+        "options": ["A", "B", "C", "D"],
+        "correctAnswer": 0,
+        "explanation": "string",
+        "difficulty": "beginner"
       }
     ]
   }
 }
 
 Avoid duplicating existing module titles or covering the same ground unnecessarily.
-Include at least two level-2 lessons and at least 2 programming exercises for each, with lessonTitle matching the heading.
+Include at least two level-2 lessons and 3 subject-appropriate MCQs for each, with lessonTitle matching the heading.
 PROMPT;
+    }
+
+    /**
+     * @param array<string, mixed> $module
+     * @return list<mixed>
+     */
+    private function rawLessonMcqs(array $module): array
+    {
+        if (is_array($module['lessonMcqs'] ?? null)) {
+            return $module['lessonMcqs'];
+        }
+        if (is_array($module['mcqs'] ?? null)) {
+            return $module['mcqs'];
+        }
+
+        return [];
+    }
+
+    /**
+     * Bind lesson MCQs to level-2 headings. Invalid links are matched by title or dropped.
+     *
+     * @param array<string, mixed> $module
+     * @param list<mixed> $rawQuestions
+     * @return array<string, mixed>
+     */
+    public function attachLessonMcqs(array $module, array $rawQuestions): array
+    {
+        $blocks = is_array($module['lessonDocument']['blocks'] ?? null) ? $module['lessonDocument']['blocks'] : [];
+        $blocks = $this->stabilizeLessonHeadings($blocks, (string) ($module['title'] ?? 'Lesson'));
+        if (!isset($module['lessonDocument']) || !is_array($module['lessonDocument'])) {
+            $module['lessonDocument'] = ['version' => 1, 'blocks' => $blocks];
+        } else {
+            $module['lessonDocument']['blocks'] = $blocks;
+        }
+        $module['lessonMcqs'] = $this->normalizeLessonMcqs($rawQuestions, $this->lessonHeadings($blocks));
+        unset($module['exercises']);
+
+        return $module;
+    }
+
+    /**
+     * Regenerate MCQs for one lesson. Does not persist and does not change other lessons.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array{lessonBlockId: string, lessonMcqs: list<array<string, mixed>>}
+     */
+    public function generateLessonMcqPreview(array $user, array $input): array
+    {
+        $this->assertAuthor($user);
+        $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? ''));
+        @set_time_limit(600);
+
+        $lessonBlockId = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($input['lessonBlockId'] ?? '')) ?? '';
+        if ($lessonBlockId === '' || strlen($lessonBlockId) > 64) {
+            throw new \InvalidArgumentException('Choose a lesson before regenerating questions.');
+        }
+        $lessonTitle = mb_substr(trim(strip_tags((string) ($input['lessonTitle'] ?? 'Lesson'))), 0, 300);
+        if ($lessonTitle === '') {
+            $lessonTitle = 'Lesson';
+        }
+        $lessonText = mb_substr(trim(strip_tags((string) ($input['lessonText'] ?? ''))), 0, 6000);
+        $topic = mb_substr(trim(strip_tags((string) ($input['topic'] ?? $lessonTitle))), 0, self::MAX_TOPIC_CHARS);
+        if ($topic === '') {
+            $topic = $lessonTitle;
+        }
+        $difficulty = $this->normalizeDifficulty((string) ($input['difficulty'] ?? 'beginner'));
+        $field = $this->normalizeAcademicField((string) ($input['academicField'] ?? 'other'));
+        $count = (int) ($input['count'] ?? 3);
+        if ($count < 2) {
+            $count = 2;
+        }
+        if ($count > 6) {
+            $count = 6;
+        }
+        $this->assertAiConfigured();
+        @set_time_limit(600);
+        $subjectRule = $field === 'computer_applications'
+            ? 'Conceptual programming MCQs are allowed, such as predicting output or choosing valid syntax. Do not ask the student to write a program.'
+            : 'Write subject-specific MCQs. Do not create programming exercises.';
+        $system = <<<SYSTEM
+You write multiple-choice practice for one university lesson.
+Return ONLY valid JSON. Each question has exactly 4 options and correctAnswer 0-3.
+Do not include programming exercises, starter code, or test cases.
+{$subjectRule}
+SYSTEM;
+        $userPrompt = <<<PROMPT
+Topic: {$topic}
+Difficulty: {$difficulty}
+Academic field: {$field}
+Lesson title: {$lessonTitle}
+Lesson explanation:
+{$lessonText}
+
+Return JSON:
+{
+  "lessonMcqs": [
+    {
+      "lessonTitle": "{$lessonTitle}",
+      "question": "string",
+      "options": ["A", "B", "C", "D"],
+      "correctAnswer": 0,
+      "explanation": "why the answer is correct",
+      "difficulty": "{$difficulty}"
+    }
+  ]
+}
+Produce exactly {$count} questions about this lesson only.
+PROMPT;
+        try {
+            $raw = $this->callGenerateJson($system, $userPrompt);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            error_log('[PMS TutorialAI] generate lesson MCQs failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI question generation is temporarily unavailable. Please try again.');
+        }
+        $list = is_array($raw['lessonMcqs'] ?? null) ? $raw['lessonMcqs'] : (is_array($raw['questions'] ?? null) ? $raw['questions'] : []);
+        $module = $this->attachLessonMcqs([
+            'title' => $lessonTitle,
+            'lessonDocument' => [
+                'version' => 1,
+                'blocks' => [[
+                    'id' => $lessonBlockId,
+                    'type' => 'heading',
+                    'level' => 2,
+                    'text' => $lessonTitle,
+                ]],
+            ],
+        ], $list);
+
+        return [
+            'lessonBlockId' => $lessonBlockId,
+            'lessonMcqs' => is_array($module['lessonMcqs'] ?? null) ? $module['lessonMcqs'] : [],
+        ];
+    }
+
+    /**
+     * @param list<mixed> $rawQuestions
+     * @param list<array{id: string, text: string}> $lessons
+     * @return list<array<string, mixed>>
+     */
+    private function normalizeLessonMcqs(array $rawQuestions, array $lessons): array
+    {
+        if ($lessons === []) {
+            return [];
+        }
+        $byId = [];
+        $byTitle = [];
+        foreach ($lessons as $lesson) {
+            $byId[$lesson['id']] = $lesson;
+            $byTitle[$this->lessonKey($lesson['text'])] = $lesson;
+        }
+        $counts = [];
+        $out = [];
+        foreach ($rawQuestions as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            try {
+                $normalized = $this->normalizeMcqQuestions([$item]);
+            } catch (\InvalidArgumentException) {
+                continue;
+            }
+            if ($normalized === []) {
+                continue;
+            }
+            $question = $normalized[0];
+            $lesson = null;
+            $blockId = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['lessonBlockId'] ?? '')) ?? '';
+            if ($blockId !== '' && isset($byId[$blockId])) {
+                $lesson = $byId[$blockId];
+            } else {
+                $key = $this->lessonKey((string) ($item['lessonTitle'] ?? ''));
+                if ($key !== '' && isset($byTitle[$key])) {
+                    $lesson = $byTitle[$key];
+                } elseif (count($lessons) === 1) {
+                    $lesson = $lessons[0];
+                }
+            }
+            if ($lesson === null) {
+                continue;
+            }
+            $lessonId = $lesson['id'];
+            $counts[$lessonId] = ($counts[$lessonId] ?? 0) + 1;
+            if ($counts[$lessonId] > 6) {
+                continue;
+            }
+            $question['lessonBlockId'] = $lessonId;
+            $question['lessonTitle'] = $lesson['text'];
+            $out[] = $question;
+            if (count($out) >= 48) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<mixed> $questions
+     */
+    private function persistLessonMcqs(string $tutorialId, string $moduleId, array $questions): int
+    {
+        if ($tutorialId === '' || $moduleId === '') {
+            return 0;
+        }
+        $model = new TutorialLessonQuestionModel();
+        $saved = 0;
+        foreach ($questions as $index => $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $model->createQuestion([
+                'tutorialId' => $tutorialId,
+                'moduleId' => $moduleId,
+                'lessonBlockId' => (string) ($question['lessonBlockId'] ?? ''),
+                'question' => (string) ($question['question'] ?? ''),
+                'options' => (array) ($question['options'] ?? []),
+                'correctIndex' => (int) ($question['correctIndex'] ?? $question['correctAnswer'] ?? -1),
+                'explanation' => (string) ($question['explanation'] ?? ''),
+                'difficulty' => (string) ($question['difficulty'] ?? 'beginner'),
+                'sortOrder' => $index + 1,
+            ]);
+            $saved++;
+        }
+
+        return $saved;
     }
 
     /**

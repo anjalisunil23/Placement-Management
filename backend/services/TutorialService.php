@@ -12,6 +12,8 @@ use PMS\Models\StudentTutorialModuleProgressModel;
 use PMS\Models\StudentTutorialProgressModel;
 use PMS\Models\TutorialCategoryModel;
 use PMS\Models\TutorialExerciseModel;
+use PMS\Models\TutorialLessonQuestionAttemptModel;
+use PMS\Models\TutorialLessonQuestionModel;
 use PMS\Models\TutorialModel;
 use PMS\Models\TutorialModuleActivityModel;
 use PMS\Models\TutorialModuleActivitySubmissionModel;
@@ -528,7 +530,7 @@ final class TutorialService
     }
 
     /**
-     * Explicitly complete a lesson that has no required programming exercises.
+     * Explicitly complete a lesson that has no lesson MCQs.
      * Opening a lesson does not call this.
      *
      * @param array<string, mixed> $user
@@ -553,9 +555,9 @@ final class TutorialService
         if (!$known) {
             throw new \InvalidArgumentException('Lesson not found.');
         }
-        foreach ($this->exercises->listByModule($moduleId) as $exercise) {
-            if ((string) ($exercise['lessonBlockId'] ?? '') === $lessonId) {
-                throw new \InvalidArgumentException('Complete the exercises for this lesson.');
+        foreach ((new TutorialLessonQuestionModel())->listByModule($moduleId) as $question) {
+            if ((string) ($question['lessonBlockId'] ?? '') === $lessonId) {
+                throw new \InvalidArgumentException('Answer the practice questions for this lesson.');
             }
         }
         $studentId = $this->studentProfileId($user);
@@ -575,6 +577,84 @@ final class TutorialService
         $this->maybeCompleteReadyModules($user, $tutorialId);
 
         return $this->progressForStudent($user, $tutorialId);
+    }
+
+    /**
+     * Lesson MCQs for the selected lesson. Correct answers are omitted.
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function lessonPracticeForStudent(array $user, string $tutorialId, string $moduleId, string $lessonId): array
+    {
+        if (preg_match('/^[A-Za-z0-9_-]{1,64}$/', $lessonId) !== 1) {
+            throw new \InvalidArgumentException('Lesson not found.');
+        }
+        $this->publishedTutorialForStudent($user, $tutorialId);
+        $this->moduleOnTutorial($tutorialId, $moduleId);
+        $studentId = $this->studentProfileId($user);
+        $correct = (new TutorialLessonQuestionAttemptModel())->correctQuestionIds($studentId, $tutorialId);
+        $questions = [];
+        foreach ((new TutorialLessonQuestionModel())->listByModule($moduleId) as $question) {
+            if ((string) ($question['lessonBlockId'] ?? '') !== $lessonId) {
+                continue;
+            }
+            $id = (string) ($question['_id'] ?? '');
+            $questions[] = [
+                'id' => $id,
+                'question' => (string) ($question['question'] ?? ''),
+                'options' => array_values((array) ($question['options'] ?? [])),
+                'difficulty' => (string) ($question['difficulty'] ?? 'beginner'),
+                'answeredCorrectly' => isset($correct[$id]),
+            ];
+        }
+
+        return [
+            'lessonBlockId' => $lessonId,
+            'questions' => $questions,
+            'questionCount' => count($questions),
+        ];
+    }
+
+    /**
+     * Score one selected option. The client cannot supply the result.
+     *
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function checkLessonAnswer(array $user, string $questionId, array $input): array
+    {
+        unset($input['correct'], $input['score'], $input['correctIndex'], $input['explanation']);
+        if (!array_key_exists('selectedIndex', $input) || !is_int($input['selectedIndex']) && !is_numeric($input['selectedIndex'])) {
+            throw new \InvalidArgumentException('Choose an answer.');
+        }
+        $selected = (int) $input['selectedIndex'];
+        if ($selected < 0 || $selected > 3) {
+            throw new \InvalidArgumentException('Choose an answer.');
+        }
+        $question = (new TutorialLessonQuestionModel())->findById($questionId);
+        if ($question === null) {
+            throw new \RuntimeException('Question not found.', 404);
+        }
+        $tutorialId = (string) ($question['tutorialId'] ?? '');
+        $this->publishedTutorialForStudent($user, $tutorialId);
+        $this->moduleOnTutorial($tutorialId, (string) ($question['moduleId'] ?? ''));
+        $correctIndex = (int) ($question['correctIndex'] ?? -1);
+        $correct = $selected === $correctIndex;
+        $studentId = $this->studentProfileId($user);
+        $attempts = new TutorialLessonQuestionAttemptModel();
+        $attempts->record($studentId, $questionId, $tutorialId, $selected, $correct);
+        $this->maybeCompleteReadyModules($user, $tutorialId);
+
+        return [
+            'questionId' => $questionId,
+            'selectedIndex' => $selected,
+            'correct' => $correct,
+            'correctIndex' => $correctIndex,
+            'explanation' => (string) ($question['explanation'] ?? ''),
+            'attempts' => $attempts->countForQuestion($studentId, $questionId),
+        ];
     }
 
     /**
@@ -1334,15 +1414,8 @@ final class TutorialService
                 $reviewed[$key] = true;
             }
         }
-        $passedExercises = [];
-        foreach ($this->attempts->findAll(['studentId' => $studentId], 2000) as $attempt) {
-            if ((string) ($attempt['tutorialId'] ?? '') !== $tutorialId) {
-                continue;
-            }
-            if (($attempt['passed'] ?? false) === true) {
-                $passedExercises[(string) ($attempt['exerciseId'] ?? '')] = true;
-            }
-        }
+        $correctQuestions = (new TutorialLessonQuestionAttemptModel())->correctQuestionIds($studentId, $tutorialId);
+        $questionModel = new TutorialLessonQuestionModel();
         $activities = new TutorialModuleActivityModel();
         $submissions = new TutorialModuleActivitySubmissionModel();
         $lessonDone = 0;
@@ -1351,8 +1424,6 @@ final class TutorialService
         $exerciseTotal = 0;
         $activityDone = 0;
         $activityTotal = 0;
-        $unlinkedDone = 0;
-        $unlinkedTotal = 0;
         $readyModules = [];
         $lessonFlags = [];
         foreach ($modules as $module) {
@@ -1362,25 +1433,18 @@ final class TutorialService
             }
             $lessons = $this->buildStudentLessons($this->lessonContentString($module['content'] ?? ''), (string) ($module['title'] ?? 'Lesson'));
             $linked = [];
-            $unlinked = [];
-            foreach ($this->exercises->listByModule($moduleId) as $exercise) {
-                $exerciseId = (string) ($exercise['_id'] ?? '');
-                if ($exerciseId === '') {
+            foreach ($questionModel->listByModule($moduleId) as $question) {
+                $questionId = (string) ($question['_id'] ?? '');
+                if ($questionId === '') {
                     continue;
                 }
                 $exerciseTotal++;
-                $isPassed = isset($passedExercises[$exerciseId]);
+                $isPassed = isset($correctQuestions[$questionId]);
                 if ($isPassed) {
                     $exerciseDone++;
                 }
-                $lessonBlockId = trim((string) ($exercise['lessonBlockId'] ?? ''));
-                if ($lessonBlockId === '') {
-                    $unlinked[] = $isPassed;
-                    $unlinkedTotal++;
-                    if ($isPassed) {
-                        $unlinkedDone++;
-                    }
-                } else {
+                $lessonBlockId = trim((string) ($question['lessonBlockId'] ?? ''));
+                if ($lessonBlockId !== '') {
                     $linked[$lessonBlockId][] = $isPassed;
                 }
             }
@@ -1402,16 +1466,15 @@ final class TutorialService
                 }
                 $lessonFlags[$moduleId . ':' . $lessonId] = $complete;
             }
-            $unlinkedReady = !in_array(false, $unlinked, true);
             [$requiredActivities, $doneActivities] = $this->activityCounts($activities, $submissions, $studentId, $moduleId);
             $activityTotal += $requiredActivities;
             $activityDone += $doneActivities;
-            if ($moduleLessonsReady && $unlinkedReady && $doneActivities === $requiredActivities && $lessons !== []) {
+            if ($moduleLessonsReady && $doneActivities === $requiredActivities && $lessons !== []) {
                 $readyModules[] = $moduleId;
             }
         }
-        $units = $lessonTotal + $unlinkedTotal + $activityTotal;
-        $doneUnits = $lessonDone + $unlinkedDone + $activityDone;
+        $units = $lessonTotal + $activityTotal;
+        $doneUnits = $lessonDone + $activityDone;
         $percent = $units === 0 ? 0 : (int) round(($doneUnits / $units) * 100);
 
         return [
@@ -1666,6 +1729,16 @@ final class TutorialService
 
     private function deleteModuleTree(string $moduleId): void
     {
+        $questions = new TutorialLessonQuestionModel();
+        $attempts = new TutorialLessonQuestionAttemptModel();
+        foreach ($questions->listByModule($moduleId) as $question) {
+            $questionId = (string) ($question['_id'] ?? '');
+            if ($questionId === '') {
+                continue;
+            }
+            $attempts->deleteForQuestion($questionId);
+            $questions->delete($questionId);
+        }
         foreach ($this->exercises->listByModule($moduleId) as $exercise) {
             $this->deleteExerciseTree((string) ($exercise['_id'] ?? ''));
         }
