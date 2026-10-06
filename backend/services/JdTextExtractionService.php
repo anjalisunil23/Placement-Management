@@ -24,8 +24,11 @@ final class JdTextExtractionService
         'Transcribe this aptitude test page as plain text only (no markdown). '
         . 'Do not include page headers, footers, watermarks, branding lines, website URLs, or page numbers. '
         . 'Include every question number, all option labels (a) b) c) … or A. B. …), and marked answers if visible. '
-        . 'For letter/number/symbol arrangement lines, copy each character exactly as printed, preserving spaces between tokens. '
-        . 'Use the exact symbols printed (© # $ ₹ % @ & * ( ) + − =, etc.) and every letter/digit — do not substitute look-alikes '
+        . 'CRITICAL: If the page has a letter/number/symbol arrangement row (a long spaced line such as '
+        . '"T 8 3 1 7 F J 5 % E R @ 4 D A 2 B © Q K …"), you MUST transcribe that entire row on its own line '
+        . 'between the Directions text and the next question number. Do not skip it even if it is bold or centered. '
+        . 'Copy each character exactly as printed, preserving spaces between tokens. '
+        . 'Use the exact symbols printed (© # $ ₹ % @ & * ( ) + − = □ ■, etc.) and every letter/digit — do not substitute look-alikes '
         . '(for example do not replace © with @, or guess a currency symbol). '
         . 'Preserve "Directions (N - M):" blocks and line breaks between questions. No commentary.';
 
@@ -145,7 +148,16 @@ final class JdTextExtractionService
         $text = preg_replace('/(\s)(Directions\s*:)/iu', "\n\n$2", $text) ?? $text;
         // Keep section topic headings on their own line (not glued to option E).
         $text = preg_replace(
-            '/(\S)\s+((?:Verbal\s+Ability|Quantitative\s+Aptitude|Reasoning(?:\s+Ability)?|English\s+Language)\s*(?:\([^)]*\))?)/iu',
+            '/(\S)\s+((?:(?:Basic|General)\s+)?'
+            . '(?:Verbal\s+Ability|Quantitative\s+Aptitude|Reasoning(?:\s+Ability)?'
+            . '|English\s+Language|Computer\s+Knowledge(?:\s+and\s+Digital\s+Banking)?'
+            . '|Digital\s+Banking|General\s+Awareness)'
+            . '\s*(?:\([^)]*\))?)/iu',
+            "$1\n\n$2",
+            $text
+        ) ?? $text;
+        $text = preg_replace(
+            '/(\S)\s+([A-Z][^\n]{6,120}?\((?:Sample\s+)?Questions?\))/u',
             "$1\n\n$2",
             $text
         ) ?? $text;
@@ -324,22 +336,78 @@ final class JdTextExtractionService
         if ($line === '' || mb_strlen($line) < 11) {
             return false;
         }
+        // Reject normal prose sentences.
+        if (preg_match('/\b(?:the|and|with|from|each|which|based|study|answer|questions?)\b/iu', $line) === 1) {
+            return false;
+        }
         // e.g. "T 8 3 1 7 F J 5 % E R @ 4 D A 2 B © Q K 3 1 â □ □ U H 6 L"
-        if (preg_match('/^(?:[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫◊◆âÃÂ?¿¡\/\\\\]\s+){7,}[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫◊◆âÃÂ?¿¡\/\\\\]$/u', $line) !== 1) {
-            return false;
+        $tokenClass = '[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫◊◆●○★☆âÃÂ?¿¡\/\\\\]';
+        if (preg_match('/^(?:' . $tokenClass . '\s+){7,}' . $tokenClass . '$/u', $line) === 1) {
+            $tokens = preg_split('/\s+/u', $line) ?: [];
+            if (count($tokens) >= 8) {
+                $short = 0;
+                foreach ($tokens as $tok) {
+                    if (mb_strlen($tok) <= 2) {
+                        $short++;
+                    }
+                }
+                if ($short / count($tokens) >= 0.7) {
+                    return true;
+                }
+            }
         }
-        $tokens = preg_split('/\s+/u', $line) ?: [];
-        if (count($tokens) < 8) {
-            return false;
+        // Compact extracts with little/no spacing: "T8317FJ5%ER@4DA2B©QK…"
+        if (preg_match('/\s/u', $line) !== 1
+            && mb_strlen($line) >= 16
+            && preg_match('/^' . $tokenClass . '{16,80}$/u', $line) === 1
+            && preg_match('/\p{L}/u', $line) === 1
+            && preg_match('/\p{N}/u', $line) === 1
+            && preg_match('/[@#%©$₹*&□■●â]/u', $line) === 1) {
+            return true;
         }
-        $short = 0;
-        foreach ($tokens as $tok) {
-            if (mb_strlen($tok) <= 2) {
-                $short++;
+
+        return false;
+    }
+
+    public static function textHasSymbolArrangementLine(string $text): bool
+    {
+        foreach (preg_split('/\n/u', $text) ?: [] as $line) {
+            if (self::isSymbolArrangementLine(trim($line))) {
+                return true;
+            }
+        }
+        // Flat OCR blob: arrangement tokens mid-paragraph.
+        if (preg_match(
+            '/(?:^|[\n\r]|arrangement[^\n]{0,200}?)((?:[\p{L}\p{N}@#%©$₹*&□■â]\s+){10,}[\p{L}\p{N}@#%©$₹*&□■â])/iu',
+            $text,
+            $m
+        )) {
+            return self::isSymbolArrangementLine(trim((string) ($m[1] ?? '')));
+        }
+
+        return false;
+    }
+
+    public static function extractSymbolArrangementLine(string $text): string
+    {
+        foreach (preg_split('/\n/u', $text) ?: [] as $line) {
+            $trim = trim($line);
+            if (self::isSymbolArrangementLine($trim)) {
+                return $trim;
+            }
+        }
+        if (preg_match(
+            '/((?:[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ●]\s+){10,}[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ●])/u',
+            $text,
+            $m
+        )) {
+            $candidate = trim(preg_replace('/\s+/u', ' ', $m[1]) ?? $m[1]);
+            if (self::isSymbolArrangementLine($candidate)) {
+                return $candidate;
             }
         }
 
-        return $short / count($tokens) >= 0.75;
+        return '';
     }
 
     public static function isGarbledExtract(string $text): bool
@@ -413,13 +481,24 @@ final class JdTextExtractionService
     {
         $viaShell = $this->extractPdfViaPdftotext($path, true, true);
         $viaShell = self::repairCommonPdfMojibake($viaShell);
+        // Bold/centered arrangement rows are often outside the cropped text layer.
+        if (self::mentionsSymbolArrangement($viaShell) && !self::textHasSymbolArrangementLine($viaShell)) {
+            $uncropped = self::repairCommonPdfMojibake($this->extractPdfViaPdftotext($path, true, false));
+            if ($uncropped !== '' && self::textHasSymbolArrangementLine($uncropped)
+                && !self::isGarbledExtract($uncropped)) {
+                $viaShell = $uncropped;
+            }
+        }
+        $shellMissingArrangement = self::mentionsSymbolArrangement($viaShell)
+            && !self::textHasSymbolArrangementLine($viaShell);
         $shellSufficient = $viaShell !== ''
             && !self::isGarbledExtract($viaShell)
             && self::isManualExtractSufficient($viaShell)
             && !self::hasLikelyFontEncodingIssues($viaShell)
-            && !self::symbolArrangementNeedsOcr($viaShell);
+            && !self::symbolArrangementNeedsOcr($viaShell)
+            && !$shellMissingArrangement;
 
-        $needsOcr = !$shellSufficient;
+        $needsOcr = !$shellSufficient || $shellMissingArrangement;
 
         $ocrResult = ['text' => '', 'pageCount' => 0];
         if ($needsOcr && $this->openai->isConfigured()) {
@@ -430,7 +509,16 @@ final class JdTextExtractionService
         $ocrOk = $viaOcr !== ''
             && !self::isGarbledExtract($viaOcr)
             && self::isManualExtractSufficient($viaOcr);
+        $ocrHasArrangement = self::textHasSymbolArrangementLine($viaOcr);
 
+        // Prefer OCR whenever it recovers a missing arrangement row.
+        if ($ocrOk && $shellMissingArrangement && $ocrHasArrangement) {
+            return [
+                'text' => $viaOcr,
+                'method' => 'pdf_ocr',
+                'pageCount' => (int) ($ocrResult['pageCount'] ?? 0),
+            ];
+        }
         if ($ocrOk && (!$shellSufficient || self::manualExtractQuality($viaOcr) > self::manualExtractQuality($viaShell))) {
             return [
                 'text' => $viaOcr,
@@ -453,6 +541,11 @@ final class JdTextExtractionService
         }
 
         return ['text' => $viaOcr !== '' ? $viaOcr : $viaShell, 'method' => 'pdf', 'pageCount' => 0];
+    }
+
+    public static function mentionsSymbolArrangement(string $text): bool
+    {
+        return preg_match('/letter\s*[\/\s]*number\s*[\/\s]*symbol\s+arrangement|above\s+arrangement/iu', $text) === 1;
     }
 
     public static function hasLikelyFontEncodingIssues(string $text): bool
@@ -483,16 +576,20 @@ final class JdTextExtractionService
      */
     public static function symbolArrangementNeedsOcr(string $text): bool
     {
-        if (!preg_match('/letter[\s\/]*number[\s\/]*symbol\s+arrangement/iu', $text)) {
+        if (!self::mentionsSymbolArrangement($text)) {
             return false;
+        }
+        // Bold arrangement rows are frequently absent from the text layer.
+        if (!self::textHasSymbolArrangementLine($text)) {
+            return true;
         }
         if (self::hasLikelyFontEncodingIssues($text)) {
             return true;
         }
-        if (preg_match('/(?:^|\n)((?:[\p{L}\p{N}@#%©$₹*]\s+){8,}[\p{L}\p{N}@#%©$₹*])/mu', $text, $m) !== 1) {
-            return false;
+        $line = self::extractSymbolArrangementLine($text);
+        if ($line === '') {
+            return true;
         }
-        $line = (string) ($m[1] ?? '');
         $atCount = substr_count($line, '@');
         $hasCopyright = str_contains($line, '©') || str_contains($text, '©');
 
@@ -504,6 +601,12 @@ final class JdTextExtractionService
         $score = mb_strlen(trim($text));
         if (self::hasLikelyFontEncodingIssues($text)) {
             $score -= 800;
+        }
+        if (self::mentionsSymbolArrangement($text) && !self::textHasSymbolArrangementLine($text)) {
+            $score -= 500;
+        }
+        if (self::textHasSymbolArrangementLine($text)) {
+            $score += 200;
         }
         if (preg_match('/©/u', $text)) {
             $score += 120;

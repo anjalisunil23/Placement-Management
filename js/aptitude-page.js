@@ -2010,9 +2010,15 @@
     const answerLine = manualPreview && !answerKnown
       ? '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>'
       : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : `${esc(answerLabel)}.`} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
+    const normOpts = displayOpts.map((o) => String(o || '').trim().toLowerCase()).filter(Boolean);
+    const hasDupOpts = manualPreview && normOpts.length >= 2 && new Set(normOpts).size < normOpts.length;
+    const dupWarn = hasDupOpts
+      ? '<div class="small text-warning mb-1">Warning: two options look identical — check the PDF and edit if needed.</div>'
+      : '';
     return `<div class="${shellCls}">
       <div class="fw-semibold mb-2">${esc(qLabel)}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
       ${promptBlock}
+      ${dupWarn}
       <div class="small mb-2">${displayOpts.length
         ? displayOpts.map((o, oi) => {
           const label = esc(stripHtml(String(o || '')) || String(o || ''));

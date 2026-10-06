@@ -237,7 +237,9 @@ SYS;
                 }
             }
 
-            return array_values(array_filter($opts, static fn (string $s): bool => $s !== ''));
+            return AptitudeManualQuestionParser::repairDuplicateLetterCodeOptions(
+                array_values(array_filter($opts, static fn (string $s): bool => $s !== ''))
+            );
         }
 
         $legacy = [];
@@ -248,7 +250,7 @@ SYS;
             }
         }
 
-        return $legacy;
+        return AptitudeManualQuestionParser::repairDuplicateLetterCodeOptions($legacy);
     }
 
     /**

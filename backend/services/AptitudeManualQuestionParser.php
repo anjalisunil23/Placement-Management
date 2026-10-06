@@ -82,11 +82,16 @@ final class AptitudeManualQuestionParser
                         (int) ($parsed['questionNumber'] ?? $qNum ?? 0)
                     )
                 );
+                $parsed['prompt'] = $this->ensureArrangementLineOnPrompt(
+                    (string) ($parsed['prompt'] ?? ''),
+                    $text
+                );
                 if (isset($parsed['options']) && is_array($parsed['options'])) {
                     $parsed['options'] = array_map(
                         static fn ($o) => self::cutAtNextSectionHeading((string) $o),
                         $parsed['options']
                     );
+                    $parsed['options'] = self::repairDuplicateLetterCodeOptions($parsed['options']);
                 }
                 $out[] = $parsed;
             }
@@ -291,7 +296,7 @@ final class AptitudeManualQuestionParser
         }
 
         ksort($options);
-        $optionList = array_slice(array_values($options), 0, 5);
+        $optionList = self::repairDuplicateLetterCodeOptions(array_slice(array_values($options), 0, 5));
         while (count($optionList) < 4) {
             $optionList[] = '—';
         }
@@ -543,38 +548,51 @@ final class AptitudeManualQuestionParser
      */
     private function ensureArrangementLineInPassage(string $body, string $fullText, int $dirStart, int $dirEnd): string
     {
-        $needsLine = preg_match('/letter[\s\/]*number[\s\/]*symbol\s+arrangement|above\s+arrangement/iu', $body) === 1
-            || preg_match('/letter[\s\/]*number[\s\/]*symbol\s+arrangement/iu', substr($fullText, $dirStart, max(0, $dirEnd - $dirStart) + 240)) === 1;
+        $needsLine = JdTextExtractionService::mentionsSymbolArrangement($body)
+            || JdTextExtractionService::mentionsSymbolArrangement(
+                substr($fullText, max(0, $dirStart - 80), max(0, $dirEnd - $dirStart) + 400)
+            );
         if (!$needsLine) {
             return $body;
         }
-        if (JdTextExtractionService::isSymbolArrangementLine($body)
-            || preg_match('/(?:^|\n|\s)((?:[\p{L}\p{N}@#%©$₹*&□■â]\s+){7,}[\p{L}\p{N}@#%©$₹*&□■â])/u', $body) === 1) {
+        if (JdTextExtractionService::textHasSymbolArrangementLine($body)) {
             return $body;
         }
 
-        $window = substr($fullText, $dirStart, 1200);
-        if (!is_string($window)) {
-            return $body;
+        // PDF reading order sometimes places the bold row after the question — search nearby.
+        $from = max(0, $dirStart - 200);
+        $window = substr($fullText, $from, 3200);
+        $line = is_string($window) ? JdTextExtractionService::extractSymbolArrangementLine($window) : '';
+        if ($line === '') {
+            $line = JdTextExtractionService::extractSymbolArrangementLine($fullText);
         }
-        foreach (preg_split('/\n/u', $window) ?: [] as $line) {
-            $line = trim($line);
-            if ($line !== '' && JdTextExtractionService::isSymbolArrangementLine($line)) {
-                return trim($body . "\n" . $line);
-            }
-        }
-        if (preg_match(
-            '/((?:[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ]\s+){7,}[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ])/u',
-            $window,
-            $am
-        )) {
-            $candidate = trim(preg_replace('/\s+/u', ' ', $am[1]) ?? $am[1]);
-            if ($candidate !== '' && !str_contains($body, $candidate)) {
-                return trim($body . "\n" . $candidate);
-            }
+        if ($line !== '' && !str_contains($body, $line)) {
+            return trim($body . "\n" . $line);
         }
 
         return $body;
+    }
+
+    private function ensureArrangementLineOnPrompt(string $prompt, string $fullText): string
+    {
+        if (!JdTextExtractionService::mentionsSymbolArrangement($prompt)
+            && !preg_match('/above\s+arrangement|following\s+arrangement/iu', $prompt)) {
+            return $prompt;
+        }
+        if (JdTextExtractionService::textHasSymbolArrangementLine($prompt)) {
+            return $prompt;
+        }
+        $line = JdTextExtractionService::extractSymbolArrangementLine($fullText);
+        if ($line === '') {
+            return $prompt;
+        }
+
+        // Insert arrangement row before the question stem when prompt has directions + stem.
+        if (preg_match('/^(.*arrangement[^\n]*[.?!]?)(\s+)(.+)$/isu', $prompt, $m)) {
+            return trim($m[1] . "\n" . $line . "\n" . $m[3]);
+        }
+
+        return trim($line . "\n" . $prompt);
     }
 
     private function isSharedAnswerKeyDirections(string $body): bool
@@ -635,8 +653,8 @@ final class AptitudeManualQuestionParser
     }
 
     /**
-     * Cut next topic/section headings (e.g. "Verbal Ability (English Language)") so they
-     * are not glued onto the previous question's options or prompt.
+     * Cut next topic/section headings (e.g. "Verbal Ability…", "Basic Computer Knowledge…")
+     * so they are not glued onto the previous question and do not share Directions.
      */
     public static function cutAtNextSectionHeading(string $text): string
     {
@@ -659,16 +677,78 @@ final class AptitudeManualQuestionParser
 
     private static function nextSectionHeadingOffset(string $text, int $from = 0): ?int
     {
-        $pattern = '/(?:^|[\n\r]\s*|\s{2,}|(?<=[a-z0-9.]))'
-            . '((?:Verbal\s+Ability|Quantitative\s+Aptitude|Reasoning(?:\s+Ability)?'
-            . '|English\s+Language|General\s+Awareness|Computer\s+Knowledge'
-            . '|Numerical\s+Ability|Logical\s+Reasoning)'
-            . '(?:\s*\([^)]*\))?)/iu';
-        if (preg_match($pattern, $text, $m, PREG_OFFSET_CAPTURE, $from)) {
-            return (int) ($m[1][1] ?? $m[0][1] ?? 0);
+        $patterns = [
+            // "Basic Computer Knowledge and Digital Banking (Sample Questions)"
+            '/(?:^|[\n\r]\s*|\s)'
+            . '((?:Basic|General|Verbal|Quantitative|Computer|Digital|Reasoning|English'
+            . '|Numerical|Logical|Data|Marketing)[^\n\r]{0,100}?\((?:Sample\s+)?Questions?\))/iu',
+            // Named aptitude sections (allow a short lead-in like "Basic ")
+            '/(?:^|[\n\r]\s*|\s{2,}|\s)'
+            . '((?:Basic\s+|General\s+)?'
+            . '(?:Verbal\s+Ability|Quantitative\s+Aptitude|Reasoning(?:\s+Ability)?'
+            . '|English\s+Language|General\s+Awareness'
+            . '|Computer\s+Knowledge(?:\s+and\s+Digital\s+Banking)?'
+            . '|Digital\s+Banking|Numerical\s+Ability|Logical\s+Reasoning'
+            . '|Data\s+Interpretation|Marketing\s+Aptitude)'
+            . '(?:\s*\([^)]*\))?)/iu',
+            // Title-case banner line immediately before the next numbered question
+            '/(?:^|[\n\r]\s*)'
+            . '([A-Z][A-Za-z0-9][A-Za-z0-9 \\/&,\-]{6,90}(?:\([^)]{3,40}\))?)\s*'
+            . '(?=[\n\r]+\s*\d{1,3}\))/u',
+        ];
+        $best = null;
+        foreach ($patterns as $pattern) {
+            if (!preg_match($pattern, $text, $m, PREG_OFFSET_CAPTURE, $from)) {
+                continue;
+            }
+            $at = (int) ($m[1][1] ?? $m[0][1] ?? -1);
+            $label = trim((string) ($m[1][0] ?? ''));
+            if ($at < 0 || $label === '' || !self::looksLikeSectionHeading($label)) {
+                continue;
+            }
+            if ($best === null || $at < $best) {
+                $best = $at;
+            }
         }
 
-        return null;
+        return $best;
+    }
+
+    private static function looksLikeSectionHeading(string $label): bool
+    {
+        $label = trim(preg_replace('/\s+/u', ' ', $label) ?? $label);
+        if ($label === '' || mb_strlen($label) < 8 || mb_strlen($label) > 140) {
+            return false;
+        }
+        if (str_contains($label, '?') || preg_match('/^\d{1,3}\)/u', $label) === 1) {
+            return false;
+        }
+        if (preg_match('/^(?:a|b|c|d|e)\)/iu', $label) === 1) {
+            return false;
+        }
+        if (preg_match('/\b(?:no correction|none of these|cannot be determined)\b/iu', $label) === 1) {
+            return false;
+        }
+        // Avoid cutting mid-sentence option text that happens to contain "computer knowledge".
+        if (preg_match('/\b(?:is|are|was|were|which|what|how|when|where|who|the\s+following)\b/iu', $label) === 1
+            && preg_match('/\((?:Sample\s+)?Questions?\)/iu', $label) !== 1) {
+            return false;
+        }
+        if (preg_match('/\((?:Sample\s+)?Questions?\)/iu', $label) === 1) {
+            return true;
+        }
+        if (preg_match(
+            '/\b(?:Ability|Aptitude|Reasoning|Awareness|Knowledge|Banking|Interpretation|Language)\b/iu',
+            $label
+        ) === 1) {
+            return true;
+        }
+        // Title-ish: at least 3 capitalized words
+        if (preg_match_all('/\b[A-Z][A-Za-z0-9]+\b/u', $label, $wm) && count($wm[0] ?? []) >= 3) {
+            return true;
+        }
+
+        return false;
     }
 
     /** Strip leading "7)" / "Q7." — UI already shows Q7. */
@@ -1157,6 +1237,85 @@ final class AptitudeManualQuestionParser
         $text = preg_replace('/\s+\d{1,3}\)\s+Study\s+the\s+following.*$/iu', '', $text) ?? $text;
 
         return trim($text);
+    }
+
+    /**
+     * OCR/PDF text often collapses near-identical coding options (YITSNED vs YTISNED).
+     * If two letter-code options are identical and exactly one confused adjacent swap
+     * is missing from the set, restore that distinct option on the later duplicate.
+     *
+     * @param list<string> $options
+     * @return list<string>
+     */
+    public static function repairDuplicateLetterCodeOptions(array $options): array
+    {
+        $opts = array_values(array_map(static fn ($o) => trim((string) $o), $options));
+        if (count($opts) < 3) {
+            return $opts;
+        }
+
+        $codeIdx = [];
+        foreach ($opts as $i => $o) {
+            if (preg_match('/^[A-Za-z]{4,12}$/u', $o) === 1) {
+                $codeIdx[] = $i;
+            }
+        }
+        if (count($codeIdx) < 3) {
+            return $opts;
+        }
+
+        $len = strlen($opts[$codeIdx[0]]);
+        foreach ($codeIdx as $i) {
+            if (strlen($opts[$i]) !== $len) {
+                return $opts;
+            }
+        }
+
+        for ($a = 0; $a < count($codeIdx); $a++) {
+            for ($b = $a + 1; $b < count($codeIdx); $b++) {
+                $i = $codeIdx[$a];
+                $j = $codeIdx[$b];
+                if (strcasecmp($opts[$i], $opts[$j]) !== 0) {
+                    continue;
+                }
+                $dup = $opts[$i];
+                $existing = [];
+                foreach ($codeIdx as $ci) {
+                    $existing[strtoupper($opts[$ci])] = true;
+                }
+                $candidates = [];
+                $chars = preg_split('//u', $dup, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+                for ($p = 0, $plen = count($chars) - 1; $p < $plen; $p++) {
+                    if (!self::isConfusedLetterPair($chars[$p], $chars[$p + 1])) {
+                        continue;
+                    }
+                    $swap = $chars;
+                    $tmp = $swap[$p];
+                    $swap[$p] = $swap[$p + 1];
+                    $swap[$p + 1] = $tmp;
+                    $cand = implode('', $swap);
+                    if (!isset($existing[strtoupper($cand)])) {
+                        $candidates[$cand] = true;
+                    }
+                }
+                if (count($candidates) === 1) {
+                    $fixed = (string) array_key_first($candidates);
+                    // Put the restored distinct spelling on the earlier option (B before C).
+                    $opts[$i] = preg_match('/^[A-Z]+$/u', $dup) === 1 ? strtoupper($fixed) : $fixed;
+                }
+
+                return $opts;
+            }
+        }
+
+        return $opts;
+    }
+
+    private static function isConfusedLetterPair(string $a, string $b): bool
+    {
+        $pair = strtoupper($a . $b);
+
+        return in_array($pair, ['IT', 'TI', 'IL', 'LI', 'IJ', 'JI', 'DO', 'OD', 'RN', 'NR', 'CG', 'GC', 'UO', 'OU', 'VW', 'WV'], true);
     }
 
     /**
