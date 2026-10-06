@@ -65,16 +65,21 @@ final class AptitudeManualQuestionParser
                 && !preg_match('/[A-Da-d][\.\):]/u', $trim)) {
                 continue;
             }
+            $questionPart = self::stripLeadingQuestionNumber(self::stripDirectionsRangeLabel($trim));
             if ($qNum !== null && isset($passageForQuestion[$qNum])) {
-                $trim = $passageForQuestion[$qNum] . "\n\n" . self::stripDirectionsRangeLabel($trim);
+                $trim = $passageForQuestion[$qNum] . "\n\n" . $questionPart;
             } else {
-                $trim = self::stripDirectionsRangeLabel($trim);
+                $trim = $questionPart;
             }
             $parsed = $this->parseQuestionBlock($trim);
             if ($parsed !== null) {
                 if ($qNum !== null && empty($parsed['questionNumber'])) {
                     $parsed['questionNumber'] = $qNum;
                 }
+                $parsed['prompt'] = self::stripEmbeddedQuestionNumber(
+                    (string) ($parsed['prompt'] ?? ''),
+                    (int) ($parsed['questionNumber'] ?? $qNum ?? 0)
+                );
                 $out[] = $parsed;
             }
         }
@@ -434,6 +439,30 @@ final class AptitudeManualQuestionParser
         return trim($text);
     }
 
+    /** Strip leading "7)" / "Q7." — UI already shows Q7. */
+    public static function stripLeadingQuestionNumber(string $text): string
+    {
+        $text = preg_replace('/^\s*(?:Q(?:uestion)?\s*)?\d{1,4}[\.\):]\s*/iu', '', $text) ?? $text;
+        $text = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $text) ?? $text;
+
+        return trim($text);
+    }
+
+    /** Remove a mid-prompt "7)" before the actual question when Q number is known. */
+    public static function stripEmbeddedQuestionNumber(string $prompt, int $qNum): string
+    {
+        $prompt = trim($prompt);
+        if ($prompt === '' || $qNum <= 0) {
+            return self::stripLeadingQuestionNumber($prompt);
+        }
+        $n = preg_quote((string) $qNum, '/');
+        // "…P. 7) Who sits" / newline "7) Who sits"
+        $prompt = preg_replace('/(^|[\n\r]\s*|\.\s+)(?:Q(?:uestion)?\s*)?' . $n . '[\.\):]\s+/iu', '$1', $prompt) ?? $prompt;
+        $prompt = preg_replace('/\s+' . $n . '\)\s+/u', ' ', $prompt) ?? $prompt;
+
+        return trim(self::stripLeadingQuestionNumber($prompt));
+    }
+
     private function leadingQuestionNumber(string $block): ?int
     {
         if (preg_match('/^\s*(?:Q(?:uestion)?\s*)?(\d{1,4})[\.\):]/iu', $block, $m)) {
@@ -529,7 +558,7 @@ final class AptitudeManualQuestionParser
                     continue;
                 }
 
-                $prompt = $qNum . ') ' . $promptBody;
+                $prompt = $promptBody;
                 $optionList = array_slice(array_values($options), 0, 5);
                 while (count($optionList) < 4) {
                     $optionList[] = '—';
@@ -634,7 +663,7 @@ final class AptitudeManualQuestionParser
                     continue;
                 }
 
-                $prompt = $qNum . ') ' . $promptBody;
+                $prompt = $promptBody;
                 $optionList = [];
                 foreach (['A', 'B', 'C', 'D', 'E'] as $letter) {
                     if (isset($options[$letter])) {

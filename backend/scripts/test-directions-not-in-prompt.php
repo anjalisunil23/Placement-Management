@@ -29,8 +29,16 @@ foreach ($r as $q) {
         echo "  FAIL Directions (N-M): label leaked into prompt\n";
         $failed++;
     }
+    if (preg_match('/(?<![0-9])' . preg_quote((string) $n, '/') . '\)\s/u', $prompt)) {
+        echo "  FAIL question number {$n}) leaked into prompt\n";
+        $failed++;
+    }
     if (!str_contains($prompt, 'Eight friends')) {
         echo "  FAIL passage body missing from prompt\n";
+        $failed++;
+    }
+    if (!str_contains($prompt, 'Who sits') && !str_contains($prompt, 'position of T')) {
+        echo "  FAIL question stem missing from prompt\n";
         $failed++;
     }
 }

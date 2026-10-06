@@ -151,6 +151,8 @@ SYS;
                 $prompt = $directions . "\n\n" . $prompt;
             }
             $prompt = AptitudeManualQuestionParser::stripDirectionsRangeLabel(trim($prompt));
+            $qNum = max(0, (int) ($row['questionNumber'] ?? 0));
+            $prompt = AptitudeManualQuestionParser::stripEmbeddedQuestionNumber($prompt, $qNum);
             if ($prompt === '') {
                 continue;
             }
@@ -169,7 +171,6 @@ SYS;
             $section = trim((string) ($row['section'] ?? ''));
             $category = $section !== '' ? $section : 'General Aptitude';
             $sourcePage = max(0, (int) ($row['sourcePage'] ?? 0));
-            $qNum = max(0, (int) ($row['questionNumber'] ?? 0));
             $confidence = (float) ($row['confidence'] ?? 0.85);
             if ($confidence < 0 || $confidence > 1) {
                 $confidence = 0.85;
