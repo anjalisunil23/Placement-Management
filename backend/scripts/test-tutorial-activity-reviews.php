@@ -304,6 +304,38 @@ try {
     ]);
     $check(($again['review']['status'] ?? '') === 'reviewed', '11 repeated finalization is handled safely');
 
+    // 11b editing a finalized review stays reviewed (does not demote to pending)
+    $edited = $activities->saveReviewManaged($staff, $tutorialId, $attemptId, [
+        'score' => 9,
+        'maxScore' => 10,
+        'feedback' => 'Updated feedback after finalize',
+        'privateNotes' => 'Edited notes',
+        'passed' => true,
+    ]);
+    $check(
+        ($edited['review']['status'] ?? '') === 'reviewed'
+        && (float) ($edited['review']['score'] ?? 0) === 9.0
+        && ($edited['review']['feedback'] ?? '') === 'Updated feedback after finalize',
+        '11b editing a finalized review stays in reviewed status'
+    );
+    $reviewedOnly = $activities->listSubmissionsManaged($staff, $tutorialId, ['status' => 'reviewed', 'limit' => 50]);
+    $pendingOnly = $activities->listSubmissionsManaged($staff, $tutorialId, ['status' => 'pending', 'limit' => 50]);
+    $inReviewed = false;
+    foreach (($reviewedOnly['submissions'] ?? []) as $row) {
+        if ((string) ($row['id'] ?? '') === $attemptId) {
+            $inReviewed = true;
+            break;
+        }
+    }
+    $inPending = false;
+    foreach (($pendingOnly['submissions'] ?? []) as $row) {
+        if ((string) ($row['id'] ?? '') === $attemptId) {
+            $inPending = true;
+            break;
+        }
+    }
+    $check($inReviewed && !$inPending, '11c reviewed queue excludes pending and includes edited review');
+
     // 12 activity edit does not alter historical review context
     $snapTitle = (string) ($detail['activitySnapshot']['title'] ?? '');
     $activities->update($staff, $tutorialId, $moduleId, $progId, [
@@ -324,8 +356,8 @@ try {
     $check(
         is_array($studentAttempt)
         && (($studentAttempt['review']['status'] ?? '') === 'reviewed')
-        && (($studentAttempt['review']['feedback'] ?? '') === 'Good work overall')
-        && (($studentAttempt['review']['score'] ?? null) == 8)
+        && (($studentAttempt['review']['feedback'] ?? '') === 'Updated feedback after finalize')
+        && (($studentAttempt['review']['score'] ?? null) == 9)
         && (($studentAttempt['autoResult']['status'] ?? '') === 'reviewed'),
         '14 student-visible feedback is returned after reviewed state'
     );

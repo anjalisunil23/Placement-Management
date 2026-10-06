@@ -1176,8 +1176,70 @@
     if (editable) bindModuleDrag(root);
   }
 
+  function clearModuleDropMarkers(root) {
+    root.querySelectorAll('[data-module-card]').forEach((card) => {
+      card.classList.remove('is-dragging', 'is-drop-target', 'is-drop-before', 'is-drop-after');
+    });
+  }
+
+  function moduleDropPlacement(card, clientY) {
+    const rect = card.getBoundingClientRect();
+    const placeAfter = clientY > rect.top + (rect.height / 2);
+    return {
+      toId: card.getAttribute('data-module-card') || '',
+      placeAfter,
+    };
+  }
+
+  function scrollAncestorsBy(node, dy) {
+    let el = node;
+    while (el && el !== document.body) {
+      if (el instanceof HTMLElement) {
+        const style = window.getComputedStyle(el);
+        const canScroll = (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflow === 'auto' || style.overflow === 'scroll')
+          && el.scrollHeight > el.clientHeight + 1;
+        if (canScroll) el.scrollTop += dy;
+      }
+      el = el.parentElement;
+    }
+    window.scrollBy(0, dy);
+  }
+
   function bindModuleDrag(root) {
     let dragId = '';
+    let lastClientY = 0;
+    let scrollRaf = 0;
+
+    const stopAutoScroll = () => {
+      if (scrollRaf) {
+        cancelAnimationFrame(scrollRaf);
+        scrollRaf = 0;
+      }
+    };
+
+    const tickAutoScroll = () => {
+      scrollRaf = 0;
+      if (!dragId) return;
+      const edge = 80;
+      const maxStep = 24;
+      const y = lastClientY;
+      let dy = 0;
+      if (y < edge) dy = -Math.max(6, Math.ceil(((edge - y) / edge) * maxStep));
+      else if (y > window.innerHeight - edge) dy = Math.max(6, Math.ceil(((y - (window.innerHeight - edge)) / edge) * maxStep));
+      if (dy) scrollAncestorsBy(root, dy);
+      scrollRaf = requestAnimationFrame(tickAutoScroll);
+    };
+
+    const startAutoScroll = () => {
+      if (!scrollRaf) scrollRaf = requestAnimationFrame(tickAutoScroll);
+    };
+
+    const onDragOverWindow = (event) => {
+      if (!dragId) return;
+      lastClientY = event.clientY;
+      startAutoScroll();
+    };
+
     root.querySelectorAll('[data-drag-module]').forEach((handle) => {
       handle.addEventListener('dragstart', (event) => {
         dragId = handle.getAttribute('data-drag-module') || '';
@@ -1189,6 +1251,9 @@
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', dragId);
         card.classList.add('is-dragging');
+        lastClientY = event.clientY;
+        document.addEventListener('dragover', onDragOverWindow);
+        startAutoScroll();
         try {
           event.dataTransfer.setDragImage(card, 24, 24);
         } catch {
@@ -1197,41 +1262,62 @@
       });
       handle.addEventListener('dragend', () => {
         dragId = '';
-        root.querySelectorAll('[data-module-card]').forEach((card) => {
-          card.classList.remove('is-dragging', 'is-drop-target');
-        });
+        stopAutoScroll();
+        document.removeEventListener('dragover', onDragOverWindow);
+        clearModuleDropMarkers(root);
       });
     });
+
     root.querySelectorAll('[data-module-card]').forEach((card) => {
       card.addEventListener('dragover', (event) => {
         if (!dragId && !(event.dataTransfer && event.dataTransfer.types.includes('text/plain'))) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
-        root.querySelectorAll('[data-module-card]').forEach((item) => item.classList.remove('is-drop-target'));
-        card.classList.add('is-drop-target');
+        lastClientY = event.clientY;
+        startAutoScroll();
+        const { placeAfter } = moduleDropPlacement(card, event.clientY);
+        root.querySelectorAll('[data-module-card]').forEach((item) => {
+          item.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
+        });
+        card.classList.add('is-drop-target', placeAfter ? 'is-drop-after' : 'is-drop-before');
       });
       card.addEventListener('dragleave', (event) => {
-        if (!card.contains(event.relatedTarget)) card.classList.remove('is-drop-target');
+        if (!card.contains(event.relatedTarget)) {
+          card.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
+        }
       });
       card.addEventListener('drop', (event) => {
         event.preventDefault();
-        card.classList.remove('is-drop-target');
+        event.stopPropagation();
         const fromId = (event.dataTransfer && event.dataTransfer.getData('text/plain')) || dragId;
-        const toId = card.getAttribute('data-module-card') || '';
-        if (!fromId || !toId || fromId === toId) return;
-        saveModuleOrder(fromId, toId).catch(fail);
+        const { toId, placeAfter } = moduleDropPlacement(card, event.clientY);
+        clearModuleDropMarkers(root);
+        stopAutoScroll();
+        document.removeEventListener('dragover', onDragOverWindow);
+        dragId = '';
+        if (!fromId || !toId) return;
+        saveModuleOrder(fromId, toId, placeAfter).catch(fail);
       });
     });
   }
 
-  async function saveModuleOrder(fromId, toId) {
-    if (!state.active || state.moduleReorderBusy) return;
-    const modules = [...(state.active.modules || [])];
+  function buildReorderedModules(modules, fromId, toId, placeAfter) {
     const from = modules.findIndex((row) => row.id === fromId);
-    const to = modules.findIndex((row) => row.id === toId);
-    if (from < 0 || to < 0 || from === to) return;
-    const [item] = modules.splice(from, 1);
-    modules.splice(to, 0, item);
+    const target = modules.findIndex((row) => row.id === toId);
+    if (from < 0 || target < 0) return null;
+    let insertAt = placeAfter ? target + 1 : target;
+    if (from === insertAt || from + 1 === insertAt) return null;
+    const next = [...modules];
+    const [item] = next.splice(from, 1);
+    if (from < insertAt) insertAt -= 1;
+    next.splice(insertAt, 0, item);
+    return next;
+  }
+
+  async function saveModuleOrder(fromId, toId, placeAfter = false) {
+    if (!state.active || state.moduleReorderBusy) return;
+    const modules = buildReorderedModules(state.active.modules || [], fromId, toId, placeAfter);
+    if (!modules) return;
     const previous = state.active.modules;
     state.active.modules = modules;
     renderModuleNav();
@@ -2781,7 +2867,7 @@
     const index = modules.findIndex((row) => row.id === id);
     const next = index + direction;
     if (index < 0 || next < 0 || next >= modules.length) return;
-    await saveModuleOrder(id, modules[next].id);
+    await saveModuleOrder(id, modules[next].id, direction > 0);
   }
 
   function findExercise(moduleId, exerciseId) {
@@ -2964,12 +3050,40 @@
     }
   }
 
-  async function openActivityReviews(tutorialId) {
-    if (!tutorialId) return;
-    state.reviewTutorialId = tutorialId;
+  function setReviewQueueTab(status) {
+    const next = status === 'reviewed' ? 'reviewed' : 'pending';
+    document.getElementById('reviewFilterStatus').value = next;
+    const pendingBtn = document.getElementById('reviewQueuePendingBtn');
+    const reviewedBtn = document.getElementById('reviewQueueReviewedBtn');
+    if (pendingBtn && reviewedBtn) {
+      pendingBtn.classList.toggle('btn-primary', next === 'pending');
+      pendingBtn.classList.toggle('btn-outline-secondary', next !== 'pending');
+      reviewedBtn.classList.toggle('btn-primary', next === 'reviewed');
+      reviewedBtn.classList.toggle('btn-outline-secondary', next !== 'reviewed');
+    }
+    const hint = document.getElementById('reviewQueueHint');
+    if (hint) {
+      hint.textContent = next === 'reviewed'
+        ? 'Already reviewed submissions — open one to view or edit feedback.'
+        : 'Only submissions waiting for a tutor review.';
+    }
+    const queueTitle = document.querySelector('#activityReviewQueue')?.previousElementSibling;
+    if (queueTitle && queueTitle.classList.contains('fw-semibold')) {
+      queueTitle.textContent = next === 'reviewed' ? 'Reviewed submissions' : 'Pending submissions';
+    }
+  }
+
+  function clearActivityReviewDetail() {
     state.reviewDetail = null;
     document.getElementById('activityReviewDetail').classList.add('d-none');
     document.getElementById('activityReviewEmpty').classList.remove('d-none');
+    document.getElementById('activityReviewEmpty').textContent = 'Select a submission to review.';
+  }
+
+  async function openActivityReviews(tutorialId) {
+    if (!tutorialId) return;
+    state.reviewTutorialId = tutorialId;
+    clearActivityReviewDetail();
     showStaffScreen('reviews');
     document.getElementById('activityReviewQueue').innerHTML = '<p class="text-muted-2 mb-0">Loading…</p>';
     try {
@@ -2981,7 +3095,7 @@
       moduleSelect.innerHTML = '<option value="">All modules</option>'
         + ((course.modules || []).map((row) => `<option value="${esc(row.id)}">${esc(row.title || 'Module')}</option>`).join(''));
       await populateReviewActivityFilter();
-      document.getElementById('reviewFilterStatus').value = 'pending';
+      setReviewQueueTab('pending');
       await loadActivityReviewQueue();
     } catch (err) {
       fail(err);
@@ -3035,8 +3149,11 @@
   function renderActivityReviewQueue() {
     const queue = document.getElementById('activityReviewQueue');
     const rows = state.reviewQueue || [];
+    const filterStatus = document.getElementById('reviewFilterStatus').value || 'pending';
     if (!rows.length) {
-      queue.innerHTML = '<p class="text-muted-2 mb-0">No submissions match these filters.</p>';
+      queue.innerHTML = filterStatus === 'reviewed'
+        ? '<p class="text-muted-2 mb-0">No reviewed submissions yet.</p>'
+        : '<p class="text-muted-2 mb-0">No pending submissions. Switch to Reviewed to view earlier feedback.</p>';
       return;
     }
     queue.innerHTML = rows.map((row) => {
@@ -3107,17 +3224,28 @@
     }
     const form = document.getElementById('activityReviewForm');
     const reviewable = detail.reviewable === true;
+    const alreadyReviewed = review.status === 'reviewed';
     form.classList.toggle('d-none', !reviewable);
-    document.getElementById('reviewFormNote').textContent = reviewable
-      ? 'Score fields are optional. Finalize makes feedback visible to the student.'
-      : 'This submission uses automated evaluation and cannot be manually overwritten.';
+    const heading = document.getElementById('reviewFormHeading');
+    if (heading) heading.textContent = alreadyReviewed ? 'Edit previous review' : 'Tutor review';
+    document.getElementById('reviewFormNote').textContent = !reviewable
+      ? 'This submission uses automated evaluation and cannot be manually overwritten.'
+      : (alreadyReviewed
+        ? 'This review was already shared with the student. Changes stay in the Reviewed queue and update what the student sees.'
+        : 'Score fields are optional. Finalize makes feedback visible to the student.');
     document.getElementById('reviewScore').value = review.score != null ? review.score : '';
     document.getElementById('reviewMaxScore').value = review.maxScore != null ? review.maxScore : 10;
     document.getElementById('reviewPassed').checked = review.passed === true;
     document.getElementById('reviewFeedback').value = review.feedback || '';
     document.getElementById('reviewPrivateNotes').value = review.privateNotes || '';
+    const draftBtn = document.getElementById('reviewSaveDraftBtn');
+    const finalizeBtn = document.getElementById('reviewFinalizeBtn');
+    const updateBtn = document.getElementById('reviewUpdateBtn');
+    if (draftBtn) draftBtn.classList.toggle('d-none', !reviewable || alreadyReviewed);
+    if (finalizeBtn) finalizeBtn.classList.toggle('d-none', !reviewable || alreadyReviewed);
+    if (updateBtn) updateBtn.classList.toggle('d-none', !reviewable || !alreadyReviewed);
     const disabled = !reviewable;
-    ['reviewScore', 'reviewMaxScore', 'reviewPassed', 'reviewFeedback', 'reviewPrivateNotes', 'reviewSaveDraftBtn', 'reviewFinalizeBtn']
+    ['reviewScore', 'reviewMaxScore', 'reviewPassed', 'reviewFeedback', 'reviewPrivateNotes', 'reviewSaveDraftBtn', 'reviewFinalizeBtn', 'reviewUpdateBtn']
       .forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.disabled = disabled;
@@ -3209,15 +3337,20 @@
       fail(err);
       return;
     }
+    const alreadyReviewed = (state.reviewDetail.review || {}).status === 'reviewed';
     const ok = await confirmAction({
-      title: 'Finalize review',
-      message: 'Finalize this review? Score and feedback become visible to the student.',
-      confirmText: 'Finalize',
+      title: alreadyReviewed ? 'Update review' : 'Finalize review',
+      message: alreadyReviewed
+        ? 'Update this review? The student will see the revised score and feedback.'
+        : 'Finalize this review? Score and feedback become visible to the student.',
+      confirmText: alreadyReviewed ? 'Update' : 'Finalize',
     });
     if (!ok) return;
     state.reviewBusy = true;
     document.getElementById('reviewFinalizeBtn').disabled = true;
     document.getElementById('reviewSaveDraftBtn').disabled = true;
+    const updateBtn = document.getElementById('reviewUpdateBtn');
+    if (updateBtn) updateBtn.disabled = true;
     try {
       const saved = await call(`/tutorials/manage/${encodeURIComponent(state.reviewTutorialId)}/activity-submissions/${encodeURIComponent(state.reviewDetail.id)}/review/finalize`, {
         method: 'POST',
@@ -3226,13 +3359,18 @@
       state.reviewDetail = saved;
       paintActivityReviewDetail();
       await loadActivityReviewQueue();
-      toast('Review finalized.', 'success');
+      toast(alreadyReviewed ? 'Review updated.' : 'Review finalized.', 'success');
+      if (!alreadyReviewed && (document.getElementById('reviewFilterStatus').value || 'pending') === 'pending') {
+        clearActivityReviewDetail();
+        document.getElementById('activityReviewEmpty').textContent = 'Review finalized. It now appears under Reviewed.';
+      }
     } catch (err) {
       fail(err);
     } finally {
       state.reviewBusy = false;
       document.getElementById('reviewFinalizeBtn').disabled = false;
       document.getElementById('reviewSaveDraftBtn').disabled = false;
+      if (updateBtn) updateBtn.disabled = false;
     }
   }
 
@@ -3338,12 +3476,25 @@
       populateReviewActivityFilter().catch(fail);
     });
     document.getElementById('reviewFilterApply').addEventListener('click', () => {
+      clearActivityReviewDetail();
       loadActivityReviewQueue().catch(fail);
+    });
+    document.querySelectorAll('[data-review-queue]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = btn.getAttribute('data-review-queue') || 'pending';
+        if ((document.getElementById('reviewFilterStatus').value || 'pending') === next) return;
+        setReviewQueueTab(next);
+        clearActivityReviewDetail();
+        loadActivityReviewQueue().catch(fail);
+      });
     });
     document.getElementById('reviewSaveDraftBtn').addEventListener('click', () => {
       saveActivityReviewDraft().catch(fail);
     });
     document.getElementById('reviewFinalizeBtn').addEventListener('click', () => {
+      finalizeActivityReview().catch(fail);
+    });
+    document.getElementById('reviewUpdateBtn').addEventListener('click', () => {
       finalizeActivityReview().catch(fail);
     });
     document.getElementById('builderPreview').addEventListener('click', () => {
@@ -3857,10 +4008,9 @@
   }
 
   function syncPracticeEmpty(questionCount) {
-    const activities = (learn.activities || []).filter(practiceMatchesLesson);
     const hasAssessment = !document.getElementById('studentAssessmentSection').classList.contains('d-none');
     const empty = document.getElementById('studentPracticeEmpty');
-    if (empty) empty.classList.toggle('d-none', !!(questionCount || activities.length || hasAssessment));
+    if (empty) empty.classList.toggle('d-none', !!(questionCount || hasAssessment));
     const hint = document.getElementById('studentPracticeHint');
     if (hint) {
       const lesson = (learn.lessons || [])[learn.lessonIndex];
@@ -4351,9 +4501,9 @@
       const actionLabel = latest && latest.status === 'IN_PROGRESS'
         ? 'Continue'
         : (latest && latest.status === 'SUBMITTED' ? 'View' : 'Open');
-      return `<div class="border rounded p-3" data-student-activity-card="${esc(row.id)}">
+      return `<div class="student-activity-card" data-student-activity-card="${esc(row.id)}">
         <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
-          <div class="flex-grow-1">
+          <div class="flex-grow-1 min-w-0">
             <div class="fw-semibold">${esc(row.title || 'Activity')}</div>
             <div class="small text-muted-2 mb-1">${esc(STUDENT_ACTIVITY_TYPE_LABELS[row.activityType] || row.activityType)} · ${esc(row.difficulty || 'beginner')} · ${esc(evalLabel)}</div>
             <div class="small mb-2">${esc(short || 'No instructions preview.')}</div>
@@ -4488,13 +4638,16 @@
       return;
     }
     if (type === 'programming_task') {
-      const source = Object.prototype.hasOwnProperty.call(payload, 'source')
-        ? payload.source
-        : (config.boilerplate || '');
+      let source = Object.prototype.hasOwnProperty.call(payload, 'source')
+        ? String(payload.source ?? '')
+        : '';
+      const starter = String(config.boilerplate || '');
+      // Older clients autofilled the starter into the response field.
+      if (!locked && starter !== '' && source === starter) source = '';
       root.innerHTML = `
         <label class="form-label" for="studentActSource">Your code <span class="text-muted-2">(${esc(languageLabel(config.language || 'text'))})</span></label>
-        <textarea class="form-control font-monospace" id="studentActSource" rows="12" spellcheck="false" ${disabled}>${esc(source)}</textarea>
-        <div class="form-text">Stored as text only. There is no Run or Execute button.</div>`;
+        <textarea class="form-control font-monospace" id="studentActSource" rows="12" spellcheck="false" placeholder="Type or paste your code here" ${disabled}>${esc(source)}</textarea>
+        <div class="form-text">Starts empty — use the starter code above as a reference if you need it. Stored as text only.</div>`;
     } else if (type === 'sql_query') {
       root.innerHTML = `
         <label class="form-label" for="studentActSql">Your SQL</label>
@@ -5254,20 +5407,47 @@
     });
   }
 
-  async function boot() {
-    if (typeof renderShell === 'function') renderShell('tutorials.html');
+  function revealTutorialShell() {
     const staff = document.getElementById('staffTutorialPage');
     const student = document.getElementById('studentTutorialPage');
-    if (!isAuthor()) {
-      student.classList.remove('d-none');
+    const loading = document.getElementById('tutorialBootLoading');
+    if (!staff || !student) return false;
+    const knownRole = role();
+    if (!knownRole) {
+      if (loading) loading.classList.remove('d-none');
       staff.classList.add('d-none');
-      bindStudent();
-      await loadStudentList();
+      student.classList.add('d-none');
+      return false;
+    }
+    if (loading) loading.classList.add('d-none');
+    const author = isAuthor();
+    staff.classList.toggle('d-none', !author);
+    student.classList.toggle('d-none', author);
+    return true;
+  }
+
+  let staffBound = false;
+  let studentBound = false;
+
+  async function boot() {
+    if (typeof renderShell === 'function') renderShell('tutorials.html');
+    revealTutorialShell();
+    if (!isAuthor()) {
+      if (!studentBound) {
+        bindStudent();
+        studentBound = true;
+      }
+      try {
+        await loadStudentList();
+      } catch (err) {
+        fail(err);
+      }
       return;
     }
-    staff.classList.remove('d-none');
-    student.classList.add('d-none');
-    bind();
+    if (!staffBound) {
+      bind();
+      staffBound = true;
+    }
     try {
       await Promise.all([loadCategories(), loadDepartments()]);
       await refreshList();
@@ -5276,5 +5456,13 @@
     }
   }
 
+  // Paint the staff/student shell from the cached session immediately so the
+  // main pane is not blank while app.js waits on /auth/me (staff never soft-skips).
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', revealTutorialShell, { once: true });
+  } else {
+    revealTutorialShell();
+  }
+  document.addEventListener('ph-ready', revealTutorialShell, { once: true });
   onAppReady(boot);
 })();

@@ -1243,9 +1243,11 @@ final class TutorialActivityService
         }
         $feedback = (string) ($input['feedback'] ?? '');
         $privateNotes = (string) ($input['privateNotes'] ?? '');
-        $status = $finalize ? 'reviewed' : 'pending';
-
         $existing = $this->reviews->findBySubmission((string) ($submission['_id'] ?? ''));
+        // Editing a finalized review must stay in the reviewed queue — never demote to pending.
+        $alreadyReviewed = is_array($existing) && (string) ($existing['status'] ?? '') === 'reviewed';
+        $status = ($finalize || $alreadyReviewed) ? 'reviewed' : 'pending';
+
         $payload = [
             'submissionId' => (string) ($submission['_id'] ?? ''),
             'activityId' => (string) ($submission['activityId'] ?? ''),
@@ -1259,7 +1261,7 @@ final class TutorialActivityService
         ];
         if (is_array($existing)) {
             // Idempotent finalize: already reviewed stays reviewed.
-            if ($finalize && (string) ($existing['status'] ?? '') === 'reviewed' && !$this->reviewInputChanged($existing, $payload)) {
+            if ($finalize && $alreadyReviewed && !$this->reviewInputChanged($existing, $payload)) {
                 return $this->managedSubmissionDetail($submission);
             }
             $this->reviews->updateReview((string) ($existing['_id'] ?? ''), $payload);
