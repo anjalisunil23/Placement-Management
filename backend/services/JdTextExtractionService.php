@@ -176,6 +176,13 @@ final class JdTextExtractionService
             "$1\n$2\n",
             $text
         ) ?? $text;
+        // Option glued to arrangement row: "None of these T 8 3 1 7 F J 5 % …"
+        $text = preg_replace(
+            '/(\b(?:these|above|follows?|determined|source)\b|[A-Ea-e][\.\)])\s+'
+            . '((?:[\p{L}\p{N}@#%©$₹*&□■â]\s+){7,}[\p{L}\p{N}@#%©$₹*&□■â])/u',
+            "$1\n$2",
+            $text
+        ) ?? $text;
         // Option line glued to a directions block (e.g. "e) 17 Directions (7 - 11):").
         $text = preg_replace('/(\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
         $text = preg_replace('/(\d{1,3}\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;

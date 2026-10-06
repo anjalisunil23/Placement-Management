@@ -86,6 +86,12 @@ final class AptitudeManualQuestionParser
                         )
                     )
                 );
+                // Drop a trailing arrangement token row glued onto unrelated prompts
+                // (keep it when this question is itself an arrangement item).
+                if (!JdTextExtractionService::mentionsSymbolArrangement((string) $parsed['prompt'])
+                    && !preg_match('/\babove\s+arrangement\b/iu', (string) $parsed['prompt'])) {
+                    $parsed['prompt'] = self::cutTrailingArrangementLine((string) $parsed['prompt']);
+                }
                 $parsed['prompt'] = $this->ensureArrangementLineOnPrompt(
                     (string) ($parsed['prompt'] ?? ''),
                     $text,
@@ -93,8 +99,10 @@ final class AptitudeManualQuestionParser
                 );
                 if (isset($parsed['options']) && is_array($parsed['options'])) {
                     $parsed['options'] = array_map(
-                        static fn ($o) => self::cutAtNextNumberedQuestion(
-                            self::cutAtNextStudyPassage(self::cutAtNextSectionHeading((string) $o))
+                        static fn ($o) => self::cutTrailingArrangementLine(
+                            self::cutAtNextNumberedQuestion(
+                                self::cutAtNextStudyPassage(self::cutAtNextSectionHeading((string) $o))
+                            )
                         ),
                         $parsed['options']
                     );
@@ -934,6 +942,11 @@ final class AptitudeManualQuestionParser
         $block = self::cutAtNextSectionHeading($block);
         $block = self::cutAtNextStudyPassage($block);
         $block = self::cutAtNextNumberedQuestion($block);
+        // If this block is a normal MCQ (has options) and ends with an arrangement row, drop the row.
+        if (preg_match('/[A-Ea-e][\.\)]|[a-eA-E]\)/u', $block) === 1
+            && !JdTextExtractionService::mentionsSymbolArrangement($block)) {
+            $block = self::cutTrailingArrangementLine($block);
+        }
         if (preg_match('/\([a-eA-E]\)|[a-eA-E]\)|[A-Ea-e][\.\):]/u', $block)
             && preg_match('/\s+Directions\s*:/iu', $block, $dm, PREG_OFFSET_CAPTURE)) {
             $block = trim(substr($block, 0, (int) $dm[0][1]));
@@ -944,6 +957,55 @@ final class AptitudeManualQuestionParser
         $stripped = self::cutAtNextNumberedQuestion($stripped);
 
         return trim($stripped ?? $block);
+    }
+
+    /**
+     * Remove a trailing letter/number/symbol arrangement token row glued onto option/prompt text.
+     * e.g. "None of these T 8 3 1 7 F J 5 % E R @ 4 D A 2 B © Q K"
+     */
+    public static function cutTrailingArrangementLine(string $text): string
+    {
+        $text = trim($text);
+        if ($text === '') {
+            return '';
+        }
+
+        // Whole last line is an arrangement row.
+        $lines = preg_split('/\n/u', $text) ?: [];
+        while ($lines !== [] && trim((string) end($lines)) === '') {
+            array_pop($lines);
+        }
+        if (count($lines) >= 2) {
+            $last = trim((string) end($lines));
+            if (JdTextExtractionService::isSymbolArrangementLine($last)
+                || JdTextExtractionService::isArrangementLineContinuation($last)) {
+                array_pop($lines);
+                // Also drop a short wrapped continuation above if present.
+                if ($lines !== []) {
+                    $prev = trim((string) end($lines));
+                    if (JdTextExtractionService::isSymbolArrangementLine($prev)) {
+                        array_pop($lines);
+                    }
+                }
+
+                return trim(implode("\n", $lines));
+            }
+        }
+
+        // Same-line glue: prose + arrangement tokens at end.
+        $tokenRun = '[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ●]';
+        if (preg_match(
+            '/^(.*?\S)\s+((?:' . $tokenRun . '\s+){7,}' . $tokenRun . ')\s*$/us',
+            $text,
+            $m
+        )) {
+            $tail = trim(preg_replace('/\s+/u', ' ', (string) $m[2]) ?? (string) $m[2]);
+            if (JdTextExtractionService::isSymbolArrangementLine($tail)) {
+                return trim((string) $m[1]);
+            }
+        }
+
+        return $text;
     }
 
     /**
@@ -1484,6 +1546,7 @@ final class AptitudeManualQuestionParser
         $text = self::cutAtNextSectionHeading($text);
         $text = self::cutAtNextStudyPassage($text);
         $text = self::cutAtNextNumberedQuestion($text);
+        $text = self::cutTrailingArrangementLine($text);
         $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
         $text = preg_replace('/\s+Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:.*$/iu', '', $text) ?? $text;
         $text = preg_replace('/\s+\d{1,3}\)\s+Study\s+the\s+following.*$/iu', '', $text) ?? $text;
@@ -1494,6 +1557,7 @@ final class AptitudeManualQuestionParser
             $text
         ) ?? $text;
         $text = preg_replace('/\s+\d{1,3}\)\s+\S.*$/u', '', $text) ?? $text;
+        $text = self::cutTrailingArrangementLine($text);
 
         return trim($text);
     }
