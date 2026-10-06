@@ -232,6 +232,14 @@
     align-items:flex-start;
   }
   #activityReviewView .row.g-3 > [class*="col-"] > .card-surface{height:100%}
+  .review-filter-card .form-label{margin-bottom:.35rem}
+  .review-filter-card .form-select-sm,
+  .review-filter-card .review-queue-toggle > .btn,
+  .review-filter-card .review-filter-apply{
+    min-height:2rem;
+  }
+  .review-filter-card .review-queue-toggle > .btn{flex:1 1 0}
+  .review-filter-card #reviewQueueHint{line-height:1.4}
   .ai-course-actions{position:sticky;top:.5rem;z-index:30;background:#fff}
   @media (min-width:992px){
     body:has(#studentLearnView:not(.d-none)) .page{
@@ -857,29 +865,30 @@
         <p class="page-sub mb-0" id="activityReviewCourseMeta">Review student submissions for this course.</p>
       </div>
     </div>
-    <div class="card-surface p-3 mb-3">
-      <div class="row g-2 align-items-end">
-        <div class="col-md-3">
+    <div class="card-surface p-3 mb-3 review-filter-card">
+      <div class="row g-3 align-items-end">
+        <div class="col-sm-6 col-lg-3">
           <label class="form-label" for="reviewFilterModule">Module</label>
           <select class="form-select form-select-sm" id="reviewFilterModule"><option value="">All modules</option></select>
         </div>
-        <div class="col-md-3">
+        <div class="col-sm-6 col-lg-3">
           <label class="form-label" for="reviewFilterActivity">Activity</label>
           <select class="form-select form-select-sm" id="reviewFilterActivity"><option value="">All activities</option></select>
         </div>
-        <div class="col-md-4">
+        <div class="col-sm-6 col-lg-4">
           <label class="form-label d-block">Review queue</label>
-          <div class="btn-group w-100" role="group" aria-label="Review queue">
+          <div class="btn-group review-queue-toggle w-100" role="group" aria-label="Review queue">
             <button type="button" class="btn btn-sm btn-primary" id="reviewQueuePendingBtn" data-review-queue="pending">Pending</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" id="reviewQueueReviewedBtn" data-review-queue="reviewed">Reviewed</button>
           </div>
           <input type="hidden" id="reviewFilterStatus" value="pending"/>
-          <div class="form-text" id="reviewQueueHint">Only submissions waiting for a tutor review.</div>
         </div>
-        <div class="col-md-2">
-          <button type="button" class="btn btn-sm btn-primary w-100" id="reviewFilterApply">Apply filters</button>
+        <div class="col-sm-6 col-lg-2">
+          <label class="form-label d-none d-lg-block">&nbsp;</label>
+          <button type="button" class="btn btn-sm btn-primary w-100 review-filter-apply" id="reviewFilterApply">Apply filters</button>
         </div>
       </div>
+      <p class="small text-muted-2 mb-0 mt-2" id="reviewQueueHint">Only submissions waiting for a tutor review.</p>
     </div>
     <div class="row g-3">
       <div class="col-lg-5">
@@ -1010,5 +1019,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261006uialign"></script>
+<script src="js/tutorials-page.js?v=20261006reviewfilters"></script>
 </body></html>
