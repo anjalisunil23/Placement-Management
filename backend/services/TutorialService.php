@@ -17,6 +17,7 @@ use PMS\Models\TutorialLessonQuestionModel;
 use PMS\Models\TutorialModel;
 use PMS\Models\TutorialModuleActivityModel;
 use PMS\Models\TutorialModuleActivitySubmissionModel;
+use PMS\Models\TutorialModuleAssessmentModel;
 use PMS\Models\TutorialModuleModel;
 use PMS\Models\TutorialTestCaseModel;
 use PMS\Models\UserModel;
@@ -2256,11 +2257,15 @@ final class TutorialService
     {
         $rawForOutline = $this->lessonContentString($module['content'] ?? '');
         $outline = $this->buildStudentLessons($rawForOutline, (string) ($module['title'] ?? 'Lesson'));
+        $moduleId = (string) ($module['_id'] ?? '');
+        $assessment = $moduleId !== '' ? (new TutorialModuleAssessmentModel())->findByModule($moduleId) : null;
         $view = [
-            'id' => (string) ($module['_id'] ?? ''),
+            'id' => $moduleId,
             'title' => (string) ($module['title'] ?? ''),
             'subtitle' => (string) ($module['subtitle'] ?? ''),
             'sortOrder' => (int) ($module['sortOrder'] ?? 0),
+            'hasPublishedAssessment' => is_array($assessment)
+                && (string) ($assessment['status'] ?? '') === 'published',
             'lessonOutline' => array_map(
                 static fn (array $lesson): array => [
                     'id' => (string) ($lesson['id'] ?? ''),

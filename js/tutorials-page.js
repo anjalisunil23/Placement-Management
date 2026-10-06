@@ -1049,7 +1049,7 @@
     const course = state.preview;
     const modules = (course && course.modules) || [];
     document.getElementById('previewNav').innerHTML = modules.map((module, i) => (
-      `<button type="button" class="btn btn-sm text-start ${i === index ? 'btn-primary' : 'btn-outline-secondary'}" data-preview-module="${i}">${esc(module.title)}</button>`
+      `<button type="button" class="btn btn-sm w-100 text-start ${i === index ? 'btn-primary' : 'btn-outline-secondary'}" data-preview-module="${i}">${i + 1}. ${esc(module.title)}</button>`
     )).join('') || '<p class="text-muted-2 mb-0">This course has no modules yet.</p>';
     document.querySelectorAll('[data-preview-module]').forEach((btn) => {
       btn.addEventListener('click', () => renderPreview(Number(btn.getAttribute('data-preview-module'))));
@@ -2239,7 +2239,7 @@
     const saved = state.assessment && state.assessment.status === 'published';
     if (saved && status === 'published') {
       note.className = 'alert alert-success py-2 small mb-3';
-      note.innerHTML = 'This assessment is <strong>Published</strong>. Students see <strong>Module assessment</strong> in the Practice panel for this module.';
+      note.innerHTML = 'This assessment is <strong>Published</strong>. Students open it from the course contents list as a separate <strong>Module assessment</strong> page.';
       return;
     }
     note.className = 'alert alert-warning py-2 small mb-3';
@@ -2293,7 +2293,7 @@
       renderAssessmentQuestions();
       syncAssessmentVisibilityNote();
       if ((state.assessment && state.assessment.status) === 'published') {
-        toast('Assessment published. Students can take it in Practice → Module assessment.', 'success');
+        toast('Assessment published. Students open Module assessment from the course contents list.', 'success');
       } else {
         toast('Assessment saved as draft. Students cannot see it until you publish.', 'success');
       }
@@ -2312,7 +2312,7 @@
     }
     const settings = assessmentSettingsFromForm();
     const total = questions.reduce((sum, row) => sum + (Number(row.marks) || 1), 0);
-    body.innerHTML = `<div class="mb-2"><strong>${esc(settings.title)}</strong> · ${questions.length} questions · ${total} marks · pass ${settings.passPercent}%</div>`
+    body.innerHTML = `<div class="mb-2"><strong>${esc(settings.title)}</strong> · ${questions.length} questions · ${total} marks · need ${settings.passPercent}% to pass</div>`
       + questions.map((row, index) => (
         `<div class="mb-3"><div class="fw-semibold">Q${index + 1}. ${esc(row.question || '')}</div>
         ${(row.options || []).map((opt, oi) => `<div class="form-check"><input class="form-check-input" type="radio" disabled/><label class="form-check-label">${String.fromCharCode(65 + oi)}. ${esc(opt)}</label></div>`).join('')}</div>`
@@ -3637,6 +3637,7 @@
     practiceIndex: 0,
     practiceSelection: {},
     practiceFeedback: null,
+    viewMode: 'lesson',
     assessment: null,
     assessmentAttemptId: null,
     assessmentAnswers: {},
@@ -3902,6 +3903,26 @@
     return flags[`${moduleId}:${lessonId}`] === true;
   }
 
+  function moduleHasPublishedAssessment(module, index) {
+    if (module && module.hasPublishedAssessment === true) return true;
+    return index === learn.moduleIndex && !!(learn.assessment && learn.assessment.assessment);
+  }
+
+  function setStudentViewMode(mode) {
+    learn.viewMode = mode === 'assessment' ? 'assessment' : 'lesson';
+    const workspace = document.getElementById('studentWorkspace');
+    const lessonView = document.getElementById('studentLessonView');
+    const assessmentPage = document.getElementById('studentAssessmentPage');
+    const practiceCol = document.getElementById('studentPracticeColumn');
+    const badge = document.getElementById('studentLearnBadge');
+    const isAssessment = learn.viewMode === 'assessment';
+    if (workspace) workspace.classList.toggle('is-assessment-view', isAssessment);
+    if (lessonView) lessonView.classList.toggle('d-none', isAssessment);
+    if (assessmentPage) assessmentPage.classList.toggle('d-none', !isAssessment);
+    if (practiceCol) practiceCol.classList.toggle('d-none', isAssessment);
+    if (badge) badge.textContent = isAssessment ? 'Assessment' : 'Learn';
+  }
+
   function renderStudentModuleNav() {
     const modules = (learn.detail && learn.detail.modules) || [];
     const root = document.getElementById('studentModuleNav');
@@ -3915,23 +3936,24 @@
       const lessons = lessonOutlineFor(module, index);
       const markedIds = (learn.progress && learn.progress.completedModuleIds) || [];
       const moduleReady = markedIds.includes(module.id) || ((learn.progress && learn.progress.workspace && learn.progress.workspace.readyModuleIds) || []).includes(module.id);
-      const hasPublishedAssessment = index === learn.moduleIndex && !!(learn.assessment && learn.assessment.assessment);
-      const assessmentButton = expanded && hasPublishedAssessment
-        ? `<button type="button" class="btn btn-sm student-lesson btn-outline-primary" data-student-assessment-jump="${index}"><span class="me-1" aria-hidden="true">▣</span>Module assessment</button>`
-        : '';
+      const hasPublishedAssessment = moduleHasPublishedAssessment(module, index);
+      const assessmentActive = learn.viewMode === 'assessment' && index === learn.moduleIndex;
       const lessonButtons = expanded ? `<div class="student-lessons">${lessons.map((lesson, lessonIndex) => {
-        const active = index === learn.moduleIndex && lessonIndex === learn.lessonIndex;
+        const active = learn.viewMode === 'lesson' && index === learn.moduleIndex && lessonIndex === learn.lessonIndex;
         const done = lessonIsComplete(module.id, lesson.id);
         return `<button type="button" class="btn btn-sm student-lesson ${active ? 'btn-primary is-active' : 'btn-outline-secondary'}" data-student-lesson-jump="${index}:${lessonIndex}"><span class="me-1" aria-hidden="true">${done ? '✓' : '○'}</span>${esc(lesson.title || ('Lesson ' + (lessonIndex + 1)))}</button>`;
-      }).join('')}${assessmentButton}</div>` : '';
-      return `<div class="student-module ${index === learn.moduleIndex ? 'is-active' : ''}">
+      }).join('')}</div>` : '';
+      const assessmentEntry = hasPublishedAssessment
+        ? `<button type="button" class="student-assessment-nav ${assessmentActive ? 'is-active' : ''}" data-student-assessment-jump="${index}">Module assessment · Module ${index + 1}</button>`
+        : '';
+      return `<div class="student-module ${index === learn.moduleIndex && learn.viewMode === 'lesson' ? 'is-active' : ''}">
         <button type="button" class="student-module-toggle" data-student-module="${index}" aria-expanded="${expanded ? 'true' : 'false'}">
           <span class="me-1" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
           <span class="me-1" aria-hidden="true">${moduleReady ? '✓' : '○'}</span>
           Module ${index + 1}: ${esc(module.title || 'Module')}
         </button>
         ${lessonButtons}
-      </div>`;
+      </div>${assessmentEntry}`;
     }).join('');
     root.querySelectorAll('[data-student-module]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -3940,7 +3962,7 @@
         if (!module) return;
         const wasExpanded = learn.expandedModules[module.id] === true || (learn.expandedModules[module.id] !== false && index === learn.moduleIndex);
         learn.expandedModules[module.id] = !wasExpanded;
-        if (index !== learn.moduleIndex) {
+        if (index !== learn.moduleIndex || learn.viewMode === 'assessment') {
           learn.expandedModules[module.id] = true;
           showStudentModule(index).catch(fail);
           return;
@@ -3960,23 +3982,9 @@
     root.querySelectorAll('[data-student-assessment-jump]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const moduleIndex = Number(btn.getAttribute('data-student-assessment-jump'));
-        if (moduleIndex !== learn.moduleIndex) {
-          showStudentModule(moduleIndex).then(() => focusStudentAssessment()).catch(fail);
-          return;
-        }
-        focusStudentAssessment();
+        openStudentAssessmentPage(moduleIndex).catch(fail);
       });
     });
-  }
-
-  function focusStudentAssessment() {
-    const section = document.getElementById('studentAssessmentSection');
-    if (!section || section.classList.contains('d-none')) return;
-    const panel = section.closest('.student-practice-panel');
-    section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    if (panel) panel.scrollTop = Math.max(0, section.offsetTop - 12);
-    const startBtn = document.getElementById('studentAssessmentStartBtn');
-    if (startBtn) startBtn.focus({ preventScroll: true });
   }
 
   function currentLessonId() {
@@ -4000,21 +4008,24 @@
     const prev = document.getElementById('studentPrevModule');
     const next = document.getElementById('studentNextModule');
     if (!prev || !next) return;
-    const atFirst = learn.moduleIndex <= 0 && learn.lessonIndex <= 0;
+    const inAssessment = learn.viewMode === 'assessment';
+    const atFirst = !inAssessment && learn.moduleIndex <= 0 && learn.lessonIndex <= 0;
     const lastLesson = learn.lessonIndex >= Math.max(lessons.length - 1, 0);
-    const atLast = learn.moduleIndex >= modules.length - 1 && lastLesson;
-    prev.disabled = atFirst || !modules.length;
-    next.disabled = atLast || !modules.length;
-    prev.textContent = 'Previous lesson';
-    next.textContent = !atLast && lastLesson && learn.moduleIndex < modules.length - 1 ? 'Continue to next module' : 'Next lesson';
+    const atLast = !inAssessment && learn.moduleIndex >= modules.length - 1 && lastLesson;
+    prev.disabled = inAssessment ? false : (atFirst || !modules.length);
+    next.disabled = inAssessment ? (learn.moduleIndex >= modules.length - 1) : (atLast || !modules.length);
+    prev.textContent = inAssessment ? 'Back to lessons' : 'Previous lesson';
+    next.textContent = inAssessment
+      ? (learn.moduleIndex < modules.length - 1 ? 'Next module' : 'Next lesson')
+      : (!atLast && lastLesson && learn.moduleIndex < modules.length - 1 ? 'Continue to next module' : 'Next lesson');
     const markLesson = document.getElementById('studentMarkLesson');
     const module = modules[learn.moduleIndex];
     const lesson = lessons[learn.lessonIndex];
     if (markLesson) {
       const hasPractice = (learn.practiceQuestions || []).length > 0;
       const done = module && lesson ? lessonIsComplete(module.id, lesson.id) : false;
-      markLesson.classList.toggle('d-none', hasPractice);
-      markLesson.disabled = !module || !lesson;
+      markLesson.classList.toggle('d-none', inAssessment || hasPractice);
+      markLesson.disabled = inAssessment || !module || !lesson;
       markLesson.textContent = done ? 'Mark lesson incomplete' : 'Mark lesson complete';
       markLesson.classList.toggle('btn-outline-secondary', !done);
       markLesson.classList.toggle('btn-outline-warning', done);
@@ -4023,7 +4034,8 @@
     const finishModule = document.getElementById('studentFinishModule');
     if (finishModule) {
       const marked = module && ((learn.progress && learn.progress.completedModuleIds) || []).includes(module.id);
-      finishModule.disabled = !module;
+      finishModule.classList.toggle('d-none', inAssessment);
+      finishModule.disabled = inAssessment || !module;
       finishModule.textContent = marked ? 'Mark module incomplete' : 'Finish module';
       finishModule.classList.toggle('btn-success', !marked);
       finishModule.classList.toggle('btn-outline-warning', !!marked);
@@ -4036,6 +4048,7 @@
     const backdrop = document.getElementById('studentNavBackdrop');
     if (courseNav) courseNav.classList.remove('is-open');
     if (backdrop) backdrop.classList.remove('is-open');
+    setStudentViewMode('lesson');
     const lessons = learn.lessons || [];
     const lessonHeading = document.getElementById('studentLessonHeading');
     if (!lessons.length) {
@@ -4090,9 +4103,8 @@
   }
 
   function syncPracticeEmpty(questionCount) {
-    const hasAssessment = !document.getElementById('studentAssessmentSection').classList.contains('d-none');
     const empty = document.getElementById('studentPracticeEmpty');
-    if (empty) empty.classList.toggle('d-none', !!(questionCount || hasAssessment));
+    if (empty) empty.classList.toggle('d-none', !!questionCount);
     const hint = document.getElementById('studentPracticeHint');
     if (hint) {
       const lesson = (learn.lessons || [])[learn.lessonIndex];
@@ -4217,6 +4229,16 @@
     const modules = (learn.detail && learn.detail.modules) || [];
     const lessons = learn.lessons || [];
     if (!modules.length) return;
+    if (learn.viewMode === 'assessment') {
+      if (delta < 0) {
+        await showStudentLesson(learn.lessonIndex);
+        return;
+      }
+      if (delta > 0 && learn.moduleIndex < modules.length - 1) {
+        await showStudentModule(learn.moduleIndex + 1);
+      }
+      return;
+    }
     let moduleIndex = learn.moduleIndex;
     let lessonIndex = learn.lessonIndex + delta;
     if (lessonIndex >= 0 && lessonIndex < lessons.length) {
@@ -4268,10 +4290,9 @@
     }
     const modules = (learn.detail && learn.detail.modules) || [];
     renderStudentModuleNav();
-    document.getElementById('studentAssessmentSection').classList.add('d-none');
-    document.getElementById('studentAssessmentAttempt').classList.add('d-none');
-    document.getElementById('studentAssessmentResults').classList.add('d-none');
+    resetStudentAssessmentUi(false);
     resetStudentActivityUi();
+    setStudentViewMode('lesson');
     if (!modules.length) {
       learn.lessons = [];
       learn.lessonIndex = 0;
@@ -4323,52 +4344,107 @@
     await showStudentLesson(learn.lessonIndex);
   }
 
-  function resetStudentAssessmentUi() {
-    learn.assessment = null;
-    learn.assessmentAttemptId = null;
-    learn.assessmentAnswers = {};
-    learn.assessmentQuestionIndex = 0;
-    learn.assessmentResult = null;
-    document.getElementById('studentAssessmentSection').classList.add('d-none');
-    document.getElementById('studentAssessmentAttempt').classList.add('d-none');
-    document.getElementById('studentAssessmentResults').classList.add('d-none');
+  function resetStudentAssessmentUi(clearData = true) {
+    if (clearData) {
+      learn.assessment = null;
+      learn.assessmentAttemptId = null;
+      learn.assessmentAnswers = {};
+      learn.assessmentQuestionIndex = 0;
+      learn.assessmentResult = null;
+    }
+    const attempt = document.getElementById('studentAssessmentAttempt');
+    const results = document.getElementById('studentAssessmentResults');
+    const intro = document.getElementById('studentAssessmentIntro');
+    if (attempt) {
+      attempt.classList.add('d-none');
+      attempt.innerHTML = '';
+    }
+    if (results) {
+      results.classList.add('d-none');
+      results.innerHTML = '';
+    }
+    if (intro && clearData) intro.innerHTML = '';
   }
 
   async function loadStudentAssessment() {
-    resetStudentAssessmentUi();
+    resetStudentAssessmentUi(true);
     if (!learn.detail || !learn.module) return;
     try {
       const data = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/assessment`);
       learn.assessment = data;
-      renderStudentAssessmentIntro();
+      const modules = (learn.detail && learn.detail.modules) || [];
+      const summary = modules[learn.moduleIndex];
+      if (summary) summary.hasPublishedAssessment = true;
+      renderStudentModuleNav();
     } catch (err) {
-      if (err && err.status === 404) return;
+      if (err && err.status === 404) {
+        const modules = (learn.detail && learn.detail.modules) || [];
+        const summary = modules[learn.moduleIndex];
+        if (summary) summary.hasPublishedAssessment = false;
+        renderStudentModuleNav();
+        return;
+      }
       /* Missing assessment must not block lesson study. */
     }
   }
 
+  async function openStudentAssessmentPage(moduleIndex) {
+    const modules = (learn.detail && learn.detail.modules) || [];
+    if (!modules.length) return;
+    const index = typeof moduleIndex === 'number' ? moduleIndex : learn.moduleIndex;
+    if (index !== learn.moduleIndex || !learn.module) {
+      await showStudentModule(index);
+    }
+    if (!learn.assessment || !learn.assessment.assessment) {
+      await loadStudentAssessment();
+    }
+    if (!learn.assessment || !learn.assessment.assessment) {
+      toast('No published assessment for this module yet.', 'error');
+      await showStudentLesson(learn.lessonIndex);
+      return;
+    }
+    const courseNav = document.getElementById('studentCourseNav');
+    const backdrop = document.getElementById('studentNavBackdrop');
+    if (courseNav) courseNav.classList.remove('is-open');
+    if (backdrop) backdrop.classList.remove('is-open');
+    setStudentViewMode('assessment');
+    document.getElementById('studentModulePosition').textContent = `Module ${learn.moduleIndex + 1} of ${modules.length} · Assessment`;
+    document.getElementById('studentModuleHeading').textContent = (learn.assessment.assessment && learn.assessment.assessment.title) || 'Module assessment';
+    const subtitle = document.getElementById('studentModuleSubtitle');
+    if (subtitle) subtitle.textContent = `Quiz for ${(learn.module && learn.module.title) || 'this module'}`;
+    const lessonHeading = document.getElementById('studentLessonHeading');
+    if (lessonHeading) {
+      lessonHeading.textContent = '';
+      lessonHeading.classList.add('d-none');
+    }
+    renderStudentAssessmentIntro();
+    if (learn.assessmentResult) renderStudentAssessmentResults(learn.assessmentResult);
+    if (learn.assessmentAttemptId && !learn.assessmentResult) renderStudentAssessmentAttempt();
+    renderStudentModuleNav();
+    updateLessonNavButtons();
+  }
+
   function renderStudentAssessmentIntro() {
     const data = learn.assessment;
-    if (!data || !data.assessment) return;
-    const section = document.getElementById('studentAssessmentSection');
     const intro = document.getElementById('studentAssessmentIntro');
+    if (!intro || !data || !data.assessment) return;
     const a = data.assessment;
     const summaries = (data.attemptSummaries || []).filter((row) => row.status === 'SUBMITTED');
-    section.classList.remove('d-none');
     intro.innerHTML = `
-      <div class="fw-semibold">${esc(a.title || 'Module quiz')}</div>
-      <div class="small text-muted-2 mb-2">${a.questionCount || 0} questions · ${a.totalMarks || 0} marks · pass ${a.passPercent || 60}% · ${data.attemptsRemaining || 0} attempt(s) left</div>
-      ${summaries.length ? `<div class="small mb-2">Best recent: ${summaries.map((row) => `#${row.attemptNumber} ${row.percent}% ${row.passed ? 'Pass' : 'Fail'}`).join(' · ')}</div>` : ''}
+      <div class="fw-semibold mb-1">${esc(a.title || 'Module quiz')}</div>
+      <div class="small text-muted-2 mb-3">${a.questionCount || 0} questions · ${a.totalMarks || 0} marks · need ${a.passPercent || 60}% to pass · ${data.attemptsRemaining || 0} attempt(s) left</div>
+      ${summaries.length ? `<div class="small mb-3">Best recent: ${summaries.map((row) => `#${row.attemptNumber} ${row.percent}% ${row.passed ? 'Pass' : 'Fail'}`).join(' · ')}</div>` : ''}
+      <p class="small text-muted-2 mb-3">This is a separate module quiz. Lesson practice questions stay on each lesson page.</p>
       <button type="button" class="btn btn-sm btn-primary" id="studentAssessmentStartBtn" ${(data.attemptsRemaining || 0) <= 0 && !data.inProgressAttemptId ? 'disabled' : ''}>${data.inProgressAttemptId ? 'Continue assessment' : 'Start assessment'}</button>
     `;
     const startBtn = document.getElementById('studentAssessmentStartBtn');
     if (startBtn) startBtn.addEventListener('click', () => startStudentAssessment().catch(fail));
-    renderStudentModuleNav();
-    syncPracticeEmpty((learn.practiceQuestions || []).length);
   }
 
   async function startStudentAssessment() {
     if (!learn.detail || !learn.module || !learn.assessment) return;
+    if (learn.viewMode !== 'assessment') await openStudentAssessmentPage(learn.moduleIndex);
+    if (!learn.assessment || !learn.assessment.assessment) return;
     const started = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(learn.module.id)}/assessment/start`, {
       method: 'POST',
       body: {},
@@ -4377,7 +4453,11 @@
     learn.assessmentAnswers = {};
     learn.assessmentQuestionIndex = 0;
     learn.assessmentResult = null;
-    document.getElementById('studentAssessmentResults').classList.add('d-none');
+    const results = document.getElementById('studentAssessmentResults');
+    if (results) {
+      results.classList.add('d-none');
+      results.innerHTML = '';
+    }
     renderStudentAssessmentAttempt();
   }
 
@@ -4471,7 +4551,7 @@
     const review = result.review || [];
     root.innerHTML = `
       <div class="fw-semibold mb-1">${result.passed ? 'Passed' : 'Not passed'}</div>
-      <div class="mb-3">${result.score}/${result.totalMarks} · ${result.percent}% (pass ${result.passPercent}%)</div>
+      <div class="mb-3">${result.score}/${result.totalMarks} · you scored ${result.percent}% · need ${result.passPercent}% to pass</div>
       ${review.length ? review.map((row, index) => (
         `<div class="border rounded p-2 mb-2">
           <div class="fw-semibold">Q${index + 1}. ${esc(row.question || '')}</div>
