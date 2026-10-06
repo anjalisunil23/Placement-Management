@@ -1987,9 +1987,10 @@
     const answerKnown = q.answerKnown !== false && q.answerKnown !== 0;
     const correct = Math.max(0, Math.min(Math.max(displayOpts.length, 1) - 1, Number(q.correctIndex ?? 0)));
     const promptRaw = String(q.prompt || '').trim();
+    const promptWrapStyle = (isSc || isDs || /\n/.test(promptRaw)) ? ' style="white-space:pre-wrap"' : '';
     const promptBlock = /<[^>]+>/.test(promptRaw)
-      ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
-      : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
+      ? `<div class="mb-2 apt-q-card-text apt-rich"${promptWrapStyle}>${promptRaw}</div>`
+      : `<div class="mb-2 apt-q-card-text"${promptWrapStyle}>${esc(stripHtml(promptRaw) || 'Question')}</div>`;
     const metaParts = [];
     if (manualPreview && q.questionType === 'DATA_SUFFICIENCY') metaParts.push('Data sufficiency');
     else if (manualPreview && q.questionType === 'STATEMENTS_CONCLUSIONS') metaParts.push('Statements & conclusions');
