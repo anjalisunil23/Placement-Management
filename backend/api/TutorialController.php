@@ -220,6 +220,14 @@ final class TutorialController
         Response::success($this->service->lessonQuestionsForStaff($user, $tutorialId, $moduleId));
     }
 
+    public function similarTutorials(): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $topic = trim((string) ($_GET['topic'] ?? $_GET['q'] ?? ($this->body()['topic'] ?? '')));
+        $exclude = trim((string) ($_GET['excludeId'] ?? ($this->body()['excludeId'] ?? '')));
+        Response::success($this->service->findSimilarTutorials($user, $topic, $exclude !== '' ? $exclude : null));
+    }
+
     public function lessonPractice(string $tutorialId, string $moduleId, string $lessonId): void
     {
         $user = AuthMiddleware::authenticate();

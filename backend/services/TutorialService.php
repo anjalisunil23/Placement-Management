@@ -19,6 +19,7 @@ use PMS\Models\TutorialModuleActivityModel;
 use PMS\Models\TutorialModuleActivitySubmissionModel;
 use PMS\Models\TutorialModuleModel;
 use PMS\Models\TutorialTestCaseModel;
+use PMS\Models\UserModel;
 
 /**
  * Tutorial catalog, authoring, and student visibility.
@@ -54,6 +55,7 @@ final class TutorialService
         private ?StudentTutorialModuleProgressModel $moduleProgress = null,
         private ?StudentExerciseAttemptModel $attempts = null,
         private ?TutorialsCodeExecutionService $executor = null,
+        private ?UserModel $users = null,
     ) {
         $this->categories = $categories ?? new TutorialCategoryModel();
         $this->tutorials = $tutorials ?? new TutorialModel();
@@ -66,6 +68,7 @@ final class TutorialService
         $this->moduleProgress = $moduleProgress ?? new StudentTutorialModuleProgressModel();
         $this->attempts = $attempts ?? new StudentExerciseAttemptModel();
         $this->executor = $executor ?? new TutorialsCodeExecutionService();
+        $this->users = $users ?? new UserModel();
     }
 
     public function useCodeExecution(TutorialsCodeExecutionService $executor): void
@@ -658,7 +661,7 @@ final class TutorialService
      */
     public function lessonQuestionsForStaff(array $user, string $tutorialId, string $moduleId): array
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireViewableTutorial($user, $tutorialId);
         $module = $this->moduleOnTutorial($tutorialId, $moduleId);
         $lessons = $this->buildStudentLessons(
             $this->lessonContentString($module['content'] ?? ''),
@@ -749,12 +752,38 @@ final class TutorialService
     public function listManaged(array $user): array
     {
         $this->assertAuthor($user);
-        $rows = $this->canManageCampusTutorials($user)
-            ? $this->tutorials->findAll([], 500, 0, ['createdAt' => -1])
-            : $this->tutorials->listByCreator($this->userId($user));
+        $userId = $this->userId($user);
+        $byId = [];
+        foreach ($this->tutorials->listByStatus('published') as $row) {
+            $id = (string) ($row['_id'] ?? '');
+            if ($id !== '') {
+                $byId[$id] = $row;
+            }
+        }
+        foreach ($this->tutorials->listByCreator($userId) as $row) {
+            $id = (string) ($row['_id'] ?? '');
+            if ($id !== '') {
+                $byId[$id] = $row;
+            }
+        }
+        if ($this->canManageCampusTutorials($user)) {
+            foreach ($this->tutorials->listByStatus('unpublished') as $row) {
+                $id = (string) ($row['_id'] ?? '');
+                if ($id !== '') {
+                    $byId[$id] = $row;
+                }
+            }
+        }
+        $rows = array_values($byId);
+        usort($rows, static function (array $a, array $b): int {
+            return strcmp((string) ($b['createdAt'] ?? ''), (string) ($a['createdAt'] ?? ''));
+        });
         $out = [];
         foreach ($rows as $row) {
-            $view = $this->managedTutorial($row, false);
+            if (!$this->canViewManagedTutorial($user, $row)) {
+                continue;
+            }
+            $view = $this->managedTutorial($row, false, $user);
             $view['updatedAt'] = (string) ($row['updatedAt'] ?? '');
             $view['moduleCount'] = $this->modules->countForTutorial((string) ($row['_id'] ?? ''));
             $view['exerciseCount'] = $this->exerciseCount((string) ($row['_id'] ?? ''));
@@ -770,9 +799,84 @@ final class TutorialService
      */
     public function showManaged(array $user, string $id): array
     {
-        $row = $this->ownedTutorial($user, $id);
+        $row = $this->requireViewableTutorial($user, $id);
 
-        return $this->managedTutorial($row, true);
+        return $this->managedTutorial($row, true, $user);
+    }
+
+    /**
+     * Similar published (and own draft) tutorials for duplicate-topic awareness.
+     *
+     * @param array<string, mixed> $user
+     * @return array{matches: list<array<string, mixed>>, hasMatches: bool}
+     */
+    public function findSimilarTutorials(array $user, string $topicOrTitle, ?string $excludeTutorialId = null): array
+    {
+        $this->assertAuthor($user);
+        $needle = trim($topicOrTitle);
+        if ($needle === '') {
+            return ['matches' => [], 'hasMatches' => false];
+        }
+        $userId = $this->userId($user);
+        $excludeTutorialId = $excludeTutorialId !== null && $excludeTutorialId !== '' ? $excludeTutorialId : null;
+        $candidates = [];
+        foreach ($this->tutorials->listByStatus('published') as $row) {
+            $id = (string) ($row['_id'] ?? '');
+            if ($id !== '') {
+                $candidates[$id] = $row;
+            }
+        }
+        foreach ($this->tutorials->listByCreator($userId) as $row) {
+            $id = (string) ($row['_id'] ?? '');
+            $status = strtolower((string) ($row['status'] ?? ''));
+            if ($id !== '' && ($status === 'draft' || $status === 'unpublished')) {
+                $candidates[$id] = $row;
+            }
+        }
+        $matches = [];
+        foreach ($candidates as $row) {
+            $id = (string) ($row['_id'] ?? '');
+            if ($excludeTutorialId !== null && $id === $excludeTutorialId) {
+                continue;
+            }
+            $title = (string) ($row['title'] ?? '');
+            $topic = (string) ($row['topic'] ?? '');
+            if (!$this->topicsSimilar($needle, $title) && !$this->topicsSimilar($needle, $topic)) {
+                continue;
+            }
+            $isOwner = (string) ($row['createdBy'] ?? '') === $userId;
+            $matches[] = [
+                'id' => $id,
+                'title' => $title,
+                'topic' => $topic,
+                'status' => (string) ($row['status'] ?? ''),
+                'createdByName' => $this->creatorDisplayName((string) ($row['createdBy'] ?? ''), $isOwner),
+                'isOwner' => $isOwner,
+            ];
+            if (count($matches) >= 8) {
+                break;
+            }
+        }
+
+        return [
+            'matches' => $matches,
+            'hasMatches' => $matches !== [],
+        ];
+    }
+
+    /**
+     * Normalize a topic/title for deterministic duplicate comparison.
+     */
+    public static function normalizeTopicKey(string $value): string
+    {
+        $value = mb_strtolower(trim($value));
+        if ($value === '') {
+            return '';
+        }
+        $value = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $value) ?? '';
+        $value = preg_replace('/\s+/u', ' ', $value) ?? '';
+
+        return trim($value);
     }
 
     /**
@@ -786,7 +890,7 @@ final class TutorialService
         unset($input['createdBy'], $input['status'], $input['createdAt'], $input['_id']);
         $row = $this->tutorials->create($this->tutorialPayload($input, $this->userId($user), 'draft'));
 
-        return $this->managedTutorial($row, false);
+        return $this->managedTutorial($row, false, $user);
     }
 
     /**
@@ -796,7 +900,7 @@ final class TutorialService
      */
     public function updateTutorial(array $user, string $id, array $input): array
     {
-        $existing = $this->ownedTutorial($user, $id);
+        $existing = $this->requireMutableTutorial($user, $id);
         unset($input['createdBy'], $input['status'], $input['createdAt'], $input['_id']);
         $payload = $this->tutorialPayload($input, (string) ($existing['createdBy'] ?? ''), (string) ($existing['status'] ?? 'draft'));
         $row = $this->tutorials->updateTutorial($id, $payload);
@@ -804,7 +908,7 @@ final class TutorialService
             throw new \RuntimeException('Tutorial not found.', 404);
         }
 
-        return $this->managedTutorial($row, false);
+        return $this->managedTutorial($row, false, $user);
     }
 
     /**
@@ -812,7 +916,7 @@ final class TutorialService
      */
     public function deleteTutorial(array $user, string $id): void
     {
-        $this->ownedTutorial($user, $id);
+        $this->requireMutableTutorial($user, $id);
         foreach ($this->modules->listByTutorial($id) as $module) {
             $this->deleteModuleTree((string) ($module['_id'] ?? ''));
         }
@@ -825,7 +929,7 @@ final class TutorialService
      */
     public function publish(array $user, string $id): array
     {
-        $this->ownedTutorial($user, $id);
+        $this->requireMutableTutorial($user, $id);
         $check = $this->publishChecklist($user, $id);
         if (!$check['canPublish']) {
             throw new \InvalidArgumentException($check['errors'][0] ?? 'This course cannot be published yet.');
@@ -835,7 +939,7 @@ final class TutorialService
             throw new \RuntimeException('Tutorial not found.', 404);
         }
 
-        return $this->managedTutorial($row, false);
+        return $this->managedTutorial($row, false, $user);
     }
 
     /**
@@ -844,7 +948,7 @@ final class TutorialService
      */
     public function publishChecklist(array $user, string $id): array
     {
-        $existing = $this->ownedTutorial($user, $id);
+        $existing = $this->requireMutableTutorial($user, $id);
         $checks = [];
         $errors = [];
         $warnings = [];
@@ -920,13 +1024,13 @@ final class TutorialService
      */
     public function unpublish(array $user, string $id): array
     {
-        $this->ownedTutorial($user, $id);
+        $this->requireMutableTutorial($user, $id);
         $row = $this->tutorials->updateTutorial($id, ['status' => 'unpublished']);
         if ($row === null) {
             throw new \RuntimeException('Tutorial not found.', 404);
         }
 
-        return $this->managedTutorial($row, false);
+        return $this->managedTutorial($row, false, $user);
     }
 
     /**
@@ -970,7 +1074,7 @@ final class TutorialService
 
     public function createModule(array $user, string $tutorialId, array $input): array
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireMutableTutorial($user, $tutorialId);
         $row = $this->modules->create([
             'tutorialId' => $tutorialId,
             'title' => (string) ($input['title'] ?? ''),
@@ -989,7 +1093,7 @@ final class TutorialService
      */
     public function updateModule(array $user, string $tutorialId, string $moduleId, array $input): array
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireMutableTutorial($user, $tutorialId);
         $existing = $this->moduleOnTutorial($tutorialId, $moduleId);
         $row = $this->modules->updateModule($moduleId, [
             'tutorialId' => $tutorialId,
@@ -1012,7 +1116,7 @@ final class TutorialService
      */
     public function deleteModule(array $user, string $tutorialId, string $moduleId): void
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireMutableTutorial($user, $tutorialId);
         $this->moduleOnTutorial($tutorialId, $moduleId);
         $this->deleteModuleTree($moduleId);
     }
@@ -1024,7 +1128,7 @@ final class TutorialService
      */
     public function reorderModules(array $user, string $tutorialId, array $moduleIds): array
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireMutableTutorial($user, $tutorialId);
         $existing = $this->modules->listByTutorial($tutorialId);
         $known = [];
         foreach ($existing as $module) {
@@ -1067,7 +1171,7 @@ final class TutorialService
      */
     public function createExercise(array $user, string $tutorialId, string $moduleId, array $input): array
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireMutableTutorial($user, $tutorialId);
         $this->moduleOnTutorial($tutorialId, $moduleId);
         $instructions = trim(strip_tags(self::sanitizeHtml((string) ($input['instructions'] ?? ''))));
         if ($instructions === '') {
@@ -1096,7 +1200,7 @@ final class TutorialService
      */
     public function updateExercise(array $user, string $tutorialId, string $moduleId, string $exerciseId, array $input): array
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireMutableTutorial($user, $tutorialId);
         $this->moduleOnTutorial($tutorialId, $moduleId);
         $existing = $this->exerciseOnModule($moduleId, $exerciseId);
         $limits = $this->limits($input, (int) ($existing['timeLimitMs'] ?? 5000), (int) ($existing['memoryLimitKb'] ?? 128000));
@@ -1129,7 +1233,7 @@ final class TutorialService
      */
     public function reorderExercises(array $user, string $tutorialId, string $moduleId, array $exerciseIds): array
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireMutableTutorial($user, $tutorialId);
         $this->moduleOnTutorial($tutorialId, $moduleId);
         $existing = $this->exercises->listByModule($moduleId);
         $known = [];
@@ -1217,7 +1321,7 @@ final class TutorialService
      */
     public function deleteExercise(array $user, string $tutorialId, string $moduleId, string $exerciseId): void
     {
-        $this->ownedTutorial($user, $tutorialId);
+        $this->requireMutableTutorial($user, $tutorialId);
         $this->moduleOnTutorial($tutorialId, $moduleId);
         $this->exerciseOnModule($moduleId, $exerciseId);
         $this->deleteExerciseTree($exerciseId);
@@ -1625,20 +1729,69 @@ final class TutorialService
 
     /**
      * @param array<string, mixed> $user
+     * @param array<string, mixed> $row
+     */
+    private function canViewManagedTutorial(array $user, array $row): bool
+    {
+        $status = strtolower((string) ($row['status'] ?? ''));
+        if ($status === 'published') {
+            return true;
+        }
+        if ($status === 'unpublished' && $this->canManageCampusTutorials($user)) {
+            return true;
+        }
+
+        return (string) ($row['createdBy'] ?? '') === $this->userId($user);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $row
+     */
+    private function canMutateManagedTutorial(array $user, array $row): bool
+    {
+        if ((string) ($row['createdBy'] ?? '') === $this->userId($user)) {
+            return true;
+        }
+        $status = strtolower((string) ($row['status'] ?? ''));
+
+        return $this->canManageCampusTutorials($user) && $status !== 'draft';
+    }
+
+    /**
+     * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
-    private function ownedTutorial(array $user, string $id): array
+    private function requireViewableTutorial(array $user, string $id): array
+    {
+        $this->assertAuthor($user);
+        $row = $this->tutorials->findById($id);
+        if (!is_array($row) || !$this->canViewManagedTutorial($user, $row)) {
+            throw new \RuntimeException('Tutorial not found.', 404);
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireMutableTutorial(array $user, string $id): array
     {
         $this->assertAuthor($user);
         $row = $this->tutorials->findById($id);
         if (!is_array($row)) {
             throw new \RuntimeException('Tutorial not found.', 404);
         }
-        if (!$this->canManageCampusTutorials($user) && (string) ($row['createdBy'] ?? '') !== $this->userId($user)) {
-            throw new \RuntimeException('You can only change tutorials you created.', 403);
+        if ($this->canMutateManagedTutorial($user, $row)) {
+            return $row;
+        }
+        if (!$this->canViewManagedTutorial($user, $row)) {
+            throw new \RuntimeException('Tutorial not found.', 404);
         }
 
-        return $row;
+        throw new \RuntimeException('You can only change tutorials you created.', 403);
     }
 
     /**
@@ -1649,9 +1802,81 @@ final class TutorialService
     {
         $exercise = $this->requireExercise($exerciseId);
         $module = $this->requireModule((string) ($exercise['moduleId'] ?? ''));
-        $this->ownedTutorial($user, (string) ($module['tutorialId'] ?? ''));
+        $this->requireMutableTutorial($user, (string) ($module['tutorialId'] ?? ''));
 
         return $exercise;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function topicTokens(string $normalized): array
+    {
+        if ($normalized === '') {
+            return [];
+        }
+        $stop = [
+            'a', 'an', 'and', 'basics', 'course', 'for', 'fundamentals', 'in', 'into',
+            'introduction', 'of', 'on', 'the', 'to', 'tutorial', 'with',
+        ];
+        $tokens = [];
+        foreach (explode(' ', $normalized) as $token) {
+            if ($token === '' || in_array($token, $stop, true) || mb_strlen($token) < 2) {
+                continue;
+            }
+            $tokens[$token] = $token;
+        }
+
+        return array_values($tokens);
+    }
+
+    private function topicsSimilar(string $left, string $right): bool
+    {
+        $a = self::normalizeTopicKey($left);
+        $b = self::normalizeTopicKey($right);
+        if ($a === '' || $b === '') {
+            return false;
+        }
+        if ($a === $b) {
+            return true;
+        }
+        $shorter = mb_strlen($a) <= mb_strlen($b) ? $a : $b;
+        $longer = $shorter === $a ? $b : $a;
+        if (mb_strlen($shorter) >= 4 && str_contains($longer, $shorter)) {
+            return true;
+        }
+        $ta = $this->topicTokens($a);
+        $tb = $this->topicTokens($b);
+        if ($ta === [] || $tb === []) {
+            return false;
+        }
+        $setB = array_fill_keys($tb, true);
+        $overlap = 0;
+        foreach ($ta as $token) {
+            if (isset($setB[$token])) {
+                $overlap++;
+            }
+        }
+        if ($overlap === 0) {
+            return false;
+        }
+        $union = count(array_unique(array_merge($ta, $tb)));
+
+        return $union > 0 && ($overlap / $union) >= 0.6;
+    }
+
+    private function creatorDisplayName(string $createdBy, bool $isOwner): string
+    {
+        if ($isOwner) {
+            return 'You';
+        }
+        if ($createdBy === '') {
+            return 'Staff';
+        }
+        $creator = $this->users->findById($createdBy);
+        $name = trim((string) ($creator['name'] ?? ''));
+
+        return $name !== '' ? $name : 'Staff';
     }
 
     /**
@@ -1993,8 +2218,16 @@ final class TutorialService
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function managedTutorial(array $row, bool $withChildren): array
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed>|null $viewer
+     * @return array<string, mixed>
+     */
+    private function managedTutorial(array $row, bool $withChildren, ?array $viewer = null): array
     {
+        $createdBy = (string) ($row['createdBy'] ?? '');
+        $isOwner = is_array($viewer) && $createdBy !== '' && $createdBy === $this->userId($viewer);
+        $canEdit = is_array($viewer) ? $this->canMutateManagedTutorial($viewer, $row) : false;
         $view = [
             'id' => (string) ($row['_id'] ?? ''),
             'title' => (string) ($row['title'] ?? ''),
@@ -2006,7 +2239,10 @@ final class TutorialService
             'visibility' => (string) ($row['visibility'] ?? ''),
             'departmentIds' => array_values((array) ($row['departmentIds'] ?? [])),
             'passingYears' => array_values((array) ($row['passingYears'] ?? [])),
-            'createdBy' => (string) ($row['createdBy'] ?? ''),
+            'createdBy' => $createdBy,
+            'createdByName' => $this->creatorDisplayName($createdBy, $isOwner),
+            'isOwner' => $isOwner,
+            'canEdit' => $canEdit,
         ];
         if ($withChildren) {
             $view['modules'] = [];

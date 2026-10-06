@@ -35,7 +35,8 @@
     lesson: null,
     activeBlockId: '',
     insertAfterId: '',
-    statusFilter: '',
+    statusFilter: 'draft',
+    moduleReorderBusy: false,
     publishId: '',
     creatingModule: false,
     selectedModuleId: '',
@@ -230,29 +231,40 @@
     const body = document.getElementById('tutorialRows');
     const rows = state.tutorials.filter((row) => !state.statusFilter || row.status === state.statusFilter);
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="9" class="text-muted-2 p-4">No courses in this list. Create a course to begin.</td></tr>';
+      const empty = state.statusFilter === 'draft'
+        ? 'No drafts of yours yet. Create a course or generate one with AI.'
+        : (state.statusFilter === 'published'
+          ? 'No published tutorials are available yet.'
+          : 'No courses in this list.');
+      body.innerHTML = `<tr><td colspan="9" class="text-muted-2 p-4">${empty}</td></tr>`;
       return;
     }
     body.innerHTML = rows.map((row) => {
       const status = row.status || 'draft';
-      const publish = status === 'published'
-        ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-unpublish="${esc(row.id)}">Unpublish</button>`
-        : `<button type="button" class="btn btn-sm btn-outline-primary" data-publish="${esc(row.id)}">Publish</button>`;
-      const edit = status === 'published' ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-edit-tutorial="${esc(row.id)}">Edit</button>`;
-      const manage = `<button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">${status === 'published' ? 'Manage' : 'Manage Modules'}</button>`;
-      const reviews = `<button type="button" class="btn btn-sm btn-outline-secondary" data-activity-reviews="${esc(row.id)}">Reviews</button>`;
-      const remove = status === 'published'
+      const editable = row.canEdit === true;
+      const publish = !editable
         ? ''
-        : `<button type="button" class="btn btn-sm btn-outline-danger" data-delete-tutorial="${esc(row.id)}">Delete</button>`;
+        : (status === 'published'
+          ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-unpublish="${esc(row.id)}">Unpublish</button>`
+          : `<button type="button" class="btn btn-sm btn-outline-primary" data-publish="${esc(row.id)}">Publish</button>`);
+      const edit = editable && status !== 'published'
+        ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-edit-tutorial="${esc(row.id)}">Edit</button>`
+        : '';
+      const manage = `<button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">${editable ? (status === 'published' ? 'Manage' : 'Continue Editing') : 'View'}</button>`;
+      const reviews = `<button type="button" class="btn btn-sm btn-outline-secondary" data-activity-reviews="${esc(row.id)}">Reviews</button>`;
+      const remove = editable && status !== 'published'
+        ? `<button type="button" class="btn btn-sm btn-outline-danger" data-delete-tutorial="${esc(row.id)}">Delete</button>`
+        : '';
       const updated = row.updatedAt && typeof formatDate === 'function' ? formatDate(row.updatedAt) : '—';
+      const creator = row.createdByName || (row.isOwner ? 'You' : 'Staff');
       return `<tr>
         <td class="fw-semibold">${esc(row.title)}</td>
         <td>${esc(categoryName(row.categoryId))}</td>
         <td>${esc(row.topic)}</td>
+        <td>${esc(creator)}</td>
         <td>${statusBadge(status)}</td>
         <td>${esc(visibilityText(row))}</td>
         <td>${esc(row.moduleCount ?? 0)}</td>
-        <td>${esc(row.exerciseCount ?? 0)}</td>
         <td>${esc(updated)}</td>
         <td class="text-nowrap">
           <div class="d-flex flex-wrap gap-1 justify-content-end">
@@ -275,6 +287,46 @@
     body.querySelectorAll('[data-delete-tutorial]').forEach((btn) => btn.addEventListener('click', () => deleteTutorial(btn.getAttribute('data-delete-tutorial'))));
   }
 
+  function paintSimilarWarning(hostId, similar) {
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    const matches = (similar && similar.matches) || [];
+    if (!matches.length) {
+      host.classList.add('d-none');
+      host.innerHTML = '';
+      return;
+    }
+    const lines = matches.map((row) => {
+      const owner = row.isOwner ? 'Created by You' : `Created by ${row.createdByName || 'Staff'}`;
+      const open = row.id
+        ? ` <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-similar-open="${esc(row.id)}">View existing tutorial</button>`
+        : '';
+      return `<div>⚠ A similar tutorial already exists: <strong>${esc(row.title || row.topic || 'Tutorial')}</strong> · ${esc(row.status || '')} · ${esc(owner)}.${open}</div>`;
+    }).join('');
+    host.innerHTML = `${lines}<div class="mt-1">You can continue if you intentionally want another course.</div>`;
+    host.classList.remove('d-none');
+    host.querySelectorAll('[data-similar-open]').forEach((btn) => {
+      btn.addEventListener('click', () => openModules(btn.getAttribute('data-similar-open')).catch(fail));
+    });
+  }
+
+  async function checkSimilarTopic(topic, hostId, excludeId) {
+    const value = String(topic || '').trim();
+    if (value.length < 3) {
+      paintSimilarWarning(hostId, { matches: [] });
+      return { matches: [], hasMatches: false };
+    }
+    try {
+      const params = new URLSearchParams({ topic: value });
+      if (excludeId) params.set('excludeId', excludeId);
+      const data = await call(`/tutorials/manage/similar?${params}`);
+      paintSimilarWarning(hostId, data);
+      return data || { matches: [], hasMatches: false };
+    } catch {
+      return { matches: [], hasMatches: false };
+    }
+  }
+
   async function refreshList() {
     state.tutorials = await call('/tutorials/manage') || [];
     renderTutorials();
@@ -289,6 +341,7 @@
     setDepartments([]);
     renderYears();
     syncAudience();
+    paintSimilarWarning('tutorialTopicSimilar', { matches: [] });
   }
 
   async function openTutorial(id) {
@@ -746,6 +799,7 @@
       setAiError('aiCourseError', 'Number of modules must be between 1 and 12.');
       return;
     }
+    await checkSimilarTopic(topic, 'aiCourseTopicSimilar');
     const btn = document.getElementById('aiCourseGenerateBtn');
     btn.disabled = true;
     document.getElementById('aiCourseLoading').classList.remove('d-none');
@@ -767,6 +821,7 @@
       }
       state.aiCourse = data;
       state.aiSavedTutorialId = '';
+      paintSimilarWarning('aiCourseTopicSimilar', data.similarTutorials);
       renderAiCoursePreview();
       toast('Review the generated course, then save it as a draft.', 'success');
     } catch (err) {
@@ -832,6 +887,7 @@
         },
       });
       state.aiSavedTutorialId = (saved && saved.tutorial && saved.tutorial.id) || '';
+      paintSimilarWarning('aiCourseTopicSimilar', saved && saved.similarTutorials);
       setAiCourseSavedVisible(true);
       if (saveState) saveState.textContent = 'Saved as draft.';
       toast('Course saved as draft.', 'success');
@@ -1014,17 +1070,27 @@
 
   function paintCourseHeader() {
     const course = state.active || {};
+    const editable = course.canEdit === true;
     document.getElementById('moduleTutorialTitle').textContent = course.title || 'Course';
     document.getElementById('moduleTutorialMeta').textContent = [
       categoryName(course.categoryId),
       course.topic || '',
       visibilityText(course),
       course.status || 'draft',
+      course.createdByName ? `Created by ${course.createdByName}` : '',
+      editable ? '' : 'View only',
     ].filter(Boolean).join(' · ');
     const publish = document.getElementById('builderPublish');
     if (publish) {
       publish.textContent = course.status === 'published' ? 'Unpublish' : 'Publish';
+      publish.classList.toggle('d-none', !editable);
     }
+    const editBtn = document.getElementById('builderEditCourse');
+    if (editBtn) editBtn.classList.toggle('d-none', !editable);
+    const addModule = document.getElementById('addModuleBtn');
+    if (addModule) addModule.classList.toggle('d-none', !editable);
+    const genModule = document.getElementById('generateModuleAiBtn');
+    if (genModule) genModule.classList.toggle('d-none', !editable);
   }
 
   async function openModules(id, stayOnArticle) {
@@ -1064,37 +1130,126 @@
   function renderModuleNav() {
     const root = document.getElementById('moduleNav');
     const modules = (state.active && state.active.modules) || [];
+    const editable = !state.active || state.active.canEdit === true;
     if (!modules.length && !state.creatingModule) {
       root.innerHTML = '<p class="small text-muted-2 mb-0">No modules yet.</p>';
       return;
     }
+    const hint = editable && modules.length > 1
+      ? '<p class="small text-muted-2 mb-2">Drag the handle on the left to rearrange modules. Order saves automatically.</p>'
+      : '';
     const cards = modules.map((module, index) => {
       const active = !state.creatingModule && state.selectedModuleId === module.id;
       const excerpt = plainExcerpt(module.content) || 'No lesson text yet';
-      return `<div class="border rounded p-2 ${active ? 'border-primary' : ''}">
-        <button type="button" class="btn btn-sm p-0 fw-semibold" data-select-module="${esc(module.id)}">${active ? '●' : '○'} ${esc(index + 1)}. ${esc(module.title)}</button>
-        <div class="small text-muted-2 mb-2">${esc(excerpt)}</div>
-        <div class="d-flex flex-wrap gap-1">
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-up="${esc(module.id)}" ${index === 0 ? 'disabled' : ''} aria-label="Move module up">Up</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-down="${esc(module.id)}" ${index === modules.length - 1 ? 'disabled' : ''} aria-label="Move module down">Down</button>
-          <button type="button" class="btn btn-sm btn-outline-primary" data-practice-module="${esc(module.id)}">Practice questions</button>
+      const controls = editable
+        ? `<button type="button" class="btn btn-sm btn-outline-primary" data-practice-module="${esc(module.id)}">Practice questions</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" data-select-module="${esc(module.id)}">Edit</button>
-          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-module="${esc(module.id)}">Delete</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-module="${esc(module.id)}">Delete</button>`
+        : `<button type="button" class="btn btn-sm btn-outline-primary" data-practice-module="${esc(module.id)}">Practice questions</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-select-module="${esc(module.id)}">View</button>`;
+      const handle = editable
+        ? `<button type="button" class="module-drag-handle" draggable="true" data-drag-module="${esc(module.id)}" aria-label="Drag to reorder module" title="Drag to reorder"><i class="bi bi-grip-vertical" aria-hidden="true"></i></button>`
+        : '';
+      return `<div class="module-card border rounded p-2 ${active ? 'border-primary' : ''}" data-module-card="${esc(module.id)}">
+        <div class="d-flex gap-2 align-items-start">
+          ${handle}
+          <div class="flex-grow-1 min-w-0">
+            <button type="button" class="btn btn-sm p-0 fw-semibold" data-select-module="${esc(module.id)}">${active ? '●' : '○'} ${esc(index + 1)}. ${esc(module.title)}</button>
+            <div class="small text-muted-2 mb-2">${esc(excerpt)}</div>
+            <div class="d-flex flex-wrap gap-1">
+              ${controls}
+            </div>
+            <div class="d-none mt-2" data-practice-panel="${esc(module.id)}"></div>
+          </div>
         </div>
-        <div class="d-none mt-2" data-practice-panel="${esc(module.id)}"></div>
       </div>`;
     }).join('');
     const draft = state.creatingModule
       ? '<div class="border border-primary rounded p-2"><div class="fw-semibold">● New module</div><div class="small text-muted-2">Write the title and lesson on the right, then save.</div></div>'
       : '';
-    root.innerHTML = cards + draft;
+    root.innerHTML = hint + cards + draft;
     root.querySelectorAll('[data-select-module]').forEach((btn) => btn.addEventListener('click', () => selectModule(btn.getAttribute('data-select-module'))));
     root.querySelectorAll('[data-delete-module]').forEach((btn) => btn.addEventListener('click', () => deleteModule(btn.getAttribute('data-delete-module'))));
-    root.querySelectorAll('[data-up]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-up'), -1)));
-    root.querySelectorAll('[data-down]').forEach((btn) => btn.addEventListener('click', () => moveModule(btn.getAttribute('data-down'), 1)));
     root.querySelectorAll('[data-practice-module]').forEach((btn) => btn.addEventListener('click', () => {
       toggleModulePractice(btn.getAttribute('data-practice-module')).catch(fail);
     }));
+    if (editable) bindModuleDrag(root);
+  }
+
+  function bindModuleDrag(root) {
+    let dragId = '';
+    root.querySelectorAll('[data-drag-module]').forEach((handle) => {
+      handle.addEventListener('dragstart', (event) => {
+        dragId = handle.getAttribute('data-drag-module') || '';
+        const card = handle.closest('[data-module-card]');
+        if (!dragId || !card) {
+          event.preventDefault();
+          return;
+        }
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', dragId);
+        card.classList.add('is-dragging');
+        try {
+          event.dataTransfer.setDragImage(card, 24, 24);
+        } catch {
+          /* some browsers reject custom drag images */
+        }
+      });
+      handle.addEventListener('dragend', () => {
+        dragId = '';
+        root.querySelectorAll('[data-module-card]').forEach((card) => {
+          card.classList.remove('is-dragging', 'is-drop-target');
+        });
+      });
+    });
+    root.querySelectorAll('[data-module-card]').forEach((card) => {
+      card.addEventListener('dragover', (event) => {
+        if (!dragId && !(event.dataTransfer && event.dataTransfer.types.includes('text/plain'))) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        root.querySelectorAll('[data-module-card]').forEach((item) => item.classList.remove('is-drop-target'));
+        card.classList.add('is-drop-target');
+      });
+      card.addEventListener('dragleave', (event) => {
+        if (!card.contains(event.relatedTarget)) card.classList.remove('is-drop-target');
+      });
+      card.addEventListener('drop', (event) => {
+        event.preventDefault();
+        card.classList.remove('is-drop-target');
+        const fromId = (event.dataTransfer && event.dataTransfer.getData('text/plain')) || dragId;
+        const toId = card.getAttribute('data-module-card') || '';
+        if (!fromId || !toId || fromId === toId) return;
+        saveModuleOrder(fromId, toId).catch(fail);
+      });
+    });
+  }
+
+  async function saveModuleOrder(fromId, toId) {
+    if (!state.active || state.moduleReorderBusy) return;
+    const modules = [...(state.active.modules || [])];
+    const from = modules.findIndex((row) => row.id === fromId);
+    const to = modules.findIndex((row) => row.id === toId);
+    if (from < 0 || to < 0 || from === to) return;
+    const [item] = modules.splice(from, 1);
+    modules.splice(to, 0, item);
+    const previous = state.active.modules;
+    state.active.modules = modules;
+    renderModuleNav();
+    state.moduleReorderBusy = true;
+    try {
+      await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/reorder`, {
+        method: 'POST',
+        body: { moduleIds: modules.map((row) => row.id) },
+      });
+      toast('Module order saved.', 'success');
+      await openModules(state.active.id);
+    } catch (err) {
+      state.active.modules = previous;
+      renderModuleNav();
+      fail(err);
+    } finally {
+      state.moduleReorderBusy = false;
+    }
   }
 
   function renderStaffPractice(data) {
@@ -1658,6 +1813,13 @@
     const published = !state.creatingModule && state.active && state.active.status === 'published';
     status.textContent = state.creatingModule ? 'Draft' : (published ? 'Published' : 'Draft');
     status.classList.toggle('is-published', !!published);
+    const editable = state.creatingModule || (state.active && state.active.canEdit === true);
+    const saveBtn = document.getElementById('articleSave');
+    if (saveBtn) saveBtn.classList.toggle('d-none', !editable);
+    ['moduleTitle', 'moduleSubtitle'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.readOnly = !editable;
+    });
     toggleInsertMenu(false);
     showStaffScreen('article');
   }
@@ -2615,23 +2777,11 @@
 
   async function moveModule(id, direction) {
     if (!state.active) return;
-    const modules = [...(state.active.modules || [])];
+    const modules = state.active.modules || [];
     const index = modules.findIndex((row) => row.id === id);
     const next = index + direction;
     if (index < 0 || next < 0 || next >= modules.length) return;
-    const swap = modules[index];
-    modules[index] = modules[next];
-    modules[next] = swap;
-    try {
-      await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/reorder`, {
-        method: 'POST',
-        body: { moduleIds: modules.map((row) => row.id) },
-      });
-      toast('Module order saved.', 'success');
-      await openModules(state.active.id);
-    } catch (err) {
-      fail(err);
-    }
+    await saveModuleOrder(id, modules[next].id);
   }
 
   function findExercise(moduleId, exerciseId) {
@@ -3238,6 +3388,25 @@
     });
     document.querySelectorAll('input[name="tutorialVisibility"]').forEach((input) => input.addEventListener('change', syncAudience));
     document.querySelectorAll('input[name="aiCourseVisibility"]').forEach((input) => input.addEventListener('change', syncAiAudience));
+    const tutorialTopic = document.getElementById('tutorialTopic');
+    if (tutorialTopic) {
+      tutorialTopic.addEventListener('blur', () => {
+        checkSimilarTopic(tutorialTopic.value, 'tutorialTopicSimilar', document.getElementById('tutorialId').value || '').catch(fail);
+      });
+    }
+    const tutorialTitle = document.getElementById('tutorialTitle');
+    if (tutorialTitle) {
+      tutorialTitle.addEventListener('blur', () => {
+        const topic = (document.getElementById('tutorialTopic').value || tutorialTitle.value || '').trim();
+        checkSimilarTopic(topic, 'tutorialTopicSimilar', document.getElementById('tutorialId').value || '').catch(fail);
+      });
+    }
+    const aiTopic = document.getElementById('aiCourseTopic');
+    if (aiTopic) {
+      aiTopic.addEventListener('blur', () => {
+        checkSimilarTopic(aiTopic.value, 'aiCourseTopicSimilar').catch(fail);
+      });
+    }
     const aiAddYear = document.getElementById('aiAddYearBtn');
     if (aiAddYear) {
       aiAddYear.addEventListener('click', () => {

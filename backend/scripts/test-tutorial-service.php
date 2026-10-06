@@ -153,16 +153,16 @@ try {
         'topic' => 'Docker',
         'description' => 'Staff authored.',
         'visibility' => 'all',
-    ]), 403);
+    ]), 404);
 
-    $adminEdit = $service->updateTutorial($admin, $byStaff['id'], [
+    $throws(fn () => $service->updateTutorial($admin, $byStaff['id'], [
         'title' => 'Staff tutorial edited ' . $suffix,
         'categoryId' => $categoryId,
         'topic' => 'Docker',
         'description' => 'Edited by admin.',
         'visibility' => 'all',
-    ]);
-    $check($adminEdit['title'] === 'Staff tutorial edited ' . $suffix && $adminEdit['createdBy'] === $staffA['_id'], 'admin can edit another user tutorial without taking ownership');
+    ]), 404);
+    $check(true, 'admin cannot edit another staff draft (draft privacy)');
 
     $visibleBeforePublish = array_column($service->listForStudent($studentUsers['cse2027']), 'id');
     $check(!in_array($byStaff['id'], $visibleBeforePublish, true) && !in_array($byAdmin['id'], $visibleBeforePublish, true), 'draft tutorials are hidden from students');

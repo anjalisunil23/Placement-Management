@@ -42,7 +42,7 @@ final class TutorialAssessmentService
      */
     public function generateForModule(array $user, string $tutorialId, string $moduleId, array $input): array
     {
-        $ctx = $this->staffModuleContext($user, $tutorialId, $moduleId);
+        $ctx = $this->staffModuleContext($user, $tutorialId, $moduleId, true);
         if (isset($input['academicField']) && is_string($input['academicField']) && $input['academicField'] !== '') {
             $ctx['academicField'] = $input['academicField'];
         }
@@ -59,7 +59,7 @@ final class TutorialAssessmentService
      */
     public function saveGenerated(array $user, string $tutorialId, string $moduleId, array $input): array
     {
-        $this->staffModuleContext($user, $tutorialId, $moduleId);
+        $this->staffModuleContext($user, $tutorialId, $moduleId, true);
         $normalized = $this->ai->normalizeMcqQuestions(is_array($input['questions'] ?? null) ? $input['questions'] : []);
         $selected = array_values(array_filter($normalized, static fn (array $q): bool => ($q['selected'] ?? true) !== false));
         if ($selected === []) {
@@ -79,7 +79,7 @@ final class TutorialAssessmentService
      */
     public function saveAssessment(array $user, string $tutorialId, string $moduleId, array $input): array
     {
-        $this->staffModuleContext($user, $tutorialId, $moduleId);
+        $this->staffModuleContext($user, $tutorialId, $moduleId, true);
         $questionsIn = is_array($input['questions'] ?? null) ? $input['questions'] : [];
         $normalized = [];
         foreach ($questionsIn as $row) {
@@ -568,9 +568,12 @@ final class TutorialAssessmentService
      * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
-    private function staffModuleContext(array $user, string $tutorialId, string $moduleId): array
+    private function staffModuleContext(array $user, string $tutorialId, string $moduleId, bool $requireEdit = false): array
     {
         $course = $this->tutorials->showManaged($user, $tutorialId);
+        if ($requireEdit && ($course['canEdit'] ?? false) !== true) {
+            throw new \RuntimeException('You can only change tutorials you created.', 403);
+        }
         $module = null;
         foreach ((array) ($course['modules'] ?? []) as $row) {
             if ((string) ($row['id'] ?? '') === $moduleId) {

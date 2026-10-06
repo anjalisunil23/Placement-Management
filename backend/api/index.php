@@ -643,6 +643,8 @@ $routes = [
     ['POST',   '/tutorials/manage',                 [TutorialController::class, 'manageCreate']],
     ['POST',   '/tutorials/manage/media',           [TutorialController::class, 'uploadMedia']],
     ['GET',    '/tutorials/manage/ai/status',        [TutorialController::class, 'aiStatus']],
+    ['GET',    '/tutorials/manage/similar',          [TutorialController::class, 'similarTutorials']],
+    ['POST',   '/tutorials/manage/similar',          [TutorialController::class, 'similarTutorials']],
     ['POST',   '/tutorials/manage/ai/generate-course', [TutorialController::class, 'aiGenerateCourse']],
     ['POST',   '/tutorials/manage/ai/save-course',   [TutorialController::class, 'aiSaveCourse']],
     ['POST',   '/tutorials/manage/ai/generate-lesson-mcqs', [TutorialController::class, 'aiGenerateLessonExercises']],

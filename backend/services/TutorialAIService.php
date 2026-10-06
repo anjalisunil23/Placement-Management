@@ -117,6 +117,10 @@ class TutorialAIService
 
         $normalized = $this->normalizeCourseDocument($raw, $req);
         $previewId = 'course-' . bin2hex(random_bytes(6));
+        $similar = $this->tutorials->findSimilarTutorials(
+            $user,
+            (string) ($normalized['course']['title'] ?? $req['topic'])
+        );
 
         return [
             'previewId' => $previewId,
@@ -131,6 +135,7 @@ class TutorialAIService
             'course' => $normalized['course'],
             'modules' => $normalized['modules'],
             'moduleCount' => count($normalized['modules']),
+            'similarTutorials' => $similar,
         ];
     }
 
@@ -231,10 +236,17 @@ class TutorialAIService
                 $pdo->commit();
             }
 
+            $similar = $this->tutorials->findSimilarTutorials(
+                $user,
+                (string) ($normalized['course']['title'] ?? $reqHints['topic']),
+                $tutorialId
+            );
+
             return [
                 'tutorial' => $course,
                 'modules' => $savedModules,
                 'status' => 'draft',
+                'similarTutorials' => $similar,
             ];
         } catch (\Throwable $e) {
             if ($started && $pdo->inTransaction()) {
@@ -258,6 +270,9 @@ class TutorialAIService
         @set_time_limit(600);
 
         $course = $this->tutorials->showManaged($user, $tutorialId);
+        if (($course['canEdit'] ?? false) !== true) {
+            throw new \RuntimeException('You can only change tutorials you created.', 403);
+        }
         $req = $this->normalizeModuleRequest($input, $course);
         $this->assertAiConfigured();
         @set_time_limit(600);
@@ -308,6 +323,9 @@ class TutorialAIService
     {
         $this->assertAuthor($user);
         $course = $this->tutorials->showManaged($user, $tutorialId);
+        if (($course['canEdit'] ?? false) !== true) {
+            throw new \RuntimeException('You can only change tutorials you created.', 403);
+        }
         $statusBefore = (string) ($course['status'] ?? 'draft');
 
         $moduleIn = is_array($input['module'] ?? null) ? $input['module'] : $input;

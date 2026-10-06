@@ -67,7 +67,7 @@ final class TutorialActivityService
      */
     public function create(array $user, string $tutorialId, string $moduleId, array $input): array
     {
-        $this->requireManagedModule($user, $tutorialId, $moduleId);
+        $this->requireEditableManagedModule($user, $tutorialId, $moduleId);
         $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
         $status = strtolower(trim((string) ($input['status'] ?? 'draft')));
         if ($status === 'published') {
@@ -103,7 +103,7 @@ final class TutorialActivityService
      */
     public function update(array $user, string $tutorialId, string $moduleId, string $activityId, array $input): array
     {
-        $existing = $this->requireManagedActivity($user, $tutorialId, $moduleId, $activityId);
+        $existing = $this->requireEditableManagedActivity($user, $tutorialId, $moduleId, $activityId);
         if (($existing['archived'] ?? false) === true) {
             throw new \InvalidArgumentException('Archived activities cannot be edited. Create a new activity instead.');
         }
@@ -150,7 +150,7 @@ final class TutorialActivityService
      */
     public function archive(array $user, string $tutorialId, string $moduleId, string $activityId): array
     {
-        $this->requireManagedActivity($user, $tutorialId, $moduleId, $activityId);
+        $this->requireEditableManagedActivity($user, $tutorialId, $moduleId, $activityId);
         $row = $this->activities->archive($activityId);
         if ($row === null) {
             throw new \RuntimeException('Activity not found.', 404);
@@ -166,7 +166,7 @@ final class TutorialActivityService
      */
     public function reorder(array $user, string $tutorialId, string $moduleId, array $activityIds): array
     {
-        $this->requireManagedModule($user, $tutorialId, $moduleId);
+        $this->requireEditableManagedModule($user, $tutorialId, $moduleId);
         $existing = $this->activities->listByModule($moduleId, false);
         $known = [];
         foreach ($existing as $row) {
@@ -211,7 +211,7 @@ final class TutorialActivityService
      */
     public function publish(array $user, string $tutorialId, string $moduleId, string $activityId): array
     {
-        $existing = $this->requireManagedActivity($user, $tutorialId, $moduleId, $activityId);
+        $existing = $this->requireEditableManagedActivity($user, $tutorialId, $moduleId, $activityId);
         if (($existing['archived'] ?? false) === true) {
             throw new \InvalidArgumentException('Archived activities cannot be published.');
         }
@@ -242,7 +242,7 @@ final class TutorialActivityService
      */
     public function unpublish(array $user, string $tutorialId, string $moduleId, string $activityId): array
     {
-        $existing = $this->requireManagedActivity($user, $tutorialId, $moduleId, $activityId);
+        $existing = $this->requireEditableManagedActivity($user, $tutorialId, $moduleId, $activityId);
         $row = $this->activities->updateActivity($activityId, [
             'title' => (string) ($existing['title'] ?? ''),
             'instructions' => (string) ($existing['instructions'] ?? ''),
@@ -272,6 +272,7 @@ final class TutorialActivityService
      */
     public function generateForModule(array $user, string $tutorialId, string $moduleId, array $input): array
     {
+        $this->requireEditableManagedModule($user, $tutorialId, $moduleId);
         $ctx = $this->staffModuleContext($user, $tutorialId, $moduleId);
         if (isset($input['academicField']) && is_string($input['academicField']) && $input['academicField'] !== '') {
             $ctx['academicField'] = $input['academicField'];
@@ -289,7 +290,7 @@ final class TutorialActivityService
      */
     public function saveGenerated(array $user, string $tutorialId, string $moduleId, array $input): array
     {
-        $this->requireManagedModule($user, $tutorialId, $moduleId);
+        $this->requireEditableManagedModule($user, $tutorialId, $moduleId);
         $raw = is_array($input['activity'] ?? null) ? $input['activity'] : $input;
         $normalized = $this->ai->normalizeActivityPreview($raw, [
             'activityType' => (string) ($raw['activityType'] ?? $input['activityType'] ?? ''),
@@ -1527,9 +1528,45 @@ final class TutorialActivityService
      * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
+    private function requireEditableManagedModule(array $user, string $tutorialId, string $moduleId): array
+    {
+        $ctx = $this->requireManagedModule($user, $tutorialId, $moduleId);
+        if (($ctx['course']['canEdit'] ?? false) !== true) {
+            throw new \RuntimeException('You can only change tutorials you created.', 403);
+        }
+
+        return $ctx;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
     private function requireManagedActivity(array $user, string $tutorialId, string $moduleId, string $activityId): array
     {
         $this->requireManagedModule($user, $tutorialId, $moduleId);
+        if (!Security::isValidId($activityId)) {
+            throw new \RuntimeException('Activity not found.', 404);
+        }
+        $activity = $this->activities->findById($activityId);
+        if (
+            !is_array($activity)
+            || (string) ($activity['tutorialId'] ?? '') !== $tutorialId
+            || (string) ($activity['moduleId'] ?? '') !== $moduleId
+        ) {
+            throw new \RuntimeException('Activity not found.', 404);
+        }
+
+        return $activity;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireEditableManagedActivity(array $user, string $tutorialId, string $moduleId, string $activityId): array
+    {
+        $this->requireEditableManagedModule($user, $tutorialId, $moduleId);
         if (!Security::isValidId($activityId)) {
             throw new \RuntimeException('Activity not found.', 404);
         }
