@@ -80,7 +80,20 @@ class TutorialModuleModel extends BaseModel
             return [];
         }
 
-        return $this->findAll(['tutorialId' => $tutorialId], 500, 0, ['sortOrder' => 1]);
+        // Order by the numeric generated column — JSON string sort yields 1,10,11,2…
+        $stmt = $this->db->prepare(
+            'SELECT id, payload, created_at, updated_at FROM `tutorial_modules`
+             WHERE `tutorial_id` = ?
+             ORDER BY `sort_order` ASC, `id` ASC
+             LIMIT 500'
+        );
+        $stmt->execute([$tutorialId]);
+        $results = [];
+        while ($row = $stmt->fetch()) {
+            $results[] = $this->rowToDoc($row);
+        }
+
+        return $results;
     }
 
     public function countForTutorial(string $tutorialId): int

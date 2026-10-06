@@ -100,6 +100,11 @@ final class QueryHelper
                 $clauses[] = 'updated_at ' . $dir;
                 continue;
             }
+            // Numeric JSON fields must not use string ORDER BY (1,10,11,2…).
+            if ($field === 'sortOrder') {
+                $clauses[] = 'CAST(JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.sortOrder\')) AS SIGNED) ' . $dir;
+                continue;
+            }
             $path = self::jsonPath((string) $field);
             $clauses[] = "JSON_UNQUOTE(JSON_EXTRACT(payload, '{$path}')) {$dir}";
         }

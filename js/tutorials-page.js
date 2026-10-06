@@ -1129,18 +1129,26 @@
 
   function renderModuleNav() {
     const root = document.getElementById('moduleNav');
+    const hintHost = document.getElementById('moduleReorderHint');
     const modules = (state.active && state.active.modules) || [];
     const editable = !state.active || state.active.canEdit === true;
+    if (!root) return;
+    if (hintHost) {
+      if (editable && modules.length > 1) {
+        hintHost.classList.remove('d-none');
+        hintHost.innerHTML = `<div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <p class="small text-muted-2 mb-0">Drag a module handle — others move to make space. Order saves on drop.</p>
+          <span class="module-reorder-status" id="moduleReorderStatus" aria-live="polite"></span>
+        </div>`;
+      } else {
+        hintHost.classList.add('d-none');
+        hintHost.innerHTML = '';
+      }
+    }
     if (!modules.length && !state.creatingModule) {
       root.innerHTML = '<p class="small text-muted-2 mb-0">No modules yet.</p>';
       return;
     }
-    const hint = editable && modules.length > 1
-      ? `<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-          <p class="small text-muted-2 mb-0">Drag the handle to move one module; the others shift to fill the gap. Order saves when you drop.</p>
-          <span class="module-reorder-status" id="moduleReorderStatus" aria-live="polite"></span>
-        </div>`
-      : '';
     const busy = !!state.moduleReorderBusy;
     const cards = modules.map((module, index) => {
       const active = !state.creatingModule && state.selectedModuleId === module.id;
@@ -1171,7 +1179,7 @@
     const draft = state.creatingModule
       ? '<div class="border border-primary rounded p-2" data-module-draft="1"><div class="fw-semibold">● New module</div><div class="small text-muted-2">Write the title and lesson on the right, then save.</div></div>'
       : '';
-    root.innerHTML = hint + cards + draft;
+    root.innerHTML = cards + draft;
     root.querySelectorAll('[data-select-module]').forEach((btn) => btn.addEventListener('click', () => selectModule(btn.getAttribute('data-select-module'))));
     root.querySelectorAll('[data-delete-module]').forEach((btn) => btn.addEventListener('click', () => deleteModule(btn.getAttribute('data-delete-module'))));
     root.querySelectorAll('[data-practice-module]').forEach((btn) => btn.addEventListener('click', () => {
@@ -1182,256 +1190,84 @@
 
   const moduleDrag = {
     active: false,
-    moduleId: '',
     card: null,
-    placeholder: null,
-    ghost: null,
-    offsetY: 0,
-    lastClientY: 0,
-    scrollParents: [],
-    scrollRaf: 0,
-    startModules: null,
     startIds: null,
-    fromIndex: -1,
     moved: false,
   };
-
-  /** Move one id to toIndex measured in the list after the id is removed (splice shift). */
-  function moveModuleId(startIds, moduleId, toIndex) {
-    const ids = (startIds || []).map((id) => String(id));
-    const from = ids.indexOf(String(moduleId || ''));
-    if (from < 0) return ids;
-    const [item] = ids.splice(from, 1);
-    const insertAt = Math.max(0, Math.min(Number(toIndex) || 0, ids.length));
-    ids.splice(insertAt, 0, item);
-    return ids;
-  }
-
-  function dropIndexFromPlaceholder(root) {
-    const ph = root && root.querySelector('[data-module-placeholder]');
-    if (!ph) return 0;
-    let index = 0;
-    let el = ph.previousElementSibling;
-    while (el) {
-      if (el.hasAttribute('data-module-card')) index += 1;
-      el = el.previousElementSibling;
-    }
-    return index;
-  }
 
   function setModuleReorderStatus(text) {
     const el = document.getElementById('moduleReorderStatus');
     if (el) el.textContent = text || '';
   }
 
-  function findScrollParents(node) {
-    const parents = [];
-    let el = node instanceof HTMLElement ? node : null;
-    while (el && el !== document.documentElement) {
-      const style = window.getComputedStyle(el);
-      const overflowY = style.overflowY;
-      if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay')
-        && el.scrollHeight > el.clientHeight + 1) {
-        parents.push(el);
-      }
-      el = el.parentElement;
-    }
-    const doc = document.scrollingElement || document.documentElement;
-    if (!parents.includes(doc)) parents.push(doc);
-    return parents;
+  function readModuleIdsFromDom(root) {
+    return [...root.querySelectorAll('[data-module-card]')]
+      .map((el) => el.getAttribute('data-module-card') || '')
+      .filter(Boolean);
   }
 
-  function scrollParentsBy(parents, dy) {
-    if (!dy) return;
-    parents.forEach((el) => {
-      if (el === document.documentElement || el === document.body || el === document.scrollingElement) {
-        window.scrollBy(0, dy);
-      } else if (el instanceof HTMLElement) {
-        el.scrollTop += dy;
-      }
-    });
-  }
-
-  function stopModuleAutoScroll() {
-    if (moduleDrag.scrollRaf) {
-      cancelAnimationFrame(moduleDrag.scrollRaf);
-      moduleDrag.scrollRaf = 0;
-    }
-  }
-
-  function tickModuleAutoScroll() {
-    moduleDrag.scrollRaf = 0;
-    if (!moduleDrag.active) return;
-    const edge = 100;
-    const maxStep = 28;
-    const y = moduleDrag.lastClientY;
-    let dy = 0;
-    if (y < edge) dy = -Math.max(4, Math.ceil(((edge - y) / edge) * maxStep));
-    else if (y > window.innerHeight - edge) dy = Math.max(4, Math.ceil(((y - (window.innerHeight - edge)) / edge) * maxStep));
-    if (dy) {
-      scrollParentsBy(moduleDrag.scrollParents, dy);
-      relocateModulePlaceholder(moduleDrag.lastClientY);
-    }
-    moduleDrag.scrollRaf = requestAnimationFrame(tickModuleAutoScroll);
-  }
-
-  function startModuleAutoScroll() {
-    if (!moduleDrag.scrollRaf) moduleDrag.scrollRaf = requestAnimationFrame(tickModuleAutoScroll);
-  }
-
-  function visibleModuleCards(root) {
-    return [...root.querySelectorAll('[data-module-card]')].filter((card) => {
-      if (card === moduleDrag.card) return false;
-      if (card.classList.contains('is-dragging-source')) return false;
-      const style = window.getComputedStyle(card);
-      return style.display !== 'none' && style.visibility !== 'hidden';
-    });
-  }
-
-  function relocateModulePlaceholder(clientY) {
-    const root = document.getElementById('moduleNav');
-    const ph = moduleDrag.placeholder;
-    if (!root || !ph) return;
-    const cards = visibleModuleCards(root);
+  /** Insert dragged card before the first card whose midpoint is below the pointer. */
+  function placeDraggingCard(root, card, clientY) {
+    const others = [...root.querySelectorAll('[data-module-card]')].filter((el) => el !== card);
     let insertBefore = null;
-    for (const card of cards) {
-      const rect = card.getBoundingClientRect();
-      if (clientY < rect.top + (rect.height / 2)) {
-        insertBefore = card;
+    for (const other of others) {
+      const rect = other.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) {
+        insertBefore = other;
         break;
       }
     }
     const draft = root.querySelector('[data-module-draft="1"]');
     if (insertBefore) {
-      if (ph.nextElementSibling !== insertBefore) root.insertBefore(ph, insertBefore);
+      if (card.nextElementSibling !== insertBefore) root.insertBefore(card, insertBefore);
       return;
     }
     if (draft) {
-      if (ph.nextElementSibling !== draft) root.insertBefore(ph, draft);
+      if (card.nextElementSibling !== draft) root.insertBefore(card, draft);
       return;
     }
-    if (ph.parentElement !== root || root.lastElementChild !== ph) root.appendChild(ph);
-  }
-
-  function cleanupModuleDragVisuals() {
-    stopModuleAutoScroll();
-    document.body.classList.remove('is-module-reordering');
-    document.removeEventListener('pointermove', onModulePointerMove);
-    document.removeEventListener('pointerup', onModulePointerUp);
-    document.removeEventListener('pointercancel', onModulePointerUp);
-    if (moduleDrag.ghost && moduleDrag.ghost.parentNode) moduleDrag.ghost.parentNode.removeChild(moduleDrag.ghost);
-    if (moduleDrag.placeholder && moduleDrag.placeholder.parentNode) {
-      moduleDrag.placeholder.parentNode.removeChild(moduleDrag.placeholder);
-    }
-    moduleDrag.ghost = null;
-    moduleDrag.placeholder = null;
-    moduleDrag.card = null;
+    if (root.lastElementChild !== card) root.appendChild(card);
   }
 
   function onModulePointerMove(event) {
-    if (!moduleDrag.active) return;
-    moduleDrag.lastClientY = event.clientY;
+    if (!moduleDrag.active || !moduleDrag.card) return;
     moduleDrag.moved = true;
-    if (moduleDrag.ghost) {
-      moduleDrag.ghost.style.top = `${Math.round(event.clientY - moduleDrag.offsetY)}px`;
-      const root = document.getElementById('moduleNav');
-      if (root) {
-        const bounds = root.getBoundingClientRect();
-        const width = moduleDrag.ghost.offsetWidth;
-        const left = Math.min(Math.max(bounds.left, event.clientX - width / 2), bounds.right - width);
-        moduleDrag.ghost.style.left = `${Math.round(left)}px`;
-      }
-    }
-    relocateModulePlaceholder(event.clientY);
+    const root = document.getElementById('moduleNav');
+    if (root) placeDraggingCard(root, moduleDrag.card, event.clientY);
   }
 
   function onModulePointerUp() {
     if (!moduleDrag.active) return;
     const root = document.getElementById('moduleNav');
-    const draggedId = moduleDrag.moduleId;
-    const previous = moduleDrag.startModules;
-    const startIds = moduleDrag.startIds || (previous || []).map((row) => row.id);
+    const card = moduleDrag.card;
+    const startIds = moduleDrag.startIds || [];
     const moved = moduleDrag.moved;
-    const toIndex = root ? dropIndexFromPlaceholder(root) : moduleDrag.fromIndex;
-    const orderedIds = moved && draggedId && startIds.length
-      ? moveModuleId(startIds, draggedId, toIndex)
-      : startIds.slice();
-    cleanupModuleDragVisuals();
+    const orderedIds = root ? readModuleIdsFromDom(root) : [];
+    if (card) card.classList.remove('is-dragging');
+    document.body.classList.remove('is-module-reordering');
+    document.removeEventListener('pointermove', onModulePointerMove);
+    document.removeEventListener('pointerup', onModulePointerUp);
+    document.removeEventListener('pointercancel', onModulePointerUp);
     moduleDrag.active = false;
-    moduleDrag.moduleId = '';
-    moduleDrag.startModules = null;
+    moduleDrag.card = null;
     moduleDrag.startIds = null;
-    moduleDrag.fromIndex = -1;
     moduleDrag.moved = false;
-    if (!draggedId || !previous) {
+
+    const previous = [...((state.active && state.active.modules) || [])];
+    if (!moved || !orderedIds.length) {
       renderModuleNav();
       return;
     }
-    if (!moved) {
-      renderModuleNav();
-      return;
-    }
-    if (previous.length !== orderedIds.length) {
+    if (startIds.length !== orderedIds.length || startIds.some((id) => !orderedIds.includes(id))) {
       renderModuleNav();
       toast('Could not reorder modules.', 'error');
       return;
     }
-    const unchanged = previous.every((row, index) => row.id === orderedIds[index]);
-    if (unchanged) {
+    if (startIds.every((id, index) => id === orderedIds[index])) {
       renderModuleNav();
       return;
     }
     persistModuleOrder(orderedIds, previous).catch(fail);
-  }
-
-  function startModulePointerDrag(root, card, moduleId, event) {
-    if (moduleDrag.active || state.moduleReorderBusy) return;
-    const rect = card.getBoundingClientRect();
-    const startModules = [...((state.active && state.active.modules) || [])];
-    const startIds = startModules.map((row) => row.id);
-    const fromIndex = startIds.indexOf(moduleId);
-    if (fromIndex < 0) return;
-
-    moduleDrag.active = true;
-    moduleDrag.moduleId = moduleId;
-    moduleDrag.card = card;
-    moduleDrag.offsetY = event.clientY - rect.top;
-    moduleDrag.lastClientY = event.clientY;
-    moduleDrag.moved = false;
-    moduleDrag.scrollParents = findScrollParents(root);
-    moduleDrag.startModules = startModules;
-    moduleDrag.startIds = startIds;
-    moduleDrag.fromIndex = fromIndex;
-
-    const placeholder = document.createElement('div');
-    placeholder.className = 'module-drop-placeholder';
-    placeholder.setAttribute('data-module-placeholder', '1');
-    placeholder.style.height = `${Math.max(rect.height, 56)}px`;
-    placeholder.innerHTML = '<span>Drop module here</span>';
-    card.parentNode.insertBefore(placeholder, card);
-    moduleDrag.placeholder = placeholder;
-
-    const ghost = card.cloneNode(true);
-    ghost.classList.add('module-drag-ghost');
-    ghost.querySelectorAll('button, a, input, textarea, select').forEach((el) => {
-      el.setAttribute('tabindex', '-1');
-      if ('disabled' in el) el.disabled = true;
-    });
-    ghost.style.width = `${rect.width}px`;
-    ghost.style.left = `${rect.left}px`;
-    ghost.style.top = `${rect.top}px`;
-    document.body.appendChild(ghost);
-    moduleDrag.ghost = ghost;
-
-    // Detach the source card so other modules shift around the placeholder only.
-    card.parentNode.removeChild(card);
-
-    document.body.classList.add('is-module-reordering');
-    document.addEventListener('pointermove', onModulePointerMove);
-    document.addEventListener('pointerup', onModulePointerUp);
-    document.addEventListener('pointercancel', onModulePointerUp);
-    startModuleAutoScroll();
-    relocateModulePlaceholder(event.clientY);
   }
 
   function bindModuleDrag(root) {
@@ -1439,11 +1275,21 @@
       handle.addEventListener('pointerdown', (event) => {
         if (event.button !== 0) return;
         if (state.moduleReorderBusy || moduleDrag.active) return;
-        const moduleId = handle.getAttribute('data-drag-module') || '';
         const card = handle.closest('[data-module-card]');
-        if (!moduleId || !card) return;
+        if (!card) return;
         event.preventDefault();
-        startModulePointerDrag(root, card, moduleId, event);
+        // Close open practice panels so card heights stay stable while dragging.
+        root.querySelectorAll('[data-practice-panel]').forEach((panel) => panel.classList.add('d-none'));
+        moduleDrag.active = true;
+        moduleDrag.card = card;
+        moduleDrag.startIds = readModuleIdsFromDom(root);
+        moduleDrag.moved = false;
+        card.classList.add('is-dragging');
+        document.body.classList.add('is-module-reordering');
+        document.addEventListener('pointermove', onModulePointerMove);
+        document.addEventListener('pointerup', onModulePointerUp);
+        document.addEventListener('pointercancel', onModulePointerUp);
+        try { handle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
       });
       handle.addEventListener('click', (event) => {
         if (moduleDrag.moved) {
@@ -1513,13 +1359,14 @@
     const from = ids.indexOf(fromId);
     const target = ids.indexOf(toId);
     if (from < 0 || target < 0 || from === target) return;
-    // toIndex is measured after removing the dragged id (same as drag-drop).
-    let toIndex = placeAfter ? target + 1 : target;
-    if (from < toIndex) toIndex -= 1;
-    if (from === toIndex) return;
-    const orderedIds = moveModuleId(ids, fromId, toIndex);
-    if (ids.every((id, index) => id === orderedIds[index])) return;
-    await persistModuleOrder(orderedIds, modules);
+    const next = ids.slice();
+    const [item] = next.splice(from, 1);
+    let insertAt = placeAfter ? target + 1 : target;
+    if (from < insertAt) insertAt -= 1;
+    if (from === insertAt) return;
+    next.splice(insertAt, 0, item);
+    if (ids.every((id, index) => id === next[index])) return;
+    await persistModuleOrder(next, modules);
   }
 
   function renderStaffPractice(data) {

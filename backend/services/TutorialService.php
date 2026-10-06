@@ -1230,6 +1230,19 @@ final class TutorialService
         if (count($clean) !== count($known)) {
             throw new \InvalidArgumentException('Reorder list must contain each module of this tutorial once.');
         }
+        // Two-phase update avoids temporary duplicate sortOrder values while saving.
+        $temp = 1000;
+        foreach (array_keys($clean) as $moduleId) {
+            $module = $known[$moduleId];
+            $this->modules->updateModule($moduleId, [
+                'tutorialId' => $tutorialId,
+                'title' => (string) ($module['title'] ?? ''),
+                'subtitle' => (string) ($module['subtitle'] ?? ''),
+                'sortOrder' => $temp,
+                'content' => (string) ($module['content'] ?? ''),
+            ]);
+            $temp++;
+        }
         $order = 1;
         foreach (array_keys($clean) as $moduleId) {
             $module = $known[$moduleId];

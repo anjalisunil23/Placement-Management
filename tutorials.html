@@ -276,18 +276,11 @@
   }
   #moduleNav .btn{white-space:normal;text-align:left}
   #moduleNav.module-nav-list{display:flex;flex-direction:column;gap:.5rem}
-  .module-card{background:#fff;transition:border-color .15s ease,box-shadow .15s ease,opacity .15s ease;position:relative}
-  .module-card.is-dragging-source{display:none!important}
-  .module-drop-placeholder{
-    display:flex;align-items:center;justify-content:center;min-height:3.5rem;
-    border:2px dashed color-mix(in srgb,var(--primary,#2563EB) 55%,#cbd5e1);
-    border-radius:.5rem;background:color-mix(in srgb,var(--primary,#2563EB) 8%,#fff);
-    color:var(--primary,#2563EB);font-size:.85rem;font-weight:600;pointer-events:none;user-select:none;
-  }
-  .module-drag-ghost{
-    position:fixed;z-index:1080;margin:0;pointer-events:none;opacity:.92;
-    box-shadow:0 12px 28px rgba(15,23,42,.18);border:1px solid color-mix(in srgb,var(--primary,#2563EB) 35%,#e2e8f0)!important;
-    background:#fff;border-radius:.5rem;
+  .module-card{background:#fff;transition:border-color .15s ease,box-shadow .15s ease;position:relative}
+  .module-card.is-dragging{
+    opacity:.45;border-style:dashed!important;
+    border-color:color-mix(in srgb,var(--primary,#2563EB) 55%,#cbd5e1)!important;
+    background:color-mix(in srgb,var(--primary,#2563EB) 6%,#fff);
   }
   body.is-module-reordering{cursor:grabbing;user-select:none}
   body.is-module-reordering *{cursor:grabbing!important}
@@ -618,6 +611,7 @@
           <p class="small text-muted-2 mt-2 mb-0">The module and its lesson questions are saved as draft content. Course publish status does not change.</p>
         </div>
       </div>
+      <div id="moduleReorderHint" class="d-none mb-2"></div>
       <div id="moduleNav" class="module-nav-list d-flex flex-column gap-2"></div>
     </div>
   </div>
@@ -1019,5 +1013,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261006dndshift"></script>
+<script src="js/tutorials-page.js?v=20261006dndsimple"></script>
 </body></html>
