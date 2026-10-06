@@ -1137,7 +1137,7 @@
     }
     const hint = editable && modules.length > 1
       ? `<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-          <p class="small text-muted-2 mb-0">Drag the handle on the left to rearrange modules. Order saves when you drop.</p>
+          <p class="small text-muted-2 mb-0">Drag the handle to move one module; the others shift to fill the gap. Order saves when you drop.</p>
           <span class="module-reorder-status" id="moduleReorderStatus" aria-live="polite"></span>
         </div>`
       : '';
@@ -1191,8 +1191,33 @@
     scrollParents: [],
     scrollRaf: 0,
     startModules: null,
+    startIds: null,
+    fromIndex: -1,
     moved: false,
   };
+
+  /** Move one id to toIndex measured in the list after the id is removed (splice shift). */
+  function moveModuleId(startIds, moduleId, toIndex) {
+    const ids = (startIds || []).map((id) => String(id));
+    const from = ids.indexOf(String(moduleId || ''));
+    if (from < 0) return ids;
+    const [item] = ids.splice(from, 1);
+    const insertAt = Math.max(0, Math.min(Number(toIndex) || 0, ids.length));
+    ids.splice(insertAt, 0, item);
+    return ids;
+  }
+
+  function dropIndexFromPlaceholder(root) {
+    const ph = root && root.querySelector('[data-module-placeholder]');
+    if (!ph) return 0;
+    let index = 0;
+    let el = ph.previousElementSibling;
+    while (el) {
+      if (el.hasAttribute('data-module-card')) index += 1;
+      el = el.previousElementSibling;
+    }
+    return index;
+  }
 
   function setModuleReorderStatus(text) {
     const el = document.getElementById('moduleReorderStatus');
@@ -1288,23 +1313,6 @@
     if (ph.parentElement !== root || root.lastElementChild !== ph) root.appendChild(ph);
   }
 
-  function readModuleOrderFromDom(root, draggedId) {
-    const ids = [];
-    [...root.children].forEach((el) => {
-      if (!(el instanceof HTMLElement)) return;
-      if (el.hasAttribute('data-module-placeholder')) {
-        if (draggedId && !ids.includes(draggedId)) ids.push(draggedId);
-        return;
-      }
-      if (!el.hasAttribute('data-module-card')) return;
-      const id = el.getAttribute('data-module-card') || '';
-      if (!id || id === draggedId || ids.includes(id)) return;
-      ids.push(id);
-    });
-    if (draggedId && !ids.includes(draggedId)) ids.push(draggedId);
-    return ids;
-  }
-
   function cleanupModuleDragVisuals() {
     stopModuleAutoScroll();
     document.body.classList.remove('is-module-reordering');
@@ -1314,11 +1322,6 @@
     if (moduleDrag.ghost && moduleDrag.ghost.parentNode) moduleDrag.ghost.parentNode.removeChild(moduleDrag.ghost);
     if (moduleDrag.placeholder && moduleDrag.placeholder.parentNode) {
       moduleDrag.placeholder.parentNode.removeChild(moduleDrag.placeholder);
-    }
-    if (moduleDrag.card) {
-      moduleDrag.card.classList.remove('is-dragging-source');
-      moduleDrag.card.style.display = '';
-      moduleDrag.card.hidden = false;
     }
     moduleDrag.ghost = null;
     moduleDrag.placeholder = null;
@@ -1347,14 +1350,20 @@
     const root = document.getElementById('moduleNav');
     const draggedId = moduleDrag.moduleId;
     const previous = moduleDrag.startModules;
+    const startIds = moduleDrag.startIds || (previous || []).map((row) => row.id);
     const moved = moduleDrag.moved;
-    const orderedIds = root ? readModuleOrderFromDom(root, draggedId) : [];
+    const toIndex = root ? dropIndexFromPlaceholder(root) : moduleDrag.fromIndex;
+    const orderedIds = moved && draggedId && startIds.length
+      ? moveModuleId(startIds, draggedId, toIndex)
+      : startIds.slice();
     cleanupModuleDragVisuals();
     moduleDrag.active = false;
     moduleDrag.moduleId = '';
     moduleDrag.startModules = null;
+    moduleDrag.startIds = null;
+    moduleDrag.fromIndex = -1;
     moduleDrag.moved = false;
-    if (!root || !draggedId || !previous) {
+    if (!draggedId || !previous) {
       renderModuleNav();
       return;
     }
@@ -1378,6 +1387,11 @@
   function startModulePointerDrag(root, card, moduleId, event) {
     if (moduleDrag.active || state.moduleReorderBusy) return;
     const rect = card.getBoundingClientRect();
+    const startModules = [...((state.active && state.active.modules) || [])];
+    const startIds = startModules.map((row) => row.id);
+    const fromIndex = startIds.indexOf(moduleId);
+    if (fromIndex < 0) return;
+
     moduleDrag.active = true;
     moduleDrag.moduleId = moduleId;
     moduleDrag.card = card;
@@ -1385,7 +1399,9 @@
     moduleDrag.lastClientY = event.clientY;
     moduleDrag.moved = false;
     moduleDrag.scrollParents = findScrollParents(root);
-    moduleDrag.startModules = [...((state.active && state.active.modules) || [])];
+    moduleDrag.startModules = startModules;
+    moduleDrag.startIds = startIds;
+    moduleDrag.fromIndex = fromIndex;
 
     const placeholder = document.createElement('div');
     placeholder.className = 'module-drop-placeholder';
@@ -1407,8 +1423,8 @@
     document.body.appendChild(ghost);
     moduleDrag.ghost = ghost;
 
-    card.classList.add('is-dragging-source');
-    card.style.display = 'none';
+    // Detach the source card so other modules shift around the placeholder only.
+    card.parentNode.removeChild(card);
 
     document.body.classList.add('is-module-reordering');
     document.addEventListener('pointermove', onModulePointerMove);
@@ -1493,16 +1509,17 @@
   async function saveModuleOrder(fromId, toId, placeAfter = false) {
     if (!state.active || state.moduleReorderBusy) return;
     const modules = [...(state.active.modules || [])];
-    const from = modules.findIndex((row) => row.id === fromId);
-    const target = modules.findIndex((row) => row.id === toId);
-    if (from < 0 || target < 0) return;
-    let insertAt = placeAfter ? target + 1 : target;
-    if (from === insertAt || from + 1 === insertAt) return;
-    const next = [...modules];
-    const [item] = next.splice(from, 1);
-    if (from < insertAt) insertAt -= 1;
-    next.splice(insertAt, 0, item);
-    await persistModuleOrder(next.map((row) => row.id), modules);
+    const ids = modules.map((row) => row.id);
+    const from = ids.indexOf(fromId);
+    const target = ids.indexOf(toId);
+    if (from < 0 || target < 0 || from === target) return;
+    // toIndex is measured after removing the dragged id (same as drag-drop).
+    let toIndex = placeAfter ? target + 1 : target;
+    if (from < toIndex) toIndex -= 1;
+    if (from === toIndex) return;
+    const orderedIds = moveModuleId(ids, fromId, toIndex);
+    if (ids.every((id, index) => id === orderedIds[index])) return;
+    await persistModuleOrder(orderedIds, modules);
   }
 
   function renderStaffPractice(data) {
