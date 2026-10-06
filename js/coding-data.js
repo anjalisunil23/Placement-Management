@@ -198,6 +198,12 @@
     if (replace) {
       const python = pythonStarterFromProblem(problem);
       Object.assign(starter, defaultStarters(python));
+    } else {
+      // Keep a custom Python body, but always fill missing language templates.
+      const defaults = defaultStarters(starter.Python || pythonStarterFromProblem(problem));
+      LANGUAGES.forEach((lang) => {
+        if (!String(starter[lang] || '').trim()) starter[lang] = defaults[lang];
+      });
     }
     return { ...problem, starterCode: starter };
   }
