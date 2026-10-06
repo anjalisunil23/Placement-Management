@@ -27,19 +27,26 @@ class StudentPlacementModel extends BaseModel
 
     private static bool $tableUnavailable = false;
 
-    /** Legacy phpMyAdmin / AES export tables (flat columns + empty JSON payload). */
+    /**
+     * Production student_placements flat columns (phpMyAdmin / AES export layout).
+     * payload is often {}; grid fields are read from these SQL columns.
+     */
     private const LEGACY_FLAT_COLUMN_CANDIDATES = [
-        'student', 'studentId', 'cno', 'email', 'year', 'stud_class', 'courseId', 'branchId',
-        'employer', 'empcno', 'empadr', 'payscale',
+        'studentId', 'student', 'cno', 'email', 'year', 'courseId', 'branchId',
+        'employer', 'empcno', 'empadr', 'payscale', 'status',
+        'createdBy', 'crteatedDate', 'updatedBy', 'updatedDate',
+        's3file', 'filename', 'fordvv', 'type', 'includedvv',
+        'stud_class',
     ];
 
     /** Placement-owned payload keys — never erased by empty AES values on sync/list. */
     public const PLACEMENT_OWNED_FIELDS = [
         'company', 'companyName', 'employer', 'role', 'address', 'package', 'payscale',
         'employerContact', 'contact', 'joinDate', 'endDate', 'academicDuration',
-        'internshipDetails', 'natureOfJob', 'monthlySalary', 'placementStatus',
+        'internshipDetails', 'natureOfJob', 'monthlySalary', 'placementStatus', 'status',
         'recordType', 'type', 'offerLetterVerified', 'verificationDate',
         'fordvv', 'includedvv', 'offerLetter', 'joiningLetter', 'companyIdDoc',
+        's3file', 'filename',
         'phone', 'email', 'collegeEmail', 'personalEmail', 'cno',
     ];
 
@@ -366,6 +373,12 @@ class StudentPlacementModel extends BaseModel
         $studClass = trim((string) ($row['stud_class'] ?? ''));
         $courseId = trim((string) ($row['courseId'] ?? ''));
         $branchId = trim((string) ($row['branchId'] ?? ''));
+        $status = trim((string) ($row['status'] ?? ''));
+        $type = trim((string) ($row['type'] ?? ''));
+        $fordvv = trim((string) ($row['fordvv'] ?? ''));
+        $includedvv = trim((string) ($row['includedvv'] ?? ''));
+        $s3file = trim((string) ($row['s3file'] ?? ''));
+        $filename = trim((string) ($row['filename'] ?? ''));
 
         if ($name === '' && $legacyStudentId === '' && $employer === '' && $phone === '' && $email === '') {
             return $doc;
@@ -401,6 +414,23 @@ class StudentPlacementModel extends BaseModel
             $doc['branchId'] = $branchId;
         }
 
+        $createdBy = trim((string) ($row['createdBy'] ?? ''));
+        $updatedBy = trim((string) ($row['updatedBy'] ?? ''));
+        $createdDate = trim((string) ($row['crteatedDate'] ?? $row['createdDate'] ?? ''));
+        $updatedDate = trim((string) ($row['updatedDate'] ?? ''));
+        if ($createdBy !== '') {
+            $doc['createdBy'] = $createdBy;
+        }
+        if ($updatedBy !== '') {
+            $doc['updatedBy'] = $updatedBy;
+        }
+        if ($createdDate !== '') {
+            $doc['createdDate'] = $createdDate;
+        }
+        if ($updatedDate !== '') {
+            $doc['updatedDate'] = $updatedDate;
+        }
+
         $placement = is_array($doc['placement'] ?? null) ? $doc['placement'] : [];
         if ($employer !== '') {
             $placement['company'] = $employer;
@@ -417,16 +447,95 @@ class StudentPlacementModel extends BaseModel
             $placement['package'] = $package;
             $doc['payscale'] = $package;
         }
-        if ($employer !== '') {
-            $placement['recordType'] = $placement['recordType'] ?? 'Placement';
-            $placement['placementStatus'] = $placement['placementStatus'] ?? 'Placed';
+
+        $recordType = self::normalizeLegacyRecordType($type);
+        if ($recordType !== '') {
+            $placement['recordType'] = $recordType;
+            $placement['type'] = $recordType;
+            $doc['recordType'] = $recordType;
+            $doc['type'] = $recordType;
+        } elseif ($employer !== '' && trim((string) ($placement['recordType'] ?? '')) === '') {
+            $placement['recordType'] = 'Placement';
+            $placement['type'] = 'Placement';
         }
+
+        $placementStatus = self::normalizeLegacyPlacementStatus($status, $employer !== '');
+        if ($placementStatus !== '') {
+            $placement['placementStatus'] = $placementStatus;
+            $doc['placementStatus'] = $placementStatus;
+            $doc['status'] = $status !== '' ? $status : $placementStatus;
+        }
+
+        if ($fordvv !== '') {
+            $placement['fordvv'] = $fordvv;
+            $doc['fordvv'] = $fordvv;
+        }
+        if ($includedvv !== '') {
+            $placement['includedvv'] = $includedvv;
+            $doc['includedvv'] = $includedvv;
+        }
+        if ($s3file !== '') {
+            $placement['offerLetter'] = $s3file;
+            $doc['s3file'] = $s3file;
+        }
+        if ($filename !== '') {
+            $doc['filename'] = $filename;
+            if (trim((string) ($placement['offerLetter'] ?? '')) === '') {
+                $placement['offerLetter'] = $filename;
+            }
+        }
+
         $doc['placement'] = $placement;
         $doc['studRole'] = $doc['studRole'] ?? 'alumni';
         $doc['stud_role'] = $doc['stud_role'] ?? 'Alumni';
         $doc['legacyFlatRow'] = true;
 
         return $doc;
+    }
+
+    private static function normalizeLegacyRecordType(string $type): string
+    {
+        $raw = strtolower(trim($type));
+        if ($raw === '') {
+            return '';
+        }
+        if (str_contains($raw, 'higher') || str_contains($raw, 'education') || $raw === 'he') {
+            return 'Higher Education';
+        }
+        if (str_contains($raw, 'research')) {
+            return 'Research';
+        }
+        if (str_contains($raw, 'place') || $raw === 'job' || $raw === '1') {
+            return 'Placement';
+        }
+
+        return trim($type);
+    }
+
+    private static function normalizeLegacyPlacementStatus(string $status, bool $hasEmployer): string
+    {
+        $raw = trim($status);
+        if ($raw === '') {
+            return $hasEmployer ? 'Placed' : '';
+        }
+        $lower = strtolower($raw);
+        if (in_array($lower, ['1', 'placed', 'joined', 'yes', 'true'], true)) {
+            return 'Placed';
+        }
+        if (in_array($lower, ['offered', 'offer'], true)) {
+            return 'Offered';
+        }
+        if (str_contains($lower, 'not') && str_contains($lower, 'join')) {
+            return 'Not Joined';
+        }
+        if (str_contains($lower, 'higher')) {
+            return 'Higher Education';
+        }
+        if (str_contains($lower, 'research')) {
+            return 'Research';
+        }
+
+        return $raw;
     }
 
     /**
