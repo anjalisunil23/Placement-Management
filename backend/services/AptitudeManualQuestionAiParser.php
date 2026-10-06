@@ -102,14 +102,14 @@ Return JSON only:
 
 Rules:
 - Include every MCQ you can find. Support options labeled A–E, a–e, or 1–5 (store option text only, without labels).
-- directionsBlock: store shared "Directions (N-M):" text once per group; do not repeat the full directions in every prompt unless the question truly stands alone.
+- directionsBlock: store shared passage/instructions once per group WITHOUT the "Directions (N-M):" label; do not put "Directions (7-11):" (or similar) in prompt or directionsBlock — only the study text and the question.
 - answerLetter: only if explicitly marked in the source (Answer: B, Ans: C). Otherwise empty string.
 - sourcePage: use "--- PAGE N ---" markers in the input when present; else use the chunk default page.
 - containsImage: true if the question depends on a diagram/graph/table image not fully described in text.
 - confidence: 0.0–1.0 for extraction certainty.
 - Skip non-MCQ content. Do not merge the entire paper into one question.
 - Data sufficiency: when Directions define (1)–(5) for statement (i)/(ii) items, use those five as options; put the question plus (i) and (ii) in prompt; set questionType to DATA_SUFFICIENCY and section from the paper.
-- Statements & conclusions: when Directions define A–E for conclusion I/II items, use those five as options; put Statements plus Conclusions I and II in prompt; set questionType to STATEMENTS_CONCLUSIONS and store shared Directions in directionsBlock once per group.
+- Statements & conclusions: when Directions define A–E for conclusion I/II items, use those five as options; put Statements plus Conclusions I and II in prompt; set questionType to STATEMENTS_CONCLUSIONS and store shared Directions in directionsBlock once per group (without the "Directions (N-M):" label).
 SYS;
 
         $user = "Default page if no marker: {$defaultPage}\n\nExtract MCQs from this text:\n\n" . $text;
@@ -143,11 +143,14 @@ SYS;
                 continue;
             }
             $prompt = trim((string) ($row['prompt'] ?? $row['questionText'] ?? $row['question'] ?? ''));
-            $directions = trim((string) ($row['directionsBlock'] ?? ''));
+            $directions = AptitudeManualQuestionParser::stripDirectionsRangeLabel(
+                trim((string) ($row['directionsBlock'] ?? ''))
+            );
+            $prompt = AptitudeManualQuestionParser::stripDirectionsRangeLabel($prompt);
             if ($directions !== '' && !str_contains($prompt, $directions)) {
                 $prompt = $directions . "\n\n" . $prompt;
             }
-            $prompt = trim($prompt);
+            $prompt = AptitudeManualQuestionParser::stripDirectionsRangeLabel(trim($prompt));
             if ($prompt === '') {
                 continue;
             }

@@ -66,10 +66,15 @@ final class AptitudeManualQuestionParser
                 continue;
             }
             if ($qNum !== null && isset($passageForQuestion[$qNum])) {
-                $trim = $passageForQuestion[$qNum] . "\n\n" . $trim;
+                $trim = $passageForQuestion[$qNum] . "\n\n" . self::stripDirectionsRangeLabel($trim);
+            } else {
+                $trim = self::stripDirectionsRangeLabel($trim);
             }
             $parsed = $this->parseQuestionBlock($trim);
             if ($parsed !== null) {
+                if ($qNum !== null && empty($parsed['questionNumber'])) {
+                    $parsed['questionNumber'] = $qNum;
+                }
                 $out[] = $parsed;
             }
         }
@@ -407,16 +412,26 @@ final class AptitudeManualQuestionParser
                 continue;
             }
             $body = trim(preg_replace('/\s+/u', ' ', $m[3]) ?? $m[3]);
+            $body = self::stripDirectionsRangeLabel($body);
             if ($body === '') {
                 continue;
             }
-            $prefix = 'Directions (' . $start . '–' . $end . '): ' . $body;
+            // Keep the passage only — do not prefix "Directions (N–M):" on created questions.
             for ($q = $start; $q <= $end; $q++) {
-                $map[$q] = $prefix;
+                $map[$q] = $body;
             }
         }
 
         return $map;
+    }
+
+    /** Remove leading "Directions (N–M):" / "Directions (N-M):" labels from created question text. */
+    public static function stripDirectionsRangeLabel(string $text): string
+    {
+        $text = preg_replace('/^\s*Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:\s*/iu', '', $text) ?? $text;
+        $text = preg_replace('/\n\s*Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:\s*/iu', "\n", $text) ?? $text;
+
+        return trim($text);
     }
 
     private function leadingQuestionNumber(string $block): ?int
