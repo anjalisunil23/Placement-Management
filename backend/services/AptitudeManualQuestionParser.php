@@ -84,7 +84,8 @@ final class AptitudeManualQuestionParser
                 );
                 $parsed['prompt'] = $this->ensureArrangementLineOnPrompt(
                     (string) ($parsed['prompt'] ?? ''),
-                    $text
+                    $text,
+                    (int) ($parsed['questionNumber'] ?? $qNum ?? 0)
                 );
                 if (isset($parsed['options']) && is_array($parsed['options'])) {
                     $parsed['options'] = array_map(
@@ -551,6 +552,7 @@ final class AptitudeManualQuestionParser
     /**
      * If Directions mention a letter/number/symbol arrangement but the token row was
      * split onto another line/page, pull that row into the passage.
+     * Only search near this Directions block — never the whole document (avoids wrong Q).
      */
     private function ensureArrangementLineInPassage(string $body, string $fullText, int $dirStart, int $dirEnd): string
     {
@@ -561,45 +563,89 @@ final class AptitudeManualQuestionParser
         if (!$needsLine) {
             return $body;
         }
-        if (JdTextExtractionService::textHasSymbolArrangementLine($body)) {
-            return $body;
-        }
-
-        // PDF reading order sometimes places the bold row after the question — search nearby.
+        // PDF reading order sometimes places the bold row after the question — search nearby only.
         $from = max(0, $dirStart - 200);
         $window = substr($fullText, $from, 3200);
         $line = is_string($window) ? JdTextExtractionService::extractSymbolArrangementLine($window) : '';
+        $line = $line !== '' ? JdTextExtractionService::repairArrangementGlyphs($line) : '';
         if ($line === '') {
-            $line = JdTextExtractionService::extractSymbolArrangementLine($fullText);
+            return $body;
         }
-        if ($line !== '' && !str_contains($body, $line)) {
+        if (JdTextExtractionService::textHasSymbolArrangementLine($body)) {
+            $existing = JdTextExtractionService::extractSymbolArrangementLine($body);
+            if ($existing !== '' && mb_strlen($line) > mb_strlen($existing) + 4) {
+                return trim(str_replace($existing, $line, $body));
+            }
+
+            return $body;
+        }
+        if (!str_contains($body, $line)) {
             return trim($body . "\n" . $line);
         }
 
         return $body;
     }
 
-    private function ensureArrangementLineOnPrompt(string $prompt, string $fullText): string
+    private function ensureArrangementLineOnPrompt(string $prompt, string $fullText, int $qNum = 0): string
     {
+        $prompt = JdTextExtractionService::repairArrangementGlyphs($prompt);
+        // Only letter/number/symbol arrangement — not generic "paragraph arrangement" wording.
         if (!JdTextExtractionService::mentionsSymbolArrangement($prompt)
-            && !preg_match('/above\s+arrangement|following\s+arrangement/iu', $prompt)) {
-            return JdTextExtractionService::repairArrangementGlyphs($prompt);
+            && !preg_match('/\babove\s+arrangement\b/iu', $prompt)) {
+            return $prompt;
         }
-        if (JdTextExtractionService::textHasSymbolArrangementLine($prompt)) {
-            return JdTextExtractionService::repairArrangementGlyphs($prompt);
+        // Require an explicit symbol-arrangement cue before injecting a token row.
+        $hasSymbolCue = preg_match(
+            '/letter\s*[\/\s]*number\s*[\/\s]*symbol\s+arrangement|\babove\s+arrangement\b/iu',
+            $prompt
+        ) === 1;
+        if (!$hasSymbolCue) {
+            return $prompt;
         }
-        $line = JdTextExtractionService::extractSymbolArrangementLine($fullText);
+
+        $line = $this->findArrangementLineNearQuestion($fullText, $qNum);
+        if ($line === '' && JdTextExtractionService::textHasSymbolArrangementLine($prompt)) {
+            return $prompt;
+        }
         if ($line === '') {
-            return JdTextExtractionService::repairArrangementGlyphs($prompt);
+            return $prompt;
         }
-        $line = JdTextExtractionService::repairArrangementGlyphs($line);
+
+        if (JdTextExtractionService::textHasSymbolArrangementLine($prompt)) {
+            $existing = JdTextExtractionService::extractSymbolArrangementLine($prompt);
+            if ($existing !== '' && mb_strlen($line) > mb_strlen($existing) + 4) {
+                return trim(str_replace($existing, $line, $prompt));
+            }
+
+            return $prompt;
+        }
 
         // Insert arrangement row before the question stem when prompt has directions + stem.
-        if (preg_match('/^(.*arrangement[^\n]*[.?!]?)(\s+)(.+)$/isu', $prompt, $m)) {
+        if (preg_match('/^(.*(?:letter\s*[\/\s]*number\s*[\/\s]*symbol\s+)?arrangement[^\n]*[.?!]?)(\s+)(.+)$/isu', $prompt, $m)) {
             return trim($m[1] . "\n" . $line . "\n" . $m[3]);
         }
 
         return trim($line . "\n" . $prompt);
+    }
+
+    /** Arrangement token row near a question number — not a document-wide grab. */
+    private function findArrangementLineNearQuestion(string $fullText, int $qNum): string
+    {
+        if ($qNum <= 0) {
+            return '';
+        }
+        if (!preg_match('/(?<![0-9])' . preg_quote((string) $qNum, '/') . '\)\s+/u', $fullText, $m, PREG_OFFSET_CAPTURE)) {
+            return '';
+        }
+        $at = (int) ($m[0][1] ?? 0);
+        $from = max(0, $at - 1000);
+        $window = substr($fullText, $from, 2200);
+        if (!is_string($window) || $window === '') {
+            return '';
+        }
+        $line = JdTextExtractionService::extractSymbolArrangementLine($window);
+
+        return $line !== '' ? JdTextExtractionService::repairArrangementGlyphs($line) : '';
     }
 
     private function isSharedAnswerKeyDirections(string $body): bool

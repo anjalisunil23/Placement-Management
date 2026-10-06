@@ -71,4 +71,13 @@ if (str_contains($prompt, 'Verbal Ability') || str_contains($prompt, 'GRATIFY'))
     $failed++;
 }
 
+$q44 = $byNum[44] ?? null;
+if ($q44 !== null) {
+    $p44 = (string) ($q44['prompt'] ?? '') . ' ' . implode(' ', $q44['options'] ?? []);
+    if (preg_match('/T\s+8\s+3\s+1\s+7/u', $p44) === 1) {
+        echo "FAIL arrangement line leaked into Q44\n";
+        $failed++;
+    }
+}
+
 exit($failed > 0 ? 1 : 0);

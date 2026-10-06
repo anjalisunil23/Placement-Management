@@ -437,24 +437,79 @@ final class JdTextExtractionService
 
     public static function extractSymbolArrangementLine(string $text): string
     {
-        foreach (preg_split('/\n/u', $text) ?: [] as $line) {
-            $trim = trim($line);
-            if (self::isSymbolArrangementLine($trim)) {
-                return $trim;
+        $candidates = [];
+        $lines = preg_split('/\n/u', $text) ?: [];
+        $n = count($lines);
+        for ($i = 0; $i < $n; $i++) {
+            $trim = trim(preg_replace('/\s+/u', ' ', (string) $lines[$i]) ?? (string) $lines[$i]);
+            if (!self::isSymbolArrangementLine($trim)) {
+                continue;
             }
+            // PDF wrap often splits: "… © Q K" / "3 1 â □ □ U H 6 L"
+            $merged = $trim;
+            for ($j = $i + 1; $j < $n; $j++) {
+                $next = trim(preg_replace('/\s+/u', ' ', (string) $lines[$j]) ?? (string) $lines[$j]);
+                if ($next === '') {
+                    continue;
+                }
+                if (self::isSymbolArrangementLine($next) || self::isArrangementLineContinuation($next)) {
+                    $merged = trim($merged . ' ' . $next);
+                    continue;
+                }
+                break;
+            }
+            $merged = trim(preg_replace('/\s+/u', ' ', $merged) ?? $merged);
+            $candidates[] = self::isSymbolArrangementLine($merged) ? $merged : $trim;
         }
-        if (preg_match(
+        if (preg_match_all(
             '/((?:[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ●]\s+){10,}[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ●])/u',
             $text,
-            $m
+            $mm
         )) {
-            $candidate = trim(preg_replace('/\s+/u', ' ', $m[1]) ?? $m[1]);
-            if (self::isSymbolArrangementLine($candidate)) {
-                return $candidate;
+            foreach ($mm[1] as $rawHit) {
+                $candidate = trim(preg_replace('/\s+/u', ' ', (string) $rawHit) ?? (string) $rawHit);
+                if (self::isSymbolArrangementLine($candidate)) {
+                    $candidates[] = $candidate;
+                }
+            }
+        }
+        if ($candidates === []) {
+            return '';
+        }
+        usort($candidates, static fn (string $a, string $b): int => mb_strlen($b) <=> mb_strlen($a));
+
+        return $candidates[0];
+    }
+
+    /** Short wrapped tail of a symbol-arrangement row (not a full standalone line). */
+    public static function isArrangementLineContinuation(string $line): bool
+    {
+        $line = trim(preg_replace('/\s+/u', ' ', $line) ?? $line);
+        if ($line === '' || mb_strlen($line) < 5) {
+            return false;
+        }
+        if (preg_match('/\b(?:the|and|with|from|each|which|based|study|answer|questions?|directions)\b/iu', $line) === 1) {
+            return false;
+        }
+        if (preg_match('/^\d{1,3}\)\s/u', $line) === 1) {
+            return false;
+        }
+        $tokenClass = '[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫◊◆●○★☆âÃÂ?¿¡\/\\\\]';
+        if (preg_match('/^(?:' . $tokenClass . '\s+){2,}' . $tokenClass . '$/u', $line) !== 1) {
+            return false;
+        }
+        $tokens = preg_split('/\s+/u', $line) ?: [];
+        if (count($tokens) < 3 || count($tokens) > 16) {
+            return false;
+        }
+        $short = 0;
+        foreach ($tokens as $tok) {
+            if (mb_strlen($tok) <= 2) {
+                $short++;
             }
         }
 
-        return '';
+        return ($short / count($tokens)) >= 0.75;
     }
 
     public static function isGarbledExtract(string $text): bool
