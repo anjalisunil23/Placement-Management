@@ -1136,8 +1136,12 @@
       return;
     }
     const hint = editable && modules.length > 1
-      ? '<p class="small text-muted-2 mb-2">Drag the handle on the left to rearrange modules. Order saves automatically.</p>'
+      ? `<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+          <p class="small text-muted-2 mb-0">Drag the handle on the left to rearrange modules. Order saves when you drop.</p>
+          <span class="module-reorder-status" id="moduleReorderStatus" aria-live="polite"></span>
+        </div>`
       : '';
+    const busy = !!state.moduleReorderBusy;
     const cards = modules.map((module, index) => {
       const active = !state.creatingModule && state.selectedModuleId === module.id;
       const excerpt = plainExcerpt(module.content) || 'No lesson text yet';
@@ -1148,7 +1152,7 @@
         : `<button type="button" class="btn btn-sm btn-outline-primary" data-practice-module="${esc(module.id)}">Practice questions</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" data-select-module="${esc(module.id)}">View</button>`;
       const handle = editable
-        ? `<button type="button" class="module-drag-handle" draggable="true" data-drag-module="${esc(module.id)}" aria-label="Drag to reorder module" title="Drag to reorder"><i class="bi bi-grip-vertical" aria-hidden="true"></i></button>`
+        ? `<button type="button" class="module-drag-handle" data-drag-module="${esc(module.id)}" aria-label="Drag to reorder module" title="Drag to reorder" ${busy ? 'disabled' : ''}><i class="bi bi-grip-vertical" aria-hidden="true"></i></button>`
         : '';
       return `<div class="module-card border rounded p-2 ${active ? 'border-primary' : ''}" data-module-card="${esc(module.id)}">
         <div class="d-flex gap-2 align-items-start">
@@ -1165,7 +1169,7 @@
       </div>`;
     }).join('');
     const draft = state.creatingModule
-      ? '<div class="border border-primary rounded p-2"><div class="fw-semibold">● New module</div><div class="small text-muted-2">Write the title and lesson on the right, then save.</div></div>'
+      ? '<div class="border border-primary rounded p-2" data-module-draft="1"><div class="fw-semibold">● New module</div><div class="small text-muted-2">Write the title and lesson on the right, then save.</div></div>'
       : '';
     root.innerHTML = hint + cards + draft;
     root.querySelectorAll('[data-select-module]').forEach((btn) => btn.addEventListener('click', () => selectModule(btn.getAttribute('data-select-module'))));
@@ -1176,166 +1180,329 @@
     if (editable) bindModuleDrag(root);
   }
 
-  function clearModuleDropMarkers(root) {
-    root.querySelectorAll('[data-module-card]').forEach((card) => {
-      card.classList.remove('is-dragging', 'is-drop-target', 'is-drop-before', 'is-drop-after');
-    });
+  const moduleDrag = {
+    active: false,
+    moduleId: '',
+    card: null,
+    placeholder: null,
+    ghost: null,
+    offsetY: 0,
+    lastClientY: 0,
+    scrollParents: [],
+    scrollRaf: 0,
+    startModules: null,
+    moved: false,
+  };
+
+  function setModuleReorderStatus(text) {
+    const el = document.getElementById('moduleReorderStatus');
+    if (el) el.textContent = text || '';
   }
 
-  function moduleDropPlacement(card, clientY) {
-    const rect = card.getBoundingClientRect();
-    const placeAfter = clientY > rect.top + (rect.height / 2);
-    return {
-      toId: card.getAttribute('data-module-card') || '',
-      placeAfter,
-    };
-  }
-
-  function scrollAncestorsBy(node, dy) {
-    let el = node;
-    while (el && el !== document.body) {
-      if (el instanceof HTMLElement) {
-        const style = window.getComputedStyle(el);
-        const canScroll = (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflow === 'auto' || style.overflow === 'scroll')
-          && el.scrollHeight > el.clientHeight + 1;
-        if (canScroll) el.scrollTop += dy;
+  function findScrollParents(node) {
+    const parents = [];
+    let el = node instanceof HTMLElement ? node : null;
+    while (el && el !== document.documentElement) {
+      const style = window.getComputedStyle(el);
+      const overflowY = style.overflowY;
+      if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay')
+        && el.scrollHeight > el.clientHeight + 1) {
+        parents.push(el);
       }
       el = el.parentElement;
     }
-    window.scrollBy(0, dy);
+    const doc = document.scrollingElement || document.documentElement;
+    if (!parents.includes(doc)) parents.push(doc);
+    return parents;
+  }
+
+  function scrollParentsBy(parents, dy) {
+    if (!dy) return;
+    parents.forEach((el) => {
+      if (el === document.documentElement || el === document.body || el === document.scrollingElement) {
+        window.scrollBy(0, dy);
+      } else if (el instanceof HTMLElement) {
+        el.scrollTop += dy;
+      }
+    });
+  }
+
+  function stopModuleAutoScroll() {
+    if (moduleDrag.scrollRaf) {
+      cancelAnimationFrame(moduleDrag.scrollRaf);
+      moduleDrag.scrollRaf = 0;
+    }
+  }
+
+  function tickModuleAutoScroll() {
+    moduleDrag.scrollRaf = 0;
+    if (!moduleDrag.active) return;
+    const edge = 100;
+    const maxStep = 28;
+    const y = moduleDrag.lastClientY;
+    let dy = 0;
+    if (y < edge) dy = -Math.max(4, Math.ceil(((edge - y) / edge) * maxStep));
+    else if (y > window.innerHeight - edge) dy = Math.max(4, Math.ceil(((y - (window.innerHeight - edge)) / edge) * maxStep));
+    if (dy) {
+      scrollParentsBy(moduleDrag.scrollParents, dy);
+      relocateModulePlaceholder(moduleDrag.lastClientY);
+    }
+    moduleDrag.scrollRaf = requestAnimationFrame(tickModuleAutoScroll);
+  }
+
+  function startModuleAutoScroll() {
+    if (!moduleDrag.scrollRaf) moduleDrag.scrollRaf = requestAnimationFrame(tickModuleAutoScroll);
+  }
+
+  function visibleModuleCards(root) {
+    return [...root.querySelectorAll('[data-module-card]')].filter((card) => {
+      if (card === moduleDrag.card) return false;
+      if (card.classList.contains('is-dragging-source')) return false;
+      const style = window.getComputedStyle(card);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    });
+  }
+
+  function relocateModulePlaceholder(clientY) {
+    const root = document.getElementById('moduleNav');
+    const ph = moduleDrag.placeholder;
+    if (!root || !ph) return;
+    const cards = visibleModuleCards(root);
+    let insertBefore = null;
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect();
+      if (clientY < rect.top + (rect.height / 2)) {
+        insertBefore = card;
+        break;
+      }
+    }
+    const draft = root.querySelector('[data-module-draft="1"]');
+    if (insertBefore) {
+      if (ph.nextElementSibling !== insertBefore) root.insertBefore(ph, insertBefore);
+      return;
+    }
+    if (draft) {
+      if (ph.nextElementSibling !== draft) root.insertBefore(ph, draft);
+      return;
+    }
+    if (ph.parentElement !== root || root.lastElementChild !== ph) root.appendChild(ph);
+  }
+
+  function readModuleOrderFromDom(root, draggedId) {
+    const ids = [];
+    [...root.children].forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      if (el.hasAttribute('data-module-placeholder')) {
+        if (draggedId && !ids.includes(draggedId)) ids.push(draggedId);
+        return;
+      }
+      if (!el.hasAttribute('data-module-card')) return;
+      const id = el.getAttribute('data-module-card') || '';
+      if (!id || id === draggedId || ids.includes(id)) return;
+      ids.push(id);
+    });
+    if (draggedId && !ids.includes(draggedId)) ids.push(draggedId);
+    return ids;
+  }
+
+  function cleanupModuleDragVisuals() {
+    stopModuleAutoScroll();
+    document.body.classList.remove('is-module-reordering');
+    document.removeEventListener('pointermove', onModulePointerMove);
+    document.removeEventListener('pointerup', onModulePointerUp);
+    document.removeEventListener('pointercancel', onModulePointerUp);
+    if (moduleDrag.ghost && moduleDrag.ghost.parentNode) moduleDrag.ghost.parentNode.removeChild(moduleDrag.ghost);
+    if (moduleDrag.placeholder && moduleDrag.placeholder.parentNode) {
+      moduleDrag.placeholder.parentNode.removeChild(moduleDrag.placeholder);
+    }
+    if (moduleDrag.card) {
+      moduleDrag.card.classList.remove('is-dragging-source');
+      moduleDrag.card.style.display = '';
+      moduleDrag.card.hidden = false;
+    }
+    moduleDrag.ghost = null;
+    moduleDrag.placeholder = null;
+    moduleDrag.card = null;
+  }
+
+  function onModulePointerMove(event) {
+    if (!moduleDrag.active) return;
+    moduleDrag.lastClientY = event.clientY;
+    moduleDrag.moved = true;
+    if (moduleDrag.ghost) {
+      moduleDrag.ghost.style.top = `${Math.round(event.clientY - moduleDrag.offsetY)}px`;
+      const root = document.getElementById('moduleNav');
+      if (root) {
+        const bounds = root.getBoundingClientRect();
+        const width = moduleDrag.ghost.offsetWidth;
+        const left = Math.min(Math.max(bounds.left, event.clientX - width / 2), bounds.right - width);
+        moduleDrag.ghost.style.left = `${Math.round(left)}px`;
+      }
+    }
+    relocateModulePlaceholder(event.clientY);
+  }
+
+  function onModulePointerUp() {
+    if (!moduleDrag.active) return;
+    const root = document.getElementById('moduleNav');
+    const draggedId = moduleDrag.moduleId;
+    const previous = moduleDrag.startModules;
+    const moved = moduleDrag.moved;
+    const orderedIds = root ? readModuleOrderFromDom(root, draggedId) : [];
+    cleanupModuleDragVisuals();
+    moduleDrag.active = false;
+    moduleDrag.moduleId = '';
+    moduleDrag.startModules = null;
+    moduleDrag.moved = false;
+    if (!root || !draggedId || !previous) {
+      renderModuleNav();
+      return;
+    }
+    if (!moved) {
+      renderModuleNav();
+      return;
+    }
+    if (previous.length !== orderedIds.length) {
+      renderModuleNav();
+      toast('Could not reorder modules.', 'error');
+      return;
+    }
+    const unchanged = previous.every((row, index) => row.id === orderedIds[index]);
+    if (unchanged) {
+      renderModuleNav();
+      return;
+    }
+    persistModuleOrder(orderedIds, previous).catch(fail);
+  }
+
+  function startModulePointerDrag(root, card, moduleId, event) {
+    if (moduleDrag.active || state.moduleReorderBusy) return;
+    const rect = card.getBoundingClientRect();
+    moduleDrag.active = true;
+    moduleDrag.moduleId = moduleId;
+    moduleDrag.card = card;
+    moduleDrag.offsetY = event.clientY - rect.top;
+    moduleDrag.lastClientY = event.clientY;
+    moduleDrag.moved = false;
+    moduleDrag.scrollParents = findScrollParents(root);
+    moduleDrag.startModules = [...((state.active && state.active.modules) || [])];
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'module-drop-placeholder';
+    placeholder.setAttribute('data-module-placeholder', '1');
+    placeholder.style.height = `${Math.max(rect.height, 56)}px`;
+    placeholder.innerHTML = '<span>Drop module here</span>';
+    card.parentNode.insertBefore(placeholder, card);
+    moduleDrag.placeholder = placeholder;
+
+    const ghost = card.cloneNode(true);
+    ghost.classList.add('module-drag-ghost');
+    ghost.querySelectorAll('button, a, input, textarea, select').forEach((el) => {
+      el.setAttribute('tabindex', '-1');
+      if ('disabled' in el) el.disabled = true;
+    });
+    ghost.style.width = `${rect.width}px`;
+    ghost.style.left = `${rect.left}px`;
+    ghost.style.top = `${rect.top}px`;
+    document.body.appendChild(ghost);
+    moduleDrag.ghost = ghost;
+
+    card.classList.add('is-dragging-source');
+    card.style.display = 'none';
+
+    document.body.classList.add('is-module-reordering');
+    document.addEventListener('pointermove', onModulePointerMove);
+    document.addEventListener('pointerup', onModulePointerUp);
+    document.addEventListener('pointercancel', onModulePointerUp);
+    startModuleAutoScroll();
+    relocateModulePlaceholder(event.clientY);
   }
 
   function bindModuleDrag(root) {
-    let dragId = '';
-    let lastClientY = 0;
-    let scrollRaf = 0;
-
-    const stopAutoScroll = () => {
-      if (scrollRaf) {
-        cancelAnimationFrame(scrollRaf);
-        scrollRaf = 0;
-      }
-    };
-
-    const tickAutoScroll = () => {
-      scrollRaf = 0;
-      if (!dragId) return;
-      const edge = 80;
-      const maxStep = 24;
-      const y = lastClientY;
-      let dy = 0;
-      if (y < edge) dy = -Math.max(6, Math.ceil(((edge - y) / edge) * maxStep));
-      else if (y > window.innerHeight - edge) dy = Math.max(6, Math.ceil(((y - (window.innerHeight - edge)) / edge) * maxStep));
-      if (dy) scrollAncestorsBy(root, dy);
-      scrollRaf = requestAnimationFrame(tickAutoScroll);
-    };
-
-    const startAutoScroll = () => {
-      if (!scrollRaf) scrollRaf = requestAnimationFrame(tickAutoScroll);
-    };
-
-    const onDragOverWindow = (event) => {
-      if (!dragId) return;
-      lastClientY = event.clientY;
-      startAutoScroll();
-    };
-
     root.querySelectorAll('[data-drag-module]').forEach((handle) => {
-      handle.addEventListener('dragstart', (event) => {
-        dragId = handle.getAttribute('data-drag-module') || '';
+      handle.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        if (state.moduleReorderBusy || moduleDrag.active) return;
+        const moduleId = handle.getAttribute('data-drag-module') || '';
         const card = handle.closest('[data-module-card]');
-        if (!dragId || !card) {
+        if (!moduleId || !card) return;
+        event.preventDefault();
+        startModulePointerDrag(root, card, moduleId, event);
+      });
+      handle.addEventListener('click', (event) => {
+        if (moduleDrag.moved) {
           event.preventDefault();
-          return;
+          event.stopPropagation();
         }
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', dragId);
-        card.classList.add('is-dragging');
-        lastClientY = event.clientY;
-        document.addEventListener('dragover', onDragOverWindow);
-        startAutoScroll();
-        try {
-          event.dataTransfer.setDragImage(card, 24, 24);
-        } catch {
-          /* some browsers reject custom drag images */
-        }
-      });
-      handle.addEventListener('dragend', () => {
-        dragId = '';
-        stopAutoScroll();
-        document.removeEventListener('dragover', onDragOverWindow);
-        clearModuleDropMarkers(root);
-      });
-    });
-
-    root.querySelectorAll('[data-module-card]').forEach((card) => {
-      card.addEventListener('dragover', (event) => {
-        if (!dragId && !(event.dataTransfer && event.dataTransfer.types.includes('text/plain'))) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        lastClientY = event.clientY;
-        startAutoScroll();
-        const { placeAfter } = moduleDropPlacement(card, event.clientY);
-        root.querySelectorAll('[data-module-card]').forEach((item) => {
-          item.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
-        });
-        card.classList.add('is-drop-target', placeAfter ? 'is-drop-after' : 'is-drop-before');
-      });
-      card.addEventListener('dragleave', (event) => {
-        if (!card.contains(event.relatedTarget)) {
-          card.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
-        }
-      });
-      card.addEventListener('drop', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const fromId = (event.dataTransfer && event.dataTransfer.getData('text/plain')) || dragId;
-        const { toId, placeAfter } = moduleDropPlacement(card, event.clientY);
-        clearModuleDropMarkers(root);
-        stopAutoScroll();
-        document.removeEventListener('dragover', onDragOverWindow);
-        dragId = '';
-        if (!fromId || !toId) return;
-        saveModuleOrder(fromId, toId, placeAfter).catch(fail);
       });
     });
   }
 
-  function buildReorderedModules(modules, fromId, toId, placeAfter) {
-    const from = modules.findIndex((row) => row.id === fromId);
-    const target = modules.findIndex((row) => row.id === toId);
-    if (from < 0 || target < 0) return null;
-    let insertAt = placeAfter ? target + 1 : target;
-    if (from === insertAt || from + 1 === insertAt) return null;
-    const next = [...modules];
-    const [item] = next.splice(from, 1);
-    if (from < insertAt) insertAt -= 1;
-    next.splice(insertAt, 0, item);
-    return next;
+  function modulesFromOrderedIds(orderedIds, sourceModules) {
+    const byId = new Map();
+    (sourceModules || []).forEach((row) => {
+      if (row && row.id) byId.set(row.id, row);
+    });
+    const next = [];
+    orderedIds.forEach((id) => {
+      const row = byId.get(id);
+      if (row) next.push(row);
+    });
+    return next.length === byId.size ? next : null;
   }
 
-  async function saveModuleOrder(fromId, toId, placeAfter = false) {
+  async function persistModuleOrder(orderedIds, previousModules) {
     if (!state.active || state.moduleReorderBusy) return;
-    const modules = buildReorderedModules(state.active.modules || [], fromId, toId, placeAfter);
-    if (!modules) return;
-    const previous = state.active.modules;
+    const previous = previousModules || [...(state.active.modules || [])];
+    const modules = modulesFromOrderedIds(orderedIds, previous);
+    if (!modules) {
+      state.active.modules = previous;
+      renderModuleNav();
+      toast('Could not reorder modules.', 'error');
+      return;
+    }
+    const unchanged = previous.length === modules.length && previous.every((row, index) => row.id === modules[index].id);
+    if (unchanged) {
+      renderModuleNav();
+      return;
+    }
     state.active.modules = modules;
     renderModuleNav();
+    setModuleReorderStatus('Saving order…');
     state.moduleReorderBusy = true;
     try {
       await call(`/tutorials/manage/${encodeURIComponent(state.active.id)}/modules/reorder`, {
         method: 'POST',
         body: { moduleIds: modules.map((row) => row.id) },
       });
+      setModuleReorderStatus('Order saved');
       toast('Module order saved.', 'success');
       await openModules(state.active.id);
+      setModuleReorderStatus('');
     } catch (err) {
       state.active.modules = previous;
       renderModuleNav();
+      setModuleReorderStatus('');
       fail(err);
     } finally {
       state.moduleReorderBusy = false;
+      renderModuleNav();
     }
+  }
+
+  async function saveModuleOrder(fromId, toId, placeAfter = false) {
+    if (!state.active || state.moduleReorderBusy) return;
+    const modules = [...(state.active.modules || [])];
+    const from = modules.findIndex((row) => row.id === fromId);
+    const target = modules.findIndex((row) => row.id === toId);
+    if (from < 0 || target < 0) return;
+    let insertAt = placeAfter ? target + 1 : target;
+    if (from === insertAt || from + 1 === insertAt) return;
+    const next = [...modules];
+    const [item] = next.splice(from, 1);
+    if (from < insertAt) insertAt -= 1;
+    next.splice(insertAt, 0, item);
+    await persistModuleOrder(next.map((row) => row.id), modules);
   }
 
   function renderStaffPractice(data) {
