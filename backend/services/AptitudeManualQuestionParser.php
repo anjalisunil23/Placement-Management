@@ -62,7 +62,7 @@ final class AptitudeManualQuestionParser
             }
             if (!preg_match('/\([a-eA-E]\)/', $trim)
                 && !preg_match('/(?:^|[\s])[a-eA-E]\)/u', $trim)
-                && !preg_match('/[A-Da-d][\.\):]/u', $trim)) {
+                && !preg_match('/[A-Ea-e][\.\):]/u', $trim)) {
                 continue;
             }
             $questionPart = self::stripLeadingQuestionNumber(self::stripDirectionsRangeLabel($trim));
@@ -76,10 +76,14 @@ final class AptitudeManualQuestionParser
                 if ($qNum !== null && empty($parsed['questionNumber'])) {
                     $parsed['questionNumber'] = $qNum;
                 }
-                $parsed['prompt'] = self::cutAtNextSectionHeading(
-                    self::stripEmbeddedQuestionNumber(
-                        (string) ($parsed['prompt'] ?? ''),
-                        (int) ($parsed['questionNumber'] ?? $qNum ?? 0)
+                $parsed['prompt'] = self::cutAtNextNumberedQuestion(
+                    self::cutAtNextStudyPassage(
+                        self::cutAtNextSectionHeading(
+                            self::stripEmbeddedQuestionNumber(
+                                (string) ($parsed['prompt'] ?? ''),
+                                (int) ($parsed['questionNumber'] ?? $qNum ?? 0)
+                            )
+                        )
                     )
                 );
                 $parsed['prompt'] = $this->ensureArrangementLineOnPrompt(
@@ -89,7 +93,9 @@ final class AptitudeManualQuestionParser
                 );
                 if (isset($parsed['options']) && is_array($parsed['options'])) {
                     $parsed['options'] = array_map(
-                        static fn ($o) => self::cutAtNextSectionHeading((string) $o),
+                        static fn ($o) => self::cutAtNextNumberedQuestion(
+                            self::cutAtNextStudyPassage(self::cutAtNextSectionHeading((string) $o))
+                        ),
                         $parsed['options']
                     );
                     $parsed['options'] = self::repairDuplicateLetterCodeOptions($parsed['options']);
@@ -165,7 +171,7 @@ final class AptitudeManualQuestionParser
                 return $this->refineQuestionBlocks($blocks);
             }
         }
-        $inline = preg_split('/\s+(?=\d{1,3}\)\s+[A-Za-z(])/', $text, -1, PREG_SPLIT_NO_EMPTY);
+        $inline = preg_split('/\s+(?=\d{1,3}\)\s+\S)/u', $text, -1, PREG_SPLIT_NO_EMPTY);
         if (is_array($inline) && count($inline) > 1) {
             return array_values(array_filter(array_map('trim', $inline), static fn (string $b): bool => $b !== ''));
         }
@@ -335,9 +341,12 @@ final class AptitudeManualQuestionParser
     private function extractOptionsFromBlock(string $block): array
     {
         $options = [];
+        $studyStop = '\s+(?:Study|Read)\s+the\s+following\b';
+        $nextQStop = '\s+\d{1,3}\)\s+\S';
         if (preg_match_all(
             // Skip answer-key prose: "answer (A), (B), (C)…" (comma / next letter immediately after).
-            '/(?:^|[\n\s])\(([a-eA-E])\)\s+(?![,;])(?!\([a-eA-E]\))(.+?)(?=(?:[\n\s]\([a-eA-E]\)|\s+\d{1,3}\)|\s+Directions\s*\(|$))/s',
+            '/(?:^|[\n\s])\(([a-eA-E])\)\s+(?![,;])(?!\([a-eA-E]\))(.+?)(?=(?:[\n\s]\([a-eA-E]\)|'
+            . $nextQStop . '|' . $studyStop . '|\s+Directions\s*\(|$))/su',
             $block,
             $matches,
             PREG_SET_ORDER
@@ -351,7 +360,8 @@ final class AptitudeManualQuestionParser
             }
         }
         if ($options === [] && preg_match_all(
-            '/(?:^|[\n\s])([a-eA-E])\)\s*(.+?)(?=(?:[\n\s][a-eA-E]\)|\s+\d{1,3}\)|\s+Directions\s*\(|$))/su',
+            '/(?:^|[\n\s])([a-eA-E])\)\s*(.+?)(?=(?:[\n\s][a-eA-E]\)|'
+            . $nextQStop . '|' . $studyStop . '|\s+Directions\s*\(|$))/su',
             $block,
             $matches,
             PREG_SET_ORDER
@@ -361,7 +371,8 @@ final class AptitudeManualQuestionParser
             }
         }
         if ($options === [] && preg_match_all(
-            '/(?:^|\n)\s*([A-Da-d])[\.\):]\s*(.+?)(?=\n\s*[A-Da-d][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\s+Directions\s*\(|\z)/s',
+            '/(?:^|\n)\s*([A-Ea-e])[\.\):]\s*(.+?)(?=\n\s*[A-Ea-e][\.\):]|\n\s*(?:Answer|Correct|Explanation)|'
+            . $nextQStop . '|' . $studyStop . '|\s+Directions\s*\(|\z)/su',
             $block,
             $matches,
             PREG_SET_ORDER
@@ -371,7 +382,8 @@ final class AptitudeManualQuestionParser
             }
         }
         if ($options === [] && preg_match_all(
-            '/(?:^|\n|\s)\(([A-Da-d])\)\s*(.+?)(?=(?:^|\n|\s)\([A-Da-d]\)|\n\s*(?:Answer|Correct)|\s+Directions\s*\(|\z)/s',
+            '/(?:^|\n|\s)\(([A-Ea-e])\)\s*(.+?)(?=(?:^|\n|\s)\([A-Ea-e]\)|\n\s*(?:Answer|Correct)|'
+            . $nextQStop . '|' . $studyStop . '|\s+Directions\s*\(|\z)/su',
             $block,
             $matches,
             PREG_SET_ORDER
@@ -381,12 +393,13 @@ final class AptitudeManualQuestionParser
             }
         }
         if ($options === [] && preg_match_all(
-            '/(?:^|\n)\s*([1-4])[\.\):]\s*(.+?)(?=\n\s*[1-4][\.\):]|\n\s*(?:Answer|Correct|Explanation)|\s+Directions\s*\(|\z)/s',
+            '/(?:^|\n)\s*([1-5])[\.\):]\s*(.+?)(?=\n\s*[1-5][\.\):]|\n\s*(?:Answer|Correct|Explanation)|'
+            . $nextQStop . '|' . $studyStop . '|\s+Directions\s*\(|\z)/su',
             $block,
             $matches,
             PREG_SET_ORDER
         )) {
-            $map = ['1' => 'A', '2' => 'B', '3' => 'C', '4' => 'D'];
+            $map = ['1' => 'A', '2' => 'B', '3' => 'C', '4' => 'D', '5' => 'E'];
             foreach ($matches as $m) {
                 $letter = $map[$m[1]] ?? '';
                 if ($letter !== '') {
@@ -395,7 +408,8 @@ final class AptitudeManualQuestionParser
             }
         }
         if ($options === [] && preg_match_all(
-            '/\b([A-Da-d])\.\s+(.+?)(?=\s+[A-Da-d]\.\s+|\s*(?:Answer|Ans)\s*[:\.]|\z)/s',
+            '/\b([A-Ea-e])\.\s+(.+?)(?=\s+[A-Ea-e]\.\s+|\s*(?:Answer|Ans)\s*[:\.]|'
+            . $nextQStop . '|' . $studyStop . '|\z)/su',
             $block,
             $matches,
             PREG_SET_ORDER
@@ -478,6 +492,36 @@ final class AptitudeManualQuestionParser
             }
         }
 
+        // "Study/Read the following information carefully…" without a Directions: label.
+        if (preg_match_all(
+            '/((?:Study|Read)\s+the\s+following\s+'
+            . '(?:information|passage|arrangement|data|table|pie\s*chart|graph|bar\s*graph)\b'
+            . '[\s\S]*?)(?=\n\s*(?:\d{1,3}\)\s|\d{1,4}[\.\):]\s)|\n\s*Directions\s*:|$)/iu',
+            $text,
+            $studyMatches,
+            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+        )) {
+            foreach ($studyMatches as $m) {
+                $rawBody = (string) ($m[1][0] ?? '');
+                $matchStart = (int) ($m[1][1] ?? 0);
+                $afterPos = $matchStart + strlen($rawBody);
+                $body = $this->normalizePassageBody($rawBody);
+                if ($body === '' || mb_strlen($body) < 24) {
+                    continue;
+                }
+                $maxSpan = preg_match('/\bquestions\b/iu', $rawBody) === 1 ? 8 : 1;
+                $following = $this->listFollowingQuestionNumbers($text, $afterPos, $maxSpan);
+                if ($following === []) {
+                    continue;
+                }
+                foreach ($following as $q) {
+                    if (!isset($map[$q])) {
+                        $map[$q] = $body;
+                    }
+                }
+            }
+        }
+
         return $map;
     }
 
@@ -522,7 +566,8 @@ final class AptitudeManualQuestionParser
             if ($nums !== [] && is_string($between)) {
                 if (preg_match('/Directions\s*:/iu', $between) === 1
                     || self::nextDirectionsRangeOffset($between) !== null
-                    || self::nextSectionHeadingOffset($between) !== null) {
+                    || self::nextSectionHeadingOffset($between) !== null
+                    || self::nextStudyPassageOffset($between) !== null) {
                     break;
                 }
             }
@@ -719,6 +764,41 @@ final class AptitudeManualQuestionParser
         return trim(substr($text, 0, $at));
     }
 
+    /**
+     * Cut "Study/Read the following information carefully…" passages glued onto prior options.
+     * OCR typo "answer he given questions" is accepted.
+     * If the text itself starts with that opener, keep it (it is the passage, not a leak).
+     */
+    public static function cutAtNextStudyPassage(string $text): string
+    {
+        $at = self::nextStudyPassageOffset($text);
+        if ($at === null || $at < 1) {
+            return trim($text);
+        }
+
+        return trim(substr($text, 0, $at));
+    }
+
+    private static function nextStudyPassageOffset(string $text, int $from = 0): ?int
+    {
+        if (preg_match(
+            '/(?:^|[\n\r]\s*|\s)'
+            . '((?:Study|Read)\s+the\s+following\s+'
+            . '(?:information|passage|arrangement|data|table|pie\s*chart|graph|bar\s*graph)\b'
+            . '[^\n\r]{0,120}?(?:carefully\s+)?(?:and\s+answer\s+(?:the|he)\s+given\s+questions?[:.]?)?)/iu',
+            $text,
+            $m,
+            PREG_OFFSET_CAPTURE,
+            $from
+        )) {
+            return (int) ($m[1][1] ?? $m[0][1] ?? -1) >= 0
+                ? (int) ($m[1][1] ?? $m[0][1])
+                : null;
+        }
+
+        return null;
+    }
+
     private static function nextDirectionsRangeOffset(string $text, int $from = 0): ?int
     {
         if (preg_match('/Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:/iu', $text, $m, PREG_OFFSET_CAPTURE, $from)) {
@@ -852,14 +932,43 @@ final class AptitudeManualQuestionParser
     {
         $block = self::cutAtNextDirectionsRange($block);
         $block = self::cutAtNextSectionHeading($block);
-        if (preg_match('/\([a-eA-E]\)|[a-eA-E]\)/u', $block)
+        $block = self::cutAtNextStudyPassage($block);
+        $block = self::cutAtNextNumberedQuestion($block);
+        if (preg_match('/\([a-eA-E]\)|[a-eA-E]\)|[A-Ea-e][\.\):]/u', $block)
             && preg_match('/\s+Directions\s*:/iu', $block, $dm, PREG_OFFSET_CAPTURE)) {
             $block = trim(substr($block, 0, (int) $dm[0][1]));
         }
         $stripped = preg_replace('/\s+Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:.*$/isu', '', $block);
         $stripped = preg_replace('/\s+Directions\s*:[\s\S]*$/iu', '', $stripped ?? $block);
+        $stripped = self::cutAtNextStudyPassage($stripped ?? $block);
+        $stripped = self::cutAtNextNumberedQuestion($stripped);
 
         return trim($stripped ?? $block);
+    }
+
+    /**
+     * When the next "69) …" question is glued onto option E / a prior block, cut it off.
+     * Does not cut a leading question number (the block's own stem).
+     */
+    public static function cutAtNextNumberedQuestion(string $text): string
+    {
+        $text = (string) $text;
+        if ($text === '') {
+            return '';
+        }
+        // Skip the block's own leading "69)"
+        $offset = 0;
+        if (preg_match('/^\s*(?:Q(?:uestion)?\s*)?\d{1,3}\)\s+/iu', $text, $lead)) {
+            $offset = strlen($lead[0]);
+        }
+        if (preg_match('/\s+\d{1,3}\)\s+\S/u', $text, $m, PREG_OFFSET_CAPTURE, $offset)) {
+            $at = (int) ($m[0][1] ?? -1);
+            if ($at > 0) {
+                return trim(substr($text, 0, $at));
+            }
+        }
+
+        return trim($text);
     }
 
     /**
@@ -1373,9 +1482,18 @@ final class AptitudeManualQuestionParser
     {
         $text = self::cutAtNextDirectionsRange($text);
         $text = self::cutAtNextSectionHeading($text);
+        $text = self::cutAtNextStudyPassage($text);
+        $text = self::cutAtNextNumberedQuestion($text);
         $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
         $text = preg_replace('/\s+Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:.*$/iu', '', $text) ?? $text;
         $text = preg_replace('/\s+\d{1,3}\)\s+Study\s+the\s+following.*$/iu', '', $text) ?? $text;
+        $text = preg_replace(
+            '/\s+(?:Study|Read)\s+the\s+following\s+'
+            . '(?:information|passage|arrangement|data|table|pie\s*chart|graph|bar\s*graph)\b.*$/iu',
+            '',
+            $text
+        ) ?? $text;
+        $text = preg_replace('/\s+\d{1,3}\)\s+\S.*$/u', '', $text) ?? $text;
 
         return trim($text);
     }

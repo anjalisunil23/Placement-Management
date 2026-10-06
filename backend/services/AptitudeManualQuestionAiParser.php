@@ -155,8 +155,10 @@ SYS;
             $prompt = AptitudeManualQuestionParser::stripEmbeddedQuestionNumber($prompt, $qNum);
             $prompt = AptitudeManualQuestionParser::cutAtNextDirectionsRange($prompt);
             $prompt = AptitudeManualQuestionParser::cutAtNextSectionHeading($prompt);
+            $prompt = AptitudeManualQuestionParser::cutAtNextStudyPassage($prompt);
             $directions = AptitudeManualQuestionParser::cutAtNextDirectionsRange($directions);
             $directions = AptitudeManualQuestionParser::cutAtNextSectionHeading($directions);
+            $directions = AptitudeManualQuestionParser::cutAtNextStudyPassage($directions);
             if ($prompt === '') {
                 continue;
             }

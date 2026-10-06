@@ -145,7 +145,8 @@ final class JdTextExtractionService
         $text = preg_replace('/\n{3,}/u', "\n\n", $text) ?? $text;
         $text = trim($text);
         // Flat OCR blobs: "… hour? a) 6% b) 2% … 2) Find …"
-        $text = preg_replace('/(\s)(\d{1,3}\)\s+(?=[A-Za-z(]))/u', "\n$2", $text) ?? $text;
+        // Also fill-in stems: "69) ........ is a …" (not only letter/( starters).
+        $text = preg_replace('/(\s)(\d{1,3}\)\s+\S)/u', "\n$2", $text) ?? $text;
         $text = preg_replace('/(\s)(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "\n\n$2", $text) ?? $text;
         $text = preg_replace('/(\s)(Directions\s*:)/iu', "\n\n$2", $text) ?? $text;
         // Keep section topic headings on their own line (not glued to option E).
@@ -178,6 +179,19 @@ final class JdTextExtractionService
         // Option line glued to a directions block (e.g. "e) 17 Directions (7 - 11):").
         $text = preg_replace('/(\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
         $text = preg_replace('/(\d{1,3}\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
+        // "E. 17 Study the following information carefully…" → keep study block separate.
+        $text = preg_replace(
+            '/(\b[A-Ea-e][\.\)]\s*\S+)\s+((?:Study|Read)\s+the\s+following\s+'
+            . '(?:information|passage|arrangement|data|table|pie\s*chart|graph|bar\s*graph)\b)/iu',
+            "$1\n\n$2",
+            $text
+        ) ?? $text;
+        $text = preg_replace(
+            '/(\S)\s+((?:Study|Read)\s+the\s+following\s+'
+            . '(?:information|passage|arrangement|data|table|pie\s*chart|graph|bar\s*graph)\b)/iu',
+            "$1\n\n$2",
+            $text
+        ) ?? $text;
         $beforeRepair = $text;
         $text = self::repairCommonPdfMojibake($text);
         if (self::isGarbledExtract($text)) {
