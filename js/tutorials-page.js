@@ -1504,7 +1504,7 @@
       el.className = block.level === 3 ? 'lesson-heading lesson-subhead' : 'lesson-heading';
       el.dataset.editable = '1';
       el.contentEditable = 'true';
-      el.dataset.placeholder = block.level === 3 ? 'Subheading' : 'Heading';
+      el.dataset.placeholder = block.level === 3 ? 'Section subheading' : 'Lesson heading';
       el.textContent = block.text || '';
       wireTextBlock(el, block);
       return el;
@@ -1514,7 +1514,7 @@
       el.className = 'lesson-quote';
       el.dataset.editable = '1';
       el.contentEditable = 'true';
-      el.dataset.placeholder = 'Quote';
+      el.dataset.placeholder = 'Key takeaway or example quote';
       el.textContent = block.text || '';
       wireTextBlock(el, block);
       return el;
@@ -1599,7 +1599,7 @@
     el.className = 'lesson-paragraph';
     el.dataset.editable = '1';
     el.contentEditable = 'true';
-    el.dataset.placeholder = 'Tell your story…';
+    el.dataset.placeholder = 'Write the lesson content for students…';
     el.textContent = block.text || '';
     wireTextBlock(el, block);
     return el;
@@ -1654,7 +1654,10 @@
 
   function openArticleShell() {
     document.getElementById('articleCourseName').textContent = state.active ? (state.active.title || '') : '';
-    document.getElementById('articleStatus').textContent = state.creatingModule ? 'Draft' : (state.active && state.active.status === 'published' ? 'Published' : 'Draft');
+    const status = document.getElementById('articleStatus');
+    const published = !state.creatingModule && state.active && state.active.status === 'published';
+    status.textContent = state.creatingModule ? 'Draft' : (published ? 'Published' : 'Draft');
+    status.classList.toggle('is-published', !!published);
     toggleInsertMenu(false);
     showStaffScreen('article');
   }

@@ -208,14 +208,89 @@
     .student-workspace.is-nav-collapsed .student-course-nav{display:block}
   }
   #moduleNav .btn{white-space:normal;text-align:left}
-  #articleView{background:#fff;min-height:70vh}
-  .article-column{max-width:760px;margin:0 auto;padding:0 1.25rem 4rem 3rem}
-  .article-title{display:block;width:100%;border:0;outline:0;background:transparent;font-size:clamp(2rem,4vw,2.75rem);font-weight:700;line-height:1.15;letter-spacing:-.02em;padding:0;margin:1.5rem 0 .75rem;color:#1a1a1a}
-  .article-title::placeholder{color:#b7b7b7;font-weight:500}
-  .article-title:focus{box-shadow:none}
-  .article-subtitle{display:block;width:100%;border:0;outline:0;background:transparent;font-size:1.2rem;color:#5c6570;padding:0;margin:0 0 1.25rem}
-  .article-subtitle::placeholder{color:#b7b7b7}
-  .article-subtitle:focus{box-shadow:none}
+  #articleView{
+    --article-accent:var(--primary,#2563EB);
+    --article-ink:var(--text,#0F172A);
+    --article-muted:var(--muted,#64748B);
+    --article-line:var(--border,#E2E8F0);
+    --article-soft:var(--surface-2,#F1F5F9);
+    min-height:calc(100dvh - var(--topbar-h,64px) - 2rem);
+    margin:-.25rem -.15rem 0;
+  }
+  .article-toolbar{
+    position:sticky;top:0;z-index:25;
+    display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem;
+    padding:.7rem .9rem;margin-bottom:.9rem;
+    background:rgba(248,250,252,.92);backdrop-filter:blur(8px);
+    border:1px solid var(--article-line);border-radius:12px;
+    box-shadow:0 1px 2px rgba(15,23,42,.04);
+  }
+  .article-toolbar-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem;min-width:0}
+  .article-toolbar-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}
+  .article-status-badge{
+    display:inline-flex;align-items:center;gap:.35rem;
+    padding:.2rem .55rem;border-radius:999px;font-size:.75rem;font-weight:600;
+    background:color-mix(in srgb,var(--warning,#F59E0B) 16%,#fff);
+    color:#92400e;border:1px solid color-mix(in srgb,var(--warning,#F59E0B) 35%,#fff);
+  }
+  .article-status-badge.is-published{
+    background:color-mix(in srgb,var(--success,#22C55E) 14%,#fff);
+    color:#166534;border-color:color-mix(in srgb,var(--success,#22C55E) 35%,#fff);
+  }
+  .article-course-chip{
+    max-width:18rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:.8rem;color:var(--article-muted);padding:.15rem .55rem;border-radius:999px;
+    background:var(--article-soft);border:1px solid var(--article-line);
+  }
+  .article-shell{
+    max-width:860px;margin:0 auto 1.25rem;
+    background:#fff;border:1px solid var(--article-line);border-radius:16px;
+    box-shadow:0 8px 24px rgba(15,23,42,.05);overflow:hidden;
+  }
+  .article-shell-head{
+    padding:1rem 1.25rem .85rem;
+    background:linear-gradient(180deg,#fff 0%,#f8fafc 100%);
+    border-bottom:1px solid var(--article-line);
+  }
+  .article-kicker{
+    display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;
+    margin:0 0 .85rem;font-size:.78rem;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--article-muted);
+  }
+  .article-kicker span{color:var(--article-accent)}
+  .article-field{margin-bottom:.85rem}
+  .article-field label{
+    display:block;margin-bottom:.3rem;font-size:.78rem;font-weight:600;color:var(--article-muted);
+  }
+  .article-title,.article-subtitle{
+    display:block;width:100%;border:1px solid transparent;outline:0;background:#fff;
+    border-radius:10px;padding:.45rem .65rem;transition:border-color .15s ease,box-shadow .15s ease;
+  }
+  .article-title{
+    font-size:clamp(1.45rem,2.4vw,1.85rem);font-weight:750;line-height:1.25;
+    letter-spacing:-.02em;color:var(--article-ink);margin:0;
+  }
+  .article-subtitle{
+    font-size:1rem;line-height:1.45;color:#334155;margin:0;
+  }
+  .article-title::placeholder,.article-subtitle::placeholder{color:#94a3b8;font-weight:500}
+  .article-title:focus,.article-subtitle:focus{
+    border-color:color-mix(in srgb,var(--article-accent) 45%,var(--article-line));
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--article-accent) 16%,transparent);
+  }
+  .article-body{padding:1rem 1.25rem 1.35rem}
+  .article-editor-hint{
+    display:flex;flex-wrap:wrap;align-items:center;gap:.45rem .75rem;
+    margin:0 0 .85rem;padding:.55rem .7rem;border-radius:10px;
+    background:var(--article-soft);border:1px dashed color-mix(in srgb,var(--article-accent) 28%,var(--article-line));
+    color:var(--article-muted);font-size:.82rem;line-height:1.4;
+  }
+  .article-editor-hint kbd{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:.74rem;padding:.05rem .35rem;border-radius:5px;
+    border:1px solid var(--article-line);background:#fff;color:#334155;
+  }
+  .article-column{max-width:860px;margin:0 auto;padding:0 0 1.5rem}
   .tutorial-code-block,.tutorial-lesson .tutorial-code-card{background:#0f172a;color:#f8fafc;border-radius:.75rem;margin:1rem 0;overflow:hidden}
   .tutorial-code-block textarea,.tutorial-code-card pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92rem;line-height:1.6;white-space:pre;tab-size:2}
   .tutorial-code-block textarea{width:100%;min-height:8rem;border:0;background:transparent;color:#f8fafc;resize:vertical;padding:.75rem 1rem}
@@ -224,30 +299,51 @@
   .tutorial-code-bar select{background:#0f172a;color:#f8fafc;border:0;border-radius:.35rem;padding:.15rem .4rem}
   .tutorial-code-note{font-size:.75rem;color:#94a3b8;padding:.4rem 1rem 0}
   .tutorial-code-card pre{margin:0;padding:.75rem 1rem;background:transparent;color:inherit;overflow:auto}
-  .lesson-row{position:relative;display:flex;gap:.75rem;align-items:flex-start;margin:.15rem 0 .15rem -2.5rem;padding-left:2.5rem}
+  .lesson-row{position:relative;display:flex;gap:.7rem;align-items:flex-start;margin:.2rem 0;padding:.15rem .15rem .15rem 2.35rem;border-radius:10px}
+  .lesson-row.is-active{background:color-mix(in srgb,var(--article-accent) 5%,#fff)}
   .lesson-main{flex:1;min-width:0}
-  .row-plus{position:absolute;left:0;top:.2rem;visibility:hidden;width:1.8rem;height:1.8rem;border-radius:50%;border:1px solid #cfd6cf;background:#fff;color:#1f7a3a;line-height:1;padding:0}
+  .row-plus{
+    position:absolute;left:.2rem;top:.35rem;visibility:hidden;
+    width:1.7rem;height:1.7rem;border-radius:8px;border:1px solid var(--article-line);
+    background:#fff;color:var(--article-accent);line-height:1;padding:0;font-size:1.05rem;font-weight:600;
+  }
   .lesson-row.is-active .row-plus,.lesson-row:hover .row-plus{visibility:visible}
+  .row-plus:hover{background:color-mix(in srgb,var(--article-accent) 10%,#fff);border-color:color-mix(in srgb,var(--article-accent) 40%,var(--article-line))}
   .tutorial-code-lang-label{display:flex;align-items:center;gap:.45rem;margin:0;font-size:.8rem;color:#cbd5e1}
   .tutorial-code-lang-label select{min-width:9rem}
   .tutorial-code-detected{font-size:.75rem;color:#94a3b8}
-  .lesson-paragraph,.lesson-heading,.lesson-quote{outline:none;min-height:1.6rem}
-  .lesson-paragraph:empty:before,.lesson-heading:empty:before,.lesson-quote:empty:before{content:attr(data-placeholder);color:#b7b7b7}
-  .lesson-heading{font-size:1.7rem;font-weight:700}
-  .lesson-subhead{font-size:1.3rem;font-weight:650}
-  .lesson-quote{border-left:3px solid #d0d5dd;padding-left:.8rem;color:#3f3f46}
+  .lesson-paragraph,.lesson-heading,.lesson-quote{outline:none;min-height:1.55rem}
+  .lesson-paragraph:empty:before,.lesson-heading:empty:before,.lesson-quote:empty:before{content:attr(data-placeholder);color:#94a3b8}
+  .lesson-heading{font-size:1.35rem;font-weight:700;color:var(--article-ink);margin:.15rem 0}
+  .lesson-subhead{font-size:1.08rem;font-weight:650}
+  .lesson-paragraph{font-size:1rem;line-height:1.65;color:#1e293b}
+  .lesson-quote{border-left:3px solid color-mix(in srgb,var(--article-accent) 45%,var(--article-line));padding-left:.8rem;color:#475569}
   .lesson-image img{display:block;width:100%;max-height:28rem;object-fit:contain;border-radius:.5rem;background:#f8fafc}
   .lesson-figure{margin:1rem 0}
   .lesson-figure img{display:block;width:100%;max-height:28rem;object-fit:contain;border-radius:.5rem}
   .lesson-figure figcaption{font-size:.9rem;color:#667085;margin-top:.35rem}
   .tutorial-code-block [data-code-output]{min-height:4.5rem;border-top:1px solid #334155}
-  .article-insert{display:flex;flex-wrap:wrap;gap:.4rem;margin:.35rem 0 1rem;padding:.55rem;background:#fff;border:1px solid #dce3dc;border-radius:.75rem;box-shadow:0 8px 24px rgba(16,24,40,.08)}
-  .article-insert button{border:0;background:#f4f6f4;border-radius:999px;padding:.25rem .7rem;font-size:.85rem}
-  #lessonBlocks{min-height:48vh;padding:.25rem 0 2rem;font-size:1.15rem;line-height:1.75}
+  .article-insert{
+    display:flex;flex-wrap:wrap;gap:.4rem;margin:.45rem 0 1rem;padding:.6rem .65rem;
+    background:#fff;border:1px solid var(--article-line);border-radius:12px;
+    box-shadow:0 10px 28px rgba(15,23,42,.08);
+  }
+  .article-insert button{
+    border:1px solid var(--article-line);background:var(--article-soft);border-radius:8px;
+    padding:.28rem .7rem;font-size:.82rem;font-weight:550;color:#334155;
+  }
+  .article-insert button:hover{border-color:color-mix(in srgb,var(--article-accent) 40%,var(--article-line));color:var(--article-accent);background:#fff}
+  #lessonBlocks{min-height:42vh;padding:.15rem 0 1.25rem;font-size:1rem;line-height:1.65}
+  #moduleExercisePane,#moduleAssessmentPane,#moduleActivityPane{
+    max-width:860px;margin:0 auto 1rem;padding:1rem 1.15rem;
+    background:#fff;border:1px solid var(--article-line);border-radius:14px;
+    box-shadow:0 4px 14px rgba(15,23,42,.04);
+  }
   @media (max-width: 767.98px){
     #studentLearnView .d-flex.justify-content-between{flex-wrap:wrap}
-    .article-column{padding-left:1.25rem}
-    .lesson-row{margin-left:0;padding-left:2.2rem}
+    .article-shell-head,.article-body{padding-left:.9rem;padding-right:.9rem}
+    .lesson-row{padding-left:2.1rem}
+    .article-course-chip{max-width:11rem}
   }
 </style>
 
@@ -434,30 +530,50 @@
     </div>
   </div>
   <div id="articleView" class="d-none">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-      <button type="button" class="btn btn-link text-decoration-none px-0" id="articleBack">← Back to course</button>
-      <div class="small text-muted-2" id="articleStatus">Draft</div>
-      <button type="submit" class="btn btn-sm btn-success" id="articleSave" form="moduleForm">Save draft</button>
+    <div class="article-toolbar">
+      <div class="article-toolbar-meta">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="articleBack"><i class="bi bi-arrow-left me-1"></i>Back to course</button>
+        <span class="article-course-chip" id="articleCourseName"></span>
+        <span class="article-status-badge" id="articleStatus">Draft</span>
+      </div>
+      <div class="article-toolbar-actions">
+        <span class="small text-muted-2 d-none d-md-inline">Students only see published courses</span>
+        <button type="submit" class="btn btn-sm btn-primary" id="articleSave" form="moduleForm"><i class="bi bi-check2 me-1"></i>Save draft</button>
+      </div>
     </div>
-    <form id="moduleForm" class="article-column">
-      <div class="small text-muted-2" id="articleCourseName"></div>
-      <input type="hidden" id="moduleId"/>
-      <input class="article-title" id="moduleTitle" placeholder="Module title" maxlength="160" required aria-label="Module title"/>
-      <input class="article-subtitle" id="moduleSubtitle" placeholder="Short description" maxlength="240" aria-label="Short description"/>
-      <input type="file" id="articleImageInput" class="d-none" accept="image/jpeg,image/png,image/gif,image/webp"/>
-      <div id="lessonBlocks"></div>
-      <div id="articleInsertMenu" class="article-insert d-none" role="menu">
-        <button type="button" data-insert="text">Text</button>
-        <button type="button" data-insert="heading">Heading</button>
-        <button type="button" data-insert="subheading">Subheading</button>
-        <button type="button" data-insert="quote">Quote</button>
-        <button type="button" data-insert="code">Code</button>
-        <button type="button" data-insert="example">Code + Output</button>
-        <button type="button" data-insert="image">Image</button>
-        <button type="button" data-insert="divider">Divider</button>
+    <form id="moduleForm" class="article-shell">
+      <div class="article-shell-head">
+        <div class="article-kicker">Module editor · <span>lesson content</span></div>
+        <input type="hidden" id="moduleId"/>
+        <div class="article-field">
+          <label for="moduleTitle">Module title</label>
+          <input class="article-title" id="moduleTitle" placeholder="e.g. Introduction to Financial Statements" maxlength="160" required aria-label="Module title"/>
+        </div>
+        <div class="article-field mb-0">
+          <label for="moduleSubtitle">Short description</label>
+          <input class="article-subtitle" id="moduleSubtitle" placeholder="One-line summary students see in the module list" maxlength="240" aria-label="Short description"/>
+        </div>
+      </div>
+      <div class="article-body">
+        <div class="article-editor-hint">
+          <span>Write the lesson students will study.</span>
+          <span>Press <kbd>+</kbd> to add a block, or type <kbd>/</kbd> for headings, code, quotes, and images.</span>
+        </div>
+        <input type="file" id="articleImageInput" class="d-none" accept="image/jpeg,image/png,image/gif,image/webp"/>
+        <div id="lessonBlocks"></div>
+        <div id="articleInsertMenu" class="article-insert d-none" role="menu">
+          <button type="button" data-insert="text">Text</button>
+          <button type="button" data-insert="heading">Heading</button>
+          <button type="button" data-insert="subheading">Subheading</button>
+          <button type="button" data-insert="quote">Quote</button>
+          <button type="button" data-insert="code">Code</button>
+          <button type="button" data-insert="example">Code + Output</button>
+          <button type="button" data-insert="image">Image</button>
+          <button type="button" data-insert="divider">Divider</button>
+        </div>
       </div>
     </form>
-    <div id="moduleExercisePane" class="article-column d-none">
+    <div id="moduleExercisePane" class="d-none">
       <div class="fw-semibold mb-2">Exercise</div>
       <div id="moduleExerciseList" class="d-flex flex-column gap-2"></div>
       <button type="button" class="btn btn-sm btn-outline-primary mt-3" id="addExerciseInline">+ Add Exercise</button>
@@ -499,7 +615,7 @@
             </div>
           </form>
     </div>
-    <div id="moduleAssessmentPane" class="article-column d-none mt-4">
+    <div id="moduleAssessmentPane" class="d-none mt-4">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
         <div class="fw-semibold">Module MCQ assessment</div>
         <div class="small text-muted-2" id="assessmentMeta"></div>
@@ -555,7 +671,7 @@
         <button type="button" class="btn btn-sm btn-outline-secondary mt-2" id="assessmentPreviewClose">Close preview</button>
       </div>
     </div>
-    <div id="moduleActivityPane" class="article-column d-none mt-4">
+    <div id="moduleActivityPane" class="d-none mt-4">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
         <div class="fw-semibold">Practical activities</div>
         <div class="small text-muted-2" id="activityMeta"></div>
@@ -809,5 +925,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261005practice"></script>
+<script src="js/tutorials-page.js?v=20261006moduleeditor"></script>
 </body></html>
