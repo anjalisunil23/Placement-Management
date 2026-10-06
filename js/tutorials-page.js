@@ -250,7 +250,7 @@
       const edit = editable && status !== 'published'
         ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-edit-tutorial="${esc(row.id)}">Edit</button>`
         : '';
-      const manage = `<button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">${editable ? (status === 'published' ? 'Manage' : 'Continue Editing') : 'View'}</button>`;
+      const manage = `<button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">${editable ? (status === 'published' ? 'Manage' : 'Continue Editing') : 'View only'}</button>`;
       const reviews = `<button type="button" class="btn btn-sm btn-outline-secondary" data-activity-reviews="${esc(row.id)}">Reviews</button>`;
       const remove = editable && status !== 'published'
         ? `<button type="button" class="btn btn-sm btn-outline-danger" data-delete-tutorial="${esc(row.id)}">Delete</button>`

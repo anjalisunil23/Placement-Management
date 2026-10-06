@@ -188,6 +188,30 @@ try {
         'Test 8b: Staff B cannot add modules to Staff A published tutorial'
     );
 
+    // Test 8c: Placement officers also cannot manage another staff member's published course.
+    $officer = $makeUser('placement_officer', 'vis_officer');
+    $officerOpen = $service->showManaged($officer, $published['id']);
+    $check(
+        ($officerOpen['id'] ?? '') === $published['id']
+        && ($officerOpen['canEdit'] ?? true) === false,
+        'Test 8c: Placement officer opens another staff published course as view-only'
+    );
+    $ownerModules = $service->showManaged($staffA, $published['id']);
+    $firstModuleId = (string) (($ownerModules['modules'][0]['id'] ?? ''));
+    $check($firstModuleId !== '', 'owner published course has a module for officer denial checks');
+    $throws(
+        static fn () => $service->updateModule($officer, $published['id'], $firstModuleId, [
+            'title' => 'Officer overwrite',
+        ]),
+        403,
+        'Test 8d: Placement officer cannot edit another staff module'
+    );
+    $throws(
+        static fn () => $service->unpublish($officer, $published['id']),
+        403,
+        'Test 8e: Placement officer cannot unpublish another staff course'
+    );
+
     // Test 9: Duplicate published topic produces a warning.
     $similarForB = $service->findSimilarTutorials($staffB, 'Python Programming');
     $titles = array_map(static fn (array $row): string => (string) ($row['title'] ?? ''), $similarForB['matches'] ?? []);

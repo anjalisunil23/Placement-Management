@@ -1844,17 +1844,17 @@ final class TutorialService
     }
 
     /**
+     * Only the creator may mutate a tutorial (modules, publish, reorder, etc.).
+     * Other tutorials staff can still view published courses as read-only.
+     *
      * @param array<string, mixed> $user
      * @param array<string, mixed> $row
      */
     private function canMutateManagedTutorial(array $user, array $row): bool
     {
-        if ((string) ($row['createdBy'] ?? '') === $this->userId($user)) {
-            return true;
-        }
-        $status = strtolower((string) ($row['status'] ?? ''));
+        $createdBy = (string) ($row['createdBy'] ?? '');
 
-        return $this->canManageCampusTutorials($user) && $status !== 'draft';
+        return $createdBy !== '' && $createdBy === $this->userId($user);
     }
 
     /**
