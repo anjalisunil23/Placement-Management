@@ -386,7 +386,7 @@ final class StaffController
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
         Response::success(DocumentHelper::jsonSafe([
-            'departments' => $registrySvc->departmentFilterOptions(),
+            'departments' => $registrySvc->departmentFilterOptions($ctx),
             'programs' => $svc->fetchProgramOptions($filterCtx),
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),

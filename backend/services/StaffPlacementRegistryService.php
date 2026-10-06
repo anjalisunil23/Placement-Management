@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Middleware\AuthMiddleware;
 use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentModel;
@@ -30,11 +31,33 @@ final class StaffPlacementRegistryService
      * @return array<string, mixed>
      */
     /**
+     * Admin: all departments. Staff / department placement officer: home department only.
+     *
+     * @param array<string, mixed> $staffCtx
      * @return list<array{id:string,code:string,name:string}>
      */
-    public function departmentFilterOptions(): array
+    public function departmentFilterOptions(array $staffCtx = []): array
     {
+        if ($staffCtx !== [] && !$this->canViewAllDepartments($staffCtx)) {
+            return $this->loadScopedDepartments($staffCtx);
+        }
+
         return $this->loadAllDepartments();
+    }
+
+    /**
+     * Only institution admins may browse / filter campus-wide across departments.
+     *
+     * @param array<string, mixed> $staffCtx
+     */
+    public function canViewAllDepartments(array $staffCtx): bool
+    {
+        $user = is_array($staffCtx['user'] ?? null) ? $staffCtx['user'] : [];
+        if ($user === []) {
+            return false;
+        }
+
+        return AuthMiddleware::resolvedRole($user) === 'admin';
     }
 
     /**
@@ -54,7 +77,7 @@ final class StaffPlacementRegistryService
      *
      * @param array<string, mixed> $staffCtx
      * @param array<string, string> $filters
-     * @return array{departmentId:string,departmentName:string,departmentCode:string,campusWide:bool,departmentAesId:string}
+     * @return array{departmentId:string,departmentName:string,departmentCode:string,campusWide:bool,canViewAllDepartments:bool,departmentAesId:string}
      */
     public function resolvedRegistryScope(array $staffCtx, array $filters = []): array
     {
@@ -63,13 +86,15 @@ final class StaffPlacementRegistryService
         $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
         $filterCtx = StaffContext::officerCompatible($listCtx);
         $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($filterCtx);
+        $canAll = $this->canViewAllDepartments($staffCtx);
 
         return [
-            'departmentId'     => $deptId,
-            'departmentName'   => trim((string) ($dept['name'] ?? '')),
-            'departmentCode'   => strtoupper(trim((string) ($dept['code'] ?? ''))),
-            'campusWide'       => !empty($listCtx['campusWide']),
-            'departmentAesId'  => $deptAesId,
+            'departmentId'           => $deptId,
+            'departmentName'         => trim((string) ($dept['name'] ?? '')),
+            'departmentCode'         => strtoupper(trim((string) ($dept['code'] ?? ''))),
+            'campusWide'             => $canAll && !empty($listCtx['campusWide']),
+            'canViewAllDepartments'  => $canAll,
+            'departmentAesId'        => $deptAesId,
         ];
     }
 
@@ -1007,8 +1032,12 @@ final class StaffPlacementRegistryService
             }
         }
 
+        $scope = $this->resolvedRegistryScope($staffCtx, $filters);
+        $filterOptions['canViewAllDepartments'] = !empty($scope['canViewAllDepartments']);
+
         return [
             'filters' => $filterOptions,
+            'scope'   => $scope,
             'columns' => self::registryTableColumns(),
             'rows'    => $filtered,
             'canEditBatch' => $batch !== '' && StaffContext::canEditClassBatch($staffCtx, $batch),
@@ -2241,7 +2270,7 @@ final class StaffPlacementRegistryService
             'programs'    => $programs,
             'branches'    => $program !== '' ? $filterSvc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'     => $batches,
-            'departments' => $this->loadAllDepartments(),
+            'departments' => $this->departmentFilterOptions($staffCtx),
         ];
     }
 
@@ -2265,7 +2294,7 @@ final class StaffPlacementRegistryService
             'programs'     => $programs,
             'branches'     => $branches,
             'batches'      => $batches,
-            'departments'  => $this->loadAllDepartments(),
+            'departments'  => $this->departmentFilterOptions($staffCtx),
         ];
     }
 
@@ -2278,11 +2307,22 @@ final class StaffPlacementRegistryService
      */
     private function resolveRegistryListContext(array $staffCtx, array $filters): array
     {
+        $canAll = $this->canViewAllDepartments($staffCtx);
+        $homeDeptId = trim((string) ($staffCtx['departmentId'] ?? ''));
         $selectedDeptId = trim((string) ($filters['departmentId'] ?? ''));
+
+        // Staff / department placement officer: always their own department.
+        if (!$canAll) {
+            if ($homeDeptId !== '' && is_array($staffCtx['department'] ?? null)) {
+                return array_merge($staffCtx, ['campusWide' => false]);
+            }
+
+            return array_merge($staffCtx, ['campusWide' => false]);
+        }
+
         if ($selectedDeptId === '') {
-            $staffDept = trim((string) ($staffCtx['departmentId'] ?? ''));
-            if ($staffDept !== '' && is_array($staffCtx['department'] ?? null)) {
-                return $staffCtx;
+            if ($homeDeptId !== '' && is_array($staffCtx['department'] ?? null)) {
+                return array_merge($staffCtx, ['campusWide' => false]);
             }
 
             return array_merge($staffCtx, [
@@ -2292,13 +2332,13 @@ final class StaffPlacementRegistryService
             ]);
         }
 
-        if ($selectedDeptId === trim((string) ($staffCtx['departmentId'] ?? ''))) {
-            return $staffCtx;
+        if ($selectedDeptId === $homeDeptId) {
+            return array_merge($staffCtx, ['campusWide' => false]);
         }
 
         $dept = (new DepartmentModel())->findById($selectedDeptId);
         if (!is_array($dept) || $dept === []) {
-            return $staffCtx;
+            return array_merge($staffCtx, ['campusWide' => false]);
         }
 
         return array_merge($staffCtx, [
@@ -2340,17 +2380,18 @@ final class StaffPlacementRegistryService
     private function loadScopedDepartments(array $staffCtx): array
     {
         $dept = is_array($staffCtx['department'] ?? null) ? $staffCtx['department'] : null;
-        if (!$dept) {
+        $id = trim((string) ($dept['_id'] ?? $staffCtx['departmentId'] ?? ''));
+        if ($id === '') {
             return [];
         }
         $code = strtoupper(trim((string) ($dept['code'] ?? '')));
         $name = trim((string) ($dept['name'] ?? ''));
-        if ($code === '' || $name === '') {
-            return [];
+        if ($name === '') {
+            $name = $code !== '' ? $code : 'Your department';
         }
 
         return [[
-            'id'   => (string) ($dept['_id'] ?? $staffCtx['departmentId'] ?? ''),
+            'id'   => $id,
             'code' => $code,
             'name' => $name,
         ]];

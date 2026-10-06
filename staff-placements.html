@@ -483,6 +483,7 @@
     let filterBatch = '';
     let scopeDepartmentId = '';
     let scopeDepartmentName = '';
+    let canViewAllDepartments = false;
     let lastFilterBatches = [];
     let lastFilterPrograms = [];
     let sortKey = '';
@@ -684,8 +685,9 @@
       if (!scope || typeof scope !== 'object') return;
       scopeDepartmentId = String(scope.departmentId || '').trim();
       scopeDepartmentName = String(scope.departmentName || scope.departmentCode || '').trim();
+      canViewAllDepartments = scope.canViewAllDepartments === true;
       const deptEl = document.getElementById('filterDepartment');
-      if (deptEl && !filterDepartmentId && scopeDepartmentId) {
+      if (deptEl && scopeDepartmentId && (!canViewAllDepartments || !filterDepartmentId)) {
         if ([...deptEl.options].some(o => o.value === scopeDepartmentId)) {
           deptEl.value = scopeDepartmentId;
           syncDepartmentFilter();
@@ -885,15 +887,27 @@
     function fillDepartmentSelect(departments, selected = '') {
       const el = document.getElementById('filterDepartment');
       if (!el) return;
-      const current = selected || el.value || '';
-      el.innerHTML = '<option value="">All departments</option>' + (departments || []).map(d => {
+      const list = Array.isArray(departments) ? departments : [];
+      const allowAll = canViewAllDepartments === true;
+      const preferred = selected || scopeDepartmentId || el.value || '';
+      const allOpt = allowAll ? '<option value="">All departments</option>' : '';
+      el.innerHTML = allOpt + list.map(d => {
         const id = String(d.id || '').trim();
         const label = String(d.name || d.code || id).trim();
         if (!id) return '';
         return `<option value="${esc(id)}">${esc(label)}</option>`;
       }).join('');
-      if (current && [...el.options].some(o => o.value === current)) el.value = current;
-      else el.value = '';
+      if (preferred && [...el.options].some(o => o.value === preferred)) {
+        el.value = preferred;
+      } else if (!allowAll && list.length === 1) {
+        el.value = String(list[0].id || '').trim();
+      } else if (allowAll) {
+        el.value = '';
+      } else if (el.options.length) {
+        el.selectedIndex = 0;
+      }
+      // Staff / DPO: lock to home department (no campus-wide picker).
+      el.disabled = !allowAll && list.length <= 1;
       syncDepartmentFilter();
     }
 
@@ -914,6 +928,9 @@
       }
 
       applyScopeFromFiltersApi(data);
+      if (data.scope && typeof data.scope === 'object') {
+        canViewAllDepartments = data.scope.canViewAllDepartments === true;
+      }
       fillDepartmentSelect(data.departments || [], filterDepartmentId || scopeDepartmentId);
 
       let programs = data.programs || [];
@@ -1382,8 +1399,15 @@
           }
         } catch (_) { /* ignore */ }
       }
-      if (data.filters && typeof data.filters === 'object' && Array.isArray(data.filters.departments)) {
-        fillDepartmentSelect(data.filters.departments, filterDepartmentId);
+      if (data.filters && typeof data.filters === 'object') {
+        if (data.scope && typeof data.scope === 'object') {
+          canViewAllDepartments = data.scope.canViewAllDepartments === true;
+        } else if (typeof data.filters.canViewAllDepartments === 'boolean') {
+          canViewAllDepartments = data.filters.canViewAllDepartments;
+        }
+        if (Array.isArray(data.filters.departments)) {
+          fillDepartmentSelect(data.filters.departments, filterDepartmentId || scopeDepartmentId);
+        }
       }
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
