@@ -731,15 +731,23 @@ final class AptitudeManualQuestionParser
     private static function nextSectionHeadingOffset(string $text, int $from = 0): ?int
     {
         $patterns = [
-            // "Basic Computer Knowledge and Digital Banking (Sample Questions)"
+            // Topic banners: "Banking Awareness (Sample Questions)", "Basic Computer Knowledge … (Questions)"
+            // Prefer Title Case words (not ALLCAPS acronyms like SMTP) immediately before (Sample Questions).
             '/(?:^|[\n\r]\s*|\s)'
-            . '((?:Basic|General|Verbal|Quantitative|Computer|Digital|Reasoning|English'
-            . '|Numerical|Logical|Data|Marketing)[^\n\r]{0,100}?\((?:Sample\s+)?Questions?\))/iu',
+            . '((?:'
+            . '(?:Basic|General|Verbal|Quantitative|Computer|Digital|Reasoning|English'
+            . '|Numerical|Logical|Data|Marketing|Banking|Financial|Insurance|Current)'
+            . '[^\n\r]{0,90}?'
+            . '|'
+            . '[A-Z][a-z]+(?:\s+(?:and\s+)?[A-Z][a-z]+){0,8}'
+            . ')'
+            . '\s*\((?:Sample\s+)?Questions?\))/u',
             // Named aptitude sections (allow a short lead-in like "Basic ")
             '/(?:^|[\n\r]\s*|\s{2,}|\s)'
             . '((?:Basic\s+|General\s+)?'
             . '(?:Verbal\s+Ability|Quantitative\s+Aptitude|Reasoning(?:\s+Ability)?'
-            . '|English\s+Language|General\s+Awareness'
+            . '|English\s+Language|General\s+Awareness|Banking\s+Awareness'
+            . '|Financial\s+Awareness|Current\s+Affairs'
             . '|Computer\s+Knowledge(?:\s+and\s+Digital\s+Banking)?'
             . '|Digital\s+Banking|Numerical\s+Ability|Logical\s+Reasoning'
             . '|Data\s+Interpretation|Marketing\s+Aptitude)'

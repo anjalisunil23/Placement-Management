@@ -28,8 +28,9 @@ final class JdTextExtractionService
         . '"T 8 3 1 7 F J 5 % E R @ 4 D A 2 B © Q K …"), you MUST transcribe that entire row on its own line '
         . 'between the Directions text and the next question number. Do not skip it even if it is bold or centered. '
         . 'Copy each character exactly as printed, preserving spaces between tokens. '
-        . 'Use the exact symbols printed (© # $ ₹ % @ & * ( ) + − = □ ■ ●, etc.) and every letter/digit — do not substitute look-alikes '
+        . 'Use the exact symbols printed (© # $ ₹ % @ & * ( ) + − = □ ■ ● â, etc.) and every letter/digit — do not substitute look-alikes '
         . '(for example do not replace © with @, or guess a currency symbol). '
+        . 'If the arrangement includes â (a with circumflex) or a similar accented-a glyph, copy it as â — never simplify it to plain a. '
         . 'If hollow square boxes appear in the arrangement (□ □), you MUST copy them as the character □ with spaces — never omit them. '
         . 'Preserve "Directions (N - M):" blocks and line breaks between questions. No commentary.';
 
@@ -152,13 +153,19 @@ final class JdTextExtractionService
             '/(\S)\s+((?:(?:Basic|General)\s+)?'
             . '(?:Verbal\s+Ability|Quantitative\s+Aptitude|Reasoning(?:\s+Ability)?'
             . '|English\s+Language|Computer\s+Knowledge(?:\s+and\s+Digital\s+Banking)?'
-            . '|Digital\s+Banking|General\s+Awareness)'
+            . '|Digital\s+Banking|General\s+Awareness|Banking\s+Awareness'
+            . '|Financial\s+Awareness|Current\s+Affairs)'
             . '\s*(?:\([^)]*\))?)/iu',
             "$1\n\n$2",
             $text
         ) ?? $text;
+        // "Banking Awareness (Sample Questions)" and similar topic banners.
         $text = preg_replace(
-            '/(\S)\s+([A-Z][^\n]{6,120}?\((?:Sample\s+)?Questions?\))/u',
+            '/(\S)\s+('
+            . '(?:(?:Basic|General|Verbal|Quantitative|Computer|Digital|Reasoning|English'
+            . '|Numerical|Logical|Data|Marketing|Banking|Financial|Insurance|Current)[^\n]{0,90}?'
+            . '|[A-Z][a-z]+(?:\s+(?:and\s+)?[A-Z][a-z]+){0,8})'
+            . '\s*\((?:Sample\s+)?Questions?\))/u',
             "$1\n\n$2",
             $text
         ) ?? $text;
@@ -190,7 +197,8 @@ final class JdTextExtractionService
     }
 
     /**
-     * Keep hollow-square arrangement tokens (□ □). OCR/PDF often drops them after â.
+     * Keep hollow-square arrangement tokens (□ □) and the â glyph.
+     * OCR/PDF often emit plain "a" or drop boxes after â.
      */
     public static function repairArrangementGlyphs(string $text): string
     {
@@ -199,6 +207,8 @@ final class JdTextExtractionService
         }
         // Normalize lookalike hollow boxes / missing-glyph placeholders to □.
         $text = preg_replace('/[▢☐◻◽⬜▯▫◻︎]/u', '□', $text) ?? $text;
+        // Recompose decomposed "a + ◌̂" back to â before other repairs.
+        $text = str_replace(["a\u{0302}", "A\u{0302}", "a\xCC\x82", "A\xCC\x82"], ['â', 'Â', 'â', 'Â'], $text);
 
         $lines = preg_split('/\n/u', $text) ?: [];
         foreach ($lines as $i => $line) {
@@ -208,23 +218,26 @@ final class JdTextExtractionService
             }
             $looksArrangement = self::isSymbolArrangementLine($trim)
                 || (
-                    preg_match('/â/u', $trim) === 1
-                    && preg_match('/(?:^|\s)(?:[\p{L}\p{N}@#%©$₹*&□]\s+){5,}[\p{L}\p{N}@#%©$₹*&□â]/u', $trim) === 1
+                    preg_match('/(?:â|(?<=\s)a(?=\s))/u', $trim) === 1
+                    && preg_match('/(?:^|\s)(?:[\p{L}\p{N}@#%©$₹*&□â]\s+){5,}[\p{L}\p{N}@#%©$₹*&□â]/u', $trim) === 1
                 );
             if (!$looksArrangement) {
                 continue;
             }
             $fixed = $trim;
             $fixed = preg_replace('/[▢☐◻◽⬜▯▫]/u', '□', $fixed) ?? $fixed;
+            // Arrangement rows use uppercase letters; the special glyph is â.
+            // OCR frequently drops the circumflex and leaves plain "a".
+            $fixed = preg_replace('/(?<=\s)a(?=\s)/u', 'â', $fixed) ?? $fixed;
             // "â□□U" / "â □□ U" → spaced boxes
-            $fixed = preg_replace('/\bâ\s*□\s*□\s*/u', 'â □ □ ', $fixed) ?? $fixed;
+            $fixed = preg_replace('/(?<=\s)â\s*□\s*□\s*/u', 'â □ □ ', $fixed) ?? $fixed;
             // Single surviving box between â and a letter
-            $fixed = preg_replace('/\bâ\s*□\s*(?=[A-Za-z])/u', 'â □ □ ', $fixed) ?? $fixed;
+            $fixed = preg_replace('/(?<=\s)â\s*□\s*(?=[A-Za-z])/u', 'â □ □ ', $fixed) ?? $fixed;
             // pdftotext often emits "=" for missing glyphs: "â = = U" / "â = U"
-            $fixed = preg_replace('/\bâ\s*=\s*=\s*(?=[A-Za-z])/u', 'â □ □ ', $fixed) ?? $fixed;
-            $fixed = preg_replace('/\bâ\s*=\s*(?=[A-Za-z])/u', 'â □ □ ', $fixed) ?? $fixed;
+            $fixed = preg_replace('/(?<=\s)â\s*=\s*=\s*(?=[A-Za-z])/u', 'â □ □ ', $fixed) ?? $fixed;
+            $fixed = preg_replace('/(?<=\s)â\s*=\s*(?=[A-Za-z])/u', 'â □ □ ', $fixed) ?? $fixed;
             // OCR omitted boxes entirely: "3 1 â U H"
-            $fixed = preg_replace('/\bâ\s+(?=[A-Za-z]\b)/u', 'â □ □ ', $fixed) ?? $fixed;
+            $fixed = preg_replace('/(?<=\s)â\s+(?=[A-Za-z]\b)/u', 'â □ □ ', $fixed) ?? $fixed;
             // Avoid runaway repeats
             $fixed = preg_replace('/(?:□\s*){3,}/u', '□ □ ', $fixed) ?? $fixed;
             $fixed = trim(preg_replace('/[^\S\n]+/u', ' ', $fixed) ?? $fixed);

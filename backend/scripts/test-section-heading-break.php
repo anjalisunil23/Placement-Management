@@ -77,4 +77,48 @@ if (stripos($cut, 'Basic Computer') !== false) {
     $failed++;
 }
 
+$bankRaw = <<<'TXT'
+55) The crowd loved her Performance and gave her a stand ovation as she left the stage.
+a) stand ovate
+b) stood ovation
+c) stand the ovation
+d) standing ovation
+e) No correction required
+Banking Awareness (Sample Questions)
+56) Which of the following is a public sector bank?
+a) HDFC Bank
+b) Axis Bank
+c) SBI
+d) Yes Bank
+e) None of these
+TXT;
+$bank = (new AptitudeManualQuestionParser())->parse($bankRaw);
+$bankBy = [];
+foreach ($bank as $q) {
+    $bankBy[(int) ($q['questionNumber'] ?? 0)] = $q;
+}
+$bankE55 = (string) (($bankBy[55]['options'] ?? [])[4] ?? '');
+$bankP56 = (string) ($bankBy[56]['prompt'] ?? '');
+echo 'Banking Q55 E=' . $bankE55 . PHP_EOL;
+echo 'Banking Q56 prompt=' . substr(str_replace("\n", ' ', $bankP56), 0, 90) . PHP_EOL;
+if (stripos($bankE55, 'Banking Awareness') !== false || stripos($bankE55, 'Sample Questions') !== false) {
+    echo "FAIL Banking Awareness leaked into Q55 option E\n";
+    $failed++;
+}
+if ($bankP56 === '' || stripos($bankP56, 'public sector bank') === false) {
+    echo "FAIL Banking Awareness Q56 missing/wrong\n";
+    $failed++;
+}
+if (stripos($bankP56, 'stand ovation') !== false) {
+    echo "FAIL previous verbal prompt followed into Banking Q56\n";
+    $failed++;
+}
+$cutBank = AptitudeManualQuestionParser::cutAtNextSectionHeading(
+    'e) SMTP Banking Awareness (Sample Questions)'
+);
+if (stripos($cutBank, 'Banking Awareness') !== false) {
+    echo "FAIL cutAtNextSectionHeading did not remove Banking Awareness\n";
+    $failed++;
+}
+
 exit($failed > 0 ? 1 : 0);
