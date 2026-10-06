@@ -2007,6 +2007,7 @@
     document.getElementById('assessmentStatus').value = assessment && assessment.status === 'published' ? 'published' : 'draft';
     document.getElementById('assessmentShowExplanations').checked = !assessment || assessment.showExplanations !== false;
     document.getElementById('assessmentAllowReview').checked = !assessment || assessment.allowReview !== false;
+    syncAssessmentVisibilityNote();
   }
 
   function renderAssessmentQuestions() {
@@ -2231,7 +2232,21 @@
     }
   }
 
-  async function saveAssessmentEditor() {
+  function syncAssessmentVisibilityNote() {
+    const note = document.getElementById('assessmentStudentVisibilityNote');
+    if (!note) return;
+    const status = document.getElementById('assessmentStatus')?.value === 'published' ? 'published' : 'draft';
+    const saved = state.assessment && state.assessment.status === 'published';
+    if (saved && status === 'published') {
+      note.className = 'alert alert-success py-2 small mb-3';
+      note.innerHTML = 'This assessment is <strong>Published</strong>. Students see <strong>Module assessment</strong> in the Practice panel for this module.';
+      return;
+    }
+    note.className = 'alert alert-warning py-2 small mb-3';
+    note.innerHTML = 'Students only see this quiz when status is <strong>Published</strong> and you click <strong>Publish for students</strong>. Saving as draft keeps it staff-only.';
+  }
+
+  async function saveAssessmentEditor(publish = false) {
     if (!state.active || !state.selectedModuleId) {
       toast('Save the module before saving an assessment.', 'error');
       return;
@@ -2240,7 +2255,11 @@
       toast('Add at least one question before saving.', 'error');
       return;
     }
+    if (publish) {
+      document.getElementById('assessmentStatus').value = 'published';
+    }
     const settings = assessmentSettingsFromForm();
+    if (publish) settings.status = 'published';
     if (settings.status === 'published' && state.active.status !== 'published') {
       toast('Publish the course before publishing the assessment, or save as draft.', 'error');
       return;
@@ -2272,7 +2291,12 @@
       }));
       fillAssessmentSettings(state.assessment);
       renderAssessmentQuestions();
-      toast('Assessment saved.', 'success');
+      syncAssessmentVisibilityNote();
+      if ((state.assessment && state.assessment.status) === 'published') {
+        toast('Assessment published. Students can take it in Practice → Module assessment.', 'success');
+      } else {
+        toast('Assessment saved as draft. Students cannot see it until you publish.', 'success');
+      }
     } catch (err) {
       fail(err);
     }
@@ -3442,7 +3466,14 @@
       document.getElementById('assessmentStudentPreview').classList.add('d-none');
     });
     document.getElementById('assessmentSaveBtn').addEventListener('click', () => {
-      saveAssessmentEditor().catch(fail);
+      document.getElementById('assessmentStatus').value = 'draft';
+      saveAssessmentEditor(false).catch(fail);
+    });
+    document.getElementById('assessmentPublishBtn').addEventListener('click', () => {
+      saveAssessmentEditor(true).catch(fail);
+    });
+    document.getElementById('assessmentStatus').addEventListener('change', () => {
+      syncAssessmentVisibilityNote();
     });
     document.getElementById('activityAiGenerateBtn').addEventListener('click', () => {
       generateActivityDraft().catch(fail);

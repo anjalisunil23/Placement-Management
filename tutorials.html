@@ -706,14 +706,17 @@
         <div class="fw-semibold">Module MCQ assessment</div>
         <div class="small text-muted-2" id="assessmentMeta"></div>
       </div>
+      <div class="alert alert-warning py-2 small mb-3" id="assessmentStudentVisibilityNote" role="status">
+        Students only see this quiz when status is <strong>Published</strong> and you click <strong>Publish for students</strong>. Saving as draft keeps it staff-only.
+      </div>
       <div class="row g-2 mb-3">
         <div class="col-md-5"><label class="form-label" for="assessmentTitle">Title</label><input class="form-control form-control-sm" id="assessmentTitle" maxlength="160" value="Module quiz"/></div>
         <div class="col-md-2"><label class="form-label" for="assessmentPass">Pass %</label><input class="form-control form-control-sm" id="assessmentPass" type="number" min="0" max="100" value="60"/></div>
         <div class="col-md-2"><label class="form-label" for="assessmentMaxAttempts">Max attempts</label><input class="form-control form-control-sm" id="assessmentMaxAttempts" type="number" min="1" max="20" value="3"/></div>
         <div class="col-md-3"><label class="form-label" for="assessmentStatus">Status</label>
           <select class="form-select form-select-sm" id="assessmentStatus">
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
+            <option value="draft">Draft (staff only)</option>
+            <option value="published">Published (students)</option>
           </select>
         </div>
         <div class="col-md-6 form-check ms-2"><input class="form-check-input" type="checkbox" id="assessmentShowExplanations" checked/><label class="form-check-label" for="assessmentShowExplanations">Show explanations after submit</label></div>
@@ -749,7 +752,8 @@
       <div class="d-flex flex-wrap gap-2">
         <button type="button" class="btn btn-sm btn-outline-secondary" id="assessmentAddQuestionBtn">+ Add question</button>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="assessmentPreviewBtn">Preview</button>
-        <button type="button" class="btn btn-sm btn-success" id="assessmentSaveBtn">Save assessment</button>
+        <button type="button" class="btn btn-sm btn-outline-success" id="assessmentSaveBtn">Save draft</button>
+        <button type="button" class="btn btn-sm btn-success" id="assessmentPublishBtn">Publish for students</button>
       </div>
       <div id="assessmentStudentPreview" class="d-none border rounded p-3 mt-3">
         <div class="fw-semibold mb-2">Student preview</div>
@@ -1013,5 +1017,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261006dndsimple"></script>
+<script src="js/tutorials-page.js?v=20261006publishmcq"></script>
 </body></html>
