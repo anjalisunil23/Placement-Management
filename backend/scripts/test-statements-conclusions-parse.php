@@ -81,6 +81,19 @@ foreach ($r as $q) {
         echo "  FAIL prompt should not repeat A-E options\n";
         $failed++;
     }
+    $prompt = (string) ($q['prompt'] ?? '');
+    if (!str_contains($prompt, "Statements\n") || !str_contains($prompt, "\nConclusions\n")) {
+        echo "  FAIL prompt not multi-line Statements/Conclusions\n";
+        $failed++;
+    }
+    if (str_contains($prompt, 'Statements Some') || str_contains($prompt, 'Conclusions I)')) {
+        echo "  FAIL prompt still flat after Statements/Conclusions labels\n";
+        $failed++;
+    }
+    if (!str_contains($prompt, "I) ") || !str_contains($prompt, "\nII) ")) {
+        echo "  FAIL conclusions I/II not on separate lines\n";
+        $failed++;
+    }
     foreach ($expectedOpts as $i => $want) {
         $got = trim((string) ($opts[$i] ?? ''));
         if ($got !== $want) {
@@ -95,4 +108,27 @@ foreach ($r as $q) {
         }
     }
 }
+
+// Flat OCR one-liner must still become multi-line.
+$flat = "Directions: In each question below are given three statements followed by two conclusions. "
+    . "decide which of the answer (A), (B), (C), (D) and (E) is correct answer and indicate it on the answer sheet. "
+    . "A) If only conclusion I follows B) If only conclusion II follows "
+    . "C) If either conclusion I or conclusion II follows D) If neither conclusion I nor conclusion II follows "
+    . "E) If both conclusions I and II follow "
+    . "29) Statements Some cards are plastics Some plastics are metals All metals are pots "
+    . "Conclusions I) Some pots are cards II) No pots are cards";
+$flatParsed = (new AptitudeManualQuestionParser())->parse($flat);
+$fp = '';
+foreach ($flatParsed as $q) {
+    if ((int) ($q['questionNumber'] ?? 0) === 29) {
+        $fp = (string) ($q['prompt'] ?? '');
+    }
+}
+echo "flat prompt=\n{$fp}\n";
+$wantFlat = "Statements\nSome cards are plastics\nSome plastics are metals\nAll metals are pots\nConclusions\nI) Some pots are cards\nII) No pots are cards";
+if (trim($fp) !== $wantFlat) {
+    echo "FAIL flat OCR prompt formatting\n";
+    $failed++;
+}
+
 exit($failed > 0 ? 1 : 0);

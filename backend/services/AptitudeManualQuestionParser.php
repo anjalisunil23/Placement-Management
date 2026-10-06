@@ -25,6 +25,7 @@ final class AptitudeManualQuestionParser
         }
 
         $passageForQuestion = $this->mapDirectionPassages($text);
+        $sectionForQuestion = $this->mapSectionTopicsForQuestions($text);
         $dataSufficiency = $this->parseDataSufficiencySections($text);
         $parsedDsNums = [];
         foreach ($dataSufficiency as $dsq) {
@@ -56,6 +57,11 @@ final class AptitudeManualQuestionParser
             if (preg_match('/^Directions\s*:/iu', $trim)) {
                 continue;
             }
+            // Topic banners are not questions.
+            if (preg_match('/^\s*.{0,120}\((?:Sample\s+)?Questions?\)\s*$/iu', $trim)
+                && !preg_match('/[a-eA-E][\.\)]|[A-Ea-e][\.\):]/u', $trim)) {
+                continue;
+            }
             $qNum = $this->leadingQuestionNumber($trim);
             if ($qNum !== null && (isset($parsedDsNums[$qNum]) || isset($parsedScNums[$qNum]))) {
                 continue;
@@ -66,6 +72,7 @@ final class AptitudeManualQuestionParser
                 continue;
             }
             $questionPart = self::stripLeadingQuestionNumber(self::stripDirectionsRangeLabel($trim));
+            $questionPart = self::cutAtNextSectionHeading($questionPart);
             if ($qNum !== null && isset($passageForQuestion[$qNum])) {
                 $trim = $passageForQuestion[$qNum] . "\n\n" . $questionPart;
             } else {
@@ -75,6 +82,9 @@ final class AptitudeManualQuestionParser
             if ($parsed !== null) {
                 if ($qNum !== null && empty($parsed['questionNumber'])) {
                     $parsed['questionNumber'] = $qNum;
+                }
+                if ($qNum !== null && isset($sectionForQuestion[$qNum]) && empty($parsed['section'])) {
+                    $parsed['section'] = $sectionForQuestion[$qNum];
                 }
                 $parsed['prompt'] = self::cutAtNextNumberedQuestion(
                     self::cutAtNextStudyPassage(
@@ -773,6 +783,49 @@ final class AptitudeManualQuestionParser
     }
 
     /**
+     * Map "Banking Awareness (Sample Questions)" style banners onto following question numbers.
+     *
+     * @return array<int, string> question number => section title
+     */
+    private function mapSectionTopicsForQuestions(string $text): array
+    {
+        $map = [];
+        if (!preg_match_all(
+            '/(?:^|[\n\r]\s*|\s)('
+            . '(?:(?:Basic|General|Verbal|Quantitative|Computer|Digital|Reasoning|English'
+            . '|Numerical|Logical|Data|Marketing|Banking|Financial|Insurance|Current)[^\n\r]{0,90}?'
+            . '|[A-Z][a-z]+(?:\s+(?:and\s+)?[A-Z][a-z]+){0,8})'
+            . '\s*\((?:Sample\s+)?Questions?\))/u',
+            $text,
+            $matches,
+            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+        )) {
+            return [];
+        }
+
+        foreach ($matches as $m) {
+            $label = trim((string) ($m[1][0] ?? ''));
+            $at = (int) ($m[1][1] ?? -1);
+            if ($at < 0 || $label === '' || !self::looksLikeSectionHeading($label)) {
+                continue;
+            }
+            $title = trim(preg_replace('/\s*\((?:Sample\s+)?Questions?\)\s*$/iu', '', $label) ?? $label);
+            if ($title === '') {
+                $title = $label;
+            }
+            $after = $at + strlen($label);
+            $following = $this->listFollowingQuestionNumbers($text, $after, 40);
+            foreach ($following as $q) {
+                if (!isset($map[$q])) {
+                    $map[$q] = $title;
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
      * Cut "Study/Read the following information carefully…" passages glued onto prior options.
      * OCR typo "answer he given questions" is accepted.
      * If the text itself starts with that opener, keep it (it is the passage, not a leak).
@@ -1185,7 +1238,9 @@ final class AptitudeManualQuestionParser
             if (count($options) < 2) {
                 continue;
             }
-            $tail = self::cutAtNextDirectionsRange(trim(substr($afterColon, $qStart)));
+            $tail = self::cutAtNextSectionHeading(
+                self::cutAtNextDirectionsRange(trim(substr($afterColon, $qStart)))
+            );
             $directionsPrefix = 'Directions: ' . $this->normalizeStatementsConclusionsDirectionsBody($body);
 
             $chunks = $this->splitStatementsConclusionsQuestionChunks($tail);
@@ -1194,7 +1249,7 @@ final class AptitudeManualQuestionParser
             }
 
             foreach ($chunks as $chunk) {
-                $chunk = self::cutAtNextDirectionsRange(trim($chunk));
+                $chunk = self::cutAtNextSectionHeading(self::cutAtNextDirectionsRange(trim($chunk)));
                 if ($chunk === '' || !preg_match('/^\s*(\d{1,3})\)\s*/u', $chunk, $qNumMatch)) {
                     continue;
                 }
@@ -1204,12 +1259,12 @@ final class AptitudeManualQuestionParser
                 }
 
                 $promptBody = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $chunk) ?? $chunk;
-                $promptBody = self::cutAtNextDirectionsRange(trim($promptBody));
+                $promptBody = self::cutAtNextSectionHeading(self::cutAtNextDirectionsRange(trim($promptBody)));
                 if ($promptBody === '') {
                     continue;
                 }
 
-                $prompt = $promptBody;
+                $prompt = self::formatStatementsConclusionsPrompt($promptBody);
                 $optionList = [];
                 foreach (['A', 'B', 'C', 'D', 'E'] as $letter) {
                     if (isset($options[$letter])) {
@@ -1264,8 +1319,74 @@ final class AptitudeManualQuestionParser
             return false;
         }
 
-        return preg_match('/(?:^|[\n\r]\s*)I\)\s+\S/u', $chunk) === 1
-            && preg_match('/(?:^|[\n\r]\s*)II\)\s+\S/u', $chunk) === 1;
+        return preg_match('/(?:^|[\n\r]\s*|\s)I\)\s+\S/u', $chunk) === 1
+            && preg_match('/(?:^|[\n\r]\s*|\s)II\)\s+\S/u', $chunk) === 1;
+    }
+
+    /**
+     * Keep Statements / Conclusions / I) / II) on separate lines (never one flat paragraph).
+     */
+    public static function formatStatementsConclusionsPrompt(string $prompt): string
+    {
+        $prompt = trim($prompt);
+        if ($prompt === '') {
+            return '';
+        }
+        $prompt = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $prompt) ?? $prompt;
+        $prompt = trim(preg_replace('/[^\S\n]+/u', ' ', $prompt) ?? $prompt);
+        $prompt = preg_replace('/\s*\n\s*/u', "\n", $prompt) ?? $prompt;
+
+        // Flatten then re-insert structure so OCR one-liners become multi-line.
+        $flat = trim(preg_replace('/\s+/u', ' ', $prompt) ?? $prompt);
+        if (preg_match(
+            '/^Statements\s+(.+?)\s+Conclusions\s+(.+)$/iu',
+            $flat,
+            $m
+        )) {
+            $stmts = self::splitSyllogismStatementLines(trim((string) $m[1]));
+            $conclusions = self::formatSyllogismConclusionLines(trim((string) $m[2]));
+            return "Statements\n{$stmts}\nConclusions\n{$conclusions}";
+        }
+
+        $prompt = preg_replace('/\bStatements\b\s*/iu', "Statements\n", $prompt) ?? $prompt;
+        $prompt = preg_replace('/\s*\bConclusions\b\s*/iu', "\nConclusions\n", $prompt) ?? $prompt;
+        // Match II) before I) so "II)" is not split into "I" + "I)".
+        $prompt = preg_replace('/\s+(II\))\s+/u', "\n$1 ", $prompt) ?? $prompt;
+        $prompt = preg_replace('/(?<!I)(I\))\s+/u', "\n$1 ", $prompt) ?? $prompt;
+        $prompt = trim(preg_replace("/\n{3,}/u", "\n\n", $prompt) ?? $prompt);
+
+        return $prompt;
+    }
+
+    private static function splitSyllogismStatementLines(string $text): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+        if ($text === '') {
+            return '';
+        }
+        $text = preg_replace(
+            '/\s+(?=(?:All|Some|No|Only|Every|None|Most|A\s+few)\b)/u',
+            "\n",
+            $text
+        ) ?? $text;
+
+        return trim($text);
+    }
+
+    private static function formatSyllogismConclusionLines(string $text): string
+    {
+        $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+        if ($text === '') {
+            return '';
+        }
+        if (preg_match('/^I\)\s*(.+?)\s*II\)\s*(.+)$/iu', $text, $m)) {
+            return 'I) ' . trim((string) $m[1]) . "\nII) " . trim((string) $m[2]);
+        }
+        // Match II) before I) so "II)" is not split into "I" + "I)".
+        $text = preg_replace('/\s*(II\))\s*/u', "\n$1 ", $text) ?? $text;
+        $text = preg_replace('/(?<!I)(I\))\s*/u', "\n$1 ", $text) ?? $text;
+
+        return trim($text);
     }
 
     private function findStatementsConclusionsQuestionsStart(string $text): ?int
@@ -1292,6 +1413,10 @@ final class AptitudeManualQuestionParser
             if ($dirAt !== null && $dirAt < $end) {
                 $end = $dirAt;
             }
+            $secAt = self::nextSectionHeadingOffset($tail, $at + 1);
+            if ($secAt !== null && $secAt < $end) {
+                $end = $secAt;
+            }
             $scan = $at + 1;
             while ($scan < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+Statements\b/iu', $tail, $m2, PREG_OFFSET_CAPTURE, $scan)) {
                 $at2 = (int) ($m2[0][1] ?? 0);
@@ -1300,7 +1425,9 @@ final class AptitudeManualQuestionParser
                 }
                 break;
             }
-            $chunk = self::cutAtNextDirectionsRange(trim(substr($tail, $at, $end - $at)));
+            $chunk = self::cutAtNextSectionHeading(
+                self::cutAtNextDirectionsRange(trim(substr($tail, $at, $end - $at)))
+            );
             if ($chunk !== '' && $this->chunkHasStatementsConclusions($chunk)) {
                 $chunks[] = $chunk;
             }
