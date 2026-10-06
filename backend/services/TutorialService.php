@@ -357,6 +357,21 @@ final class TutorialService
      * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
+    public function unmarkModuleComplete(array $user, string $tutorialId, string $moduleId): array
+    {
+        $tutorial = $this->publishedTutorialForStudent($user, $tutorialId);
+        $this->moduleOnTutorial($tutorialId, $moduleId);
+        $studentId = $this->studentProfileId($user);
+        $this->moduleProgress->clearComplete($studentId, $moduleId);
+        $this->clearTutorialCompletionFlag($studentId, $tutorialId);
+
+        return $this->progressView($studentId, $tutorial);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
     public function completeTutorial(array $user, string $tutorialId): array
     {
         $tutorial = $this->publishedTutorialForStudent($user, $tutorialId);
@@ -379,6 +394,43 @@ final class TutorialService
         ]);
 
         return $this->progressView($studentId, $tutorial);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function uncompleteTutorial(array $user, string $tutorialId): array
+    {
+        $tutorial = $this->publishedTutorialForStudent($user, $tutorialId);
+        $studentId = $this->studentProfileId($user);
+        $existing = $this->progress->findFor($studentId, $tutorialId);
+        if (!is_array($existing) || !($existing['completedAt'] ?? null)) {
+            throw new \InvalidArgumentException('This tutorial is not marked complete.');
+        }
+        $this->clearTutorialCompletionFlag($studentId, $tutorialId);
+
+        return $this->progressView($studentId, $tutorial);
+    }
+
+    /**
+     * Clear the course-level COMPLETED flag without removing module progress.
+     */
+    private function clearTutorialCompletionFlag(string $studentId, string $tutorialId): void
+    {
+        $existing = $this->progress->findFor($studentId, $tutorialId);
+        if (!is_array($existing) || !($existing['_id'] ?? null)) {
+            return;
+        }
+        if (!($existing['completedAt'] ?? null) && (string) ($existing['status'] ?? '') !== 'COMPLETED') {
+            return;
+        }
+        $percent = $this->calculatedPercent($studentId, $tutorialId);
+        $this->progress->update((string) $existing['_id'], [
+            'completedAt' => null,
+            'status' => 'IN_PROGRESS',
+            'progressPercent' => $percent,
+        ]);
     }
 
     /**
@@ -578,6 +630,39 @@ final class TutorialService
             $this->progress->update((string) $stored['_id'], ['completedLessonIds' => array_values($ids)]);
         }
         $this->maybeCompleteReadyModules($user, $tutorialId);
+
+        return $this->progressForStudent($user, $tutorialId);
+    }
+
+    /**
+     * Remove an explicit lesson-complete mark (lessons without MCQs only).
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function unmarkLessonReviewed(array $user, string $tutorialId, string $moduleId, string $lessonId): array
+    {
+        $lessonId = trim($lessonId);
+        if (preg_match('/^[A-Za-z0-9_-]{1,64}$/', $lessonId) !== 1) {
+            throw new \InvalidArgumentException('Lesson not found.');
+        }
+        $this->publishedTutorialForStudent($user, $tutorialId);
+        $this->moduleOnTutorial($tutorialId, $moduleId);
+        $studentId = $this->studentProfileId($user);
+        $stored = $this->progress->findFor($studentId, $tutorialId);
+        if (!is_array($stored) || !($stored['_id'] ?? null)) {
+            return $this->progressForStudent($user, $tutorialId);
+        }
+        $key = $moduleId . ':' . $lessonId;
+        $ids = [];
+        foreach ((array) ($stored['completedLessonIds'] ?? []) as $existing) {
+            $existing = (string) $existing;
+            if ($existing !== '' && $existing !== $key) {
+                $ids[$existing] = $existing;
+            }
+        }
+        $this->progress->update((string) $stored['_id'], ['completedLessonIds' => array_values($ids)]);
+        $this->clearTutorialCompletionFlag($studentId, $tutorialId);
 
         return $this->progressForStudent($user, $tutorialId);
     }

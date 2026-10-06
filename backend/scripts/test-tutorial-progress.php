@@ -163,6 +163,21 @@ try {
     $doneAgain = $service->completeTutorial($owner, $tutorial['id']);
     $check($done['completed'] === true && $doneAgain['status'] === 'COMPLETED' && $doneAgain['progressPercent'] === 100, 'tutorial completion persists and can be repeated');
 
+    $undone = $service->uncompleteTutorial($owner, $tutorial['id']);
+    $check($undone['completed'] === false && $undone['status'] === 'IN_PROGRESS' && $undone['completedModules'] === 2, 'tutorial can be marked incomplete while modules stay complete');
+    $redone = $service->completeTutorial($owner, $tutorial['id']);
+    $check($redone['completed'] === true, 'tutorial can be completed again after incomplete');
+
+    $clearedModule = $service->unmarkModuleComplete($owner, $tutorial['id'], $moduleB['id']);
+    $check(
+        $clearedModule['completed'] === false
+        && $clearedModule['completedModules'] === 1
+        && !in_array($moduleB['id'], $clearedModule['completedModuleIds'] ?? [], true),
+        'module can be marked incomplete and course completion clears'
+    );
+    $service->markModuleComplete($owner, $tutorial['id'], $moduleB['id']);
+    $service->completeTutorial($owner, $tutorial['id']);
+
     $saved = $service->saveAttempt($owner, $exercise['id'], ['sourceCode' => "int main(){return 0;}\n", 'language' => 'c']);
     $savedAgain = $service->saveAttempt($owner, $exercise['id'], ['sourceCode' => "int main(){return 1;}\n", 'language' => 'C']);
     $check($saved['status'] === 'ATTEMPTED' && !array_key_exists('testsPassed', $saved), 'an attempt is stored without a grade');

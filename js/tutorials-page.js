@@ -1420,8 +1420,9 @@
   }
 
   function languageLabel(value) {
+    if (value === 'text' || value === 'plain' || value === 'plaintext') return 'Plain text';
     const hit = LANGUAGES.find((row) => row.value === value);
-    return hit ? hit.label : (value || '');
+    return hit ? hit.label : (value || 'Plain text');
   }
 
   function newBlockId() {
@@ -2298,11 +2299,12 @@
     if (type === 'programming_task') {
       root.innerHTML = `
         <div class="row g-2">
-          <div class="col-md-4"><label class="form-label" for="actLang">Language</label>
+          <div class="col-md-4"><label class="form-label" for="actLang">Response format</label>
             <select class="form-select form-select-sm" id="actLang">
-              ${LANGUAGES.map((row) => `<option value="${esc(row.value)}" ${((config.language || 'python') === row.value) ? 'selected' : ''}>${esc(row.label)}</option>`).join('')}
-              <option value="text" ${(config.language || '') === 'text' ? 'selected' : ''}>Plain text</option>
+              <option value="text" ${((config.language || 'text') === 'text') ? 'selected' : ''}>Plain text</option>
+              ${LANGUAGES.map((row) => `<option value="${esc(row.value)}" ${((config.language || 'text') === row.value) ? 'selected' : ''}>${esc(row.label)}</option>`).join('')}
             </select>
+            <div class="form-text">How the student should write their answer. Use Plain text unless this is a coding task.</div>
           </div>
           <div class="col-12"><label class="form-label" for="actBoilerplate">Starter / boilerplate code</label><textarea class="form-control form-control-sm font-monospace" id="actBoilerplate" rows="6" spellcheck="false">${esc(config.boilerplate || '')}</textarea><div class="form-text">Stored as text only. Not executed.</div></div>
           <div class="col-12"><label class="form-label" for="actModelAnswer">Optional model solution (staff only)</label><textarea class="form-control form-control-sm font-monospace" id="actModelAnswer" rows="3">${esc(key.modelAnswer || '')}</textarea></div>
@@ -3960,14 +3962,20 @@
       const hasPractice = (learn.practiceQuestions || []).length > 0;
       const done = module && lesson ? lessonIsComplete(module.id, lesson.id) : false;
       markLesson.classList.toggle('d-none', hasPractice);
-      markLesson.disabled = !module || !lesson || done;
-      markLesson.textContent = done ? 'Lesson complete' : 'Mark lesson complete';
+      markLesson.disabled = !module || !lesson;
+      markLesson.textContent = done ? 'Mark lesson incomplete' : 'Mark lesson complete';
+      markLesson.classList.toggle('btn-outline-secondary', !done);
+      markLesson.classList.toggle('btn-outline-warning', done);
+      markLesson.dataset.complete = done ? '1' : '0';
     }
     const finishModule = document.getElementById('studentFinishModule');
     if (finishModule) {
       const marked = module && ((learn.progress && learn.progress.completedModuleIds) || []).includes(module.id);
-      finishModule.disabled = !module || marked;
-      finishModule.textContent = marked ? 'Module complete' : 'Finish module';
+      finishModule.disabled = !module;
+      finishModule.textContent = marked ? 'Mark module incomplete' : 'Finish module';
+      finishModule.classList.toggle('btn-success', !marked);
+      finishModule.classList.toggle('btn-outline-warning', !!marked);
+      finishModule.dataset.complete = marked ? '1' : '0';
     }
   }
 
@@ -4071,10 +4079,16 @@
     )).join('');
     const result = feedback
       ? `<div class="alert ${feedback.correct ? 'alert-success' : 'alert-danger'} py-2 mt-2 mb-0"><div class="fw-semibold">${feedback.correct ? 'Correct' : 'Incorrect'}</div>${feedback.explanation ? `<div class="small mt-1">${esc(feedback.explanation)}</div>` : ''}</div>`
-      : (question.answeredCorrectly ? '<div class="small text-success mt-2">Answered correctly.</div>' : '');
+      : '';
+    const priorBadge = !feedback && question.answeredCorrectly
+      ? '<span class="badge text-bg-light border">Answered before</span>'
+      : '';
     host.innerHTML = `
       <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-        <div class="small text-muted-2">Question ${index + 1} of ${questions.length}</div>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <div class="small text-muted-2">Question ${index + 1} of ${questions.length}</div>
+          ${priorBadge}
+        </div>
         <div class="d-flex gap-1">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-practice-prev ${index === 0 ? 'disabled' : ''}>Previous</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" data-practice-next ${index === questions.length - 1 ? 'disabled' : ''}>Next</button>
@@ -4597,7 +4611,7 @@
     const type = activity.activityType;
     const bits = [];
     if (type === 'programming_task') {
-      bits.push(`<div><strong>Language:</strong> ${esc(languageLabel(config.language || 'text'))}</div>`);
+      bits.push(`<div><strong>Response format:</strong> ${esc(languageLabel(config.language || 'text'))}</div>`);
       if (config.boilerplate) {
         bits.push(`<div class="mt-2"><div class="fw-semibold mb-1">Starter code</div><pre class="mb-0 small">${esc(config.boilerplate)}</pre></div>`);
       }
@@ -5167,8 +5181,11 @@
     if (completeBtn) {
       const ready = (progress.totalModules || 0) > 0 && (progress.completedModules || 0) === progress.totalModules && !progress.completed;
       completeBtn.classList.toggle('d-none', !ready && !progress.completed);
-      completeBtn.disabled = !!progress.completed;
-      completeBtn.textContent = progress.completed ? 'Tutorial complete' : 'Mark tutorial complete';
+      completeBtn.disabled = false;
+      completeBtn.textContent = progress.completed ? 'Mark as incomplete' : 'Mark tutorial complete';
+      completeBtn.classList.toggle('btn-outline-primary', !progress.completed);
+      completeBtn.classList.toggle('btn-outline-warning', !!progress.completed);
+      completeBtn.dataset.complete = progress.completed ? '1' : '0';
     }
     renderStudentModuleNav();
     updateLessonNavButtons();
@@ -5247,34 +5264,46 @@
       const current = ((learn.detail && learn.detail.modules) || [])[learn.moduleIndex];
       if (!current || !learn.detail) return;
       const button = document.getElementById('studentFinishModule');
+      const marked = button && button.dataset.complete === '1';
       if (button) button.disabled = true;
       try {
-        learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(current.id)}/progress`, { method: 'POST', body: {} });
+        const path = `/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(current.id)}/progress`;
+        learn.progress = await call(path, { method: marked ? 'DELETE' : 'POST', body: marked ? undefined : {} });
         paintProgress();
-        toast('Module marked complete.', 'success');
+        toast(marked ? 'Module marked incomplete.' : 'Module marked complete.', 'success');
       } catch (err) {
-        if (button) button.disabled = false;
         fail(err);
+      } finally {
+        if (button) button.disabled = false;
+        updateLessonNavButtons();
       }
     });
     document.getElementById('studentMarkLesson').addEventListener('click', async () => {
       const current = ((learn.detail && learn.detail.modules) || [])[learn.moduleIndex];
       const lesson = (learn.lessons || [])[learn.lessonIndex];
       if (!current || !lesson || !learn.detail) return;
+      const button = document.getElementById('studentMarkLesson');
+      const done = button && button.dataset.complete === '1';
       try {
-        learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(current.id)}/lessons/${encodeURIComponent(lesson.id)}/complete`, { method: 'POST', body: {} });
+        const path = `/tutorials/${encodeURIComponent(learn.detail.id)}/modules/${encodeURIComponent(current.id)}/lessons/${encodeURIComponent(lesson.id)}/complete`;
+        learn.progress = await call(path, { method: done ? 'DELETE' : 'POST', body: done ? undefined : {} });
         paintProgress();
-        toast('Lesson marked complete.', 'success');
+        toast(done ? 'Lesson marked incomplete.' : 'Lesson marked complete.', 'success');
       } catch (err) {
         fail(err);
       }
     });
     document.getElementById('studentCompleteTutorial').addEventListener('click', async () => {
       if (!learn.detail) return;
+      const button = document.getElementById('studentCompleteTutorial');
+      const completed = button && button.dataset.complete === '1';
       try {
-        learn.progress = await call(`/tutorials/${encodeURIComponent(learn.detail.id)}/complete`, { method: 'POST', body: {} });
+        const path = completed
+          ? `/tutorials/${encodeURIComponent(learn.detail.id)}/incomplete`
+          : `/tutorials/${encodeURIComponent(learn.detail.id)}/complete`;
+        learn.progress = await call(path, { method: 'POST', body: {} });
         paintProgress();
-        toast('Tutorial marked complete.', 'success');
+        toast(completed ? 'Tutorial marked incomplete.' : 'Tutorial marked complete.', 'success');
       } catch (err) {
         fail(err);
       }

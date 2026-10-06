@@ -79,4 +79,14 @@ class StudentTutorialModuleProgressModel extends BaseModel
 
         return $this->findById($id) ?? $payload;
     }
+
+    public function clearComplete(string $studentId, string $moduleId): bool
+    {
+        $existing = $this->findFor($studentId, $moduleId);
+        if ($existing === null) {
+            return false;
+        }
+
+        return $this->delete((string) ($existing['_id'] ?? ''));
+    }
 }

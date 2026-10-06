@@ -102,6 +102,24 @@ final class TutorialController
         Response::success($this->service->completeTutorial($user, $id));
     }
 
+    public function uncompleteTutorial(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->uncompleteTutorial($user, $id));
+    }
+
+    public function clearModuleProgress(string $id, string $moduleId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->unmarkModuleComplete($user, $id, $moduleId));
+    }
+
+    public function unmarkLessonReviewed(string $id, string $moduleId, string $lessonId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->unmarkLessonReviewed($user, $id, $moduleId, $lessonId));
+    }
+
     public function saveAttempt(string $id): void
     {
         $user = AuthMiddleware::authenticate();

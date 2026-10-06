@@ -1861,9 +1861,9 @@ PROMPT;
         $defaultMode = $this->defaultEvaluationMode($type);
         $evaluationMode = $requestedMode !== '' ? $requestedMode : $defaultMode;
         $this->assertActivityEvaluationMode($type, $evaluationMode);
-        $preferredLanguage = strtolower(trim((string) ($input['language'] ?? 'python')));
+        $preferredLanguage = strtolower(trim((string) ($input['language'] ?? 'text')));
         if (!in_array($preferredLanguage, self::ACTIVITY_LANGUAGES, true)) {
-            $preferredLanguage = 'python';
+            $preferredLanguage = 'text';
         }
 
         $lessonExcerpt = mb_substr(trim(strip_tags((string) ($context['lessonText'] ?? ''))), 0, 6000);
@@ -1888,7 +1888,7 @@ Activity type: {$type}
 Topic / problem area: {$topic}
 Difficulty: {$difficulty}
 Evaluation mode: {$evaluationMode}
-Preferred programming language (if programming_task): {$preferredLanguage}
+Preferred response format (use text unless a programming_task needs a coding language): {$preferredLanguage}
 Additional staff instructions: {$instructions}
 
 {$schema}
@@ -2107,7 +2107,7 @@ ACT_SCHEMA,
 
         $normalizedConfig = match ($type) {
             'programming_task' => [
-                'language' => $this->normalizeActivityLanguage((string) ($config['language'] ?? 'python')),
+                'language' => $this->normalizeActivityLanguage((string) ($config['language'] ?? 'text')),
                 'boilerplate' => mb_substr((string) ($config['boilerplate'] ?? ''), 0, 20000),
                 'promptHint' => mb_substr(trim(strip_tags((string) ($config['promptHint'] ?? ''))), 0, 2000),
             ],
