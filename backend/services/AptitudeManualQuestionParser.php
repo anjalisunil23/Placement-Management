@@ -335,13 +335,18 @@ final class AptitudeManualQuestionParser
     {
         $options = [];
         if (preg_match_all(
-            '/(?:^|[\n\s])\(([a-eA-E])\)\s*(.+?)(?=(?:[\n\s]\([a-eA-E]\)|\s+\d{1,3}\)|\s+Directions\s*\(|$))/s',
+            // Skip answer-key prose: "answer (A), (B), (C)…" (comma / next letter immediately after).
+            '/(?:^|[\n\s])\(([a-eA-E])\)\s+(?![,;])(?!\([a-eA-E]\))(.+?)(?=(?:[\n\s]\([a-eA-E]\)|\s+\d{1,3}\)|\s+Directions\s*\(|$))/s',
             $block,
             $matches,
             PREG_SET_ORDER
         )) {
             foreach ($matches as $m) {
-                $options[strtoupper($m[1])] = $this->cleanOptionText($m[2]);
+                $label = $this->cleanOptionText($m[2]);
+                if ($this->isJunkExtractedOption($label)) {
+                    continue;
+                }
+                $options[strtoupper($m[1])] = $label;
             }
         }
         if ($options === [] && preg_match_all(
@@ -534,6 +539,7 @@ final class AptitudeManualQuestionParser
     {
         $body = self::cutAtNextDirectionsRange($body);
         $body = self::cutAtNextSectionHeading($body);
+        $body = JdTextExtractionService::repairArrangementGlyphs($body);
         $body = trim(preg_replace('/[^\S\n]+/u', ' ', $body) ?? $body);
         $body = preg_replace('/\n{2,}/u', "\n", $body) ?? $body;
         $body = self::stripDirectionsRangeLabel($body);
@@ -577,15 +583,16 @@ final class AptitudeManualQuestionParser
     {
         if (!JdTextExtractionService::mentionsSymbolArrangement($prompt)
             && !preg_match('/above\s+arrangement|following\s+arrangement/iu', $prompt)) {
-            return $prompt;
+            return JdTextExtractionService::repairArrangementGlyphs($prompt);
         }
         if (JdTextExtractionService::textHasSymbolArrangementLine($prompt)) {
-            return $prompt;
+            return JdTextExtractionService::repairArrangementGlyphs($prompt);
         }
         $line = JdTextExtractionService::extractSymbolArrangementLine($fullText);
         if ($line === '') {
-            return $prompt;
+            return JdTextExtractionService::repairArrangementGlyphs($prompt);
         }
+        $line = JdTextExtractionService::repairArrangementGlyphs($line);
 
         // Insert arrangement row before the question stem when prompt has directions + stem.
         if (preg_match('/^(.*arrangement[^\n]*[.?!]?)(\s+)(.+)$/isu', $prompt, $m)) {
@@ -954,7 +961,7 @@ final class AptitudeManualQuestionParser
                 continue;
             }
             $tail = self::cutAtNextDirectionsRange(trim(substr($afterColon, $qStart)));
-            $directionsPrefix = 'Directions: ' . trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
+            $directionsPrefix = 'Directions: ' . $this->normalizeStatementsConclusionsDirectionsBody($body);
 
             $chunks = $this->splitStatementsConclusionsQuestionChunks($tail);
             if ($chunks === []) {
@@ -1079,28 +1086,108 @@ final class AptitudeManualQuestionParser
     }
 
     /**
+     * Shared A–E labels for syllogism / statements-conclusions sets.
+     * Ignore prose like "answer (A), (B), (C), (D) and (E) is correct answer…".
+     *
      * @return array<string, string>
      */
     private function extractSharedConclusionOptions(string $directionsBody): array
     {
-        $raw = $this->extractOptionsFromBlock($directionsBody);
-        $out = [];
-        foreach (['A', 'B', 'C', 'D', 'E'] as $letter) {
-            if (isset($raw[$letter]) && trim($raw[$letter]) !== '') {
-                $out[$letter] = $raw[$letter];
-            }
-        }
-        if (count($out) >= 2) {
-            return $out;
-        }
-
-        return [
+        $defaults = [
             'A' => 'If only conclusion I follows',
             'B' => 'If only conclusion II follows',
             'C' => 'If either conclusion I or conclusion II follows',
             'D' => 'If neither conclusion I nor conclusion II follows',
             'E' => 'If both conclusions I and II follow',
         ];
+
+        $out = [];
+        // Prefer explicit conclusion-rule markers: A) If only… / (A) If neither…
+        if (preg_match_all(
+            '/(?:^|[\n\s])(?:\(([A-Ea-e])\)|([A-Ea-e])\))\s*'
+            . '(If\s+(?:only|either|neither|both)\b[^.\n\r]*?(?:follows?|follow))/iu',
+            $directionsBody,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            foreach ($matches as $m) {
+                $letter = strtoupper(trim((string) (($m[1] ?? '') !== '' ? $m[1] : ($m[2] ?? ''))));
+                $label = $this->cleanOptionText((string) ($m[3] ?? ''));
+                if ($letter !== '' && $this->isPlausibleConclusionOption($label)) {
+                    $out[$letter] = $label;
+                }
+            }
+        }
+
+        if (count($out) < 4) {
+            $raw = $this->extractOptionsFromBlock($directionsBody);
+            foreach (['A', 'B', 'C', 'D', 'E'] as $letter) {
+                if (isset($out[$letter])) {
+                    continue;
+                }
+                $label = $this->cleanOptionText((string) ($raw[$letter] ?? ''));
+                if ($this->isPlausibleConclusionOption($label)) {
+                    $out[$letter] = $label;
+                }
+            }
+        }
+
+        if (count($out) >= 4) {
+            $ordered = [];
+            foreach (['A', 'B', 'C', 'D', 'E'] as $letter) {
+                if (isset($out[$letter])) {
+                    $ordered[$letter] = $out[$letter];
+                } elseif (isset($defaults[$letter])) {
+                    $ordered[$letter] = $defaults[$letter];
+                }
+            }
+
+            return $ordered;
+        }
+
+        return $defaults;
+    }
+
+    private function isPlausibleConclusionOption(string $text): bool
+    {
+        $t = trim($text);
+        if ($t === '' || mb_strlen($t) < 8) {
+            return false;
+        }
+        if (preg_match('/^(?:,+|and|or)\s*$/iu', $t) === 1) {
+            return false;
+        }
+        if (preg_match('/\bis correct answer\b|\bindicate it on the answer\b/iu', $t) === 1) {
+            return false;
+        }
+
+        return preg_match('/^If\s+(?:only|either|neither|both)\b/iu', $t) === 1
+            || preg_match('/\bconclusions?\b/iu', $t) === 1;
+    }
+
+    /** Directions prose only — A–E conclusion rules belong in options, not the header. */
+    private function normalizeStatementsConclusionsDirectionsBody(string $body): string
+    {
+        $body = str_replace(["\r\n", "\r"], "\n", trim($body));
+        // Cut from the first A–E conclusion-rule marker (shown as MCQ options instead).
+        if (preg_match(
+            '/(?:^|[\n\s])(?:\([A-Ea-e]\)|[A-Ea-e]\))\s*If\s+(?:only|either|neither|both)\b/iu',
+            $body,
+            $m,
+            PREG_OFFSET_CAPTURE
+        )) {
+            $body = trim(substr($body, 0, (int) ($m[0][1] ?? 0)));
+        }
+        // Soften "answer (A), (B), (C), (D) and (E) is correct…" into a short instruction.
+        $body = preg_replace(
+            '/\b(?:Then\s+)?decide which of the answer\s*\(\s*[A-E]\s*\)(?:\s*,\s*\(\s*[A-E]\s*\)){3}\s*and\s*\(\s*[A-E]\s*\)\s*'
+            . 'is correct answer and indicate it on the\s*answer sheet\.?/iu',
+            'Choose the correct option (A–E).',
+            $body
+        ) ?? $body;
+        $body = trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
+
+        return $body;
     }
 
     /**
@@ -1237,6 +1324,26 @@ final class AptitudeManualQuestionParser
         $text = preg_replace('/\s+\d{1,3}\)\s+Study\s+the\s+following.*$/iu', '', $text) ?? $text;
 
         return trim($text);
+    }
+
+    /** Prose fragments mistaken for options, e.g. from "answer (A), (B), …". */
+    private function isJunkExtractedOption(string $text): bool
+    {
+        $t = trim($text);
+        if ($t === '' || mb_strlen($t) < 2) {
+            return true;
+        }
+        if (preg_match('/^(?:,+|and|or)\s*$/iu', $t) === 1) {
+            return true;
+        }
+        if (preg_match('/^\s*is correct answer\b/iu', $t) === 1) {
+            return true;
+        }
+        if (preg_match('/\bindicate it on the answer sheet\b/iu', $t) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

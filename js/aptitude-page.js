@@ -1979,6 +1979,7 @@
 
   function renderMcqPickDetailHtml(q, index, { compact = false, manualPreview = false } = {}) {
     const isDs = q.questionType === 'DATA_SUFFICIENCY';
+    const isSc = q.questionType === 'STATEMENTS_CONCLUSIONS';
     const letters = isDs ? ['1', '2', '3', '4', '5'] : ['A', 'B', 'C', 'D', 'E'];
     const opts = (q.options || []).filter((o) => String(o || '').trim() && String(o).trim() !== '—').slice(0, 5);
     const pad = opts.length ? opts : (q.options || []).slice(0, 5);
@@ -2008,8 +2009,8 @@
     ].filter(Boolean).join('') : '';
     const answerLabel = letters[correct] || (isDs ? String(correct + 1) : String.fromCharCode(65 + correct));
     const answerLine = manualPreview && !answerKnown
-      ? '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>'
-      : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : `${esc(answerLabel)}.`} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
+      ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>')
+      : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : (isSc ? `${esc(answerLabel)})` : `${esc(answerLabel)}.`)} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
     const normOpts = displayOpts.map((o) => String(o || '').trim().toLowerCase()).filter(Boolean);
     const hasDupOpts = manualPreview && normOpts.length >= 2 && new Set(normOpts).size < normOpts.length;
     const dupWarn = hasDupOpts
@@ -2024,7 +2025,7 @@
           const label = esc(stripHtml(String(o || '')) || String(o || ''));
           const isCorrect = answerKnown && oi === correct;
           const optLabel = letters[oi] || (isDs ? String(oi + 1) : String.fromCharCode(65 + oi));
-          const optPrefix = isDs ? `(${optLabel})` : `${optLabel}.`;
+          const optPrefix = isDs ? `(${optLabel})` : (isSc ? `${optLabel})` : `${optLabel}.`);
           return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${optPrefix} ${label}${isCorrect ? ' ✓' : ''}</div>`;
         }).join('')
         : '<div class="text-muted-2">No options</div>'}</div>
