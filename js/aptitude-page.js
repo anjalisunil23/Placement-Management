@@ -2312,13 +2312,13 @@
       const hasDoc = !!(set.hasDocument || set.jdFileUrl);
       const checked = selectedJdSetIds.has(id);
       return `<div class="border rounded-3 p-3" data-jd-set-card="${esc(id)}">
-        <div class="d-flex align-items-start justify-content-between gap-2">
+        <div class="d-flex align-items-start gap-2">
           ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select JD set"/>` : ''}
-          <div class="min-w-0">
+          <div class="min-w-0 flex-grow-1 text-start">
             <div class="fw-semibold">${esc(set.jdTitle || 'Untitled JD')}</div>
             <div class="small text-muted-2 mt-1">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
           </div>
-          <div class="d-flex gap-2 flex-shrink-0">
+          <div class="d-flex gap-2 flex-shrink-0 ms-auto">
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
             <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
             ${forProblems ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-edit-problem="${esc(id)}">Edit</button>` : ''}
