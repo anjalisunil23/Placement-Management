@@ -1069,9 +1069,57 @@
     if (previewPractice) previewPractice.innerHTML = '';
   }
 
+  function courseIsEditable() {
+    return !!(state.creatingModule || (state.active && state.active.isOwner === true && state.active.canEdit === true));
+  }
+
+  function guardCourseEdit(actionLabel) {
+    if (courseIsEditable()) return true;
+    toast(`View only — ${actionLabel || 'only the course creator can change this'}.`, 'error');
+    return false;
+  }
+
+  function applyModuleEditorLock() {
+    const editable = courseIsEditable();
+    const article = document.getElementById('articleView');
+    if (article) article.classList.toggle('is-view-only', !editable);
+    const saveBtn = document.getElementById('articleSave');
+    if (saveBtn) saveBtn.classList.toggle('d-none', !editable);
+    ['moduleTitle', 'moduleSubtitle'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.readOnly = !editable;
+    });
+    const hint = document.querySelector('.article-editor-hint');
+    if (hint) {
+      hint.innerHTML = editable
+        ? '<span>Write the lesson students will study.</span><span>Press <kbd>+</kbd> to add a block, or type <kbd>/</kbd> for headings, code, quotes, and images.</span>'
+        : '<span class="text-warning">View only — you cannot edit modules created by other staff.</span>';
+    }
+    [
+      'assessmentTitle', 'assessmentPass', 'assessmentMaxAttempts', 'assessmentStatus',
+      'assessmentShowExplanations', 'assessmentAllowReview',
+      'assessmentGenCount', 'assessmentGenDifficulty', 'assessmentGenInstructions',
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if ('readOnly' in el && el.type !== 'checkbox' && el.tagName !== 'SELECT') el.readOnly = !editable;
+      el.disabled = !editable;
+    });
+    [
+      'assessmentGenerateBtn', 'assessmentAddQuestionBtn', 'assessmentSaveBtn', 'assessmentPublishBtn',
+      'assessmentPreviewApprove', 'assessmentPreviewDiscard',
+      'activityAddBtn', 'activityAiGenerateBtn', 'activityPublishBtn', 'addExerciseInline',
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('d-none', !editable);
+    });
+    const previewBtn = document.getElementById('assessmentPreviewBtn');
+    if (previewBtn) previewBtn.classList.toggle('d-none', false);
+  }
+
   function paintCourseHeader() {
     const course = state.active || {};
-    const editable = course.isOwner === true && course.canEdit === true;
+    const editable = courseIsEditable();
     document.getElementById('moduleTutorialTitle').textContent = course.title || 'Course';
     document.getElementById('moduleTutorialMeta').textContent = [
       categoryName(course.categoryId),
@@ -1752,12 +1800,16 @@
       plus.className = 'row-plus';
       plus.setAttribute('aria-label', 'Insert block');
       plus.textContent = '+';
-      plus.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        syncLessonFromDom();
-        openInsertMenuForRow(row, block.id);
-      });
+      if (!courseIsEditable()) {
+        plus.classList.add('d-none');
+      } else {
+        plus.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          syncLessonFromDom();
+          openInsertMenuForRow(row, block.id);
+        });
+      }
 
       const main = document.createElement('div');
       main.className = 'lesson-main';
@@ -1773,30 +1825,31 @@
   }
 
   function buildEditableBlock(block) {
+    const editable = courseIsEditable();
     if (block.type === 'heading') {
       const el = document.createElement('div');
       el.className = block.level === 3 ? 'lesson-heading lesson-subhead' : 'lesson-heading';
-      el.dataset.editable = '1';
-      el.contentEditable = 'true';
+      el.dataset.editable = editable ? '1' : '0';
+      el.contentEditable = editable ? 'true' : 'false';
       el.dataset.placeholder = block.level === 3 ? 'Section subheading' : 'Lesson heading';
       el.textContent = block.text || '';
-      wireTextBlock(el, block);
+      if (editable) wireTextBlock(el, block);
       return el;
     }
     if (block.type === 'quote') {
       const el = document.createElement('div');
       el.className = 'lesson-quote';
-      el.dataset.editable = '1';
-      el.contentEditable = 'true';
+      el.dataset.editable = editable ? '1' : '0';
+      el.contentEditable = editable ? 'true' : 'false';
       el.dataset.placeholder = 'Key takeaway or example quote';
       el.textContent = block.text || '';
-      wireTextBlock(el, block);
+      if (editable) wireTextBlock(el, block);
       return el;
     }
     if (block.type === 'code') {
       const wrap = document.createElement('div');
       wrap.className = 'tutorial-code-block';
-      wrap.innerHTML = `<div class="tutorial-code-bar"><label class="tutorial-code-lang-label"><span>Language</span><select data-code-language aria-label="Code language for this block">${codeLanguageOptions(block.language || 'auto')}</select></label><span data-code-detected class="tutorial-code-detected"></span><span class="d-flex gap-1"><button type="button" data-code-copy>Copy</button><button type="button" data-code-delete>Delete</button></span></div><textarea data-code-source spellcheck="false" aria-label="Code" placeholder="Write or paste code"></textarea><div class="tutorial-code-note">Example output is optional and is typed by the tutor. Code is never executed here.</div><textarea data-code-output spellcheck="false" aria-label="Example output" placeholder="Example output (optional)"></textarea>`;
+      wrap.innerHTML = `<div class="tutorial-code-bar"><label class="tutorial-code-lang-label"><span>Language</span><select data-code-language aria-label="Code language for this block" ${editable ? '' : 'disabled'}>${codeLanguageOptions(block.language || 'auto')}</select></label><span data-code-detected class="tutorial-code-detected"></span><span class="d-flex gap-1"><button type="button" data-code-copy>Copy</button>${editable ? '<button type="button" data-code-delete>Delete</button>' : ''}</span></div><textarea data-code-source spellcheck="false" aria-label="Code" placeholder="Write or paste code" ${editable ? '' : 'readonly'}></textarea><div class="tutorial-code-note">Example output is optional and is typed by the tutor. Code is never executed here.</div><textarea data-code-output spellcheck="false" aria-label="Example output" placeholder="Example output (optional)" ${editable ? '' : 'readonly'}></textarea>`;
       const source = wrap.querySelector('[data-code-source]');
       const output = wrap.querySelector('[data-code-output]');
       const select = wrap.querySelector('[data-code-language]');
@@ -1814,68 +1867,77 @@
         detected.textContent = guessed !== 'auto' && label ? `Detected: ${label}` : '';
       };
       refreshDetected();
-      source.addEventListener('keydown', (event) => {
-        if (event.key === 'Tab') {
-          event.preventDefault();
-          const start = source.selectionStart;
-          const end = source.selectionEnd;
-          source.value = `${source.value.slice(0, start)}  ${source.value.slice(end)}`;
-          source.selectionStart = source.selectionEnd = start + 2;
-        }
-        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-          event.preventDefault();
+      if (editable) {
+        source.addEventListener('keydown', (event) => {
+          if (event.key === 'Tab') {
+            event.preventDefault();
+            const start = source.selectionStart;
+            const end = source.selectionEnd;
+            source.value = `${source.value.slice(0, start)}  ${source.value.slice(end)}`;
+            source.selectionStart = source.selectionEnd = start + 2;
+          }
+          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            syncLessonFromDom();
+            const focusId = ensureTrailingParagraph(block.id);
+            state.activeBlockId = focusId;
+            renderLessonEditor(focusId, 'text');
+          }
+        });
+        source.addEventListener('input', () => {
+          block.source = source.value;
+          refreshDetected();
+        });
+        output.addEventListener('input', () => { block.exampleOutput = output.value; });
+        select.addEventListener('change', () => {
+          block.language = select.value;
+          refreshDetected();
+        });
+        const del = wrap.querySelector('[data-code-delete]');
+        if (del) del.addEventListener('click', () => {
           syncLessonFromDom();
-          const focusId = ensureTrailingParagraph(block.id);
-          state.activeBlockId = focusId;
-          renderLessonEditor(focusId, 'text');
-        }
-      });
-      source.addEventListener('input', () => {
-        block.source = source.value;
-        refreshDetected();
-      });
-      output.addEventListener('input', () => { block.exampleOutput = output.value; });
-      select.addEventListener('change', () => {
-        block.language = select.value;
-        refreshDetected();
-      });
+          removeBlock(block.id);
+        });
+      }
       wrap.querySelector('[data-code-copy]').addEventListener('click', () => {
         if (navigator.clipboard) navigator.clipboard.writeText(source.value).then(() => toast('Copied.', 'success')).catch(() => {});
-      });
-      wrap.querySelector('[data-code-delete]').addEventListener('click', () => {
-        syncLessonFromDom();
-        removeBlock(block.id);
       });
       return wrap;
     }
     if (block.type === 'image') {
       const wrap = document.createElement('div');
       wrap.className = 'lesson-image';
-      wrap.innerHTML = `<img src="${esc(block.url)}" alt="${esc(block.alt || '')}"/><input type="text" class="form-control form-control-sm mt-2" data-image-alt maxlength="180" placeholder="Image description" value="${esc(block.alt || '')}"/><div class="d-flex gap-2 mt-2"><button type="button" class="btn btn-sm btn-outline-danger" data-image-delete>Delete image</button></div>`;
-      wrap.querySelector('[data-image-alt]').addEventListener('input', (event) => { block.alt = event.target.value; });
-      wrap.querySelector('[data-image-delete]').addEventListener('click', () => {
-        syncLessonFromDom();
-        removeBlock(block.id);
-      });
+      wrap.innerHTML = `<img src="${esc(block.url)}" alt="${esc(block.alt || '')}"/>${editable ? `<input type="text" class="form-control form-control-sm mt-2" data-image-alt maxlength="180" placeholder="Image description" value="${esc(block.alt || '')}"/><div class="d-flex gap-2 mt-2"><button type="button" class="btn btn-sm btn-outline-danger" data-image-delete>Delete image</button></div>` : (block.alt ? `<div class="small text-muted-2 mt-2">${esc(block.alt)}</div>` : '')}`;
+      if (editable) {
+        wrap.querySelector('[data-image-alt]').addEventListener('input', (event) => { block.alt = event.target.value; });
+        wrap.querySelector('[data-image-delete]').addEventListener('click', () => {
+          syncLessonFromDom();
+          removeBlock(block.id);
+        });
+      }
       return wrap;
     }
     if (block.type === 'divider') {
       const wrap = document.createElement('div');
       wrap.className = 'lesson-divider d-flex align-items-center gap-2';
-      wrap.innerHTML = '<hr class="flex-grow-1"/><button type="button" class="btn btn-sm btn-outline-danger" data-divider-delete>Delete</button>';
-      wrap.querySelector('[data-divider-delete]').addEventListener('click', () => {
-        syncLessonFromDom();
-        removeBlock(block.id);
-      });
+      wrap.innerHTML = editable
+        ? '<hr class="flex-grow-1"/><button type="button" class="btn btn-sm btn-outline-danger" data-divider-delete>Delete</button>'
+        : '<hr class="flex-grow-1"/>';
+      if (editable) {
+        wrap.querySelector('[data-divider-delete]').addEventListener('click', () => {
+          syncLessonFromDom();
+          removeBlock(block.id);
+        });
+      }
       return wrap;
     }
     const el = document.createElement('div');
     el.className = 'lesson-paragraph';
-    el.dataset.editable = '1';
-    el.contentEditable = 'true';
+    el.dataset.editable = editable ? '1' : '0';
+    el.contentEditable = editable ? 'true' : 'false';
     el.dataset.placeholder = 'Write the lesson content for students…';
     el.textContent = block.text || '';
-    wireTextBlock(el, block);
+    if (editable) wireTextBlock(el, block);
     return el;
   }
 
@@ -1932,19 +1994,14 @@
     const published = !state.creatingModule && state.active && state.active.status === 'published';
     status.textContent = state.creatingModule ? 'Draft' : (published ? 'Published' : 'Draft');
     status.classList.toggle('is-published', !!published);
-    const editable = state.creatingModule || !!(state.active && state.active.isOwner === true && state.active.canEdit === true);
-    const saveBtn = document.getElementById('articleSave');
-    if (saveBtn) saveBtn.classList.toggle('d-none', !editable);
-    ['moduleTitle', 'moduleSubtitle'].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.readOnly = !editable;
-    });
+    applyModuleEditorLock();
     toggleInsertMenu(false);
     showStaffScreen('article');
   }
 
   function beginNewModule() {
     if (!state.active) return;
+    if (!guardCourseEdit('add a module')) return;
     state.creatingModule = true;
     state.selectedModuleId = '';
     document.getElementById('moduleId').value = '';
@@ -2014,12 +2071,32 @@
   function renderAssessmentQuestions() {
     const root = document.getElementById('assessmentQuestionList');
     const questions = state.assessmentQuestions || [];
+    const editable = courseIsEditable();
     const total = questions.reduce((sum, row) => sum + (Number(row.marks) || 1), 0);
     document.getElementById('assessmentMeta').textContent = questions.length
       ? `${questions.length} question${questions.length === 1 ? '' : 's'} · ${total} marks · ${(state.assessment && state.assessment.status) || 'draft'}`
       : 'No questions yet';
     if (!questions.length) {
-      root.innerHTML = '<p class="text-muted-2 mb-0">Add questions manually or generate with AI.</p>';
+      root.innerHTML = editable
+        ? '<p class="text-muted-2 mb-0">Add questions manually or generate with AI.</p>'
+        : '<p class="text-muted-2 mb-0">No assessment questions for this module yet.</p>';
+      applyModuleEditorLock();
+      return;
+    }
+    if (!editable) {
+      root.innerHTML = questions.map((row, index) => {
+        const options = (row.options || ['', '', '', '']).slice(0, 4);
+        return `<div class="border rounded p-3 bg-light">
+          <div class="fw-semibold mb-2">Question ${index + 1}</div>
+          <div class="mb-2">${esc(row.question || '')}</div>
+          ${(options).map((opt, oi) => (
+            `<div class="small mb-1">${String.fromCharCode(65 + oi)}. ${esc(opt)}${Number(row.correctIndex) === oi ? ' <span class="badge text-bg-success">Correct</span>' : ''}</div>`
+          )).join('')}
+          <div class="small text-muted-2 mt-2">${esc(row.difficulty || 'beginner')} · ${esc(row.marks || 1)} mark(s)</div>
+          ${row.explanation ? `<div class="small mt-1">${esc(row.explanation)}</div>` : ''}
+        </div>`;
+      }).join('');
+      applyModuleEditorLock();
       return;
     }
     root.innerHTML = questions.map((row, index) => {
@@ -2100,6 +2177,7 @@
         renderAssessmentQuestions();
       });
     });
+    applyModuleEditorLock();
   }
 
   function renderAssessmentPreviewList() {
@@ -2167,6 +2245,7 @@
   }
 
   async function generateAssessmentQuestions() {
+    if (!guardCourseEdit('generate assessment questions')) return;
     if (!state.active || !state.selectedModuleId) {
       toast('Save the module before generating MCQs.', 'error');
       return;
@@ -2196,6 +2275,7 @@
   }
 
   async function approveGeneratedQuestions() {
+    if (!guardCourseEdit('approve assessment questions')) return;
     if (!state.assessmentPreview || !state.active || !state.selectedModuleId) return;
     const selected = (state.assessmentPreview.questions || []).filter((row) => row.selected !== false);
     if (!selected.length) {
@@ -2248,6 +2328,7 @@
   }
 
   async function saveAssessmentEditor(publish = false) {
+    if (!guardCourseEdit(publish ? 'publish this assessment' : 'save this assessment')) return;
     if (!state.active || !state.selectedModuleId) {
       toast('Save the module before saving an assessment.', 'error');
       return;
@@ -2514,15 +2595,28 @@
   function renderActivityList() {
     const root = document.getElementById('activityList');
     const rows = state.activities || [];
+    const editable = courseIsEditable();
     document.getElementById('activityMeta').textContent = rows.length
       ? `${rows.length} activit${rows.length === 1 ? 'y' : 'ies'}`
       : 'No activities yet';
     if (!rows.length) {
-      root.innerHTML = '<p class="text-muted-2 mb-0">Add practical activities for this module. Students will use them after you publish.</p>';
+      root.innerHTML = editable
+        ? '<p class="text-muted-2 mb-0">Add practical activities for this module. Students will use them after you publish.</p>'
+        : '<p class="text-muted-2 mb-0">No practical activities for this module yet.</p>';
+      applyModuleEditorLock();
       return;
     }
     root.innerHTML = rows.map((row, index) => {
       const status = row.status === 'published' ? ['success', 'Published'] : ['warning', 'Draft'];
+      const actions = editable
+        ? `<div class="d-flex flex-wrap gap-1 mt-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-up ${index === 0 ? 'disabled' : ''}>↑</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-down ${index === rows.length - 1 ? 'disabled' : ''}>↓</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-act-edit>Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-toggle-publish>${row.status === 'published' ? 'Unpublish' : 'Publish'}</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-act-archive>Archive</button>
+        </div>`
+        : '';
       return `<div class="border rounded p-2" data-activity-id="${esc(row.id)}">
         <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
           <div>
@@ -2531,29 +2625,26 @@
           </div>
           <span class="badge text-bg-${status[0]}">${status[1]}</span>
         </div>
-        <div class="d-flex flex-wrap gap-1 mt-2">
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-up ${index === 0 ? 'disabled' : ''}>↑</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-down ${index === rows.length - 1 ? 'disabled' : ''}>↓</button>
-          <button type="button" class="btn btn-sm btn-outline-primary" data-act-edit>Edit</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" data-act-toggle-publish>${row.status === 'published' ? 'Unpublish' : 'Publish'}</button>
-          <button type="button" class="btn btn-sm btn-outline-danger" data-act-archive>Archive</button>
-        </div>
+        ${actions}
       </div>`;
     }).join('');
-    root.querySelectorAll('[data-activity-id]').forEach((card) => {
-      const id = card.getAttribute('data-activity-id');
-      const index = state.activities.findIndex((row) => row.id === id);
-      const up = card.querySelector('[data-act-up]');
-      const down = card.querySelector('[data-act-down]');
-      const edit = card.querySelector('[data-act-edit]');
-      const pub = card.querySelector('[data-act-toggle-publish]');
-      const arch = card.querySelector('[data-act-archive]');
-      if (up) up.addEventListener('click', () => moveActivity(index, -1).catch(fail));
-      if (down) down.addEventListener('click', () => moveActivity(index, 1).catch(fail));
-      if (edit) edit.addEventListener('click', () => { openActivityForm(state.activities[index]).catch(fail); });
-      if (pub) pub.addEventListener('click', () => toggleActivityPublish(id).catch(fail));
-      if (arch) arch.addEventListener('click', () => archiveActivity(id).catch(fail));
-    });
+    if (editable) {
+      root.querySelectorAll('[data-activity-id]').forEach((card) => {
+        const id = card.getAttribute('data-activity-id');
+        const index = state.activities.findIndex((row) => row.id === id);
+        const up = card.querySelector('[data-act-up]');
+        const down = card.querySelector('[data-act-down]');
+        const edit = card.querySelector('[data-act-edit]');
+        const pub = card.querySelector('[data-act-toggle-publish]');
+        const arch = card.querySelector('[data-act-archive]');
+        if (up) up.addEventListener('click', () => moveActivity(index, -1).catch(fail));
+        if (down) down.addEventListener('click', () => moveActivity(index, 1).catch(fail));
+        if (edit) edit.addEventListener('click', () => { openActivityForm(state.activities[index]).catch(fail); });
+        if (pub) pub.addEventListener('click', () => toggleActivityPublish(id).catch(fail));
+        if (arch) arch.addEventListener('click', () => archiveActivity(id).catch(fail));
+      });
+    }
+    applyModuleEditorLock();
   }
 
   function setActivityAiBanner(show) {
@@ -2883,6 +2974,7 @@
 
   async function saveModule(event) {
     event.preventDefault();
+    if (!guardCourseEdit('save this module')) return;
     if (!state.active) return;
     const id = document.getElementById('moduleId').value;
     document.getElementById('articleStatus').textContent = 'Saving…';

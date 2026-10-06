@@ -571,7 +571,7 @@ final class TutorialAssessmentService
     private function staffModuleContext(array $user, string $tutorialId, string $moduleId, bool $requireEdit = false): array
     {
         $course = $this->tutorials->showManaged($user, $tutorialId);
-        if ($requireEdit && ($course['canEdit'] ?? false) !== true) {
+        if ($requireEdit && (($course['canEdit'] ?? false) !== true || ($course['isOwner'] ?? false) !== true)) {
             throw new \RuntimeException('You can only change tutorials you created.', 403);
         }
         $module = null;

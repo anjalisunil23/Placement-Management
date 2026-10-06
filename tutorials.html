@@ -440,6 +440,11 @@
   }
   .article-insert button:hover{border-color:color-mix(in srgb,var(--article-accent) 40%,var(--article-line));color:var(--article-accent);background:#fff}
   #lessonBlocks{min-height:42vh;padding:.15rem 0 1.25rem;font-size:1rem;line-height:1.65}
+  #articleView.is-view-only .article-insert,
+  #articleView.is-view-only .row-plus{display:none!important}
+  #articleView.is-view-only [contenteditable="true"]{pointer-events:none}
+  #moduleAssessmentPane .form-control:disabled,
+  #moduleAssessmentPane .form-select:disabled{background:#f8fafc;opacity:1}
   #moduleExercisePane,#moduleAssessmentPane,#moduleActivityPane{
     max-width:860px;margin:0 auto 1rem;padding:1rem 1.15rem;
     background:#fff;border:1px solid var(--article-line);border-radius:14px;
@@ -1038,5 +1043,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261006owneronly2"></script>
+<script src="js/tutorials-page.js?v=20261006viewlock"></script>
 </body></html>
