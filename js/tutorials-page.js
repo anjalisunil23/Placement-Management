@@ -4020,11 +4020,15 @@
       const lessons = lessonOutlineFor(module, index);
       const markedIds = (learn.progress && learn.progress.completedModuleIds) || [];
       const moduleReady = markedIds.includes(module.id) || ((learn.progress && learn.progress.workspace && learn.progress.workspace.readyModuleIds) || []).includes(module.id);
+      const hasPublishedAssessment = index === learn.moduleIndex && !!(learn.assessment && learn.assessment.assessment);
+      const assessmentButton = expanded && hasPublishedAssessment
+        ? `<button type="button" class="btn btn-sm student-lesson btn-outline-primary" data-student-assessment-jump="${index}"><span class="me-1" aria-hidden="true">▣</span>Module assessment</button>`
+        : '';
       const lessonButtons = expanded ? `<div class="student-lessons">${lessons.map((lesson, lessonIndex) => {
         const active = index === learn.moduleIndex && lessonIndex === learn.lessonIndex;
         const done = lessonIsComplete(module.id, lesson.id);
         return `<button type="button" class="btn btn-sm student-lesson ${active ? 'btn-primary is-active' : 'btn-outline-secondary'}" data-student-lesson-jump="${index}:${lessonIndex}"><span class="me-1" aria-hidden="true">${done ? '✓' : '○'}</span>${esc(lesson.title || ('Lesson ' + (lessonIndex + 1)))}</button>`;
-      }).join('')}</div>` : '';
+      }).join('')}${assessmentButton}</div>` : '';
       return `<div class="student-module ${index === learn.moduleIndex ? 'is-active' : ''}">
         <button type="button" class="student-module-toggle" data-student-module="${index}" aria-expanded="${expanded ? 'true' : 'false'}">
           <span class="me-1" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
@@ -4058,6 +4062,26 @@
         else showStudentLesson(lessonIndex).catch(fail);
       });
     });
+    root.querySelectorAll('[data-student-assessment-jump]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const moduleIndex = Number(btn.getAttribute('data-student-assessment-jump'));
+        if (moduleIndex !== learn.moduleIndex) {
+          showStudentModule(moduleIndex).then(() => focusStudentAssessment()).catch(fail);
+          return;
+        }
+        focusStudentAssessment();
+      });
+    });
+  }
+
+  function focusStudentAssessment() {
+    const section = document.getElementById('studentAssessmentSection');
+    if (!section || section.classList.contains('d-none')) return;
+    const panel = section.closest('.student-practice-panel');
+    section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (panel) panel.scrollTop = Math.max(0, section.offsetTop - 12);
+    const startBtn = document.getElementById('studentAssessmentStartBtn');
+    if (startBtn) startBtn.focus({ preventScroll: true });
   }
 
   function currentLessonId() {
@@ -4444,6 +4468,8 @@
     `;
     const startBtn = document.getElementById('studentAssessmentStartBtn');
     if (startBtn) startBtn.addEventListener('click', () => startStudentAssessment().catch(fail));
+    renderStudentModuleNav();
+    syncPracticeEmpty((learn.practiceQuestions || []).length);
   }
 
   async function startStudentAssessment() {
