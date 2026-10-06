@@ -3401,20 +3401,18 @@
       ? 'This submission uses automated evaluation and cannot be manually overwritten.'
       : (alreadyReviewed
         ? 'This review was already shared with the student. Changes stay in the Reviewed queue and update what the student sees.'
-        : 'Score fields are optional. Finalize makes feedback visible to the student.');
+        : 'Score fields are optional. Finalize shares the score and feedback with the student.');
     document.getElementById('reviewScore').value = review.score != null ? review.score : '';
     document.getElementById('reviewMaxScore').value = review.maxScore != null ? review.maxScore : 10;
     document.getElementById('reviewPassed').checked = review.passed === true;
     document.getElementById('reviewFeedback').value = review.feedback || '';
     document.getElementById('reviewPrivateNotes').value = review.privateNotes || '';
-    const draftBtn = document.getElementById('reviewSaveDraftBtn');
     const finalizeBtn = document.getElementById('reviewFinalizeBtn');
     const updateBtn = document.getElementById('reviewUpdateBtn');
-    if (draftBtn) draftBtn.classList.toggle('d-none', !reviewable || alreadyReviewed);
     if (finalizeBtn) finalizeBtn.classList.toggle('d-none', !reviewable || alreadyReviewed);
     if (updateBtn) updateBtn.classList.toggle('d-none', !reviewable || !alreadyReviewed);
     const disabled = !reviewable;
-    ['reviewScore', 'reviewMaxScore', 'reviewPassed', 'reviewFeedback', 'reviewPrivateNotes', 'reviewSaveDraftBtn', 'reviewFinalizeBtn', 'reviewUpdateBtn']
+    ['reviewScore', 'reviewMaxScore', 'reviewPassed', 'reviewFeedback', 'reviewPrivateNotes', 'reviewFinalizeBtn', 'reviewUpdateBtn']
       .forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.disabled = disabled;
@@ -3469,34 +3467,6 @@
     return payload;
   }
 
-  async function saveActivityReviewDraft() {
-    if (!state.reviewDetail || state.reviewBusy) return;
-    let body;
-    try {
-      body = collectReviewFormPayload();
-    } catch (err) {
-      fail(err);
-      return;
-    }
-    state.reviewBusy = true;
-    document.getElementById('reviewSaveDraftBtn').disabled = true;
-    try {
-      const saved = await call(`/tutorials/manage/${encodeURIComponent(state.reviewTutorialId)}/activity-submissions/${encodeURIComponent(state.reviewDetail.id)}/review`, {
-        method: 'PUT',
-        body,
-      });
-      state.reviewDetail = saved;
-      paintActivityReviewDetail();
-      await loadActivityReviewQueue();
-      toast('Review draft saved.', 'success');
-    } catch (err) {
-      fail(err);
-    } finally {
-      state.reviewBusy = false;
-      document.getElementById('reviewSaveDraftBtn').disabled = false;
-    }
-  }
-
   async function finalizeActivityReview() {
     if (!state.reviewDetail || state.reviewBusy) return;
     let body;
@@ -3516,9 +3486,9 @@
     });
     if (!ok) return;
     state.reviewBusy = true;
-    document.getElementById('reviewFinalizeBtn').disabled = true;
-    document.getElementById('reviewSaveDraftBtn').disabled = true;
+    const finalizeBtn = document.getElementById('reviewFinalizeBtn');
     const updateBtn = document.getElementById('reviewUpdateBtn');
+    if (finalizeBtn) finalizeBtn.disabled = true;
     if (updateBtn) updateBtn.disabled = true;
     try {
       const saved = await call(`/tutorials/manage/${encodeURIComponent(state.reviewTutorialId)}/activity-submissions/${encodeURIComponent(state.reviewDetail.id)}/review/finalize`, {
@@ -3537,8 +3507,7 @@
       fail(err);
     } finally {
       state.reviewBusy = false;
-      document.getElementById('reviewFinalizeBtn').disabled = false;
-      document.getElementById('reviewSaveDraftBtn').disabled = false;
+      if (finalizeBtn) finalizeBtn.disabled = false;
       if (updateBtn) updateBtn.disabled = false;
     }
   }
@@ -3656,9 +3625,6 @@
         clearActivityReviewDetail();
         loadActivityReviewQueue().catch(fail);
       });
-    });
-    document.getElementById('reviewSaveDraftBtn').addEventListener('click', () => {
-      saveActivityReviewDraft().catch(fail);
     });
     document.getElementById('reviewFinalizeBtn').addEventListener('click', () => {
       finalizeActivityReview().catch(fail);
@@ -4152,8 +4118,12 @@
     if (courseNav) courseNav.classList.remove('is-open');
     if (backdrop) backdrop.classList.remove('is-open');
     const lessons = learn.lessons || [];
+    const lessonHeading = document.getElementById('studentLessonHeading');
     if (!lessons.length) {
-      document.getElementById('studentLessonHeading').textContent = '';
+      if (lessonHeading) {
+        lessonHeading.textContent = '';
+        lessonHeading.classList.add('d-none');
+      }
       document.getElementById('studentModuleContent').textContent = 'This module does not have lesson content yet.';
       renderStudentLessonNav();
       await renderStudentPracticeForLesson();
@@ -4165,10 +4135,10 @@
     }
     const lesson = lessons[learn.lessonIndex] || lessons[0];
     renderStudentLessonNav();
-    document.getElementById('studentLessonHeading').textContent = lesson.title || '';
     const content = document.getElementById('studentModuleContent');
     if (lesson.html) setLessonHtml(content, lesson.html);
     else content.textContent = 'This lesson does not have content yet.';
+    syncStudentLessonHeading(lesson, content);
     if (learn.activity && !practiceMatchesLesson(learn.activity)) {
       learn.activity = null;
       learn.activityAttempt = null;
@@ -4180,6 +4150,24 @@
     }
     await renderStudentPracticeForLesson();
     updateLessonNavButtons();
+  }
+
+  function normalizeHeadingText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function syncStudentLessonHeading(lesson, contentEl) {
+    const heading = document.getElementById('studentLessonHeading');
+    if (!heading) return;
+    const title = String((lesson && lesson.title) || '').trim();
+    heading.textContent = title;
+    if (!title) {
+      heading.classList.add('d-none');
+      return;
+    }
+    const first = contentEl && contentEl.querySelector('h1, h2, h3, h4');
+    const duplicate = first && normalizeHeadingText(first.textContent) === normalizeHeadingText(title);
+    heading.classList.toggle('d-none', !!duplicate);
   }
 
   function syncPracticeEmpty(questionCount) {
@@ -4239,8 +4227,8 @@
     const selected = learn.practiceSelection[question.id];
     const feedback = learn.practiceFeedback && learn.practiceFeedback.questionId === question.id ? learn.practiceFeedback : null;
     const options = (question.options || []).map((option, optionIndex) => (
-      `<label class="d-flex gap-2 align-items-start border rounded p-2 mb-2">
-        <input class="mt-1" type="radio" name="lesson-practice-option" value="${optionIndex}" ${selected === optionIndex ? 'checked' : ''}/>
+      `<label class="student-practice-option">
+        <input type="radio" name="lesson-practice-option" value="${optionIndex}" ${selected === optionIndex ? 'checked' : ''}/>
         <span>${esc(option)}</span>
       </label>`
     )).join('');
@@ -4251,18 +4239,18 @@
       ? '<span class="badge text-bg-light border">Answered before</span>'
       : '';
     host.innerHTML = `
-      <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+      <div class="student-practice-qhead">
         <div class="d-flex flex-wrap align-items-center gap-2">
           <div class="small text-muted-2">Question ${index + 1} of ${questions.length}</div>
           ${priorBadge}
         </div>
-        <div class="d-flex gap-1">
+        <div class="d-flex gap-1 flex-shrink-0">
           <button type="button" class="btn btn-sm btn-outline-secondary" data-practice-prev ${index === 0 ? 'disabled' : ''}>Previous</button>
           <button type="button" class="btn btn-sm btn-outline-secondary" data-practice-next ${index === questions.length - 1 ? 'disabled' : ''}>Next</button>
         </div>
       </div>
-      <div class="fw-semibold mb-2">${esc(question.question || '')}</div>
-      ${options}
+      <div class="student-practice-prompt">${esc(question.question || '')}</div>
+      <div class="student-practice-options">${options}</div>
       <button type="button" class="btn btn-sm btn-primary" data-practice-check>Check answer</button>
       ${result}
     `;
@@ -4370,7 +4358,11 @@
       learn.lessonIndex = 0;
       document.getElementById('studentModulePosition').textContent = '';
       document.getElementById('studentModuleHeading').textContent = 'No modules yet';
-      document.getElementById('studentLessonHeading').textContent = '';
+      const emptyLessonHeading = document.getElementById('studentLessonHeading');
+      if (emptyLessonHeading) {
+        emptyLessonHeading.textContent = '';
+        emptyLessonHeading.classList.add('d-none');
+      }
       document.getElementById('studentModuleContent').textContent = 'This tutorial does not have any lessons yet.';
       const practiceHost = document.getElementById('studentPracticeQuestions');
       if (practiceHost) practiceHost.innerHTML = '<p class="text-muted-2 mb-0">There are no questions until a module is added.</p>';
@@ -4382,7 +4374,11 @@
     }
     const summary = modules[learn.moduleIndex];
     document.getElementById('studentModuleHeading').textContent = 'Loading…';
-    document.getElementById('studentLessonHeading').textContent = '';
+    const loadingLessonHeading = document.getElementById('studentLessonHeading');
+    if (loadingLessonHeading) {
+      loadingLessonHeading.textContent = '';
+      loadingLessonHeading.classList.add('d-none');
+    }
     document.getElementById('studentModuleContent').textContent = 'Loading lesson…';
     const loadingPractice = document.getElementById('studentPracticeQuestions');
     if (loadingPractice) loadingPractice.innerHTML = '<p class="text-muted-2 mb-0">Loading practice…</p>';

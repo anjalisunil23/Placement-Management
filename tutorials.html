@@ -80,13 +80,15 @@
       <div class="student-learn-column">
         <div class="card-surface student-learn-panel h-100">
           <div class="student-learn-body">
-            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-1">
-              <div class="min-w-0">
+            <div class="student-learn-heading">
+              <div class="min-w-0 flex-grow-1">
                 <div class="small text-muted-2" id="studentModulePosition"></div>
-                <h2 class="student-module-title" id="studentModuleHeading">Loading…</h2>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                  <h2 class="student-module-title mb-0" id="studentModuleHeading">Loading…</h2>
+                  <span class="badge text-bg-light border" id="studentLearnBadge">Learn</span>
+                </div>
                 <p class="text-muted-2 mb-0" id="studentModuleSubtitle"></p>
               </div>
-              <span class="badge text-bg-light border" id="studentLearnBadge">Learn</span>
             </div>
             <h3 class="student-lesson-title" id="studentLessonHeading"></h3>
             <div id="studentModuleContent" class="tutorial-lesson"></div>
@@ -155,15 +157,35 @@
   #studentModuleNav .btn,#studentLessonNav .btn{white-space:normal}
   #studentCode{min-height:14rem;font-size:.92rem;line-height:1.55}
   .student-output{background:#0f172a;color:#e2e8f0;border-radius:.5rem;padding:.75rem;min-height:6rem;max-height:16rem;overflow:auto;white-space:pre-wrap}
-  .student-workspace{display:flex;gap:.75rem;align-items:stretch;position:relative;min-width:0}
+  .student-workspace{display:flex;gap:.85rem;align-items:stretch;position:relative;min-width:0}
   .student-course-nav{width:15rem;flex:0 0 15rem;padding:.75rem .8rem;overflow-x:hidden;overflow-y:auto;min-width:0}
-  .student-learn-column{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
-  .student-practice-column{flex:0 1 20rem;max-width:22rem;min-width:0;display:flex;flex-direction:column}
-  .student-learn-panel,.student-practice-panel{min-height:0;overflow-x:hidden}
+  .student-learn-column{flex:1 1 0;min-width:0;display:flex;flex-direction:column}
+  .student-practice-column{flex:0 0 20.5rem;width:20.5rem;max-width:20.5rem;min-width:0;display:flex;flex-direction:column}
+  .student-learn-panel,.student-practice-panel{min-height:0;overflow-x:hidden;width:100%}
   .student-learn-panel{display:flex;flex-direction:column;padding:0}
-  .student-learn-body{padding:.85rem 1rem .5rem;overflow-x:hidden;overflow-y:auto;min-width:0}
-  .student-learn-actions{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.5rem;padding:.6rem .85rem;border-top:1px solid #e4e7ec;background:#fff}
-  .student-practice-panel{padding:.8rem .9rem;overflow-y:auto}
+  .student-learn-body{padding:.9rem 1rem .65rem;overflow-x:hidden;overflow-y:auto;min-width:0}
+  .student-learn-heading{margin-bottom:.35rem}
+  .student-learn-actions{
+    display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.5rem;
+    padding:.65rem .9rem;border-top:1px solid #e4e7ec;background:#fff;
+  }
+  .student-learn-actions > div{display:flex;flex-wrap:wrap;justify-content:center;gap:.45rem}
+  .student-practice-panel{padding:.85rem .9rem;overflow-y:auto;display:flex;flex-direction:column}
+  .student-practice-panel > .fw-semibold,
+  .student-practice-panel > .d-flex:first-child{flex:0 0 auto}
+  #studentPracticeHint{margin:0 0 .65rem;flex:0 0 auto}
+  #studentPracticeQuestions{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:.55rem;margin-bottom:0!important}
+  .student-practice-qhead{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap}
+  .student-practice-prompt{font-weight:600;line-height:1.4;margin:0}
+  .student-practice-options{display:flex;flex-direction:column;gap:.4rem}
+  .student-practice-option{
+    display:flex;align-items:flex-start;gap:.55rem;margin:0;padding:.55rem .65rem;
+    border:1px solid #e4e7ec;border-radius:.5rem;background:#fff;cursor:pointer;
+  }
+  .student-practice-option:hover{border-color:#cbd5e1;background:#f8fafc}
+  .student-practice-option:has(input:checked){border-color:color-mix(in srgb,var(--primary,#2563EB) 45%,#cbd5e1);background:color-mix(in srgb,var(--primary,#2563EB) 6%,#fff)}
+  .student-practice-option input{margin:.2rem 0 0;flex:0 0 auto}
+  .student-practice-option span{min-width:0;overflow-wrap:anywhere;line-height:1.4}
   .student-nav-reopen{display:none;margin-bottom:.75rem}
   .student-nav-backdrop{display:none}
   .student-course-tree .student-module{border:1px solid #e4e7ec;border-radius:.6rem;margin-bottom:.4rem;background:#fff;min-width:0}
@@ -175,9 +197,11 @@
   .student-workspace.is-nav-collapsed .student-course-nav{display:none}
   .student-workspace.is-nav-collapsed .student-nav-reopen{display:inline-flex}
   #studentLearnView #studentTutorialSummary{font-size:.78rem;line-height:1.4;margin-bottom:.5rem}
-  #studentLearnView .student-module-title{font-size:1.12rem;line-height:1.25;font-weight:700;margin:0 0 .2rem}
-  #studentLearnView .student-lesson-title{font-size:.98rem;line-height:1.3;font-weight:650;margin:.7rem 0 .35rem}
+  #studentLearnView .student-module-title{font-size:1.12rem;line-height:1.3;font-weight:700}
+  #studentLearnView .student-lesson-title{font-size:.98rem;line-height:1.3;font-weight:650;margin:.55rem 0 .4rem}
+  #studentLearnView .student-lesson-title.d-none{display:none!important;margin:0}
   #studentLearnView .tutorial-lesson{font-size:.92rem;line-height:1.55;overflow-wrap:anywhere;min-width:0}
+  #studentLearnView .tutorial-lesson > :first-child{margin-top:0}
   #studentLearnView .tutorial-lesson h2{font-size:1.02rem;line-height:1.3;font-weight:650;margin:.8rem 0 .3rem}
   #studentLearnView .tutorial-lesson h3{font-size:.95rem;line-height:1.3;font-weight:650;margin:.7rem 0 .25rem}
   #studentLearnView .tutorial-lesson p{margin:0 0 .6rem}
@@ -202,8 +226,12 @@
   }
   #studentActSource{min-height:12rem}
   .student-practice-panel{font-size:.9rem}
-  .student-practice-panel label{min-width:0}
-  .student-practice-panel label span{min-width:0;overflow-wrap:anywhere}
+  .module-card .d-flex.gap-2.align-items-start{align-items:flex-start}
+  .module-card .btn.btn-sm.p-0.fw-semibold{text-align:left;white-space:normal}
+  #moduleView .page-header,#articleView .page-header,#activityReviewView .page-header{
+    align-items:flex-start;
+  }
+  #activityReviewView .row.g-3 > [class*="col-"] > .card-surface{height:100%}
   .ai-course-actions{position:sticky;top:.5rem;z-index:30;background:#fff}
   @media (min-width:992px){
     body:has(#studentLearnView:not(.d-none)) .page{
@@ -212,21 +240,26 @@
     }
     #studentTutorialPage:has(#studentLearnView:not(.d-none)),
     #studentLearnView:not(.d-none){display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
-    #studentLearnView > #studentBackToList{margin-bottom:.4rem}
-    #studentCourseProgress{padding:.55rem .8rem;margin-bottom:.55rem;flex:0 0 auto}
-    #studentCourseProgress .progress{height:.45rem;margin-bottom:.35rem}
-    #studentLearnView .student-workspace{flex:1;min-height:0}
+    #studentLearnView > #studentBackToList{margin-bottom:.45rem;align-self:flex-start}
+    #studentCourseProgress{padding:.6rem .85rem;margin-bottom:.6rem;flex:0 0 auto}
+    #studentCourseProgress .progress{height:.45rem;margin-bottom:.4rem}
+    #studentLearnView .student-workspace{flex:1;min-height:0;align-items:stretch}
     .student-course-nav,.student-learn-column,.student-practice-column{height:100%;min-height:0}
     .student-learn-panel,.student-practice-panel{height:100%;max-height:none}
     .student-learn-panel{overflow:hidden}
     .student-learn-body{flex:1;min-height:0}
   }
   @media (max-width:991.98px){
-    .student-workspace{display:block}
-    .student-learn-column,.student-practice-column{display:block;max-width:none;width:100%}
+    .student-workspace{display:flex;flex-direction:column;gap:.75rem}
+    .student-learn-column,.student-practice-column{display:flex;max-width:none;width:100%;flex:0 0 auto}
+    .student-practice-column{width:100%}
     .student-learn-body{overflow:visible}
-    .student-nav-reopen{display:inline-flex}
-    .student-course-nav{display:block;position:fixed;z-index:1045;top:0;left:0;bottom:0;width:min(20rem,88vw);max-height:none;transform:translateX(-105%);transition:transform .2s ease;border-radius:0}
+    .student-learn-actions{grid-template-columns:1fr;justify-items:stretch}
+    .student-learn-actions > .btn,
+    .student-learn-actions > div{width:100%;justify-content:stretch}
+    .student-learn-actions > div .btn{flex:1 1 auto}
+    .student-nav-reopen{display:inline-flex;align-self:flex-start}
+    .student-course-nav{display:block;position:fixed;z-index:1045;top:0;left:0;bottom:0;width:min(20rem,88vw);max-height:none;transform:translateX(-105%);transition:transform .2s ease;border-radius:0;height:auto}
     .student-course-nav.is-open{transform:translateX(0)}
     .student-nav-backdrop{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:1040}
     .student-course-nav.is-open + .student-learn-column .student-nav-backdrop,
@@ -887,7 +920,6 @@
                 <div class="col-12"><label class="form-label" for="reviewPrivateNotes">Private tutor notes</label><textarea class="form-control form-control-sm" id="reviewPrivateNotes" rows="2"></textarea><div class="form-text">Never shown to students.</div></div>
               </div>
               <div class="d-flex flex-wrap gap-2 mt-3">
-                <button type="button" class="btn btn-sm btn-outline-secondary" id="reviewSaveDraftBtn">Save draft</button>
                 <button type="button" class="btn btn-sm btn-primary" id="reviewFinalizeBtn">Finalize review</button>
                 <button type="button" class="btn btn-sm btn-primary d-none" id="reviewUpdateBtn">Update review</button>
               </div>
@@ -978,5 +1010,5 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="js/tutorials-page.js?v=20261006dndv2"></script>
+<script src="js/tutorials-page.js?v=20261006uialign"></script>
 </body></html>
