@@ -676,14 +676,14 @@ final class StaffPlacementRegistryService
             5000,
             $batch !== ''
         );
+        // Ensure CA/MCA legacy courseId=1001 rows are present even when dept.aesId differs.
+        if ($legacyFlat && $tableRows === [] && $departmentId !== '') {
+            $tableRows = $placementModel->listLegacyFlatRosterRows($departmentId, $program);
+        }
+
         $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
         if ($aesRows !== []) {
-            // Keep legacy placement rows as the base. AES only adds classmates missing
-            // from student_placements — never replace the table with slim AES shells.
             $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
-            if ($legacyFlat) {
-                $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
-            }
         }
         $localRows = $this->fetchLocalRosterForRegistryFilters($listCtx, $filters);
         if ($localRows !== []) {
@@ -701,15 +701,15 @@ final class StaffPlacementRegistryService
             );
             if ($retryAes !== []) {
                 $tableRows = $this->mergeCompleteClassRoster($tableRows, $retryAes);
-                if ($legacyFlat) {
-                    $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
-                }
             }
         }
 
-        // AES empty for this batch — still show legacy student_placements for the department.
         if ($tableRows === [] && $legacyFlat) {
             $tableRows = $placementModel->listLegacyFlatRosterRows($departmentId, $program);
+        }
+
+        if ($legacyFlat) {
+            $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program, true);
             if ($departmentId !== '') {
                 foreach ($tableRows as $idx => $row) {
                     if (trim((string) ($row['departmentId'] ?? '')) === '') {
@@ -717,15 +717,12 @@ final class StaffPlacementRegistryService
                     }
                 }
             }
-        } elseif ($legacyFlat) {
-            $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
         }
+
         $tableRows = array_map(
             fn (array $row): array => $this->hydrateRosterRowFromAesKeys($row),
             $tableRows
         );
-        // Do not call live AES profiles over rows that already have table placement data —
-        // sparse AES responses were wiping phone/email/company.
         if (!$legacyFlat) {
             $tableRows = $this->enrichRosterRowsFromAesProfiles($tableRows, $this->enrichProfileMaxForList());
         }
@@ -819,14 +816,26 @@ final class StaffPlacementRegistryService
      * @param array<int, array<string, mixed>> $rows
      * @return array<int, array<string, mixed>>
      */
-    private function overlayLegacyFlatPlacements(array $rows, string $departmentId, string $program): array
-    {
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function overlayLegacyFlatPlacements(
+        array $rows,
+        string $departmentId,
+        string $program,
+        bool $allowCampusWideFallback = false
+    ): array {
         $departmentId = trim($departmentId);
-        if ($departmentId === '') {
-            return $rows;
+        $placementModel = new StudentPlacementModel();
+        $legacyRows = $departmentId !== ''
+            ? $placementModel->listLegacyFlatRosterRows($departmentId, $program)
+            : [];
+        $legacyDeptScoped = $legacyRows !== [];
+        if ($legacyRows === [] && ($allowCampusWideFallback || $departmentId !== '')) {
+            // courseId mismatch: still index placements for email/name/id overlay.
+            $legacyRows = $placementModel->listLegacyFlatRosterRows('', $program);
         }
-
-        $legacyRows = (new StudentPlacementModel())->listLegacyFlatRosterRows($departmentId, $program);
         if ($legacyRows === []) {
             return $rows;
         }
@@ -839,30 +848,38 @@ final class StaffPlacementRegistryService
             if ($sid !== '' && ctype_digit($sid)) {
                 $byStudentId[ltrim($sid, '0') ?: '0'] = $legacy;
             }
-            $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($legacy['studentName'] ?? ''))) ?? '');
+            $nameKey = StudentPlacementModel::normalizePersonName((string) ($legacy['studentName'] ?? ''));
             if ($nameKey !== '') {
                 $byName[$nameKey] = $legacy;
             }
             $emailKey = strtolower(trim((string) ($legacy['email'] ?? $legacy['collegeEmail'] ?? '')));
-            if ($emailKey !== '') {
+            if ($emailKey !== '' && str_contains($emailKey, '@')) {
                 $byEmail[$emailKey] = $legacy;
             }
         }
 
+        $matchedLegacy = [];
         foreach ($rows as $idx => $row) {
             $legacy = null;
-            $aesSid = trim((string) ($row['aesStudentId'] ?? $row['stud_id'] ?? $row['studentId'] ?? ''));
-            if ($aesSid !== '' && ctype_digit($aesSid)) {
-                $legacy = $byStudentId[ltrim($aesSid, '0') ?: '0'] ?? null;
+            foreach (['aesStudentId', 'stud_id', 'studentId', 'admno', 'admissionNo', 'registerNumber'] as $idField) {
+                $aesSid = trim((string) ($row[$idField] ?? ''));
+                if ($aesSid !== '' && ctype_digit($aesSid)) {
+                    $legacy = $byStudentId[ltrim($aesSid, '0') ?: '0'] ?? null;
+                    if ($legacy !== null) {
+                        break;
+                    }
+                }
             }
             if ($legacy === null) {
-                $emailKey = strtolower(trim((string) ($row['email'] ?? $row['collegeEmail'] ?? '')));
-                if ($emailKey !== '') {
+                $emailKey = strtolower(trim((string) ($row['email'] ?? $row['collegeEmail'] ?? $row['personalEmail'] ?? '')));
+                if ($emailKey !== '' && str_contains($emailKey, '@')) {
                     $legacy = $byEmail[$emailKey] ?? null;
                 }
             }
             if ($legacy === null) {
-                $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($row['studentName'] ?? $row['displayName'] ?? ''))) ?? '');
+                $nameKey = StudentPlacementModel::normalizePersonName((string) (
+                    $row['studentName'] ?? $row['displayName'] ?? ''
+                ));
                 if ($nameKey !== '') {
                     $legacy = $byName[$nameKey] ?? null;
                 }
@@ -870,7 +887,32 @@ final class StaffPlacementRegistryService
             if ($legacy === null) {
                 continue;
             }
+            $legacySid = trim((string) ($legacy['studentId'] ?? ''));
+            if ($legacySid !== '') {
+                $matchedLegacy[$legacySid] = true;
+            }
             $rows[$idx] = $this->mergeLegacyPlacementIntoRosterRow($row, $legacy);
+        }
+
+        // Keep SQL placement rows that AES roster did not absorb (different ids / names).
+        // Only when legacy load was department-scoped — campus-wide index is overlay-only.
+        if ($legacyDeptScoped) {
+            foreach ($legacyRows as $legacy) {
+                $legacySid = trim((string) ($legacy['studentId'] ?? ''));
+                if ($legacySid !== '' && isset($matchedLegacy[$legacySid])) {
+                    continue;
+                }
+                $company = trim((string) (
+                    $legacy['company'] ?? $legacy['employer'] ?? $legacy['placement']['company'] ?? ''
+                ));
+                if ($company === '') {
+                    continue;
+                }
+                if ($departmentId !== '' && trim((string) ($legacy['departmentId'] ?? '')) === '') {
+                    $legacy['departmentId'] = $departmentId;
+                }
+                $rows[] = $legacy;
+            }
         }
 
         return $rows;

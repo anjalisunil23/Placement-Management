@@ -539,6 +539,54 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
+     * Resolve AES/export courseId values used on legacy student_placements.courseId.
+     * Production Computer Applications rows use courseId=1001 even when departments.aesId differs.
+     *
+     * @return list<string>
+     */
+    private function legacyCourseIdCandidates(string $departmentId): array
+    {
+        $departmentId = trim($departmentId);
+        $ids = [];
+        $dept = null;
+        if ($departmentId !== '') {
+            $dept = (new DepartmentModel())->findById($departmentId);
+        }
+        if (is_array($dept)) {
+            foreach (['aesId', 'aes_id', 'code', 'parentAesId', 'parent_aes_id', 'courseId', 'course_id'] as $key) {
+                $v = trim((string) ($dept[$key] ?? ''));
+                if ($v !== '' && ctype_digit($v)) {
+                    $ids[$v] = true;
+                }
+            }
+            $name = strtolower(trim((string) ($dept['name'] ?? '')));
+            $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) ($dept['code'] ?? '')) ?? '');
+            // Observed on production appsamaljyothi_placements_db.student_placements
+            if (
+                str_contains($name, 'computer application')
+                || str_contains($name, 'mca')
+                || $code === 'CA'
+                || $code === 'MCA'
+                || $code === 'COMPUTERAPPLICATIONS'
+            ) {
+                $ids['1001'] = true;
+            }
+        }
+
+        $env = trim((string) ($_ENV['STAFF_PLACEMENT_LEGACY_COURSE_IDS'] ?? ''));
+        if ($env !== '') {
+            foreach (preg_split('/[\s,;]+/', $env) ?: [] as $part) {
+                $part = trim((string) $part);
+                if ($part !== '' && ctype_digit($part)) {
+                    $ids[$part] = true;
+                }
+            }
+        }
+
+        return array_keys($ids);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private function fetchLegacyFlatRows(string $departmentId, string $program, string $batch, int $limit): array
@@ -551,30 +599,73 @@ class StudentPlacementModel extends BaseModel
         $program = trim($program);
         $batch = trim($batch);
         $limit = max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX));
+        $courseIds = $this->legacyCourseIdCandidates($departmentId);
 
-        $deptAesId = '';
-        if ($departmentId !== '') {
-            $dept = (new DepartmentModel())->findById($departmentId);
-            if (is_array($dept)) {
-                $deptAesId = trim((string) ($dept['aesId'] ?? ''));
-            }
+        $rows = $this->executeLegacyFlatSelect($courseIds, $program, $batch, $limit, $courseIds !== []);
+        // departments.aesId often ≠ student_placements.courseId (e.g. CA → 1001).
+        if ($rows === [] && $departmentId !== '' && $courseIds !== []) {
+            $rows = $this->executeLegacyFlatSelect($courseIds, $program, $batch, $limit, false);
+            // Keep only rows whose courseId is in candidates when we had to drop SQL filter
+            // (executeLegacyFlatSelect without filter); if still empty, return unfiltered
+            // program/batch-scoped rows so overlay can match by email/name.
+        }
+        if ($rows === [] && $departmentId !== '') {
+            $rows = $this->executeLegacyFlatSelect([], $program, $batch, $limit, false);
         }
 
+        return $rows;
+    }
+
+    /**
+     * @param list<string> $courseIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function executeLegacyFlatSelect(
+        array $courseIds,
+        string $program,
+        string $batch,
+        int $limit,
+        bool $applyCourseFilter
+    ): array {
         $sql = 'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE 1=1';
         $params = [];
-        if ($deptAesId !== '' && $this->hasColumn('courseId')) {
-            $sql .= ' AND CAST(`courseId` AS CHAR) = ?';
-            $params[] = $deptAesId;
+        if ($applyCourseFilter && $courseIds !== [] && $this->hasColumn('courseId')) {
+            $placeholders = implode(',', array_fill(0, count($courseIds), '?'));
+            $sql .= ' AND CAST(`courseId` AS CHAR) IN (' . $placeholders . ')';
+            foreach ($courseIds as $cid) {
+                $params[] = $cid;
+            }
         }
         $orderCol = $this->hasColumn('student') ? '`student`' : '`id`';
         $sql .= ' ORDER BY ' . $orderCol . ' ASC LIMIT ' . $limit;
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        try {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $courseIdSet = [];
+        foreach ($courseIds as $cid) {
+            $courseIdSet[(string) $cid] = true;
+        }
 
         $rows = [];
         while ($row = $stmt->fetch()) {
             $doc = $this->rowToDoc($row);
+            if (
+                !$applyCourseFilter
+                && $courseIdSet !== []
+                && $this->hasColumn('courseId')
+            ) {
+                $rowCourse = trim((string) ($doc['courseId'] ?? ''));
+                // When SQL IN-filter was skipped after a miss, prefer candidate courseIds
+                // but do not drop everything if courseId column is blank on a row.
+                if ($rowCourse !== '' && !isset($courseIdSet[$rowCourse])) {
+                    continue;
+                }
+            }
             $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
             $rowProgramme = trim((string) ($doc['programme'] ?? ''));
             if ($program !== '') {
@@ -582,11 +673,6 @@ class StudentPlacementModel extends BaseModel
                 $fromRow = DepartmentProgrammeCatalog::resolveProgrammeCode($rowProgramme);
                 if ($fromRow !== '' && $want !== '' && strcasecmp($fromRow, $want) !== 0) {
                     continue;
-                }
-                if ($fromRow === '' && $rowBatch !== '' && !self::programmeMatchesBatch($program, $rowBatch, '')) {
-                    if ($deptAesId === '') {
-                        continue;
-                    }
                 }
             }
             if ($batch !== '' && $rowBatch !== '' && !self::matchesClassBatchSelection($rowBatch, $batch)) {
