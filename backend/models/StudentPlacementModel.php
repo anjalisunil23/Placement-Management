@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace PMS\Models;
 
+use PMS\Database\QueryHelper;
 use PMS\Schemas\Collections;
+use PMS\Services\AesApiService;
 use PMS\Services\ClassInchargeRegistry;
 use PMS\Services\DepartmentProgrammeCatalog;
 use PMS\Utils\DocumentHelper;
@@ -15,12 +17,108 @@ use PMS\Utils\Security;
  */
 class StudentPlacementModel extends BaseModel
 {
+    /** Max rows returned for staff full-table registry (campus-wide student_placements). */
+    public const REGISTRY_TABLE_LIST_MAX = 10000;
+
     /** Columns BaseModel SELECT/INSERT/ORDER BY require. */
     private const BASE_TABLE_COLUMNS = ['payload', 'created_at', 'updated_at'];
 
     private static bool $tableReady = false;
 
     private static bool $tableUnavailable = false;
+
+    /** Legacy phpMyAdmin / AES export tables (flat columns + empty JSON payload). */
+    private const LEGACY_FLAT_COLUMN_CANDIDATES = [
+        'student', 'studentId', 'cno', 'email', 'year', 'stud_class', 'courseId', 'branchId',
+        'employer', 'empcno', 'empadr', 'payscale',
+    ];
+
+    /** Placement-owned payload keys — never erased by empty AES values on sync/list. */
+    public const PLACEMENT_OWNED_FIELDS = [
+        'company', 'companyName', 'employer', 'role', 'address', 'package', 'payscale',
+        'employerContact', 'contact', 'joinDate', 'endDate', 'academicDuration',
+        'internshipDetails', 'natureOfJob', 'monthlySalary', 'placementStatus',
+        'recordType', 'type', 'offerLetterVerified', 'verificationDate',
+        'fordvv', 'includedvv', 'offerLetter', 'joiningLetter', 'companyIdDoc',
+        'phone', 'email', 'collegeEmail', 'personalEmail', 'cno',
+    ];
+
+    /**
+     * Blank for merge purposes: null or "" only. Keeps 0, false, and "0".
+     */
+    public static function isBlankMergeValue(mixed $value): bool
+    {
+        return $value === null || $value === '';
+    }
+
+    /**
+     * Non-destructive merge: keep $base values; fill only from non-blank $incoming.
+     * Nested arrays are merged recursively with the same rule.
+     *
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    public static function mergePreserveFilled(array $base, array $incoming): array
+    {
+        foreach ($incoming as $key => $value) {
+            if (!is_string($key) && !is_int($key)) {
+                continue;
+            }
+            $key = (string) $key;
+            if (is_array($value)) {
+                $childBase = is_array($base[$key] ?? null) ? $base[$key] : [];
+                $base[$key] = self::mergePreserveFilled($childBase, $value);
+                continue;
+            }
+            if (self::isBlankMergeValue($value)) {
+                continue;
+            }
+            if (!self::isBlankMergeValue($base[$key] ?? null)) {
+                continue;
+            }
+            $base[$key] = $value;
+        }
+
+        return $base;
+    }
+
+    /**
+     * Like mergePreserveFilled, but non-blank incoming always wins (except blank incoming
+     * never erases base). Use for profile enrichment when AES is authoritative for empties.
+     *
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    public static function mergeNonEmptyValues(array $base, array $incoming): array
+    {
+        foreach ($incoming as $key => $value) {
+            if (!is_string($key) && !is_int($key)) {
+                continue;
+            }
+            $key = (string) $key;
+            if (is_array($value)) {
+                $childBase = is_array($base[$key] ?? null) ? $base[$key] : [];
+                $base[$key] = self::mergeNonEmptyValues($childBase, $value);
+                continue;
+            }
+            if (self::isBlankMergeValue($value)) {
+                continue;
+            }
+            $base[$key] = $value;
+        }
+
+        return $base;
+    }
+
+    public static function normalizePersonName(string $name): string
+    {
+        $name = strtolower(trim($name));
+        $name = preg_replace('/\s+/', ' ', $name) ?? '';
+
+        return $name;
+    }
 
     protected function collectionName(): string
     {
@@ -114,6 +212,281 @@ class StudentPlacementModel extends BaseModel
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    public function hasLegacyFlatPlacementColumns(): bool
+    {
+        if (!$this->tableExists()) {
+            return false;
+        }
+
+        return $this->hasColumn('employer') && $this->hasColumn('student');
+    }
+
+    private function selectRowColumns(): string
+    {
+        $parts = ['`id`', '`payload`'];
+        if ($this->hasColumn('created_at')) {
+            $parts[] = '`created_at`';
+        }
+        if ($this->hasColumn('updated_at')) {
+            $parts[] = '`updated_at`';
+        }
+        if (!$this->hasLegacyFlatPlacementColumns()) {
+            return implode(', ', $parts);
+        }
+        foreach (self::LEGACY_FLAT_COLUMN_CANDIDATES as $column) {
+            if ($this->hasColumn($column)) {
+                $parts[] = '`' . $column . '`';
+            }
+        }
+
+        return implode(', ', $parts);
+    }
+
+    public function findById(string $id): ?array
+    {
+        $id = trim($id);
+        if ($id === '') {
+            return null;
+        }
+        if (!Security::isValidId($id) && !ctype_digit($id)) {
+            return null;
+        }
+        $stmt = $this->db->prepare(
+            'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE id = ? LIMIT 1'
+        );
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+
+        return $row ? $this->rowToDoc($row) : null;
+    }
+
+    /**
+     * @param array<int, string> $ids
+     * @return array<string, array<string, mixed>>
+     */
+    public function findByIds(array $ids): array
+    {
+        $clean = [];
+        foreach ($ids as $id) {
+            $id = trim((string) $id);
+            if ($id === '') {
+                continue;
+            }
+            if (Security::isValidId($id) || ctype_digit($id)) {
+                $clean[$id] = true;
+            }
+        }
+        $ids = array_keys($clean);
+        if ($ids === []) {
+            return [];
+        }
+
+        $map = [];
+        foreach (array_chunk($ids, 400) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+            $stmt = $this->db->prepare(
+                'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE id IN (' . $placeholders . ')'
+            );
+            $stmt->execute($chunk);
+            while ($row = $stmt->fetch()) {
+                $doc = $this->rowToDoc($row);
+                $map[(string) ($doc['_id'] ?? $row['id'])] = $doc;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param array<string, mixed> $filter
+     */
+    public function findOne(array $filter, array $options = []): ?array
+    {
+        [$where, $params] = QueryHelper::buildWhere($filter);
+        $sort = $options['sort'] ?? ['createdAt' => -1];
+        $orderBy = QueryHelper::buildOrderBy(is_array($sort) ? $sort : ['createdAt' => -1]);
+        $sql = 'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE ' . $where
+            . ' ORDER BY ' . $orderBy . ' LIMIT 1';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+
+        return $row ? $this->rowToDoc($row) : null;
+    }
+
+    /**
+     * @param array<string, mixed> $filter
+     * @return array<int, array<string, mixed>>
+     */
+    public function findAll(array $filter = [], int $limit = 100, int $skip = 0, array $sort = ['createdAt' => -1]): array
+    {
+        [$where, $params] = QueryHelper::buildWhere($filter);
+        $orderBy = QueryHelper::buildOrderBy($sort);
+        $sql = 'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE ' . $where
+            . ' ORDER BY ' . $orderBy . ' LIMIT ' . (int) $limit . ' OFFSET ' . (int) $skip;
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $results = [];
+        while ($row = $stmt->fetch()) {
+            $results[] = $this->rowToDoc($row);
+        }
+
+        return $results;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    protected function rowToDoc(array $row): array
+    {
+        $doc = parent::rowToDoc($row);
+
+        return self::mergeLegacyFlatRowIntoDoc($row, $doc);
+    }
+
+    /**
+     * @param array<string, mixed> $row SQL row (may include legacy flat columns)
+     * @param array<string, mixed> $doc Decoded payload document
+     * @return array<string, mixed>
+     */
+    public static function mergeLegacyFlatRowIntoDoc(array $row, array $doc): array
+    {
+        $name = trim((string) ($row['student'] ?? ''));
+        $legacyStudentId = trim((string) ($row['studentId'] ?? ''));
+        $phone = trim((string) ($row['cno'] ?? ''));
+        $email = trim((string) ($row['email'] ?? ''));
+        $employer = trim((string) ($row['employer'] ?? ''));
+        $employerContact = trim((string) ($row['empcno'] ?? ''));
+        $address = trim((string) ($row['empadr'] ?? ''));
+        $package = trim((string) ($row['payscale'] ?? ''));
+        $year = trim((string) ($row['year'] ?? ''));
+        $studClass = trim((string) ($row['stud_class'] ?? ''));
+        $courseId = trim((string) ($row['courseId'] ?? ''));
+        $branchId = trim((string) ($row['branchId'] ?? ''));
+
+        if ($name === '' && $legacyStudentId === '' && $employer === '' && $phone === '' && $email === '') {
+            return $doc;
+        }
+
+        if ($legacyStudentId !== '') {
+            $doc['studentId'] = $legacyStudentId;
+            $doc['pairKey'] = self::pairKey($legacyStudentId);
+        }
+        if ($name !== '') {
+            $doc['studentName'] = $name;
+            $doc['displayName'] = $name;
+        }
+        if ($phone !== '') {
+            $doc['phone'] = $phone;
+        }
+        if ($email !== '') {
+            $doc['email'] = $email;
+            $doc['collegeEmail'] = $email;
+        }
+        if ($studClass !== '') {
+            $doc['classBatch'] = $studClass;
+            $doc['stud_class'] = $studClass;
+        } elseif ($year !== '') {
+            $doc['classBatch'] = $year;
+            $doc['stud_class'] = $year;
+            $doc['placementYear'] = $year;
+        }
+        if ($courseId !== '') {
+            $doc['courseId'] = $courseId;
+        }
+        if ($branchId !== '') {
+            $doc['branchId'] = $branchId;
+        }
+
+        $placement = is_array($doc['placement'] ?? null) ? $doc['placement'] : [];
+        if ($employer !== '') {
+            $placement['company'] = $employer;
+            $doc['employer'] = $employer;
+            $doc['company'] = $employer;
+        }
+        if ($employerContact !== '') {
+            $placement['employerContact'] = $employerContact;
+        }
+        if ($address !== '') {
+            $placement['address'] = $address;
+        }
+        if ($package !== '') {
+            $placement['package'] = $package;
+            $doc['payscale'] = $package;
+        }
+        if ($employer !== '') {
+            $placement['recordType'] = $placement['recordType'] ?? 'Placement';
+            $placement['placementStatus'] = $placement['placementStatus'] ?? 'Placed';
+        }
+        $doc['placement'] = $placement;
+        $doc['studRole'] = $doc['studRole'] ?? 'alumni';
+        $doc['stud_role'] = $doc['stud_role'] ?? 'Alumni';
+        $doc['legacyFlatRow'] = true;
+
+        return $doc;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchLegacyFlatRows(string $departmentId, string $program, string $batch, int $limit): array
+    {
+        if (!$this->hasLegacyFlatPlacementColumns()) {
+            return [];
+        }
+
+        $departmentId = trim($departmentId);
+        $program = trim($program);
+        $batch = trim($batch);
+        $limit = max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX));
+
+        $deptAesId = '';
+        if ($departmentId !== '') {
+            $dept = (new DepartmentModel())->findById($departmentId);
+            if (is_array($dept)) {
+                $deptAesId = trim((string) ($dept['aesId'] ?? ''));
+            }
+        }
+
+        $sql = 'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE 1=1';
+        $params = [];
+        if ($deptAesId !== '' && $this->hasColumn('courseId')) {
+            $sql .= ' AND CAST(`courseId` AS CHAR) = ?';
+            $params[] = $deptAesId;
+        }
+        $orderCol = $this->hasColumn('student') ? '`student`' : '`id`';
+        $sql .= ' ORDER BY ' . $orderCol . ' ASC LIMIT ' . $limit;
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+
+        $rows = [];
+        while ($row = $stmt->fetch()) {
+            $doc = $this->rowToDoc($row);
+            $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
+            $rowProgramme = trim((string) ($doc['programme'] ?? ''));
+            if ($program !== '') {
+                $want = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
+                $fromRow = DepartmentProgrammeCatalog::resolveProgrammeCode($rowProgramme);
+                if ($fromRow !== '' && $want !== '' && strcasecmp($fromRow, $want) !== 0) {
+                    continue;
+                }
+                if ($fromRow === '' && $rowBatch !== '' && !self::programmeMatchesBatch($program, $rowBatch, '')) {
+                    if ($deptAesId === '') {
+                        continue;
+                    }
+                }
+            }
+            if ($batch !== '' && $rowBatch !== '' && !self::matchesClassBatchSelection($rowBatch, $batch)) {
+                continue;
+            }
+            $rows[] = $doc;
+        }
+
+        return $rows;
     }
 
     /**
@@ -345,6 +718,25 @@ class StudentPlacementModel extends BaseModel
 
         $register = strtoupper(trim($registerNumber));
         $now = DocumentHelper::now();
+
+        $existing = $this->findOne(['pairKey' => self::pairKey($studentId)]);
+        if (!$existing && $register !== '') {
+            $byReg = $this->findOne(['registerNumber' => $register]);
+            if (is_array($byReg)) {
+                $existing = $byReg;
+            }
+        }
+
+        if (is_array($existing)) {
+            $existingPlacement = self::placementFieldsFromDoc($existing);
+            // SQL placement fields win; AES/incoming only fills blanks.
+            $placement = self::mergePreserveFilled($existingPlacement, $placement);
+            $rosterMeta = self::mergePreserveFilled(
+                self::normalizeRosterMeta($existing),
+                $rosterMeta
+            );
+        }
+
         $set = array_merge($placement, self::normalizeRosterMeta($rosterMeta), [
             'pairKey'        => self::pairKey($studentId),
             'studentId'      => $studentId,
@@ -353,6 +745,14 @@ class StudentPlacementModel extends BaseModel
         ]);
         if ($departmentId !== null && trim($departmentId) !== '') {
             $set['departmentId'] = trim($departmentId);
+        }
+
+        // Drop blank scalars so BaseModel::update array_merge cannot erase stored values.
+        foreach ($set as $key => $value) {
+            if (is_scalar($value) && self::isBlankMergeValue($value)
+                && in_array((string) $key, self::PLACEMENT_OWNED_FIELDS, true)) {
+                unset($set[$key]);
+            }
         }
 
         return $this->upsert(
@@ -371,6 +771,20 @@ class StudentPlacementModel extends BaseModel
     {
         if (!$this->bootstrapTable()) {
             return [];
+        }
+
+        if ($this->hasLegacyFlatPlacementColumns()) {
+            $batches = [];
+            foreach ($this->fetchLegacyFlatRows($departmentId, $program, '', max(1, min($limit, 5000))) as $doc) {
+                $batch = trim((string) ($doc['classBatch'] ?? ''));
+                if ($batch !== '') {
+                    $batches[] = $batch;
+                }
+            }
+            $batches = array_values(array_unique($batches));
+            sort($batches, SORT_STRING);
+
+            return $batches;
         }
 
         $filter = $this->registryDepartmentFilter($departmentId);
@@ -402,14 +816,15 @@ class StudentPlacementModel extends BaseModel
      *
      * @return array<int, array<string, mixed>>
      */
-    public function listAllRosterRows(int $limit = 5000): array
+    public function listAllRosterRows(int $limit = self::REGISTRY_TABLE_LIST_MAX): array
     {
         if (!$this->bootstrapTable()) {
             return [];
         }
 
+        $cap = max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX));
         $rows = [];
-        foreach ($this->findAll([], max(1, min($limit, 5000))) as $doc) {
+        foreach ($this->findAll([], $cap) as $doc) {
             $rows[] = self::rosterRowFromDocument($doc);
         }
 
@@ -423,36 +838,60 @@ class StudentPlacementModel extends BaseModel
      */
     public function listRosterRowsForDepartment(string $departmentId, int $limit = 5000): array
     {
+        return $this->listRosterRowsForRegistryScope($departmentId, '', '', $limit, true);
+    }
+
+    public function listRosterRowsForClass(string $departmentId, string $program, string $batch, int $limit = 5000): array
+    {
+        return $this->listRosterRowsForRegistryScope($departmentId, $program, $batch, $limit, true);
+    }
+
+    /**
+     * Scoped load for staff registry — avoids scanning the first N rows campus-wide.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listRosterRowsForRegistryScope(
+        string $departmentId,
+        string $program,
+        string $batch,
+        int $limit = 5000,
+        bool $includeLegacyBlankDept = false
+    ): array {
         if (!$this->bootstrapTable()) {
             return [];
         }
 
         $departmentId = trim($departmentId);
-        $filter = $departmentId !== '' ? $this->registryDepartmentFilter($departmentId) : [];
-        $rows = [];
-        foreach ($this->findAll($filter, max(1, min($limit, 5000))) as $doc) {
-            $rows[] = self::rosterRowFromDocument($doc);
-        }
+        $program = trim($program);
+        $batch = trim($batch);
+        $limit = max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX));
 
-        return $rows;
-    }
-
-    public function listRosterRowsForClass(string $departmentId, string $program, string $batch, int $limit = 5000): array
-    {
-        if (!$this->bootstrapTable() || trim($batch) === '') {
-            return [];
-        }
-
-        // Class batch (+ programme) identifies the roster; ignore departmentId so rows
-        // from an earlier sync with a blank/other dept still appear for class teachers.
-        $rows = [];
-        foreach ($this->findAll([], max(1, min($limit, 5000))) as $doc) {
-            $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
-            if ($rowBatch === '' || !self::batchMatchesSelection($rowBatch, $batch)) {
-                continue;
+        if ($this->hasLegacyFlatPlacementColumns()) {
+            $rows = [];
+            foreach ($this->fetchLegacyFlatRows($departmentId, $program, $batch, $limit) as $doc) {
+                if ($departmentId !== '' && trim((string) ($doc['departmentId'] ?? '')) === '') {
+                    $doc['departmentId'] = $departmentId;
+                }
+                $rows[] = self::rosterRowFromDocument($doc);
             }
-            if ($program !== '' && !self::programmeMatchesBatch($program, $rowBatch, (string) ($doc['programme'] ?? ''))) {
-                continue;
+
+            return $rows;
+        }
+
+        $filter = $this->registryScopeFilter($departmentId, $batch, $includeLegacyBlankDept);
+        $batchFilter = $batch !== '' ? $this->registryClassBatchFilter($batch) : [];
+        if ($batchFilter !== []) {
+            $filter = $filter === [] ? $batchFilter : ['$and' => [$filter, $batchFilter]];
+        }
+
+        $rows = [];
+        foreach ($this->findAll($filter, $limit, 0, ['studentName' => 1]) as $doc) {
+            if ($program !== '' && $batch === '') {
+                $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
+                if (!self::programmeMatchesBatch($program, $rowBatch, (string) ($doc['programme'] ?? ''))) {
+                    continue;
+                }
             }
             $rows[] = self::rosterRowFromDocument($doc);
         }
@@ -465,38 +904,142 @@ class StudentPlacementModel extends BaseModel
      */
     public static function rosterRowFromDocument(array $doc): array
     {
+        $doc = array_merge($doc, self::normalizeRosterMeta($doc));
         $studentId = trim((string) ($doc['studentId'] ?? $doc['_id'] ?? ''));
-        $register = strtoupper(trim((string) ($doc['registerNumber'] ?? '')));
         $placement = self::placementFieldsFromDoc($doc);
-        $personal = [
-            'fullName' => trim((string) ($doc['studentName'] ?? '')),
-            'phone'    => trim((string) ($doc['phone'] ?? '')),
-            'collegeEmail' => trim((string) ($doc['email'] ?? '')),
-        ];
+        $snapshot = self::rosterSnapshotFromPayload($doc, $placement);
+        $company = trim((string) ($placement['company'] ?? $doc['employer'] ?? $doc['company'] ?? ''));
 
         return [
             '_id'            => $studentId,
             'id'             => $studentId,
             'studentId'      => $studentId,
-            'registerNumber' => $register,
-            'admno'          => trim((string) ($doc['admissionNo'] ?? $register)),
-            'displayName'    => $personal['fullName'],
-            'personal'       => $personal,
-            'phone'          => $personal['phone'],
-            'collegeEmail'   => $personal['collegeEmail'],
-            'email'          => $personal['email'] ?? $personal['collegeEmail'],
-            'classBatch'     => trim((string) ($doc['classBatch'] ?? '')),
-            'stud_class'     => trim((string) ($doc['classBatch'] ?? '')),
-            'programme'      => trim((string) ($doc['programme'] ?? '')),
-            'branch'         => trim((string) ($doc['branch'] ?? '')),
-            'courseId'       => trim((string) ($doc['courseId'] ?? '')),
-            'branchId'       => trim((string) ($doc['branchId'] ?? '')),
-            'departmentId'   => trim((string) ($doc['departmentId'] ?? '')),
+            'studentName'    => $snapshot['studentName'],
+            'registerNumber' => $snapshot['registerNumber'],
+            'admno'          => $snapshot['admissionNo'],
+            'displayName'    => $snapshot['studentName'],
+            'personal'       => [
+                'fullName'     => $snapshot['studentName'],
+                'phone'        => $snapshot['phone'],
+                'collegeEmail' => $snapshot['email'],
+            ],
+            'phone'          => $snapshot['phone'],
+            'collegeEmail'   => $snapshot['email'],
+            'email'          => $snapshot['email'],
+            'classBatch'     => $snapshot['classBatch'],
+            'stud_class'     => $snapshot['classBatch'],
+            'programme'      => $snapshot['programme'],
+            'stud_course'    => $snapshot['programme'],
+            'branch'         => $snapshot['branch'],
+            'courseId'       => $snapshot['courseId'],
+            'branchId'       => $snapshot['branchId'],
+            'departmentId'   => $snapshot['departmentId'],
+            'company'        => $company,
+            'employer'       => $company,
+            'role'           => trim((string) ($placement['role'] ?? '')),
+            'package'        => trim((string) ($placement['package'] ?? '')),
+            'address'        => trim((string) ($placement['address'] ?? '')),
+            'employerContact'=> trim((string) ($placement['employerContact'] ?? '')),
+            'placementStatus'=> trim((string) ($placement['placementStatus'] ?? '')),
             'placement'      => $placement,
-            'placed'         => trim((string) ($placement['company'] ?? '')) !== '',
+            'placed'         => $company !== '',
             'source'         => 'student_placements',
             'studRole'       => self::studRoleFromDocument($doc),
             'stud_role'      => trim((string) ($doc['stud_role'] ?? '')),
+            'legacyFlatRow'  => !empty($doc['legacyFlatRow']),
+        ];
+    }
+
+    /**
+     * Resolve grid columns from flat payload and leftover AES/placement keys.
+     *
+     * @param array<string, mixed> $doc
+     * @param array<string, mixed> $placementFields
+     * @return array{
+     *   studentName:string,
+     *   registerNumber:string,
+     *   admissionNo:string,
+     *   phone:string,
+     *   email:string,
+     *   classBatch:string,
+     *   programme:string,
+     *   branch:string,
+     *   courseId:string,
+     *   branchId:string,
+     *   departmentId:string
+     * }
+     */
+    public static function rosterSnapshotFromPayload(array $doc, array $placementFields = []): array
+    {
+        $personal = is_array($doc['personal'] ?? null) ? $doc['personal'] : [];
+        $roster = is_array($doc['roster'] ?? null) ? $doc['roster'] : [];
+        $pick = static function (array $sources, string ...$keys): string {
+            foreach ($sources as $source) {
+                if (!is_array($source)) {
+                    continue;
+                }
+                foreach ($keys as $key) {
+                    $value = trim((string) ($source[$key] ?? ''));
+                    if ($value !== '') {
+                        return $value;
+                    }
+                }
+            }
+
+            return '';
+        };
+
+        $name = $pick(
+            [$doc, $roster, $personal, $placementFields],
+            'studentName',
+            'displayName',
+            'stud_name',
+            'name',
+            'fullName'
+        );
+        $register = strtoupper($pick(
+            [$doc, $roster, $placementFields],
+            'registerNumber',
+            'registerno',
+            'register_number',
+            'admno',
+            'stud_admno',
+            'admissionNo'
+        ));
+        if ($register === '') {
+            $studentId = trim((string) ($doc['studentId'] ?? ''));
+            if ($studentId !== '' && !Security::isValidId($studentId)) {
+                $register = strtoupper($studentId);
+            }
+        }
+        $phone = $pick([$doc, $roster, $personal, $placementFields], 'phone', 'mobile', 'stud_mobile', 'contactPhone');
+        $email = $pick([$doc, $roster, $personal, $placementFields], 'email', 'collegeEmail', 'personalEmail', 'stud_email');
+        $classBatch = $pick([$doc, $roster, $placementFields], 'classBatch', 'stud_class', 'batch');
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($pick(
+            [$doc, $roster, $placementFields],
+            'programme',
+            'program',
+            'stud_course',
+            'stud_cource_short',
+            'course'
+        ));
+        if ($programme === '' && $classBatch !== '') {
+            $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($classBatch);
+        }
+        $branch = $pick([$doc, $roster, $placementFields], 'branch', 'stud_branch', 'branchName', 'branch_name');
+
+        return [
+            'studentName'    => $name,
+            'registerNumber' => $register,
+            'admissionNo'    => $pick([$doc, $placementFields], 'admissionNo', 'admno', 'stud_admno') ?: $register,
+            'phone'          => $phone,
+            'email'          => $email,
+            'classBatch'     => $classBatch,
+            'programme'      => $programme,
+            'branch'         => $branch,
+            'courseId'       => $pick([$doc, $placementFields], 'courseId', 'course_id', 'stud_courseid'),
+            'branchId'       => $pick([$doc, $placementFields], 'branchId', 'branch_id', 'stud_branchid'),
+            'departmentId'   => trim((string) ($doc['departmentId'] ?? '')),
         ];
     }
 
@@ -528,12 +1071,12 @@ class StudentPlacementModel extends BaseModel
             'classBatch'  => ['classBatch', 'stud_class', 'batch'],
             'programme'   => ['programme', 'program', 'stud_course'],
             'branch'      => ['branch', 'stud_branch'],
-            'studentName' => ['studentName', 'displayName', 'name'],
+            'studentName' => ['studentName', 'displayName', 'stud_name', 'name', 'fullName'],
             'courseId'    => ['courseId', 'course_id'],
             'branchId'    => ['branchId', 'branch_id'],
             'phone'       => ['phone'],
             'email'       => ['email', 'collegeEmail', 'personalEmail'],
-            'admissionNo' => ['admissionNo', 'admno', 'registerNumber'],
+            'admissionNo' => ['admissionNo', 'admno', 'stud_admno', 'registerNumber', 'registerno'],
         ];
         foreach ($map as $target => $keys) {
             foreach ($keys as $key) {
@@ -582,11 +1125,15 @@ class StudentPlacementModel extends BaseModel
      *
      * @return array<string, mixed>
      */
-    private function registryDepartmentFilter(string $departmentId): array
+    private function registryDepartmentFilter(string $departmentId, bool $includeLegacyBlank = true): array
     {
         $departmentId = trim($departmentId);
         if ($departmentId === '') {
             return [];
+        }
+
+        if (!$includeLegacyBlank) {
+            return ['departmentId' => $departmentId];
         }
 
         return [
@@ -597,9 +1144,103 @@ class StudentPlacementModel extends BaseModel
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function registryScopeFilter(string $departmentId, string $batch, bool $includeLegacyBlankDept): array
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return [];
+        }
+
+        return $this->registryDepartmentFilter($departmentId, $includeLegacyBlankDept || $batch !== '');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function registryClassBatchFilter(string $wantBatch): array
+    {
+        $wantBatch = trim($wantBatch);
+        if ($wantBatch === '') {
+            return [];
+        }
+
+        $labels = array_values(array_unique(array_filter([
+            $wantBatch,
+            ClassInchargeRegistry::batchLabelWithoutSemester($wantBatch),
+        ], static fn (string $v): bool => $v !== '')));
+
+        $cohort = ClassInchargeRegistry::cohortKey($wantBatch);
+        if ($cohort !== '' && !in_array($cohort, $labels, true)) {
+            $labels[] = $cohort;
+        }
+
+        $branches = [['classBatch' => ['$in' => $labels]]];
+        if ($cohort !== '' && !in_array($cohort, $labels, true)) {
+            $branches[] = ['classBatch' => ['$regex' => $cohort . '%']];
+        }
+
+        $batchMatch = count($branches) === 1 ? $branches[0] : ['$or' => $branches];
+
+        return [
+            '$and' => [
+                ['classBatch' => ['$ne' => '']],
+                $batchMatch,
+            ],
+        ];
+    }
+
     public static function matchesClassBatchSelection(string $rowBatch, string $wantBatch): bool
     {
         return self::batchMatchesSelection($rowBatch, $wantBatch);
+    }
+
+    /**
+     * Legacy SQL rows store placement year (2020-2021) in `year`, not AES stud_class labels
+     * (e.g. MCALE2016-18). Treat year rows as in-scope for AES class-batch filters so the
+     * grid is not emptied when department/programme already scoped the query.
+     */
+    public static function legacyBatchFilterMatches(string $wantBatch, string $rowBatch): bool
+    {
+        $wantBatch = trim($wantBatch);
+        $rowBatch = trim($rowBatch);
+        if ($wantBatch === '' || $rowBatch === '') {
+            return true;
+        }
+        if (strcasecmp($rowBatch, $wantBatch) === 0) {
+            return true;
+        }
+        if (self::matchesClassBatchSelection($rowBatch, $wantBatch)) {
+            return true;
+        }
+        // Placement-year rows vs AES admission / LE batch labels.
+        if (preg_match('/^\d{4}\s*[-–]\s*\d{2,4}$/', $rowBatch) === 1
+            && preg_match('/\b(LE|INT|MCA|BCA|MBA|B\.?\s*TECH|M\.?\s*TECH)/i', $wantBatch) === 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * All legacy flat rows for a department (ignores batch — used to overlay placement onto AES roster).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listLegacyFlatRosterRows(string $departmentId, string $program = '', int $limit = self::REGISTRY_TABLE_LIST_MAX): array
+    {
+        if (!$this->bootstrapTable() || !$this->hasLegacyFlatPlacementColumns()) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($this->fetchLegacyFlatRows($departmentId, $program, '', max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX))) as $doc) {
+            $rows[] = self::rosterRowFromDocument($doc);
+        }
+
+        return $rows;
     }
 
     private static function batchSelectionKey(string $batch): string
@@ -629,9 +1270,12 @@ class StudentPlacementModel extends BaseModel
             return true;
         }
         $wantCohort = ClassInchargeRegistry::cohortKey($wantBatch);
+        if ($wantCohort !== ''
+            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0) {
+            return true;
+        }
 
-        return $wantCohort !== ''
-            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0;
+        return ClassInchargeRegistry::batchesSameAdmissionCohort($rowBatch, $wantBatch);
     }
 
     private static function programmeMatchesBatch(string $wantProgram, string $batchLabel, string $rowProgramme): bool
@@ -665,27 +1309,11 @@ class StudentPlacementModel extends BaseModel
      */
     public static function placementFieldsFromDoc(array $doc): array
     {
-        unset(
-            $doc['_id'],
-            $doc['pairKey'],
-            $doc['studentId'],
-            $doc['registerNumber'],
-            $doc['departmentId'],
-            $doc['classBatch'],
-            $doc['programme'],
-            $doc['branch'],
-            $doc['studentName'],
-            $doc['courseId'],
-            $doc['branchId'],
-            $doc['phone'],
-            $doc['email'],
-            $doc['admissionNo'],
-            $doc['studRole'],
-            $doc['stud_role'],
-            $doc['createdAt'],
-            $doc['updatedAt']
+        $placement = is_array($doc['placement'] ?? null) ? $doc['placement'] : [];
+        $fromAes = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
+            array_merge($doc, $placement)
         );
 
-        return $doc;
+        return array_merge($placement, $fromAes);
     }
 }

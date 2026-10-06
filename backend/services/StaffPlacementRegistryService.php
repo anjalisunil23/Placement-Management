@@ -49,6 +49,30 @@ final class StaffPlacementRegistryService
         return $this->placementFilterCtx($staffCtx, $filters);
     }
 
+    /**
+     * Effective department scope after applying staff home dept when the UI filter is blank.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
+     * @return array{departmentId:string,departmentName:string,departmentCode:string,campusWide:bool,departmentAesId:string}
+     */
+    public function resolvedRegistryScope(array $staffCtx, array $filters = []): array
+    {
+        $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
+        $dept = is_array($listCtx['department'] ?? null) ? $listCtx['department'] : null;
+        $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
+        $filterCtx = StaffContext::officerCompatible($listCtx);
+        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($filterCtx);
+
+        return [
+            'departmentId'     => $deptId,
+            'departmentName'   => trim((string) ($dept['name'] ?? '')),
+            'departmentCode'   => strtoupper(trim((string) ($dept['code'] ?? ''))),
+            'campusWide'       => !empty($listCtx['campusWide']),
+            'departmentAesId'  => $deptAesId,
+        ];
+    }
+
     public function list(array $staffCtx, array $filters = []): array
     {
         StaffContext::requireDepartmentScope($staffCtx);
@@ -75,24 +99,40 @@ final class StaffPlacementRegistryService
     public function syncFromAes(array $staffCtx, array $filters = []): array
     {
         StaffContext::requireDepartmentScope($staffCtx);
-        $role = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
-        if ($role === 'all') {
-            $student = $this->syncFromAesForStudRole(
-                $staffCtx,
-                array_merge($filters, ['studRole' => 'student'])
-            );
-            $alumni = $this->syncFromAesForStudRole(
-                $staffCtx,
-                array_merge($filters, ['studRole' => 'alumni'])
-            );
+        PlacementFilterService::clearScopedRowsCache();
+        OfficerDataService::clearPlacementSyncCaches();
 
-            return [
-                'studentsSynced' => (int) ($student['studentsSynced'] ?? 0) + (int) ($alumni['studentsSynced'] ?? 0),
-                'scope'          => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
-            ];
+        $filters['studRole'] = 'all';
+        $student = $this->syncFromAesForStudRole(
+            $staffCtx,
+            array_merge($filters, ['studRole' => 'student'])
+        );
+        $alumni = $this->syncFromAesForStudRole(
+            $staffCtx,
+            array_merge($filters, ['studRole' => 'alumni'])
+        );
+        $studyingCount = (int) ($student['studentsSynced'] ?? 0);
+        $alumniCount = (int) ($alumni['studentsSynced'] ?? 0);
+        $aesFetched = (int) ($student['aesRosterFetched'] ?? 0) + (int) ($alumni['aesRosterFetched'] ?? 0);
+        $syncError = '';
+        if ($aesFetched === 0 && ($studyingCount + $alumniCount) === 0) {
+            $syncError = trim((string) ($student['syncError'] ?? ''));
+            if ($syncError === '') {
+                $syncError = trim((string) ($alumni['syncError'] ?? ''));
+            }
         }
 
-        return $this->syncFromAesForStudRole($staffCtx, array_merge($filters, ['studRole' => $role]));
+        $profilesBackfilled = $this->backfillStudentPlacementsFromAesProfiles($staffCtx, $filters);
+
+        return [
+            'studentsSynced'      => $studyingCount + $alumniCount,
+            'studyingSynced'      => $studyingCount,
+            'alumniSynced'        => $alumniCount,
+            'aesRosterFetched'    => $aesFetched,
+            'profilesBackfilled'  => $profilesBackfilled,
+            'syncError'           => $syncError,
+            'scope'               => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
+        ];
     }
 
     /**
@@ -113,51 +153,38 @@ final class StaffPlacementRegistryService
         $isAlumni = $studRole === 'alumni';
         $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
         $campusWide = $deptId === '' || !empty($listCtx['campusWide']);
+        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($officerCtx);
+        if (!$campusWide && $deptAesId === '') {
+            return [
+                'studentsSynced'     => 0,
+                'aesRosterFetched'   => 0,
+                'syncError'          => 'Could not resolve AES department code for this scope. Check department AES mapping in admin settings.',
+                'scope'              => [
+                    'departmentId' => $deptId,
+                    'program'      => $program,
+                    'batch'        => $batch,
+                    'studRole'     => $isAlumni ? 'alumni' : 'student',
+                ],
+            ];
+        }
         $roleTag = $isAlumni ? 'alumni' : 'student';
-        $directoryCtx = array_merge($officerCtx, [
-            'placementRegistryWide' => true,
-            'placementStudRole'     => $roleTag,
-            'campusWide'            => $campusWide,
-        ]);
-        // Class-scoped AES (getStudInfo4Placement per batch) — required for INMCA / MCA cohorts.
-        $classCtx = array_merge($officerCtx, [
-            'placementRegistryWide' => false,
-            'placementStudRole'     => $roleTag,
-            'campusWide'            => $campusWide,
-        ]);
 
+        $classRows = $this->filterRosterByPlacementStudRole(
+            $this->collectAesRosterRowsForScope($listCtx, $program, $batch, $isAlumni, true),
+            $studRole
+        );
+        $aesRosterFetched = count($classRows);
         $studentsSynced = 0;
-
-        if ($program !== '' && $batch !== '') {
-            $aesClassRows = $isAlumni
-                ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $batch, true)
-                : $this->officerData->listAesClassStudents($classCtx, $program, $batch, true);
-            $classRows = $this->filterRosterByPlacementStudRole($aesClassRows, $studRole);
-            $studentsSynced += $this->syncClassRowsToStudentPlacements(
-                $classRows,
-                $deptId,
-                $program,
-                $batch,
-                $roleTag
-            );
-        } else {
-            if ($isAlumni) {
-                $aesRows = $program !== ''
-                    ? $this->officerData->listAlumniProgrammeStudents($directoryCtx, $program)
-                    : $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx);
-            } elseif ($program !== '') {
-                $aesRows = $this->officerData->listAesProgrammeStudents($directoryCtx, $program);
-            } else {
-                $aesRows = $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
-            }
-            $classRows = $this->filterRosterByPlacementStudRole($aesRows, $studRole);
-            if ($classRows === [] && $program !== '') {
-                $classRows = $this->filterRosterByPlacementStudRole(
-                    $this->syncRosterViaProgrammeClassBatches($classCtx, $program, $isAlumni),
-                    $studRole
+        if ($classRows !== []) {
+            if ($program !== '' && $batch !== '') {
+                $studentsSynced += $this->syncClassRowsToStudentPlacements(
+                    $classRows,
+                    $deptId,
+                    $program,
+                    $batch,
+                    $roleTag
                 );
-            }
-            if ($classRows !== []) {
+            } else {
                 $studentsSynced += $this->syncAesDirectoryRowsToStudentPlacements(
                     $classRows,
                     $deptId,
@@ -166,15 +193,337 @@ final class StaffPlacementRegistryService
             }
         }
 
-        return [
-            'studentsSynced' => $studentsSynced,
-            'scope'          => [
-                'departmentId' => $deptId,
-                'program'      => $program,
-                'batch'        => $batch,
-                'studRole'     => $isAlumni ? 'alumni' : 'student',
+        $out = [
+            'studentsSynced'   => $studentsSynced,
+            'aesRosterFetched' => $aesRosterFetched,
+            'scope'            => [
+                'departmentId'    => $deptId,
+                'departmentAesId' => $deptAesId,
+                'program'         => $program,
+                'batch'           => $batch,
+                'studRole'        => $isAlumni ? 'alumni' : 'student',
             ],
         ];
+        if ($aesRosterFetched === 0 && $studentsSynced === 0) {
+            $out['syncError'] = $program === '' && $batch === ''
+                ? 'AES returned no students for this department. Select Integrated MCA (INMCA) and a batch, then sync again.'
+                : 'AES returned no students for these filters. Try another batch or verify AES is reachable from the server.';
+        }
+
+        return $out;
+    }
+
+    /**
+     * AES class roster for sync and staff grid (same scope rules as Sync from AES).
+     *
+     * @param array<string, mixed> $listCtx
+     * @return list<array<string, mixed>>
+     */
+    private function collectAesRosterRowsForScope(
+        array $listCtx,
+        string $program,
+        string $batch,
+        bool $isAlumni,
+        bool $forceLiveAes
+    ): array {
+        $officerCtx = StaffContext::officerCompatible($listCtx);
+        $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
+        $campusWide = $deptId === '' || !empty($listCtx['campusWide']);
+        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($officerCtx);
+        if (!$campusWide && $deptAesId === '') {
+            return [];
+        }
+
+        $roleTag = $isAlumni ? 'alumni' : 'student';
+        $directoryCtx = array_merge($officerCtx, [
+            'placementRegistryWide' => true,
+            'placementStudRole'     => $roleTag,
+            'campusWide'            => $campusWide,
+            'placementForceLiveAes' => $forceLiveAes,
+        ]);
+        $classCtx = array_merge($officerCtx, [
+            'placementRegistryWide' => false,
+            'placementStudRole'     => $roleTag,
+            'campusWide'            => $campusWide,
+            'placementForceLiveAes' => $forceLiveAes,
+        ]);
+
+        $program = trim($program);
+        $batch = trim($batch);
+
+        if ($program !== '' && $batch !== '') {
+            $aesClassRows = $isAlumni
+                ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $batch, true)
+                : $this->officerData->listAesClassStudents($classCtx, $program, $batch, true);
+            if ($aesClassRows === [] && $deptAesId !== '') {
+                $aesClassRows = $this->syncRosterRowsForExpandedBatch(
+                    $classCtx,
+                    $deptAesId,
+                    $program,
+                    $batch,
+                    $isAlumni
+                );
+            }
+
+            return $aesClassRows;
+        }
+
+        if ($program !== '') {
+            return $this->syncRosterViaProgrammeClassBatches($classCtx, $program, $isAlumni);
+        }
+
+        $classRows = $this->syncRosterViaDepartmentClassBatches($classCtx, $isAlumni);
+        if ($classRows !== []) {
+            return $classRows;
+        }
+
+        return $isAlumni
+            ? $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx)
+            : $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
+    }
+
+    private function registryListMergeAesEnabled(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_MERGE_AES'] ?? '1')));
+
+        return !in_array($v, ['0', 'false', 'no', 'off'], true);
+    }
+
+    private function registryListMergeLocalEnabled(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_MERGE_LOCAL'] ?? '1')));
+
+        return !in_array($v, ['0', 'false', 'no', 'off'], true);
+    }
+
+    private function registryListUsesLiveAes(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_REGISTRY_LIVE_AES'] ?? '0')));
+
+        return in_array($v, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /**
+     * @param array<string, mixed> $listCtx
+     * @param array<string, string> $filters
+     * @return list<array<string, mixed>>
+     */
+    private function fetchAesRosterForRegistryFilters(array $listCtx, array $filters): array
+    {
+        if (!$this->registryListMergeAesEnabled()) {
+            return [];
+        }
+
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+        $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
+        $live = $this->registryListUsesLiveAes();
+
+        if ($studRole === 'all') {
+            $rows = $this->mergeUniqueRosterRows(
+                $this->collectAesRosterRowsForScope($listCtx, $program, $batch, false, $live),
+                $this->collectAesRosterRowsForScope($listCtx, $program, $batch, true, $live)
+            );
+        } else {
+            $rows = $this->collectAesRosterRowsForScope(
+                $listCtx,
+                $program,
+                $batch,
+                $studRole === 'alumni',
+                $live
+            );
+        }
+
+        return $this->stampDepartmentOnRosterRows($rows, $listCtx, $filters);
+    }
+
+    /**
+     * @param array<string, mixed> $listCtx
+     * @param array<string, string> $filters
+     * @return list<array<string, mixed>>
+     */
+    private function fetchLocalRosterForRegistryFilters(array $listCtx, array $filters): array
+    {
+        if (!$this->registryListMergeLocalEnabled()) {
+            return [];
+        }
+
+        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            return [];
+        }
+
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+        $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
+        $wantProgram = $program !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
+            : '';
+
+        $officerCtx = StaffContext::officerCompatible($listCtx);
+        $officerCtx['departmentId'] = $departmentId;
+        $query = PlacementOfficerContext::studentCollectionFilter($officerCtx);
+
+        $rows = [];
+        foreach ((new StudentModel())->findAll($query, 5000) as $student) {
+            if (!is_array($student)) {
+                continue;
+            }
+            $row = $this->mapStudentDocumentToRosterRow($student, $departmentId);
+            if ($studRole !== 'all' && !$this->rosterRowMatchesPlacementStudRole(
+                $row,
+                $studRole === 'alumni' ? 'alumni' : 'student'
+            )) {
+                continue;
+            }
+            if ($batch !== '') {
+                $rowBatch = trim((string) ($row['classBatch'] ?? ''));
+                if (!StudentPlacementModel::matchesClassBatchSelection($rowBatch, $batch)) {
+                    continue;
+                }
+            } elseif ($program !== '' && !$this->rosterRowMatchesProgramFilter($row, $program, $wantProgram)) {
+                continue;
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @param array<string, mixed> $listCtx
+     * @param array<string, string> $filters
+     * @return list<array<string, mixed>>
+     */
+    private function stampDepartmentOnRosterRows(array $rows, array $listCtx, array $filters): array
+    {
+        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            return $rows;
+        }
+
+        foreach ($rows as $idx => $row) {
+            if (trim((string) ($row['departmentId'] ?? '')) === '') {
+                $rows[$idx]['departmentId'] = $departmentId;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $student
+     * @return array<string, mixed>
+     */
+    private function mapStudentDocumentToRosterRow(array $student, string $departmentId): array
+    {
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $studentId = trim((string) ($student['_id'] ?? ''));
+        $classBatch = trim((string) ($student['classBatch'] ?? ''));
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) ($student['programme'] ?? $student['course'] ?? ''));
+        if ($programme === '' && $classBatch !== '') {
+            $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($classBatch);
+        }
+        $name = trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? ''));
+
+        return [
+            '_id'            => $studentId,
+            'id'             => $studentId,
+            'studentId'      => $studentId,
+            'studentName'    => $name,
+            'displayName'    => $name,
+            'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
+            'classBatch'     => $classBatch,
+            'stud_class'     => $classBatch,
+            'programme'      => $programme,
+            'program'        => $programme,
+            'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
+            'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+            'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+            'departmentId'   => trim((string) ($student['departmentId'] ?? $departmentId)),
+            'source'         => 'local_students',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function rosterRowMatchesProgramFilter(array $row, string $program, string $wantProgram): bool
+    {
+        $rowProgram = (string) ($row['program'] ?? $row['programme'] ?? '');
+        $rowBatch = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
+        $fromBatch = $rowBatch !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($rowBatch)
+            : '';
+        if ($fromBatch === '' && $rowBatch !== '') {
+            $norm = DepartmentProgrammeCatalog::normalizeCode($rowBatch);
+            if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+                $fromBatch = 'INMCA';
+            } elseif (str_starts_with($norm, 'MCA')) {
+                $fromBatch = 'MCA';
+            } elseif (str_contains($norm, 'BCA')) {
+                $fromBatch = 'BCA';
+            }
+        }
+
+        return strcasecmp($rowProgram, $program) === 0
+            || ($wantProgram !== '' && strcasecmp(
+                DepartmentProgrammeCatalog::resolveProgrammeCode($rowProgram),
+                $wantProgram
+            ) === 0)
+            || ($wantProgram !== '' && $fromBatch !== '' && strcasecmp($fromBatch, $wantProgram) === 0)
+            || strcasecmp(
+                DepartmentProgrammeCatalog::normalizeCode($rowProgram),
+                DepartmentProgrammeCatalog::normalizeCode($program)
+            ) === 0;
+    }
+
+    /**
+     * When the selected batch label does not match AES stud_class literally (e.g. MCA-2023-25 vs MCAR2023-2025-S8).
+     *
+     * @param array<string, mixed> $classCtx
+     * @return list<array<string, mixed>>
+     */
+    private function syncRosterRowsForExpandedBatch(
+        array $classCtx,
+        string $deptAesId,
+        string $program,
+        string $batch,
+        bool $isAlumni
+    ): array {
+        try {
+            $known = (new AesApiService())->fetchPlacementClassBatches($deptAesId, $program);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $rows = [];
+        $seen = [];
+        foreach ($known as $label) {
+            $label = trim((string) $label);
+            if ($label === ''
+                || !ClassInchargeRegistry::batchesSameAdmissionCohort($label, $batch)
+                || !DepartmentProgrammeCatalog::batchHintMatchesProgramme($label, $program)) {
+                continue;
+            }
+            $chunk = $isAlumni
+                ? $this->officerData->listAesAlumniClassStudents($classCtx, $program, $label, true)
+                : $this->officerData->listAesClassStudents($classCtx, $program, $label, true);
+            foreach ($chunk as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
     }
 
     /**
@@ -194,8 +543,32 @@ final class StaffPlacementRegistryService
             'filterMode'                    => true,
             'placementStaffRegistryFilters' => true,
             'placementStudRole'             => $isAlumni ? 'alumni' : 'student',
+            'placementRegistryWide'         => true,
         ]);
-        $batches = (new PlacementFilterService())->fetchBatchOptions($filterCtx, $program, '', false);
+        $filterSvc = new PlacementFilterService();
+        $batches = $filterSvc->fetchBatchOptions($filterCtx, $program, '', false);
+        $deptAesId = $filterSvc->resolveParentDeptAesId($classCtx);
+        if ($batches === [] && $deptAesId !== '') {
+            $batches = (new AesApiService())->fetchPlacementClassBatches($deptAesId, $program);
+        }
+        if ($batches === [] && $deptAesId !== '') {
+            $deptWide = (new AesApiService())->fetchPlacementClassBatches($deptAesId, '');
+            $scoped = array_values(array_filter(
+                $deptWide,
+                static fn (string $label): bool => DepartmentProgrammeCatalog::batchHintMatchesProgramme($label, $program)
+            ));
+            if ($scoped !== []) {
+                $batches = $scoped;
+            }
+        } elseif ($program !== '') {
+            $scoped = array_values(array_filter(
+                $batches,
+                static fn (string $label): bool => DepartmentProgrammeCatalog::batchHintMatchesProgramme($label, $program)
+            ));
+            if ($scoped !== []) {
+                $batches = $scoped;
+            }
+        }
         $rows = [];
         $seen = [];
 
@@ -221,6 +594,63 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * @param list<array<string, mixed>> $a
+     * @param list<array<string, mixed>> $b
+     * @return list<array<string, mixed>>
+     */
+    private function mergeUniqueRosterRows(array $a, array $b): array
+    {
+        $seen = [];
+        $out = [];
+        foreach (array_merge($a, $b) as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $classCtx
+     * @return list<array<string, mixed>>
+     */
+    private function syncRosterViaDepartmentClassBatches(array $classCtx, bool $isAlumni): array
+    {
+        $filterCtx = array_merge($classCtx, [
+            'filterMode'                    => true,
+            'placementStaffRegistryFilters' => true,
+            'placementStudRole'             => $isAlumni ? 'alumni' : 'student',
+        ]);
+        $programs = (new PlacementFilterService())->fetchProgramOptions($filterCtx);
+        $rows = [];
+        $seen = [];
+
+        foreach ($programs as $program) {
+            $program = trim((string) $program);
+            if ($program === '') {
+                continue;
+            }
+            foreach ($this->syncRosterViaProgrammeClassBatches($classCtx, $program, $isAlumni) as $row) {
+                $key = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
      * @param array<string, mixed> $listCtx
      * @param array<string, string> $filters
      * @return array<int, array<string, mixed>>
@@ -228,14 +658,274 @@ final class StaffPlacementRegistryService
     private function listFromStudentPlacements(array $listCtx, array $filters): array
     {
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
+        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
 
-        $tableRows = (new StudentPlacementModel())->listAllRosterRows(5000);
+        $placementModel = new StudentPlacementModel();
+        $legacyFlat = $placementModel->hasLegacyFlatPlacementColumns();
+
+        // Legacy flat tables key rows by placement year, not AES stud_class — do not
+        // batch-filter them on list load (would always return []). Overlay / AES merge
+        // keeps the selected class when AES has the roster; otherwise show dept table.
+        $tableBatch = ($legacyFlat && $batch !== '') ? '' : $batch;
+        $tableRows = $placementModel->listRosterRowsForRegistryScope(
+            $departmentId,
+            $program,
+            $tableBatch,
+            5000,
+            $batch !== ''
+        );
+        $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
+        if ($aesRows !== []) {
+            // Keep legacy placement rows as the base. AES only adds classmates missing
+            // from student_placements — never replace the table with slim AES shells.
+            $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
+            if ($legacyFlat) {
+                $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
+            }
+        }
+        $localRows = $this->fetchLocalRosterForRegistryFilters($listCtx, $filters);
+        if ($localRows !== []) {
+            $tableRows = $this->mergeCompleteClassRoster($tableRows, $localRows);
+        }
+
+        if ($tableRows === [] && $batch !== '' && $program !== '') {
+            $liveCtx = array_merge(StaffContext::officerCompatible($listCtx), [
+                'placementForceLiveAes' => true,
+                'placementRegistryWide' => false,
+            ]);
+            $retryAes = $this->mergeUniqueRosterRows(
+                $this->officerData->listAesAlumniClassStudents($liveCtx, $program, $batch, true),
+                $this->officerData->listAesClassStudents($liveCtx, $program, $batch, true)
+            );
+            if ($retryAes !== []) {
+                $tableRows = $this->mergeCompleteClassRoster($tableRows, $retryAes);
+                if ($legacyFlat) {
+                    $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
+                }
+            }
+        }
+
+        // AES empty for this batch — still show legacy student_placements for the department.
+        if ($tableRows === [] && $legacyFlat) {
+            $tableRows = $placementModel->listLegacyFlatRosterRows($departmentId, $program);
+            if ($departmentId !== '') {
+                foreach ($tableRows as $idx => $row) {
+                    if (trim((string) ($row['departmentId'] ?? '')) === '') {
+                        $tableRows[$idx]['departmentId'] = $departmentId;
+                    }
+                }
+            }
+        } elseif ($legacyFlat) {
+            $tableRows = $this->overlayLegacyFlatPlacements($tableRows, $departmentId, $program);
+        }
+        $tableRows = array_map(
+            fn (array $row): array => $this->hydrateRosterRowFromAesKeys($row),
+            $tableRows
+        );
+        // Do not call live AES profiles over rows that already have table placement data —
+        // sparse AES responses were wiping phone/email/company.
+        if (!$legacyFlat) {
+            $tableRows = $this->enrichRosterRowsFromAesProfiles($tableRows, $this->enrichProfileMaxForList());
+        }
+        $tableRows = $this->enrichRosterRowsFromLocalStudents($tableRows);
 
         if ($studRole !== 'all') {
             $tableRows = $this->filterRosterByPlacementStudRole($tableRows, $studRole);
         }
 
         return $this->registryEntriesFromRoster($tableRows, true);
+    }
+
+    /**
+     * Fill snapshot gaps when student_placements has ids but AES keys were not normalized on save.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function enrichRosterRowsFromLocalStudents(array $rows): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+
+        $needIds = [];
+        foreach ($rows as $idx => $row) {
+            if ($this->rosterRowHasSnapshot($row)) {
+                continue;
+            }
+            $id = trim((string) ($row['studentId'] ?? $row['id'] ?? $row['_id'] ?? ''));
+            if ($id !== '' && Security::isValidId($id)) {
+                $needIds[$id][] = $idx;
+            }
+        }
+        if ($needIds === []) {
+            return $rows;
+        }
+
+        $students = (new StudentModel())->findByIds(array_keys($needIds));
+        foreach ($needIds as $id => $indexes) {
+            $student = $students[$id] ?? null;
+            if (!is_array($student)) {
+                continue;
+            }
+            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+            $patch = [
+                'displayName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+                'studentName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+                'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
+                'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
+                'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
+                'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+                'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+            ];
+            foreach ($indexes as $idx) {
+                foreach ($patch as $key => $value) {
+                    if ($value === '') {
+                        continue;
+                    }
+                    $existing = trim((string) ($rows[$idx][$key] ?? ''));
+                    if ($existing === '') {
+                        $rows[$idx][$key] = $value;
+                    }
+                }
+            }
+        }
+
+        $drop = [];
+        foreach ($needIds as $indexes) {
+            foreach ($indexes as $idx) {
+                if (!$this->rosterRowHasSnapshot($rows[$idx])) {
+                    $drop[$idx] = true;
+                }
+            }
+        }
+        if ($drop === []) {
+            return $rows;
+        }
+
+        $out = [];
+        foreach ($rows as $idx => $row) {
+            if (!isset($drop[$idx])) {
+                $out[] = $row;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function overlayLegacyFlatPlacements(array $rows, string $departmentId, string $program): array
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return $rows;
+        }
+
+        $legacyRows = (new StudentPlacementModel())->listLegacyFlatRosterRows($departmentId, $program);
+        if ($legacyRows === []) {
+            return $rows;
+        }
+
+        $byStudentId = [];
+        $byName = [];
+        $byEmail = [];
+        foreach ($legacyRows as $legacy) {
+            $sid = trim((string) ($legacy['studentId'] ?? ''));
+            if ($sid !== '' && ctype_digit($sid)) {
+                $byStudentId[ltrim($sid, '0') ?: '0'] = $legacy;
+            }
+            $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($legacy['studentName'] ?? ''))) ?? '');
+            if ($nameKey !== '') {
+                $byName[$nameKey] = $legacy;
+            }
+            $emailKey = strtolower(trim((string) ($legacy['email'] ?? $legacy['collegeEmail'] ?? '')));
+            if ($emailKey !== '') {
+                $byEmail[$emailKey] = $legacy;
+            }
+        }
+
+        foreach ($rows as $idx => $row) {
+            $legacy = null;
+            $aesSid = trim((string) ($row['aesStudentId'] ?? $row['stud_id'] ?? $row['studentId'] ?? ''));
+            if ($aesSid !== '' && ctype_digit($aesSid)) {
+                $legacy = $byStudentId[ltrim($aesSid, '0') ?: '0'] ?? null;
+            }
+            if ($legacy === null) {
+                $emailKey = strtolower(trim((string) ($row['email'] ?? $row['collegeEmail'] ?? '')));
+                if ($emailKey !== '') {
+                    $legacy = $byEmail[$emailKey] ?? null;
+                }
+            }
+            if ($legacy === null) {
+                $nameKey = strtolower(preg_replace('/\s+/', ' ', trim((string) ($row['studentName'] ?? $row['displayName'] ?? ''))) ?? '');
+                if ($nameKey !== '') {
+                    $legacy = $byName[$nameKey] ?? null;
+                }
+            }
+            if ($legacy === null) {
+                continue;
+            }
+            $rows[$idx] = $this->mergeLegacyPlacementIntoRosterRow($row, $legacy);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $legacy
+     * @return array<string, mixed>
+     */
+    private function mergeLegacyPlacementIntoRosterRow(array $row, array $legacy): array
+    {
+        $row = $this->mergeRosterStudentRows($row, $legacy);
+        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $legacyPlacement = is_array($legacy['placement'] ?? null) ? $legacy['placement'] : [];
+        foreach ($legacyPlacement as $key => $value) {
+            if (!is_scalar($value) && $value !== null) {
+                continue;
+            }
+            if (trim((string) ($placement[$key] ?? '')) === '' && trim((string) $value) !== '') {
+                $placement[$key] = $value;
+            }
+        }
+        $row['placement'] = $placement;
+        $company = trim((string) ($placement['company'] ?? $legacy['company'] ?? $legacy['employer'] ?? ''));
+        if ($company !== '') {
+            $row['company'] = $company;
+            $row['employer'] = $company;
+            $row['placed'] = true;
+        }
+        foreach (['phone', 'email', 'collegeEmail', 'package', 'role', 'address', 'employerContact', 'placementStatus'] as $field) {
+            $incoming = trim((string) ($legacy[$field] ?? ($field === 'package' || $field === 'role' || $field === 'address' || $field === 'employerContact' || $field === 'placementStatus'
+                ? ($legacyPlacement[$field] ?? '')
+                : '')));
+            if ($incoming !== '' && trim((string) ($row[$field] ?? '')) === '') {
+                $row[$field] = $incoming;
+            }
+        }
+        if (trim((string) ($row['email'] ?? '')) === '' && trim((string) ($legacy['email'] ?? '')) !== '') {
+            $row['email'] = trim((string) $legacy['email']);
+            $row['collegeEmail'] = $row['email'];
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function rosterRowHasSnapshot(array $row): bool
+    {
+        $name = trim((string) ($row['studentName'] ?? $row['displayName'] ?? ''));
+        $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+
+        return $name !== '' || $register !== '';
     }
 
     /**
@@ -458,22 +1148,18 @@ final class StaffPlacementRegistryService
      */
     private function mergeRosterStudentRows(array $local, array $aes): array
     {
-        foreach ([
-            'displayName', 'classBatch', 'stud_class', 'stud_course', 'stud_branch',
-            'programme', 'admno', 'collegeEmail', 'personalEmail', 'phone', 'photoUrl',
-            'studRole', 'stud_role',
-            'year', 'semester',
-            // AES course/branch numeric ids — local placement shells often omit these.
-            'courseId', 'course_id', 'stud_courseid', 'stud_course_id',
-            'branchId', 'branch_id', 'stud_branchid', 'stud_branch_id',
-            'stud_deptcode', 'parentDepartmentCode', 'deptCode',
-        ] as $field) {
-            $localVal = $local[$field] ?? null;
-            $aesVal = $aes[$field] ?? null;
-            $localEmpty = $localVal === null || $localVal === '' || $localVal === [];
-            if ($localEmpty && $aesVal !== null && $aesVal !== '' && $aesVal !== []) {
-                $local[$field] = $aesVal;
-            }
+        // SQL/local is base — AES only fills blanks (never wipe placement/contact).
+        $local = StudentPlacementModel::mergePreserveFilled($local, $aes);
+
+        $localPlacement = is_array($local['placement'] ?? null) ? $local['placement'] : [];
+        $aesPlacement = is_array($aes['placement'] ?? null) ? $aes['placement'] : [];
+        $local['placement'] = StudentPlacementModel::mergePreserveFilled($localPlacement, $aesPlacement);
+
+        $company = trim((string) ($local['placement']['company'] ?? $local['company'] ?? $local['employer'] ?? ''));
+        if ($company !== '') {
+            $local['company'] = $company;
+            $local['employer'] = $company;
+            $local['placed'] = true;
         }
 
         // Prefer AES numeric course/branch ids when local values are blank or non-numeric.
@@ -540,15 +1226,67 @@ final class StaffPlacementRegistryService
                 $unique[$key] = $row;
                 continue;
             }
-            // Prefer the row that already has placement / HE details filled in.
-            $existingEmployer = trim((string) ($unique[$key]['employer'] ?? $unique[$key]['company'] ?? ''));
-            $newEmployer = trim((string) ($row['employer'] ?? $row['company'] ?? ''));
-            if ($existingEmployer === '' && $newEmployer !== '') {
-                $unique[$key] = $row;
-            }
+            $unique[$key] = $this->preferRicherRegistryRow($unique[$key], $row);
         }
 
-        return array_values($unique);
+        // Legacy studentId (5458) and AES register numbers rarely share a key — collapse by name.
+        $byName = [];
+        $out = [];
+        foreach ($unique as $row) {
+            $nameKey = StudentPlacementModel::normalizePersonName((string) ($row['studentName'] ?? ''));
+            if ($nameKey === '') {
+                $out[] = $row;
+                continue;
+            }
+            if (!isset($byName[$nameKey])) {
+                $byName[$nameKey] = $row;
+                continue;
+            }
+            $byName[$nameKey] = $this->preferRicherRegistryRow($byName[$nameKey], $row);
+        }
+        foreach ($byName as $row) {
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $a
+     * @param array<string, mixed> $b
+     * @return array<string, mixed>
+     */
+    private function preferRicherRegistryRow(array $a, array $b): array
+    {
+        $score = static function (array $row): int {
+            $n = 0;
+            foreach (['studentName', 'registerNumber', 'phone', 'email', 'company', 'employer', 'role', 'package', 'address', 'employerContact'] as $field) {
+                if (trim((string) ($row[$field] ?? '')) !== '') {
+                    $n++;
+                }
+            }
+
+            return $n;
+        };
+        if ($score($b) > $score($a)) {
+            return $this->presentRegistryRow(array_merge($a, array_filter(
+                $b,
+                static fn ($v): bool => !(is_string($v) && trim($v) === '')
+            )));
+        }
+        foreach (['phone', 'email', 'company', 'employer', 'role', 'package', 'address', 'employerContact', 'placementStatus'] as $field) {
+            if (trim((string) ($a[$field] ?? '')) === '' && trim((string) ($b[$field] ?? '')) !== '') {
+                $a[$field] = $b[$field];
+            }
+        }
+        if (trim((string) ($a['company'] ?? $a['employer'] ?? '')) === ''
+            && trim((string) ($b['company'] ?? $b['employer'] ?? '')) !== '') {
+            $company = trim((string) ($b['company'] ?? $b['employer'] ?? ''));
+            $a['company'] = $company;
+            $a['employer'] = $company;
+        }
+
+        return $this->presentRegistryRow($a);
     }
 
     /**
@@ -556,7 +1294,7 @@ final class StaffPlacementRegistryService
      */
     private function studentRowKey(array $row): string
     {
-        foreach (['admissionNo', 'admno', 'registerNumber', 'studentId', 'id'] as $field) {
+        foreach (['admissionNo', 'admno', 'registerNumber', 'registerno', 'aesStudentId', 'stud_id', 'studentId', 'id'] as $field) {
             $value = strtoupper(trim((string) ($row[$field] ?? '')));
             if ($value === '') {
                 continue;
@@ -569,7 +1307,248 @@ final class StaffPlacementRegistryService
             return $value;
         }
 
+        $email = strtolower(trim((string) ($row['email'] ?? $row['collegeEmail'] ?? $row['personalEmail'] ?? '')));
+        if ($email !== '' && str_contains($email, '@')) {
+            return 'email:' . $email;
+        }
+
+        $name = StudentPlacementModel::normalizePersonName((string) ($row['studentName'] ?? $row['displayName'] ?? ''));
+        if ($name !== '') {
+            return 'name:' . $name;
+        }
+
         return '';
+    }
+
+    /**
+     * Max per-student getStudInfo4Placement calls on grid load (0 = unlimited).
+     */
+    private function enrichProfileMaxForList(): int
+    {
+        $raw = trim((string) ($_ENV['STAFF_PLACEMENT_ENRICH_AES_PROFILE_MAX'] ?? '500'));
+        if ($raw === '' || $raw === '0') {
+            return 0;
+        }
+
+        return max(0, (int) $raw);
+    }
+
+    private function enrichAesProfilesEnabled(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_ENRICH_AES_PROFILE'] ?? '1')));
+
+        return !in_array($v, ['0', 'false', 'no', 'off'], true);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function rosterRowNeedsAesProfile(array $row): bool
+    {
+        if (!empty($row['legacyFlatRow'])) {
+            return false;
+        }
+        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $hasCompany = trim((string) ($placement['company'] ?? $row['company'] ?? $row['employer'] ?? '')) !== '';
+        $hasPhone = trim((string) ($row['phone'] ?? '')) !== '';
+        $hasEmail = trim((string) ($row['email'] ?? $row['collegeEmail'] ?? '')) !== '';
+        // Already have placement + contact — do not risk a sparse AES overwrite.
+        if ($hasCompany && ($hasPhone || $hasEmail)) {
+            return false;
+        }
+        if (trim((string) ($row['studentName'] ?? $row['displayName'] ?? '')) === '') {
+            return true;
+        }
+        if (!$hasPhone || !$hasEmail) {
+            return true;
+        }
+        foreach (['company', 'role', 'package', 'address', 'employerContact', 'placementStatus'] as $key) {
+            if (trim((string) ($placement[$key] ?? '')) !== '') {
+                return false;
+            }
+        }
+
+        return !$hasCompany;
+    }
+
+    /**
+     * Live getStudInfo4Placement merge (contact + placement fields).
+     * Never overwrite non-empty local/table values with blank AES fields.
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function mergeAesProfileIntoRosterRow(array $row): array
+    {
+        $keys = [];
+        foreach (['registerNumber', 'admno', 'registerno', 'admissionNo'] as $field) {
+            $v = strtoupper(trim((string) ($row[$field] ?? '')));
+            if ($v !== '') {
+                $keys[$v] = true;
+            }
+        }
+        if ($keys === []) {
+            return $row;
+        }
+
+        $api = new AesApiService();
+        foreach (array_keys($keys) as $reg) {
+            $attempts = [['admno' => $reg]];
+            if (!ctype_digit($reg)) {
+                $attempts[] = ['registerno' => $reg, 'registerNumber' => $reg];
+            }
+            foreach ($attempts as $params) {
+                try {
+                    $profile = $api->fetchStudentPlacementProfile($params);
+                } catch (\Throwable) {
+                    $profile = [];
+                }
+                if ($profile === []) {
+                    continue;
+                }
+
+                return $this->hydrateRosterRowFromAesKeys(
+                    $this->mergeProfileWithoutWipingFilled($row, $profile)
+                );
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $profile
+     * @return array<string, mixed>
+     */
+    private function mergeProfileWithoutWipingFilled(array $row, array $profile): array
+    {
+        return StudentPlacementModel::mergePreserveFilled($row, $profile);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function enrichRosterRowsFromAesProfiles(array $rows, int $maxLookups = 0): array
+    {
+        if ($rows === [] || !$this->enrichAesProfilesEnabled()) {
+            return $rows;
+        }
+
+        $lookups = 0;
+        foreach ($rows as $idx => $row) {
+            if ($maxLookups > 0 && $lookups >= $maxLookups) {
+                break;
+            }
+            if (!$this->rosterRowNeedsAesProfile($row)) {
+                continue;
+            }
+            $merged = $this->mergeAesProfileIntoRosterRow($row);
+            if ($merged !== $row) {
+                $lookups++;
+                $rows[$idx] = $merged;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * After roster sync, fill every in-scope student_placements row from live AES profiles.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, string> $filters
+     */
+    private function backfillStudentPlacementsFromAesProfiles(array $staffCtx, array $filters): int
+    {
+        if (!$this->enrichAesProfilesEnabled()) {
+            return 0;
+        }
+
+        @set_time_limit(max(300, (int) ($_ENV['AES_REGISTRY_SYNC_TIME_LIMIT'] ?? 900)));
+
+        $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
+        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+
+        $rows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
+            $departmentId,
+            $program,
+            $batch,
+            StudentPlacementModel::REGISTRY_TABLE_LIST_MAX,
+            $batch !== ''
+        );
+        if ($rows === []) {
+            return 0;
+        }
+
+        $updated = 0;
+        foreach ($rows as $row) {
+            $row = $this->mergeAesProfileIntoRosterRow($row);
+            $batchLabel = trim((string) ($row['classBatch'] ?? $row['stud_class'] ?? $batch));
+            $programCode = DepartmentProgrammeCatalog::resolveProgrammeCode(trim((string) (
+                $row['programme'] ?? $row['stud_course'] ?? $program
+            )));
+            $role = AesApiService::normalizeStudRole($row) ?? 'student';
+            if ($this->upsertAesRosterRowToStudentPlacements(
+                $row,
+                $departmentId,
+                $programCode !== '' ? $programCode : $program,
+                $batchLabel !== '' ? $batchLabel : $batch,
+                $role === 'alumni' ? 'alumni' : 'student'
+            )) {
+                $updated++;
+            }
+        }
+
+        return $updated;
+    }
+
+    private function hydrateRosterRowFromAesKeys(array $row): array
+    {
+        $row = (new AesApiService())->applyStudInfoContactAliases($row);
+        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $fromAes = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
+            array_merge($row, $placement)
+        );
+        if ($fromAes !== []) {
+            $row['placement'] = StudentPlacementModel::mergePreserveFilled($placement, $fromAes);
+            $row['placed'] = trim((string) ($row['placement']['company'] ?? '')) !== '';
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function rosterPlacementPayload(array $row): array
+    {
+        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $fromAes = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
+            array_merge($row, $placement)
+        );
+
+        return StudentPlacementModel::mergePreserveFilled($placement, $fromAes);
+    }
+
+    /**
+     * @param array<string, mixed> $placement
+     */
+    private function placementPayloadHasGridData(array $placement): bool
+    {
+        foreach ([
+            'company', 'role', 'package', 'address', 'employerContact', 'placementStatus',
+        ] as $key) {
+            if (trim((string) ($placement[$key] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -584,7 +1563,12 @@ final class StaffPlacementRegistryService
         }
 
         $placed = ($row['placed'] ?? false) === true;
-        $studentName = trim((string) ($row['displayName'] ?? $row['user']['name'] ?? ''));
+        $studentName = trim((string) (
+            $row['studentName']
+            ?? $row['displayName']
+            ?? $row['user']['name']
+            ?? ''
+        ));
         $register = strtoupper(trim((string) ($row['registerNumber'] ?? '')));
         $phone = trim((string) ($row['phone'] ?? $row['personal']['phone'] ?? ''));
         $email = trim((string) ($row['collegeEmail'] ?? $row['personalEmail'] ?? $row['email'] ?? ''));
@@ -621,9 +1605,9 @@ final class StaffPlacementRegistryService
         $entries = [];
         $seen = [];
 
-        $placement = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $placement = $this->rosterPlacementPayload($row);
         if ((string) ($placement['company'] ?? '') !== '') {
-            $entries[] = $this->buildEntry($meta, [
+            $entry = $this->buildEntry($meta, [
                 'id'               => $studentId . ':placement',
                 'employer'         => (string) $placement['company'],
                 'role'             => (string) ($placement['role'] ?? ''),
@@ -651,29 +1635,32 @@ final class StaffPlacementRegistryService
                     || (!$studentPlacementsTableOnly && is_array($row['selfPlacement'] ?? null) && (string) ($row['selfPlacement']['companyIdDoc'] ?? '') !== ''),
                 'canVerify'        => false,
             ], $seen);
+            if ($entry !== null) {
+                $entries[] = $entry;
+            }
         }
 
         if ($studentPlacementsTableOnly) {
             if ($entries === []) {
                 $blank = $this->buildRosterEntry($meta, [
                     'id'               => $studentId . ':roster',
-                    'employer'         => '',
-                    'role'             => '',
-                    'address'          => '',
-                    'package'          => '',
-                    'employerContact'  => '',
-                    'joinDate'         => '',
-                    'endDate'          => '',
-                    'academicDuration' => '',
-                    'internshipDetails'=> '',
-                    'natureOfJob'      => '',
-                    'monthlySalary'    => '',
-                    'placementStatus'  => '',
-                    'offerLetterVerified' => false,
-                    'verificationDate' => '',
+                    'employer'         => (string) ($placement['company'] ?? ''),
+                    'role'             => (string) ($placement['role'] ?? ''),
+                    'address'          => (string) ($placement['address'] ?? ''),
+                    'package'          => $this->normalizePackage($placement['package'] ?? ''),
+                    'employerContact'  => (string) ($placement['employerContact'] ?? $placement['contact'] ?? ''),
+                    'joinDate'         => (string) ($placement['joinDate'] ?? ''),
+                    'endDate'          => (string) ($placement['endDate'] ?? ''),
+                    'academicDuration' => (string) ($placement['academicDuration'] ?? ''),
+                    'internshipDetails'=> (string) ($placement['internshipDetails'] ?? ''),
+                    'natureOfJob'      => (string) ($placement['natureOfJob'] ?? ''),
+                    'monthlySalary'    => (string) ($placement['monthlySalary'] ?? ''),
+                    'placementStatus'  => (string) ($placement['placementStatus'] ?? ''),
+                    'offerLetterVerified' => (bool) ($placement['offerLetterVerified'] ?? false),
+                    'verificationDate' => (string) ($placement['verificationDate'] ?? ''),
                     'fordvv'           => $this->normalizeVvValue($placement['fordvv'] ?? '1'),
                     'includedvv'       => $this->normalizeVvValue($placement['includedvv'] ?? '1'),
-                    'type'             => 'Placement',
+                    'type'             => $this->resolveRecordType($placement),
                     'source'           => 'class_roster',
                     'hasOfferLetter'   => false,
                     'hasJoiningLetter' => false,
@@ -887,6 +1874,11 @@ final class StaffPlacementRegistryService
             $row['type'] = $recordType;
         }
 
+        $row['studentName'] = trim((string) (
+            $row['studentName']
+            ?? $row['displayName']
+            ?? ''
+        ));
         $row['registerNumber'] = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admissionNo'] ?? '')));
         $row['classBatch'] = trim((string) ($row['classBatch'] ?? $row['batch'] ?? ''));
         $row['programme'] = trim((string) ($row['programme'] ?? $row['program'] ?? ''));
@@ -960,7 +1952,6 @@ final class StaffPlacementRegistryService
         string $batch,
         string $placementStudRole = 'student'
     ): int {
-        $model = new StudentPlacementModel();
         $deptId = trim($departmentId);
         $programCode = $program !== ''
             ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
@@ -969,41 +1960,71 @@ final class StaffPlacementRegistryService
         $synced = 0;
 
         foreach ($classRows as $row) {
-            $studentId = $this->registryStudentId($row);
-            $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
-            if ($studentId === '' || $register === '') {
-                continue;
-            }
-
-            $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
-            $fromDirectory = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
-                array_merge($row, $embedded)
-            );
-            $placement = $this->placementFieldsForAesSync(array_merge($embedded, $fromDirectory));
-            $meta = StudentPlacementModel::normalizeRosterMeta(array_merge(
+            $row = $this->mergeAesProfileIntoRosterRow($this->hydrateRosterRowFromAesKeys($row));
+            if ($this->upsertAesRosterRowToStudentPlacements(
                 $row,
-                $this->rosterStudRoleFieldsForSync($row, $placementStudRole),
-                [
-                    'classBatch' => $batchLabel !== '' ? $batchLabel : ($row['classBatch'] ?? $row['stud_class'] ?? ''),
-                    'programme'  => $programCode !== '' ? $programCode : ($row['programme'] ?? $row['stud_course'] ?? ''),
-                ]
-            ));
-
-            try {
-                $model->upsertForStudent(
-                    $studentId,
-                    $register,
-                    $placement,
-                    $deptId !== '' ? $deptId : null,
-                    $meta
-                );
+                $deptId,
+                $programCode,
+                $batchLabel,
+                $placementStudRole
+            )) {
                 $synced++;
-            } catch (\Throwable) {
-                // Registry still falls back to in-memory class rows if the table is unavailable.
             }
         }
 
         return $synced;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function upsertAesRosterRowToStudentPlacements(
+        array $row,
+        string $departmentId,
+        string $program,
+        string $batch,
+        string $placementStudRole = 'student'
+    ): bool {
+        $row = $this->hydrateRosterRowFromAesKeys($row);
+        $studentId = $this->registryStudentId($row);
+        $register = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admno'] ?? '')));
+        if ($studentId === '' || $register === '') {
+            return false;
+        }
+
+        $programCode = $program !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
+            : '';
+        $batchLabel = trim($batch);
+        $deptId = trim($departmentId);
+
+        $embedded = is_array($row['placement'] ?? null) ? $row['placement'] : [];
+        $fromDirectory = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
+            array_merge($row, $embedded)
+        );
+        $placement = $this->placementFieldsForAesSync(array_merge($embedded, $fromDirectory));
+        $meta = StudentPlacementModel::normalizeRosterMeta(array_merge(
+            $row,
+            $this->rosterStudRoleFieldsForSync($row, $placementStudRole),
+            [
+                'classBatch' => $batchLabel !== '' ? $batchLabel : ($row['classBatch'] ?? $row['stud_class'] ?? ''),
+                'programme'  => $programCode !== '' ? $programCode : ($row['programme'] ?? $row['stud_course'] ?? ''),
+            ]
+        ));
+
+        try {
+            (new StudentPlacementModel())->upsertForStudent(
+                $studentId,
+                $register,
+                $placement,
+                $deptId !== '' ? $deptId : null,
+                $meta
+            );
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**
@@ -1038,9 +2059,15 @@ final class StaffPlacementRegistryService
         ];
         $out = [];
         foreach ($allowed as $key) {
-            if (array_key_exists($key, $placement)) {
-                $out[$key] = $placement[$key];
+            if (!array_key_exists($key, $placement)) {
+                continue;
             }
+            $value = $placement[$key];
+            // Never write blank placement scalars from AES — preserves SQL on upsert merge.
+            if (is_scalar($value) && StudentPlacementModel::isBlankMergeValue($value)) {
+                continue;
+            }
+            $out[$key] = $value;
         }
         if (isset($out['companyName']) && !isset($out['company'])) {
             $out['company'] = $out['companyName'];
@@ -1201,7 +2228,7 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * Listing scope from UI department filter (empty = all departments / campus-wide).
+     * Listing scope from UI department filter (empty = staff home department when assigned).
      *
      * @param array<string, mixed> $staffCtx
      * @param array<string, string> $filters
@@ -1211,6 +2238,11 @@ final class StaffPlacementRegistryService
     {
         $selectedDeptId = trim((string) ($filters['departmentId'] ?? ''));
         if ($selectedDeptId === '') {
+            $staffDept = trim((string) ($staffCtx['departmentId'] ?? ''));
+            if ($staffDept !== '' && is_array($staffCtx['department'] ?? null)) {
+                return $staffCtx;
+            }
+
             return array_merge($staffCtx, [
                 'departmentId' => '',
                 'department'   => null,
@@ -1400,6 +2432,43 @@ final class StaffPlacementRegistryService
      */
     private function applyFilters(array $rows, array $filters): array
     {
+        if (!empty($filters['allFromTable'])) {
+            $rows = $this->applyOptionalRegistrySearchFilters($rows, $filters);
+            if ($this->hasRegistryScopeFilters($filters)) {
+                return $this->applyScopedRegistryFilters($rows, $filters);
+            }
+
+            return $rows;
+        }
+
+        return $this->applyScopedRegistryFilters($rows, $filters);
+    }
+
+    /**
+     * @param array<string, string> $filters
+     */
+    private function hasRegistryScopeFilters(array $filters): bool
+    {
+        if ($this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all')) !== 'all') {
+            return true;
+        }
+
+        foreach (['departmentId', 'program', 'branch', 'batch'] as $key) {
+            if (trim((string) ($filters[$key] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<string, string> $filters
+     * @return array<int, array<string, mixed>>
+     */
+    private function applyScopedRegistryFilters(array $rows, array $filters): array
+    {
         $program = trim((string) ($filters['program'] ?? ''));
         $branch = trim((string) ($filters['branch'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
@@ -1419,14 +2488,17 @@ final class StaffPlacementRegistryService
             }
             if ($departmentId !== '') {
                 $rowDept = trim((string) ($row['departmentId'] ?? ''));
-                $narrowScope = ($program !== '' || $batch !== '');
-                if ($rowDept !== '' && strcasecmp($rowDept, $departmentId) !== 0 && !$narrowScope) {
+                if ($rowDept !== '' && strcasecmp($rowDept, $departmentId) !== 0) {
+                    return false;
+                }
+                if ($rowDept === '' && $batch === '' && $program === '') {
                     return false;
                 }
             }
             if ($batch !== '') {
                 $rowBatch = trim((string) ($row['batch'] ?? $row['classBatch'] ?? ''));
-                $batchOk = StudentPlacementModel::matchesClassBatchSelection($rowBatch, $batch);
+                // Legacy flat rows use placement year (2020-2021); AES UI uses MCALE2016-18.
+                $batchOk = StudentPlacementModel::legacyBatchFilterMatches($batch, $rowBatch);
                 if (!$batchOk) {
                     return false;
                 }

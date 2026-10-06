@@ -391,6 +391,7 @@ final class StaffController
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
             'assignedClassBatches' => $assigned,
+            'scope'    => $registrySvc->resolvedRegistryScope($ctx, $filterPayload),
         ]));
     }
 
@@ -425,11 +426,20 @@ final class StaffController
             'program'      => (string) ($_GET['program'] ?? $_POST['program'] ?? ''),
             'branch'       => (string) ($_GET['branch'] ?? $_POST['branch'] ?? ''),
             'batch'        => (string) ($_GET['batch'] ?? $_POST['batch'] ?? ''),
-            'studRole'     => (string) ($_GET['studRole'] ?? $_POST['studRole'] ?? 'all'),
+            'studRole'     => 'all',
         ];
         $registrySvc = new StaffPlacementRegistryService();
         $result = $registrySvc->syncFromAes($ctx, $filters);
         $count = (int) ($result['studentsSynced'] ?? 0);
+        $studying = (int) ($result['studyingSynced'] ?? 0);
+        $alumni = (int) ($result['alumniSynced'] ?? 0);
+        $aesFetched = (int) ($result['aesRosterFetched'] ?? 0);
+        $profilesBackfilled = (int) ($result['profilesBackfilled'] ?? 0);
+        $syncError = trim((string) ($result['syncError'] ?? ''));
+        $scope = $registrySvc->resolvedRegistryScope($ctx, $filters);
+        if ($filters['departmentId'] === '' && $scope['departmentId'] !== '') {
+            $filters['departmentId'] = $scope['departmentId'];
+        }
         $listFilters = [
             'departmentId' => (string) ($filters['departmentId'] ?? ''),
             'program'      => (string) ($filters['program'] ?? ''),
@@ -439,13 +449,22 @@ final class StaffController
             'type'         => '',
             'q'            => '',
         ];
-        $inTable = (int) (($registrySvc->list($ctx, $listFilters)['totals']['all'] ?? 0));
+        $registry = $registrySvc->list($ctx, $listFilters);
+        $inTable = (int) ($registry['totals']['all'] ?? 0);
         $result['rowsInTable'] = $inTable;
-        $message = $count > 0
-            ? "Synced {$count} record(s) from AES into student_placements."
-            : ($inTable > 0
-                ? "AES added no new rows; showing {$inTable} record(s) already in student_placements for these filters."
-                : 'No rows in student_placements for these filters yet. AES returned no roster to import — try a specific batch or check AES connectivity.');
+        $result['registry'] = $registry;
+        $result['scope'] = $scope;
+        $message = ($syncError !== '' && $inTable === 0)
+            ? $syncError
+            : ($syncError !== '' && $inTable > 0
+                ? "AES returned no new roster for this sync pass. Grid shows {$inTable} existing row(s) — check batch label or run sync again after deploy."
+                : ($aesFetched > 0
+                ? "Fetched {$aesFetched} student(s) from AES; saved {$count} to student_placements ({$studying} studying, {$alumni} alumni)"
+                    . ($profilesBackfilled > 0 ? "; enriched {$profilesBackfilled} row(s) from live AES profiles." : '')
+                    . " Grid shows {$inTable} row(s) for these filters."
+                : ($inTable > 0
+                    ? 'AES returned no roster for these filters. Grid shows existing student_placements rows only — try a specific batch (e.g. INMCA) or check AES from the server.'
+                    : 'AES returned no roster to import. Pick department, branch, and batch (Integrated MCA / INMCA) or verify AES is reachable from the server.')));
         Response::success(
             DocumentHelper::jsonSafe($result),
             $message

@@ -444,9 +444,11 @@
   let studentJdSelectedCompanyId = null;
   let studentJdBlockView = 'tests';
   let adminJdBlockView = 'tests';
+  const JD_BLOCK_VIEWS = ['tests', 'bank', 'local'];
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aptJdManualModal;
+  let manualJdUploadBusy = false;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
   let aiGenerateContext = 'bank';
@@ -1709,6 +1711,7 @@
   }
 
   async function saveJdManualUpload() {
+    if (manualJdUploadBusy) return;
     const sel = document.getElementById('aptManualJdCompany');
     const companyId = String(sel?.value || '').trim();
     const companyName = sel?.selectedOptions?.[0]?.textContent?.trim() || '';
@@ -1738,6 +1741,7 @@
     const btn = document.getElementById('btnAptManualJdSave');
     status?.classList.remove('d-none');
     btn?.setAttribute('disabled', 'disabled');
+    manualJdUploadBusy = true;
     try {
       if (!live) {
         if (!Auth.isDemo() || !access.canManage) {
@@ -1754,8 +1758,14 @@
           jdMimeType = file.type || 'application/octet-stream';
         }
         const store = loadDemoJdStore();
-        store.unshift({
-          id: setId,
+        const titleNorm = titleState.jdTitle.trim().toLowerCase();
+        const existingIdx = store.findIndex(
+          (s) => String(s.companyId || '') === companyId
+            && String(s.jdTitle || '').trim().toLowerCase() === titleNorm
+            && jdSetCompanyBankKind(s) === 'local'
+        );
+        const entry = {
+          id: existingIdx >= 0 ? String(store[existingIdx].id || setId) : setId,
           companyId,
           companyName,
           jdTitle: titleState.jdTitle,
@@ -1768,14 +1778,27 @@
           questionCount: 0,
           questions: [],
           manualSaveTarget: 'bank',
+          manualSource: 'upload',
+          companyBankKind: 'local',
           showInCompanyBank: true,
-        });
+        };
+        if (existingIdx >= 0) {
+          store[existingIdx] = { ...store[existingIdx], ...entry };
+        } else {
+          store.unshift(entry);
+        }
         saveDemoJdStore(store);
-        toast(`Saved manual to question bank (demo): ${companyName} · ${titleState.jdTitle}`, 'success');
+        const demoReplaced = existingIdx >= 0;
+        toast(
+          demoReplaced
+            ? `Updated local bank entry (same title): ${companyName} · ${titleState.jdTitle}`
+            : `Saved manual to local bank (demo): ${companyName} · ${titleState.jdTitle}`,
+          'success'
+        );
         aptJdManualModal?.hide();
         await loadJdLibrary();
         if (jdSelectedCompanyId) {
-          applyAdminJdBlockView('bank');
+          applyAdminJdBlockView('local');
           showJdCompanyDetail(jdSelectedCompanyId);
         }
         return;
@@ -1792,16 +1815,24 @@
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
       const count = res.data?.questionCount ?? 0;
       const viaAi = res.data?.parseMethod === 'ai';
-      const msg = count > 0
-        ? `Saved ${count} question(s) to company question bank${viaAi ? ' (AI-read from manual)' : ''}.`
-        : 'Saved manual to company question bank (no MCQs detected in file).';
+      const replaced = !!res.data?.replacedExisting;
+      let msg;
+      if (replaced) {
+        msg = count > 0
+          ? `Updated local bank entry — ${count} question(s)${viaAi ? ' (AI-read from manual)' : ''}.`
+          : 'Updated local bank entry (no MCQs detected in file).';
+      } else {
+        msg = count > 0
+          ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.`
+          : 'Saved manual to local bank (no MCQs detected in file).';
+      }
       toast(msg.trim(), 'success');
       delete jdSetDetailsCache[String(res.data?.id || '')];
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();
       await loadJdLibrary();
       if (jdSelectedCompanyId) {
-        applyAdminJdBlockView('bank');
+        applyAdminJdBlockView('local');
         showJdCompanyDetail(jdSelectedCompanyId);
         const newSetId = String(res.data?.id || '');
         if (newSetId) {
@@ -1816,6 +1847,7 @@
     } catch (err) {
       toast(err?.message || 'Could not save question manual.', 'error');
     } finally {
+      manualJdUploadBusy = false;
       status?.classList.add('d-none');
       btn?.removeAttribute('disabled');
     }
@@ -1926,6 +1958,8 @@
         hasDocument: !!(s.jdFileUrl || s.jdFileDataUrl),
         questionCount: Number(s.questionCount || s.questions?.length || 0),
         manualSaveTarget: String(s.manualSaveTarget || 'bank'),
+        manualSource: String(s.manualSource || 'upload'),
+        companyBankKind: String(s.companyBankKind || 'local'),
         showInCompanyBank: s.showInCompanyBank !== false,
       }));
       jdCompanyBlocks = groupJdSetsIntoBlocks(jdLibrarySets);
@@ -1943,40 +1977,227 @@
     return /\.(jpg|jpeg|png)$/i.test(String(detail?.jdFilename || ''));
   }
 
-  function renderMcqPickDetailHtml(q, index, { compact = false } = {}) {
-    const letters = ['A', 'B', 'C', 'D', 'E'];
+  function renderMcqPickDetailHtml(q, index, { compact = false, manualPreview = false } = {}) {
+    const isDs = q.questionType === 'DATA_SUFFICIENCY';
+    const letters = isDs ? ['1', '2', '3', '4', '5'] : ['A', 'B', 'C', 'D', 'E'];
     const opts = (q.options || []).filter((o) => String(o || '').trim() && String(o).trim() !== '—').slice(0, 5);
     const pad = opts.length ? opts : (q.options || []).slice(0, 5);
     const displayOpts = pad.length ? pad : [];
+    const answerKnown = q.answerKnown !== false && q.answerKnown !== 0;
     const correct = Math.max(0, Math.min(Math.max(displayOpts.length, 1) - 1, Number(q.correctIndex ?? 0)));
     const promptRaw = String(q.prompt || '').trim();
     const promptBlock = /<[^>]+>/.test(promptRaw)
       ? `<div class="mb-2 apt-q-card-text apt-rich">${promptRaw}</div>`
       : `<div class="mb-2 apt-q-card-text">${esc(stripHtml(promptRaw) || 'Question')}</div>`;
     const metaParts = [];
-    if (q.topic) metaParts.push(String(q.topic));
+    if (manualPreview && q.questionType === 'DATA_SUFFICIENCY') metaParts.push('Data sufficiency');
+    else if (manualPreview && q.questionType === 'STATEMENTS_CONCLUSIONS') metaParts.push('Statements & conclusions');
+    else if (manualPreview && q.section) metaParts.push(String(q.section));
+    else if (q.topic) metaParts.push(String(q.topic));
     else if (q.category) metaParts.push(String(q.category));
     if (q.difficulty) metaParts.push(String(q.difficulty));
     const meta = metaParts.map((v) => esc(v)).join(' · ');
+    const qLabel = q.questionNumber ? `Q${q.questionNumber}` : `Q${index + 1}`;
     const explanation = String(q.explanation || '').trim();
     const shellCls = compact ? 'min-w-0' : 'border rounded-2 p-3 bg-white';
+    const srcPage = Number(q.sourcePage || 0);
+    const conf = q.confidence != null && q.confidence !== '' ? Math.round(Number(q.confidence) * 100) : null;
+    const importMetaLines = manualPreview ? [
+      srcPage > 0 ? `<div class="small text-muted-2">Source: Page ${srcPage}${q.containsImage ? ' · contains image/diagram' : ''}</div>` : (q.containsImage ? '<div class="small text-muted-2">Source: diagram/image question</div>' : ''),
+      conf != null && !Number.isNaN(conf) ? `<div class="small text-muted-2">Confidence: ${conf}%</div>` : '',
+    ].filter(Boolean).join('') : '';
+    const answerLabel = letters[correct] || (isDs ? String(correct + 1) : String.fromCharCode(65 + correct));
+    const answerLine = manualPreview && !answerKnown
+      ? '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>'
+      : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : `${esc(answerLabel)}.`} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
     return `<div class="${shellCls}">
-      <div class="fw-semibold mb-2">Q${index + 1}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
+      <div class="fw-semibold mb-2">${esc(qLabel)}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
       ${promptBlock}
       <div class="small mb-2">${displayOpts.length
         ? displayOpts.map((o, oi) => {
           const label = esc(stripHtml(String(o || '')) || String(o || ''));
-          const isCorrect = oi === correct;
-          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${letters[oi] || String.fromCharCode(65 + oi)}. ${label}${isCorrect ? ' ✓' : ''}</div>`;
+          const isCorrect = answerKnown && oi === correct;
+          const optLabel = letters[oi] || (isDs ? String(oi + 1) : String.fromCharCode(65 + oi));
+          const optPrefix = isDs ? `(${optLabel})` : `${optLabel}.`;
+          return `<div class="apt-q-card-text ${isCorrect ? 'text-success fw-semibold' : ''}">${optPrefix} ${label}${isCorrect ? ' ✓' : ''}</div>`;
         }).join('')
         : '<div class="text-muted-2">No options</div>'}</div>
-      <div class="small mb-1"><span class="fw-semibold">Answer:</span> ${letters[correct] || String.fromCharCode(65 + correct)}. ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>
+      ${answerLine}
+      ${importMetaLines}
       ${explanation ? `<div class="small mt-2"><span class="fw-semibold">Explanation:</span> ${esc(explanation)}</div>` : ''}
     </div>`;
   }
 
+  function jdQuestionOptionLetters(q) {
+    return q.questionType === 'DATA_SUFFICIENCY' ? ['1', '2', '3', '4', '5'] : ['A', 'B', 'C', 'D', 'E'];
+  }
+
+  function jdQuestionEditOptionCount(q) {
+    if (q.questionType === 'DATA_SUFFICIENCY' || q.questionType === 'STATEMENTS_CONCLUSIONS') return 5;
+    return Math.max(4, Math.min(5, (q.options || []).length || 4));
+  }
+
+  function renderJdQuestionEditFormHtml(q, qIndex, setId) {
+    const letters = jdQuestionOptionLetters(q);
+    const optCount = jdQuestionEditOptionCount(q);
+    const opts = (q.options || []).slice(0, optCount);
+    while (opts.length < optCount) opts.push('');
+    const correct = Math.max(0, Math.min(optCount - 1, Number(q.correctIndex ?? 0)));
+    const qLabel = q.questionNumber ? `Q${q.questionNumber}` : `Q${qIndex + 1}`;
+    const qid = esc(String(q.id || ''));
+    return `<div class="border rounded-2 p-3 bg-white" data-jd-q-card="${qIndex}" data-jd-q-id="${qid}">
+      <div class="fw-semibold mb-2">Edit ${esc(qLabel)}</div>
+      <label class="form-label small mb-1">Question</label>
+      <textarea class="form-control form-control-sm mb-2" rows="4" data-jd-q-field="prompt">${esc(String(q.prompt || ''))}</textarea>
+      ${Array.from({ length: optCount }, (_, oi) => {
+        const lab = letters[oi] || String(oi + 1);
+        const prefix = q.questionType === 'DATA_SUFFICIENCY' ? `Option (${lab})` : `Option ${lab}`;
+        return `<label class="form-label small mb-1">${esc(prefix)}</label><input class="form-control form-control-sm mb-2" data-jd-q-field="opt${oi}" value="${esc(String(opts[oi] || ''))}"/>`;
+      }).join('')}
+      <div class="mb-2">
+        <label class="form-label small mb-1">Correct answer</label>
+        <select class="form-select form-select-sm" data-jd-q-field="correct">${Array.from({ length: optCount }, (_, oi) => {
+          const lab = letters[oi] || String(oi + 1);
+          return `<option value="${oi}" ${correct === oi ? 'selected' : ''}>${esc(lab)} — ${esc(String(opts[oi] || '').slice(0, 60))}</option>`;
+        }).join('')}</select>
+      </div>
+      <label class="form-label small mb-1">Explanation</label>
+      <textarea class="form-control form-control-sm mb-2" rows="2" data-jd-q-field="explanation">${esc(String(q.explanation || ''))}</textarea>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="jd-q-answer-known-${qIndex}" data-jd-q-field="answerKnown" ${q.answerKnown !== false && q.answerKnown !== 0 ? 'checked' : ''}/>
+        <label class="form-check-label small" for="jd-q-answer-known-${qIndex}">Answer is known (show correct option in preview)</label>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-sm btn-primary" data-jd-q-save="${qIndex}" data-jd-set-id="${esc(setId)}" data-jd-q-id="${qid}">Save</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-jd-q-cancel="${qIndex}">Cancel</button>
+      </div>
+    </div>`;
+  }
+
   function renderJdQuestionDetailHtml(q, index, opts = {}) {
-    return renderMcqPickDetailHtml(q, index, opts);
+    const editable = !!opts.editable;
+    const setId = String(opts.setId || '');
+    const qIndex = opts.qIndex != null ? opts.qIndex : index;
+    if (editable && q._editing) {
+      return renderJdQuestionEditFormHtml(q, qIndex, setId);
+    }
+    const body = renderMcqPickDetailHtml(q, index, { ...opts, manualPreview: true });
+    if (!editable || !setId) return body;
+    return `<div data-jd-q-card="${qIndex}">
+      ${body}
+      <div class="mt-2 pt-2 border-top">
+        <button type="button" class="btn btn-sm btn-outline-primary" data-jd-q-edit="${qIndex}">Edit</button>
+      </div>
+    </div>`;
+  }
+
+  async function persistJdSetQuestionEdit(setId, questionId, patch) {
+    const id = String(setId || '');
+    const qid = String(questionId || '');
+    if (!id || !qid) throw new Error('Missing set or question id.');
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(id)}/questions/${encodeURIComponent(qid)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+      if (!res?.success) throw new Error(res?.message || 'Could not save question.');
+      jdSetDetailsCache[id] = res.data;
+      return res.data;
+    }
+    if (!Auth.isDemo() || !access.canManage) {
+      throw new Error('Saving requires a live session.');
+    }
+    const store = loadDemoJdStore();
+    const idx = store.findIndex((s) => String(s.id) === id);
+    if (idx < 0) throw new Error('Set not found.');
+    const qs = Array.isArray(store[idx].questions) ? store[idx].questions : [];
+    const qi = qs.findIndex((q) => String(q.id) === qid);
+    if (qi < 0) throw new Error('Question not found.');
+    qs[qi] = { ...qs[qi], ...patch, lockCorrectIndex: true };
+    store[idx] = { ...store[idx], questions: qs, questionCount: qs.length };
+    saveDemoJdStore(store);
+    jdSetDetailsCache[id] = store[idx];
+    return store[idx];
+  }
+
+  function readJdQuestionEditPatch(card, q) {
+    const optCount = jdQuestionEditOptionCount(q);
+    const options = Array.from({ length: optCount }, (_, oi) => String(card.querySelector(`[data-jd-q-field="opt${oi}"]`)?.value || '').trim());
+    return {
+      prompt: String(card.querySelector('[data-jd-q-field="prompt"]')?.value || '').trim(),
+      options,
+      correctIndex: Number(card.querySelector('[data-jd-q-field="correct"]')?.value || 0),
+      explanation: String(card.querySelector('[data-jd-q-field="explanation"]')?.value || '').trim(),
+      answerKnown: !!card.querySelector('[data-jd-q-field="answerKnown"]')?.checked,
+    };
+  }
+
+  function bindManualQuestionEditEvents(panel) {
+    if (!panel || panel.dataset.jdQEditBound === '1') return;
+    panel.dataset.jdQEditBound = '1';
+    const hostEl = () => panel.closest('[data-jd-questions]') || panel.parentElement;
+    const rerender = (detail) => {
+      const setId = String(panel.getAttribute('data-jd-set-id') || detail?.id || '');
+      const host = hostEl();
+      if (!host) return;
+      host.innerHTML = renderManualQuestionsPanel(detail || {}, { setId, editable: access.canManage });
+      bindManualQuestionEditEvents(host.querySelector('[data-jd-questions-panel]'));
+    };
+    panel.addEventListener('click', async (e) => {
+      const setId = String(panel.getAttribute('data-jd-set-id') || '');
+      if (!setId) return;
+
+      const editBtn = e.target.closest('[data-jd-q-edit]');
+      if (editBtn) {
+        e.preventDefault();
+        const qIndex = Number(editBtn.getAttribute('data-jd-q-edit'));
+        const detail = jdSetDetailsCache[setId] || (await getJdSetDetail(setId));
+        if (!detail?.questions?.[qIndex]) return;
+        detail.questions.forEach((item, i) => {
+          if (item && i !== qIndex) delete item._editing;
+        });
+        detail.questions[qIndex]._editing = true;
+        jdSetDetailsCache[setId] = detail;
+        rerender(detail);
+        return;
+      }
+
+      const cancelBtn = e.target.closest('[data-jd-q-cancel]');
+      if (cancelBtn) {
+        e.preventDefault();
+        const qIndex = Number(cancelBtn.getAttribute('data-jd-q-cancel'));
+        const detail = jdSetDetailsCache[setId];
+        if (detail?.questions?.[qIndex]) delete detail.questions[qIndex]._editing;
+        rerender(detail || {});
+        return;
+      }
+
+      const saveBtn = e.target.closest('[data-jd-q-save]');
+      if (saveBtn) {
+        e.preventDefault();
+        const qIndex = Number(saveBtn.getAttribute('data-jd-q-save'));
+        const qid = saveBtn.getAttribute('data-jd-q-id') || '';
+        const card = panel.querySelector(`[data-jd-q-card="${qIndex}"]`);
+        const detail = jdSetDetailsCache[setId] || (await getJdSetDetail(setId));
+        const q = detail?.questions?.[qIndex];
+        if (!card || !q) return;
+        const patch = readJdQuestionEditPatch(card, q);
+        if (!patch.prompt || patch.options.filter((o) => o).length < 2) {
+          toast('Enter the question and at least two options.', 'error');
+          return;
+        }
+        saveBtn.setAttribute('disabled', 'disabled');
+        try {
+          const updated = await persistJdSetQuestionEdit(setId, qid, patch);
+          rerender(updated);
+          toast('Question saved.', 'success');
+        } catch (err) {
+          toast(err?.message || 'Could not save question.', 'error');
+        } finally {
+          saveBtn.removeAttribute('disabled');
+        }
+      }
+    });
   }
 
   function splitManualTextIntoBlocks(text) {
@@ -1999,16 +2220,43 @@
     });
   }
 
-  function renderManualQuestionsPanel(detail) {
+  function renderManualQuestionsPanel(detail, panelOpts = {}) {
+    const setId = String(panelOpts.setId || detail?.id || '');
+    const editable = panelOpts.editable != null ? !!panelOpts.editable : !!access.canManage;
     const qs = Array.isArray(detail?.questions) ? detail.questions : [];
     if (qs.length) {
-      const via = detail?.manualParseMethod === 'ai' ? ' (read from manual via AI)' : '';
-      return `<p class="small text-muted-2 mb-2">${qs.length} question(s)${via}</p>`
-        + `<div class="d-flex flex-column gap-3">${qs.map((q, i) => renderJdQuestionDetailHtml(q, i)).join('')}</div>`;
+      const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};
+      const sections = Array.isArray(meta.sectionsDetected) ? meta.sectionsDetected : [];
+      const via = detail?.manualParseMethod === 'ai' ? ' · AI extraction from manual' : '';
+      const ocrNote = meta.ocrAttempted ? ' · OCR' : '';
+      const pages = meta.pageCount > 0 ? ` · ${meta.pageCount} page(s) processed` : '';
+      const fname = esc(detail?.jdFilename || 'Uploaded manual');
+      const summary = `<div class="small text-muted-2 mb-3 border-bottom pb-2">
+        <div><span class="fw-semibold text-body">${fname}</span></div>
+        <div>Questions detected: <strong>${qs.length}</strong>${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
+        ${sections.length ? `<div class="mt-1">Sections: ${sections.map((s) => esc(s)).join(', ')}</div>` : ''}
+      </div>`;
+      let lastDirections = null;
+      const cards = qs.map((q, i) => {
+        const dir = String(q.directionsBlock || '').trim();
+        let header = '';
+        if (dir && dir !== lastDirections) {
+          header = `<div class="border rounded-2 p-3 bg-light mb-1 small apt-q-card-text" style="white-space:pre-wrap">${esc(dir)}</div>`;
+          lastDirections = dir;
+        } else if (!dir) {
+          lastDirections = null;
+        }
+        return header + renderJdQuestionDetailHtml(q, i, { setId, editable, qIndex: i });
+      });
+      return summary + `<div class="d-flex flex-column gap-3" data-jd-questions-panel data-jd-set-id="${esc(setId)}">${cards.join('')}</div>`;
     }
     const text = String(detail?.manualText || '').trim();
+    const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};
     if (!text) {
-      return '<p class="small text-muted-2 mb-0">No readable text was extracted from this PDF yet. Image-based PDFs need <strong>OpenAI configured on the server</strong> for page OCR (poppler/ghostscript). Open <strong>Document</strong> to view the file, or re-upload after pasting MCQs as text.</p>';
+      const ocrTried = meta.ocrAttempted
+        ? ' Automatic OCR was attempted but no usable text was returned.'
+        : ' For scanned PDFs, configure <strong>OpenAI</strong> on the server and ensure <strong>poppler</strong> or <strong>ghostscript</strong> can render pages.';
+      return `<p class="small text-muted-2 mb-0">No readable text could be extracted from this file.${ocrTried} Open <strong>Document</strong> to verify the upload, paste MCQs as text, or re-upload a clearer PDF.</p>`;
     }
     const blocks = splitManualTextIntoBlocks(text);
     if (blocks.length > 1) {
@@ -2161,7 +2409,8 @@
           return;
         }
         const detail = await getDetail(id);
-        panel.innerHTML = renderManualQuestionsPanel(detail || {});
+        panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
+        bindManualQuestionEditEvents(panel.querySelector('[data-jd-questions-panel]'));
         panel.classList.remove('d-none');
         btn.textContent = 'Hide';
       });
@@ -2186,8 +2435,15 @@
     });
   }
 
+  function jdSetCompanyBankKind(set) {
+    const kind = String(set?.companyBankKind || '').toLowerCase();
+    if (kind === 'local' || kind === 'question') return kind;
+    if (String(set?.manualSource || '').toLowerCase() === 'upload') return 'local';
+    return 'question';
+  }
+
   function applyAdminJdBlockView(view) {
-    adminJdBlockView = view === 'bank' ? 'bank' : 'tests';
+    adminJdBlockView = JD_BLOCK_VIEWS.includes(view) ? view : 'tests';
     syncAdminJdBlockViewNav();
     if (jdSelectedCompanyId) {
       showJdCompanyDetail(jdSelectedCompanyId);
@@ -2203,6 +2459,14 @@
 
   function companyQuestionBankSets(companyId) {
     return (companyJdBlockFor(companyId)?.sets || []).filter((s) => s.showInCompanyBank !== false);
+  }
+
+  function companyJdQuestionBankSets(companyId) {
+    return companyQuestionBankSets(companyId).filter((s) => jdSetCompanyBankKind(s) === 'question');
+  }
+
+  function companyLocalBankSets(companyId) {
+    return companyQuestionBankSets(companyId).filter((s) => jdSetCompanyBankKind(s) === 'local');
   }
 
   function companyProblemOnlyManualSets(companyId) {
@@ -2302,12 +2566,17 @@
       }
     } else {
       const list = document.getElementById('jdBlockSetsList');
-      const sets = companyQuestionBankSets(companyId);
+      const sets = adminJdBlockView === 'local'
+        ? companyLocalBankSets(companyId)
+        : companyJdQuestionBankSets(companyId);
       if (!list) return;
       const bulkBar = document.getElementById('jdBulkActions');
       if (!sets.length) {
         bulkBar?.classList.add('d-none');
-        list.innerHTML = '<p class="text-muted-2 mb-0">No JD titles for this company yet.</p>';
+        const emptyMsg = adminJdBlockView === 'local'
+          ? 'No local bank manuals yet. Use Upload manual to add PDF or pasted MCQs.'
+          : 'No AI question bank sets yet. Use AI Generate for this company.';
+        list.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
         updateJdSelectionToolbar([]);
         return;
       }
@@ -2409,7 +2678,7 @@
   }
 
   function applyStudentJdBlockView(view) {
-    studentJdBlockView = view === 'bank' ? 'bank' : 'tests';
+    studentJdBlockView = JD_BLOCK_VIEWS.includes(view) ? view : 'tests';
     syncStudentJdBlockViewNav();
     if (studentJdSelectedCompanyId) {
       showStudentJdCompanyDetail(studentJdSelectedCompanyId);
@@ -2438,11 +2707,17 @@
       }
     } else {
       const list = document.getElementById('studentJdBlockSetsList');
-      const sets = block?.sets || [];
+      const allSets = (block?.sets || []).filter((s) => s.showInCompanyBank !== false);
+      const sets = studentJdBlockView === 'local'
+        ? allSets.filter((s) => jdSetCompanyBankKind(s) === 'local')
+        : allSets.filter((s) => jdSetCompanyBankKind(s) === 'question');
       if (!list) return;
+      const emptyMsg = studentJdBlockView === 'local'
+        ? 'No local bank content for this company yet.'
+        : 'No question bank sets for this company yet.';
       list.innerHTML = sets.length
         ? renderJdSetCardsHtml(sets, { allowDelete: false })
-        : '<p class="text-muted-2 mb-0">No JD question sets for this company yet.</p>';
+        : `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
       bindJdSetCardEvents(list, { getDetail: getStudentJdSetDetail, allowDelete: false });
     }
   }
@@ -4113,9 +4388,12 @@
             hasDocument: !!docUrl,
             questionCount: questions.length,
             questions,
+            manualSource: 'ai',
+            companyBankKind: 'question',
+            showInCompanyBank: true,
           });
           saveDemoJdStore(store);
-          toast(`Saved ${questions.length} question(s) to Company Block: ${companyName} · ${jdTitle}`, 'success');
+          toast(`Saved ${questions.length} question(s) to question bank: ${companyName} · ${jdTitle}`, 'success');
           await loadJdLibrary();
         } else {
           const bank = loadDemoBankStore();

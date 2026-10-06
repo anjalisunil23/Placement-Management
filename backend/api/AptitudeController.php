@@ -328,6 +328,14 @@ final class AptitudeController
         Response::success(null, 'JD question set deleted.');
     }
 
+    /** PATCH /api/aptitude/jd-sets/{id}/questions/{questionId} */
+    public function updateJdSetQuestion(string $id, string $questionId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $detail = $this->service->updateJdQuestionSetQuestion($user, $id, $questionId, $this->body());
+        Response::success($detail, 'Question updated.');
+    }
+
     /** GET /api/aptitude/student/jd-block */
     public function listStudentJdBlock(): void
     {

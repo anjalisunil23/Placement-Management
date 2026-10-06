@@ -38,6 +38,14 @@ final class OfficerDataService
     /** @var array<string, list<array<string, mixed>>> */
     private static array $aesAlumniDirectoryCache = [];
 
+    /** Clear in-request AES directory caches before a manual placement registry sync. */
+    public static function clearPlacementSyncCaches(): void
+    {
+        self::$aesDirectoryCache = [];
+        self::$aesAlumniDirectoryCache = [];
+        AesApiService::clearSharedListCaches();
+    }
+
     /**
      * @return array{user: array<string, mixed>, ctx: array<string, mixed>}
      */
@@ -1200,6 +1208,120 @@ final class OfficerDataService
         $campusWide = !empty($ctx['campusWide']) || (
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
+        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        $records = $this->resolveAesRecordsForClassList(
+            $ctx,
+            $programme,
+            $batch,
+            $matchCohort,
+            $campusWide,
+            $deptAesId
+        );
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
+        $wantCohort = ClassInchargeRegistry::cohortKey($batch);
+        $rows = [];
+        $seen = [];
+
+        foreach ($records as $record) {
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+
+            $rowBatch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+            $isAlumni = $this->recordQualifiesForAlumniTab($record);
+            if (!$isAlumni) {
+                if (!$matchCohort || !$this->classBatchMatchesSelection($rowBatch, $batch, true, $wantCohort)) {
+                    continue;
+                }
+            }
+
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? ''
+            )));
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            if ($admno === '' && $regNo === '') {
+                continue;
+            }
+
+            $local = null;
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+                $normKey = $this->normalizeStudentAdmnoKey($key);
+                if ($normKey !== '' && isset($localByKey[$normKey])) {
+                    $local = $localByKey[$normKey];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            $rowBatch = trim((string) ($row['classBatch'] ?? $record['stud_class'] ?? ''));
+            if (!$this->classBatchMatchesSelection($rowBatch, $batch, $matchCohort, $wantCohort)) {
+                continue;
+            }
+            if (!$matchCohort) {
+                $rowProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+                    $row['stud_course'] ?? $row['programme'] ?? ''
+                ));
+                $wantProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+                if ($wantProgramme !== '' && $rowProgramme !== '' && strcasecmp($rowProgramme, $wantProgramme) !== 0) {
+                    continue;
+                }
+            }
+
+            $key = $this->normalizeStudentAdmnoKey((string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = $row;
+        }
+
+        if ($rows === []) {
+            return $this->listAesAlumniClassStudentsFromDirectory($ctx, $programme, $batch, $matchCohort);
+        }
+
+        usort(
+            $rows,
+            static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['displayName'] ?? $a['registerNumber'] ?? ''),
+                (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
+            )
+        );
+
+        return $rows;
+    }
+
+    /**
+     * Fallback when class-scoped AES returns no rows (legacy path).
+     *
+     * @param array<string, mixed> $ctx
+     * @return array<int, array<string, mixed>>
+     */
+    private function listAesAlumniClassStudentsFromDirectory(
+        array $ctx,
+        string $programme,
+        string $batch,
+        bool $matchCohort
+    ): array {
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
@@ -1695,8 +1817,12 @@ final class OfficerDataService
             $wantCohort = ClassInchargeRegistry::cohortKey($wantBatch);
         }
 
-        return $wantCohort !== ''
-            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0;
+        if ($wantCohort !== ''
+            && strcasecmp(ClassInchargeRegistry::cohortKey($rowBatch), $wantCohort) === 0) {
+            return true;
+        }
+
+        return ClassInchargeRegistry::batchesSameAdmissionCohort($rowBatch, $wantBatch);
     }
 
     /**
@@ -2735,7 +2861,12 @@ final class OfficerDataService
             && !$campusWide
             && $deptAesId !== ''
             && trim($batch) !== '') {
-            $classRows = (new AesApiService())->fetchClassStudInfo4Placement($deptAesId, $programme, $batch);
+            $classRows = (new AesApiService())->fetchClassStudInfo4Placement(
+                $deptAesId,
+                $programme,
+                $batch,
+                !empty($ctx['placementForceLiveAes'])
+            );
             if ($classRows !== []) {
                 return $classRows;
             }
@@ -2762,12 +2893,15 @@ final class OfficerDataService
         if ($liveRegistry) {
             $cacheKey .= ':liveReg';
         }
-        if (isset(self::$aesDirectoryCache[$cacheKey])) {
+        $forceLive = !empty($ctx['placementForceLiveAes']);
+        if ($forceLive) {
+            unset(self::$aesDirectoryCache[$cacheKey]);
+        } elseif (isset(self::$aesDirectoryCache[$cacheKey])) {
             return self::$aesDirectoryCache[$cacheKey];
         }
 
         if ($campusWide) {
-            $records = $liveRegistry
+            $records = ($liveRegistry || $forceLive)
                 ? $this->fetchLiveCampusStudyingDirectoryRecords()
                 : $this->readCampusStudyingDirectorySnapshotRecords();
 
@@ -3120,7 +3254,10 @@ final class OfficerDataService
         if ($liveRegistry) {
             $cacheKey .= ':liveReg';
         }
-        if (isset(self::$aesAlumniDirectoryCache[$cacheKey])) {
+        $forceLive = !empty($ctx['placementForceLiveAes']);
+        if ($forceLive) {
+            unset(self::$aesAlumniDirectoryCache[$cacheKey]);
+        } elseif (isset(self::$aesAlumniDirectoryCache[$cacheKey])) {
             return self::$aesAlumniDirectoryCache[$cacheKey];
         }
 
@@ -3719,9 +3856,19 @@ final class OfficerDataService
         if ($semester !== '') {
             $row['semester'] = $semester;
         }
+        $record = (new AesApiService())->applyStudInfoContactAliases($record);
         $row['collegeEmail'] = trim((string) ($record['collegeEmail'] ?? $record['stud_ajce_mails'] ?? $row['collegeEmail'] ?? ''));
         $row['personalEmail'] = trim((string) ($record['personalEmail'] ?? $record['stud_personal_mails'] ?? $row['personalEmail'] ?? ''));
         $row['phone'] = trim((string) ($record['phone'] ?? $record['stud_mobiles'] ?? $row['phone'] ?? ''));
+        $row['email'] = trim((string) (
+            $row['email']
+            ?? $row['collegeEmail']
+            ?? $row['personalEmail']
+            ?? ''
+        ));
+        if ($name !== '') {
+            $row['studentName'] = $name;
+        }
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
             $row['photoUrl'] = $photoUrl;
             $row['photo'] = ['url' => $photoUrl, 'source' => 'aes'];

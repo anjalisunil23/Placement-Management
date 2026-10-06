@@ -239,6 +239,18 @@ final class CodingSeedService
             $this->problem('Hard', 'Most Frequent Number', 'Print the most frequent number. If tie, the smaller number.', 'First line N. Second line N integers.', 'The mode.', '1 Ôëñ N Ôëñ 1000', "6\n1 2 2 3 3 3", '3', [["4\n4 1 4 1", '1'], ["5\n7 7 8 8 8", '8']], 3),
             $this->problem('Hard', 'Matrix Diagonal Sum', 'Print the sum of both main diagonals of an N├ùN matrix. Center counted once.', 'First line N. Then N lines of N integers.', 'The diagonal sum.', '1 Ôëñ N Ôëñ 50', "3\n1 2 3\n4 5 6\n7 8 9", '25', [["1\n4", '4'], ["2\n1 2\n3 4", '10']], 3),
             $this->problem('Hard', 'LCM of Two Numbers', 'Print lcm(A,B).', 'Two integers A and B.', 'The LCM.', '1 Ôëñ A,B Ôëñ 1e6', '4 6', '12', [['7 3', '21'], ['5 5', '5']], 3),
+            $this->problem(
+                'Hard',
+                'Array Partition',
+                'Given 2N integers, group into N pairs to maximize the sum of min(a, b) for each pair.',
+                'First line: integer N. Second line: 2N space-separated integers.',
+                'Print the maximum sum.',
+                '-10^4 <= each value <= 10^4',
+                "4\n1 4 3 2",
+                '4',
+                [["2\n1 2 3 4", '4'], ["3\n-5 -2 0 4 7 9", '2']],
+                3
+            ),
         ];
     }
 }

@@ -2,6 +2,17 @@
 (function (global) {
   const LANGUAGES = ['Python', 'Java', 'C', 'C++', 'JavaScript'];
 
+  function normalizeLanguage(language) {
+    const raw = String(language || 'Python').trim().replace(/\uFF0B/g, '+').replace(/\s+/g, '');
+    const lower = raw.toLowerCase();
+    if (lower === 'python' || lower === 'py' || lower === 'python3') return 'Python';
+    if (lower === 'javascript' || lower === 'js' || lower === 'nodejs') return 'JavaScript';
+    if (lower === 'java') return 'Java';
+    if (lower === 'c') return 'C';
+    if (lower === 'c++' || lower === 'cpp' || lower === 'cxx' || lower === 'cplusplus') return 'C++';
+    return LANGUAGES.includes(String(language || '').trim()) ? String(language).trim() : 'Python';
+  }
+
   function defaultStarters(pythonBody) {
     return {
       Python: pythonBody,
@@ -313,6 +324,7 @@
       return LEGACY_TOPIC_MAP[c] || c || 'Algorithms';
     },
     DIFFICULTIES: ['Easy', 'Medium', 'Hard'],
+    normalizeLanguage,
     defaultStarters,
     pythonStarterFromSampleInput,
     pythonStarterFromProblem,

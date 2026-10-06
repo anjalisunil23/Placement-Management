@@ -119,6 +119,7 @@
               <ul class="nav nav-pills gap-1 flex-wrap mb-0" id="studentJdBlockViewNav">
                 <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-jd-block-view="tests">Problems</a></li>
                 <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-jd-block-view="bank">Question bank</a></li>
+                <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-jd-block-view="local">Local bank</a></li>
               </ul>
               <button type="button" class="btn btn-sm btn-outline-secondary" id="btnStudentJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
             </div>
@@ -316,6 +317,7 @@
           <ul class="nav nav-pills gap-1 flex-wrap mb-0 d-none" id="adminJdBlockViewNav">
             <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-admin-jd-block-view="tests">Problems</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-admin-jd-block-view="bank">Question bank</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-admin-jd-block-view="local">Local bank</a></li>
           </ul>
           <div class="d-flex flex-wrap align-items-center gap-2 ms-auto">
             <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="btnJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
@@ -577,7 +579,7 @@
 <div class="modal fade" id="aptJdManualModal" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
   <div class="modal-header"><h5 class="modal-title fw-bold">Upload question manual</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
   <div class="modal-body">
-    <p class="small text-muted-2 mb-3">Save a PDF, image, or text manual under the selected company. Parsed MCQs are added to that company’s <strong>Question bank</strong> (local bank). Use <strong>New company test</strong> when you want a Problems test.</p>
+    <p class="small text-muted-2 mb-3">Save a PDF, image, or text manual under the selected company. Parsed MCQs are stored in that company’s <strong>Local bank</strong>. Use <strong>AI Generate</strong> for the <strong>Question bank</strong>, or <strong>New company test</strong> for a Problems test.</p>
     <div class="mb-3">
       <label class="form-label small fw-semibold" for="aptManualJdCompany">Company</label>
       <select class="form-select" id="aptManualJdCompany"><option value="">Select company…</option></select>
@@ -739,5 +741,5 @@
 <script src="js/api.js?v=20260930names"></script>
 <script src="js/app.js?v=20261003practdrop"></script>
 <script src="js/aptitude-exam.js?v=20261001challenges"></script>
-<script src="js/aptitude-page.js?v=20261002practnav"></script>
+<script src="js/aptitude-page.js?v=20261005qedit"></script>
 </body></html>

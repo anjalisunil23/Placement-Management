@@ -21,7 +21,7 @@
         <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">The table lists rows from <code>student_placements</code> (local registry). <strong>Sync from AES</strong> imports/updates that table from AES for the current filters, then reloads the grid. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">The grid lists students for your department, branch, and batch filters by merging <code>student_placements</code>, the AES class roster, and local student profiles. <strong>Sync from AES</strong> saves roster + placement fields into <code>student_placements</code> for faster reloads. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
           <button type="button" class="btn btn-outline-primary btn-sm flex-shrink-0" id="btnSyncPlacementsFromAes" title="Fetch placement and higher-education data from AES into student_placements">
             <i class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></i>Sync from AES
@@ -465,7 +465,7 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261004deptfilters"></script>
+  <script src="js/staff-api.js?v=20261005aesync"></script>
   <script src="js/api.js?v=20260724viewdept"></script>
   <script src="js/app.js?v=20261001mcqroles"></script>
   <script>
@@ -482,6 +482,10 @@
     let filterDepartmentId = '';
     let filterProgram = '';
     let filterBatch = '';
+    let scopeDepartmentId = '';
+    let scopeDepartmentName = '';
+    let lastFilterBatches = [];
+    let lastFilterPrograms = [];
     let sortKey = '';
     let sortDir = 'asc';
     let canEditSelectedBatch = false;
@@ -648,15 +652,95 @@
       });
     }
 
+    function effectiveDepartmentId() {
+      syncDepartmentFilter();
+      return filterDepartmentId || scopeDepartmentId || '';
+    }
+
     function currentFilters() {
       return {
-        departmentId: filterDepartmentId,
+        departmentId: effectiveDepartmentId(),
         program: filterProgram,
         batch: filterBatch,
         studRole: 'all',
         type: document.getElementById('filterType')?.value || '',
         q: document.getElementById('tableSearch')?.value?.trim() || '',
       };
+    }
+
+    function departmentScopeLabel() {
+      syncDepartmentFilter();
+      if (filterDepartmentId) {
+        const el = document.getElementById('filterDepartment');
+        const opt = el?.selectedOptions?.[0];
+        return opt ? String(opt.textContent || '').trim() : 'Selected department';
+      }
+      if (scopeDepartmentName) return scopeDepartmentName;
+      if (scopeDepartmentId) return 'Your department (auto)';
+      return 'All departments';
+    }
+
+    function applyScopeFromFiltersApi(data) {
+      const scope = data?.scope;
+      if (!scope || typeof scope !== 'object') return;
+      scopeDepartmentId = String(scope.departmentId || '').trim();
+      scopeDepartmentName = String(scope.departmentName || scope.departmentCode || '').trim();
+      const deptEl = document.getElementById('filterDepartment');
+      if (deptEl && !filterDepartmentId && scopeDepartmentId) {
+        if ([...deptEl.options].some(o => o.value === scopeDepartmentId)) {
+          deptEl.value = scopeDepartmentId;
+          syncDepartmentFilter();
+        }
+      }
+    }
+
+    async function prepareSyncFilters() {
+      syncDepartmentFilter();
+      if (!filterDepartmentId && scopeDepartmentId) {
+        const deptEl = document.getElementById('filterDepartment');
+        if (deptEl && [...deptEl.options].some(o => o.value === scopeDepartmentId)) {
+          deptEl.value = scopeDepartmentId;
+          syncDepartmentFilter();
+        }
+      }
+      if (!filterProgram) {
+        const picked = pickPreferredProgram(lastFilterPrograms);
+        if (picked) {
+          filterProgram = picked;
+          const programEl = document.getElementById('filterProgram');
+          if (programEl) programEl.value = picked;
+        }
+      }
+      if (!filterBatch) {
+        const picked = pickPreferredBatch(lastFilterBatches, filterProgram);
+        if (picked) {
+          filterBatch = picked;
+          const batchEl = document.getElementById('filterBatch');
+          if (batchEl) batchEl.value = picked;
+        }
+      }
+      if ((!filterProgram || !filterBatch) && typeof StaffApi.fetchPlacementFilters === 'function') {
+        const data = await StaffApi.fetchPlacementFilters({
+          departmentId: effectiveDepartmentId(),
+          program: filterProgram,
+          studRole: 'all',
+        });
+        if (data) {
+          applyScopeFromFiltersApi(data);
+          lastFilterPrograms = data.programs || lastFilterPrograms;
+          lastFilterBatches = data.batches || lastFilterBatches;
+          if (!filterProgram) {
+            filterProgram = pickPreferredProgram(lastFilterPrograms);
+            const programEl = document.getElementById('filterProgram');
+            if (programEl && filterProgram) programEl.value = filterProgram;
+          }
+          if (!filterBatch) {
+            filterBatch = pickPreferredBatch(lastFilterBatches, filterProgram);
+            const batchEl = document.getElementById('filterBatch');
+            if (batchEl && filterBatch) batchEl.value = filterBatch;
+          }
+        }
+      }
     }
 
     function fillSelect(id, values, allLabel, selected = '', autoPickSingle = false) {
@@ -830,10 +914,13 @@
         apiAssignedBatches = data.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
       }
 
-      fillDepartmentSelect(data.departments || [], filterDepartmentId);
+      applyScopeFromFiltersApi(data);
+      fillDepartmentSelect(data.departments || [], filterDepartmentId || scopeDepartmentId);
 
       let programs = data.programs || [];
       let batches = data.batches || [];
+      lastFilterPrograms = programs;
+      lastFilterBatches = batches;
       // Only re-fetch batches when programme just became known and first payload had none.
       if (filterProgram && !batches.length) {
         const again = await StaffApi.fetchPlacementFilters({
@@ -1225,17 +1312,24 @@
     }
 
     async function syncPlacementsFromAes() {
+      await prepareSyncFilters();
+      const deptLabel = departmentScopeLabel();
+      const programLabel = filterProgram
+        ? (typeof courseLevelProgrammeLabel === 'function' ? (courseLevelProgrammeLabel(filterProgram) || filterProgram) : filterProgram)
+        : 'All branches (slower — scans every programme batch via AES)';
+      const batchLabel = filterBatch || 'All batches (each class cohort via AES)';
       const lines = [
-        'Sync placement and higher-education data from AES into student_placements for the current filters?',
+        'Pull roster data from live AES into student_placements for the scope below?',
         '',
-        'Only placement / higher-education registry fields are updated from AES (not a full student profile sync).',
-        'Students and alumni in the current scope are included.',
-        'Large scopes can take several minutes.',
+        'This calls AES placement APIs (not a read of the grid only). Large scopes can take several minutes.',
         '',
-        filterDepartmentId ? 'Department: selected' : 'Department: all departments',
-        filterProgram ? `Branch: ${filterProgram}` : 'Branch: all branches',
-        filterBatch ? `Batch: ${filterBatch}` : 'Batch: all batches',
+        `Department: ${deptLabel}`,
+        `Branch: ${programLabel}`,
+        `Batch: ${batchLabel}`,
       ];
+      if (!filterProgram && !filterBatch) {
+        lines.push('', 'Tip: for Integrated MCA, pick branch INMCA and one batch (e.g. MCAINT…-S8) if sync returns no rows.');
+      }
       if (!window.confirm(lines.join('\n'))) {
         return;
       }
@@ -1254,11 +1348,16 @@
           toast(res?.message || 'AES sync failed.', 'error');
           return;
         }
-        const n = res?.data?.studentsSynced;
-        const inTable = res?.data?.rowsInTable;
-        const tone = (typeof n === 'number' && n > 0) ? 'success' : ((typeof inTable === 'number' && inTable > 0) ? 'info' : 'warn');
-        toast(res.message || (typeof n === 'number' ? `Synced ${n} record(s).` : 'Sync complete.'), tone);
-        await loadRegistry();
+        const aesN = res?.data?.aesRosterFetched;
+        const saved = res?.data?.studentsSynced;
+        const syncErr = String(res?.data?.syncError || '').trim();
+        const tone = syncErr ? 'error' : ((typeof aesN === 'number' && aesN > 0) ? 'success' : 'warn');
+        toast(res.message || syncErr || (typeof saved === 'number' ? `Saved ${saved} record(s) from AES.` : 'Sync complete.'), tone);
+        if (res?.data?.registry) {
+          applyRegistryPayload(res.data.registry);
+        } else {
+          await loadRegistry();
+        }
       } catch (_) {
         toast('AES sync failed.', 'error');
       } finally {
@@ -1269,20 +1368,8 @@
       }
     }
 
-    async function loadRegistry() {
-      const tbody = document.getElementById('registryRows');
-      syncDepartmentFilter();
-      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading from student_placements…</td></tr>`;
-      const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
-      if (!data) {
-        const detail = (StaffApi._lastPlacementsFetchError || '').trim();
-        const msg = detail
-          ? esc(detail)
-          : 'Could not load registry. Sign in as staff and try again.';
-        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-danger p-4 text-center">${msg}</td></tr>`;
-        if (detail && typeof toast === 'function') toast(detail, 'error');
-        return;
-      }
+    function applyRegistryPayload(data) {
+      if (!data || typeof data !== 'object') return false;
       if (Array.isArray(data.columns) && data.columns.length) {
         setRegistryColumns(data.columns);
       }
@@ -1296,14 +1383,30 @@
           }
         } catch (_) { /* ignore */ }
       }
-      // Department only — branch/batch dropdowns come from loadPlacementFilters()
-      // (registry filters.batches is a lite subset and must not replace the full list).
       if (data.filters && typeof data.filters === 'object' && Array.isArray(data.filters.departments)) {
         fillDepartmentSelect(data.filters.departments, filterDepartmentId);
       }
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
       applyClientFilter();
+      return true;
+    }
+
+    async function loadRegistry() {
+      const tbody = document.getElementById('registryRows');
+      syncDepartmentFilter();
+      tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading registry…</td></tr>`;
+      const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
+      if (!data) {
+        const detail = (StaffApi._lastPlacementsFetchError || '').trim();
+        const msg = detail
+          ? esc(detail)
+          : 'Could not load registry. Sign in as staff and try again.';
+        tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-danger p-4 text-center">${msg}</td></tr>`;
+        if (detail && typeof toast === 'function') toast(detail, 'error');
+        return;
+      }
+      applyRegistryPayload(data);
     }
 
     async function onScopeFilterChange(changed) {

@@ -198,6 +198,9 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questionCount' => count($normalized),
             'questions' => $normalized,
             'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
+            'manualSource' => 'ai',
+            'companyBankKind' => 'question',
+            'showInCompanyBank' => true,
         ];
         $filename = trim((string) ($jdFilename ?? ''));
         if ($filename !== '') {
@@ -240,7 +243,8 @@ class AptitudeJdQuestionSetModel extends BaseModel
         ?string $jdMimeType = null,
         ?string $manualText = null,
         string $manualSaveTarget = 'bank',
-        ?string $manualParseMethod = null
+        ?string $manualParseMethod = null,
+        ?array $importMeta = null
     ): array {
         $jdTitle = trim($jdTitle);
         if ($jdTitle === '') {
@@ -281,6 +285,14 @@ class AptitudeJdQuestionSetModel extends BaseModel
             }
             $norm['id'] = 'jdq-' . ($i + 1) . '-' . bin2hex(random_bytes(4));
             $norm['source'] = 'MANUAL_UPLOAD';
+            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'directionsBlock', 'questionType'] as $metaKey) {
+                if (array_key_exists($metaKey, $q)) {
+                    $norm[$metaKey] = $q[$metaKey];
+                }
+            }
+            if (!isset($norm['answerKnown'])) {
+                $norm['answerKnown'] = false;
+            }
             $normalized[] = $norm;
         }
 
@@ -303,6 +315,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questions' => $normalized,
             'createdBy' => Security::toObjectId((string) ($createdBy ?? '')) ?: null,
             'manualSource' => 'upload',
+            'companyBankKind' => 'local',
             'manualSaveTarget' => $target,
             'showInCompanyBank' => $target !== 'problem',
         ];
@@ -330,11 +343,55 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 ? mb_substr($manualTextTrim, 0, 50000)
                 : $manualTextTrim;
         }
+        if (is_array($importMeta) && $importMeta !== []) {
+            $doc['importMeta'] = $importMeta;
+        }
+
+        $existing = $this->findLocalManualSetByTitle($companyId, $jdTitle);
+        if ($existing !== null) {
+            $existingId = (string) ($existing['_id'] ?? '');
+            if ($existingId !== '' && $this->update($existingId, $doc)) {
+                $saved = $this->findById($existingId);
+
+                return array_merge(
+                    $saved !== null ? $this->detailView($saved) : ['id' => $existingId, 'jdTitle' => $jdTitle],
+                    ['replacedExisting' => true]
+                );
+            }
+        }
 
         $id = $this->insert($doc);
         $saved = $this->findById($id);
+        $view = $saved !== null ? $this->detailView($saved) : ['id' => $id, 'jdTitle' => $jdTitle];
+        $view['replacedExisting'] = false;
 
-        return $saved !== null ? $this->detailView($saved) : ['id' => $id, 'jdTitle' => $jdTitle];
+        return $view;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findLocalManualSetByTitle(string $companyId, string $jdTitle): ?array
+    {
+        $companyId = trim($companyId);
+        $titleNorm = mb_strtolower(trim($jdTitle));
+        if ($companyId === '' || $titleNorm === '') {
+            return null;
+        }
+
+        $rows = $this->findAll(['companyId' => $companyId], 400, 0, ['createdAt' => -1]);
+        foreach ($rows as $row) {
+            if (mb_strtolower(trim((string) ($row['jdTitle'] ?? ''))) !== $titleNorm) {
+                continue;
+            }
+            if (self::resolveCompanyBankKind($row) !== 'local') {
+                continue;
+            }
+
+            return $row;
+        }
+
+        return null;
     }
 
     /**
@@ -466,6 +523,84 @@ class AptitudeJdQuestionSetModel extends BaseModel
     }
 
     /**
+     * @param array<string, mixed> $patch
+     * @return array<string, mixed>|null Updated set detail
+     */
+    public function updateQuestion(string $setId, string $questionId, array $patch): ?array
+    {
+        if (!Security::isValidId($setId)) {
+            return null;
+        }
+        $questionId = trim($questionId);
+        if ($questionId === '') {
+            return null;
+        }
+
+        $set = $this->findById($setId);
+        if ($set === null) {
+            return null;
+        }
+
+        $questions = array_values((array) ($set['questions'] ?? []));
+        $updated = false;
+        foreach ($questions as $i => $q) {
+            if (!is_array($q) || (string) ($q['id'] ?? '') !== $questionId) {
+                continue;
+            }
+            $merged = $q;
+            if (array_key_exists('prompt', $patch)) {
+                $merged['prompt'] = trim((string) $patch['prompt']);
+            }
+            if (array_key_exists('options', $patch) && is_array($patch['options'])) {
+                $merged['options'] = array_values($patch['options']);
+            }
+            if (array_key_exists('correctIndex', $patch)) {
+                $merged['correctIndex'] = (int) $patch['correctIndex'];
+            }
+            if (array_key_exists('explanation', $patch)) {
+                $merged['explanation'] = trim((string) $patch['explanation']);
+            }
+            if (array_key_exists('answerKnown', $patch)) {
+                $merged['answerKnown'] = !empty($patch['answerKnown']);
+            }
+            if (array_key_exists('directionsBlock', $patch)) {
+                $merged['directionsBlock'] = trim((string) $patch['directionsBlock']);
+            }
+
+            $norm = AptitudeTestModel::normalizeMcq($merged, (string) ($merged['category'] ?? 'General Aptitude'), $i);
+            if ($norm === null) {
+                throw new \InvalidArgumentException('Question text and at least two options are required.');
+            }
+            $norm['id'] = $questionId;
+            $norm['source'] = (string) ($q['source'] ?? 'MANUAL_UPLOAD');
+            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'directionsBlock', 'questionType', 'topic'] as $metaKey) {
+                if (array_key_exists($metaKey, $merged)) {
+                    $norm[$metaKey] = $merged[$metaKey];
+                }
+            }
+            if (array_key_exists('answerKnown', $patch)) {
+                $norm['answerKnown'] = !empty($patch['answerKnown']);
+            }
+            $questions[$i] = $norm;
+            $updated = true;
+            break;
+        }
+
+        if (!$updated) {
+            return null;
+        }
+
+        $set['questions'] = $questions;
+        $set['questionCount'] = count($questions);
+        if (!$this->update($setId, $set)) {
+            return null;
+        }
+        $saved = $this->findById($setId);
+
+        return $saved !== null ? $this->detailView($saved) : null;
+    }
+
+    /**
      * @param array<string, mixed> $set
      * @return array<string, array<string, mixed>>
      */
@@ -505,6 +640,8 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'hasDocument' => $this->rowHasManualDocument($row),
             'questionCount' => (int) ($row['questionCount'] ?? count((array) ($row['questions'] ?? []))),
             'manualSaveTarget' => (string) ($row['manualSaveTarget'] ?? 'bank'),
+            'manualSource' => (string) ($row['manualSource'] ?? ''),
+            'companyBankKind' => self::resolveCompanyBankKind($row),
             'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
             'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
             'createdAt' => (string) ($row['createdAt'] ?? ''),
@@ -532,7 +669,15 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 'difficulty' => (string) ($q['difficulty'] ?? 'Medium'),
                 'category' => (string) ($q['category'] ?? 'General Aptitude'),
                 'marks' => (float) ($q['marks'] ?? 1),
-                'source' => 'AI_JD',
+                'source' => (string) ($q['source'] ?? 'MANUAL_UPLOAD'),
+                'questionNumber' => (int) ($q['questionNumber'] ?? 0),
+                'sourcePage' => (int) ($q['sourcePage'] ?? 0),
+                'section' => (string) ($q['section'] ?? ''),
+                'confidence' => isset($q['confidence']) ? (float) $q['confidence'] : null,
+                'containsImage' => !empty($q['containsImage']),
+                'answerKnown' => !empty($q['answerKnown']),
+                'directionsBlock' => (string) ($q['directionsBlock'] ?? ''),
+                'questionType' => (string) ($q['questionType'] ?? ''),
             ];
         }
 
@@ -551,10 +696,29 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'questions' => $questions,
             'manualText' => $this->manualTextForView($row),
             'manualSaveTarget' => (string) ($row['manualSaveTarget'] ?? 'bank'),
+            'manualSource' => (string) ($row['manualSource'] ?? ''),
+            'companyBankKind' => self::resolveCompanyBankKind($row),
             'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
             'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
+            'importMeta' => is_array($row['importMeta'] ?? null) ? $row['importMeta'] : [],
             'createdAt' => (string) ($row['createdAt'] ?? ''),
         ], $row, $forStudent);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private static function resolveCompanyBankKind(array $row): string
+    {
+        $kind = strtolower(trim((string) ($row['companyBankKind'] ?? '')));
+        if ($kind === 'local' || $kind === 'question') {
+            return $kind;
+        }
+        if (strtolower(trim((string) ($row['manualSource'] ?? ''))) === 'upload') {
+            return 'local';
+        }
+
+        return 'question';
     }
 
     /**

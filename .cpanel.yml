@@ -49,6 +49,7 @@ deployment:
     - cd $DEPLOYPATH && (/usr/local/bin/composer install --no-dev --optimize-autoloader || /opt/cpanel/composer/bin/composer install --no-dev --optimize-autoloader)
     - cd $DEPLOYPATH && (/usr/local/bin/composer dump-autoload -o || /opt/cpanel/composer/bin/composer dump-autoload -o)
     - cd $DEPLOYPATH && (/usr/local/bin/php backend/scripts/ensure-schema.php || /opt/cpanel/ea-php82/root/usr/bin/php backend/scripts/ensure-schema.php) || (echo "DEPLOY FAILED - ensure-schema.php did not complete. Check DB permissions." >&2; exit 1)
+    - cd $DEPLOYPATH && (/usr/local/bin/php backend/scripts/coding-fix-array-partition-tests.php || /opt/cpanel/ea-php82/root/usr/bin/php backend/scripts/coding-fix-array-partition-tests.php) || true
     - cd $DEPLOYPATH && (/usr/local/bin/php backend/scripts/seed-tutorial-demo-data.php || /opt/cpanel/ea-php82/root/usr/bin/php backend/scripts/seed-tutorial-demo-data.php) || (echo "DEPLOY FAILED - tutorial demo courses were not created. Check the admin user and database." >&2; exit 1)
     # Only stamp deploy-version after the tutorial seed succeeds, so students are not left on old catalogue data.
     - /bin/git rev-parse HEAD > $DEPLOYPATH/deploy-version.txt

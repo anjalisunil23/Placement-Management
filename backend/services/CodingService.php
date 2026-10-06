@@ -2485,7 +2485,7 @@ final class CodingService
         if (trim($source) === '') {
             Response::error('Source code is required.', 422);
         }
-        $language = trim((string) ($body['language'] ?? 'Python'));
+        $language = \PMS\Utils\CodingLanguage::canonicalLabel((string) ($body['language'] ?? 'Python'));
         $stdin = (string) ($body['stdin'] ?? '');
         $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 8000)));
 
@@ -2494,6 +2494,13 @@ final class CodingService
             Response::notFound('Problem not found.');
         }
         $problem = CodingProblemBankModel::normalize($row);
+        $repaired = \PMS\Utils\CodingProblemTestRepair::apply($problem);
+        if (\PMS\Utils\CodingProblemTestRepair::testCasesChanged($problem, $repaired)) {
+            $payload = $repaired;
+            unset($payload['id'], $payload['_id']);
+            $this->bank->saveProblem($payload, $id);
+        }
+        $problem = $repaired;
 
         return (new CodingPracticeRunService())->run($problem, $language, $source, $stdin, $timeLimitMs);
     }
@@ -2559,6 +2566,13 @@ final class CodingService
         }
 
         $problem = CodingProblemBankModel::normalize($row);
+        $repaired = \PMS\Utils\CodingProblemTestRepair::apply($problem);
+        if (\PMS\Utils\CodingProblemTestRepair::testCasesChanged($problem, $repaired)) {
+            $payloadFix = $repaired;
+            unset($payloadFix['id'], $payloadFix['_id']);
+            $this->bank->saveProblem($payloadFix, $bankProblemId);
+        }
+        $problem = $repaired;
         $grader = new CodingSubmissionGrader();
         $graded = $grader->grade($problem, $language, $sourceCode);
         $accepted = !empty($graded['accepted']);

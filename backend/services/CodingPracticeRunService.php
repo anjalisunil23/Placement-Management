@@ -61,7 +61,7 @@ final class CodingPracticeRunService
                 }
             }
             $input = (string) ($tc['input'] ?? '');
-            $ran = $this->executeOnce($problem, $language, $source, $input, $timeLimitMs);
+            $ran = $this->executeOnce($problem, $language, $source, $input, $timeLimitMs, $tc);
             $cases[] = [
                 'id' => (string) ($tc['id'] ?? ('tc-' . ($i + 1))),
                 'label' => $label,
@@ -178,15 +178,21 @@ final class CodingPracticeRunService
      * @param array<string, mixed> $problem
      * @return array<string, mixed>
      */
+    /**
+     * @param array<string, mixed> $problem
+     * @param array<string, mixed>|null $testCase when set, use this row's expected (hidden/sample grading)
+     */
     private function executeOnce(
         array $problem,
         string $language,
         string $source,
         string $stdin,
-        int $timeLimitMs
+        int $timeLimitMs,
+        ?array $testCase = null
     ): array {
+        $stdin = str_replace("\r\n", "\n", str_replace("\r", "\n", $stdin));
         $exec = $this->executor->run($language, $source, $stdin, $timeLimitMs);
-        $expected = $this->expectedFor($problem, $stdin);
+        $expected = $this->resolveExpected($problem, $stdin, $testCase);
         $stdout = CodingTestCaseChecker::normalize((string) ($exec['stdout'] ?? ''));
         $expectedNorm = CodingTestCaseChecker::normalize($expected);
         $succeeded = CodingTestCaseChecker::executionSucceeded($exec);
@@ -217,6 +223,25 @@ final class CodingPracticeRunService
                     : trim((string) ($exec['stderrTrace'] ?? $exec['stderr'] ?? $exec['errorSummary'] ?? '')),
             ],
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $problem
+     * @param array<string, mixed>|null $testCase
+     */
+    private function resolveExpected(array $problem, string $stdin, ?array $testCase = null): string
+    {
+        if ($testCase !== null) {
+            $raw = $testCase['expected'] ?? $testCase['output'] ?? null;
+            if ($raw !== null && $raw !== '') {
+                return CodingTestCaseChecker::normalize((string) $raw);
+            }
+            if ($raw === 0 || $raw === '0') {
+                return '0';
+            }
+        }
+
+        return $this->expectedFor($problem, $stdin);
     }
 
     /**

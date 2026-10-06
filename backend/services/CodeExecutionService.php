@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Utils\CodingExecutionErrorFormatter;
+use PMS\Utils\CodingLanguage;
 
 /**
  * Code execution facade for the PHP API layer.
@@ -22,8 +23,13 @@ final class CodeExecutionService
      */
     public function run(string $language, string $source, string $stdin = '', int $timeLimitMs = 3000): array
     {
+        $resolved = CodingLanguage::resolveForSource($language, $source);
+        $language = $resolved['label'];
         pms_coding_exec_debug_log('pre_run', [
             'language' => $language,
+            'requestedLanguage' => $resolved['requested'],
+            'normalizedKey' => $resolved['key'],
+            'languageOverride' => $resolved['override'],
             'source' => $source,
             'stdin' => $stdin,
             'timeLimitMs' => $timeLimitMs,

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Utils\CodingLanguage;
+
 /**
  * Remote compile/run via Wandbox (public API, no key).
  *
@@ -49,6 +51,15 @@ final class WandboxExecutionClient
             'stdin' => $stdin,
             'options' => $mapped['options'],
         ];
+        pms_coding_exec_debug_log('wandbox_request', [
+            'selectedLanguage' => $language,
+            'normalizedKey' => $mapped['key'] ?? CodingLanguage::normalizeKey($language),
+            'wandboxCompiler' => $mapped['compiler'],
+            'wandboxOptions' => $mapped['options'],
+            'stdin' => $stdin,
+            'source' => $source,
+            'payload' => $body,
+        ]);
         $payload = json_encode($body, JSON_UNESCAPED_UNICODE);
         if ($payload === false) {
             $this->lastError = 'Could not encode Wandbox payload.';
@@ -136,12 +147,15 @@ final class WandboxExecutionClient
      */
     private function mapLanguage(string $language): ?array
     {
-        $raw = strtolower(trim($language));
-        return match ($raw) {
+        $key = CodingLanguage::normalizeKey($language);
+        if ($key === null) {
+            return null;
+        }
+        $mapped = match ($key) {
             'python' => ['compiler' => 'cpython-3.11.10', 'options' => '', 'transform' => ''],
-            'javascript', 'js' => ['compiler' => 'nodejs-20.17.0', 'options' => '', 'transform' => ''],
+            'javascript' => ['compiler' => 'nodejs-20.17.0', 'options' => '', 'transform' => ''],
             'c' => ['compiler' => 'gcc-13.2.0-c', 'options' => 'gnu11', 'transform' => ''],
-            'c++', 'cpp' => ['compiler' => 'gcc-13.2.0', 'options' => 'c++17', 'transform' => ''],
+            'cpp' => ['compiler' => 'gcc-13.2.0', 'options' => 'c++17', 'transform' => ''],
             'java' => [
                 'compiler' => 'openjdk-jdk-21+35',
                 'options' => '',
@@ -149,6 +163,12 @@ final class WandboxExecutionClient
             ],
             default => null,
         };
+        if ($mapped === null) {
+            return null;
+        }
+        $mapped['key'] = $key;
+
+        return $mapped;
     }
 
     /**
