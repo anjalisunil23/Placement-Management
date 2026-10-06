@@ -1535,11 +1535,11 @@
       return `<div class="border rounded-3 p-3 apt-q-card">
         <div class="d-flex align-items-start gap-2">
           <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-bank-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select question"/>
-          <div class="min-w-0 flex-grow-1">
-            <div class="fw-medium apt-q-card-text">${esc(prompt)}</div>
-            <div class="small text-muted-2 mt-1">${esc(q.category || 'General Aptitude')} · ${esc(q.difficulty || '')}${q.source ? ` · ${esc(q.source)}` : ''} · ${esc(q.options?.length || 0)} options</div>
+          <div class="min-w-0 flex-grow-1 text-start">
+            <div class="fw-medium apt-q-card-text text-start">${esc(prompt)}</div>
+            <div class="small text-muted-2 mt-1 text-start">${esc(q.category || 'General Aptitude')} · ${esc(q.difficulty || '')}${q.source ? ` · ${esc(q.source)}` : ''} · ${esc(q.options?.length || 0)} options</div>
           </div>
-          <div class="d-flex align-items-center gap-2 flex-shrink-0">
+          <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-auto">
             ${bankDifficultyBadge(q.difficulty)}
             <button type="button" class="btn btn-sm btn-outline-danger" data-bank-delete="${esc(id)}" title="Delete"><i class="bi bi-trash"></i></button>
           </div>
@@ -2315,8 +2315,8 @@
         <div class="d-flex align-items-start gap-2">
           ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select JD set"/>` : ''}
           <div class="min-w-0 flex-grow-1 text-start">
-            <div class="fw-semibold">${esc(set.jdTitle || 'Untitled JD')}</div>
-            <div class="small text-muted-2 mt-1">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
+            <div class="fw-semibold text-start">${esc(set.jdTitle || 'Untitled JD')}</div>
+            <div class="small text-muted-2 mt-1 text-start">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
           </div>
           <div class="d-flex gap-2 flex-shrink-0 ms-auto">
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
@@ -5895,10 +5895,10 @@
     const docSetId = isCompanyTest(t) ? primaryJdSetIdForTest(t) : '';
     return `
       <div class="border rounded-3 p-3">
-        <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
-          <div class="d-flex align-items-start gap-2 min-w-0">
+        <div class="d-flex flex-wrap align-items-start gap-2">
+          <div class="d-flex align-items-start gap-2 min-w-0 flex-grow-1 text-start">
             ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
-            <div class="min-w-0">
+            <div class="min-w-0 flex-grow-1 text-start">
             <strong>${esc(t.title)}</strong>
             <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
             ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
@@ -5906,7 +5906,7 @@
             ${showContestBadge ? contestScheduleControls(t) : ''}
             </div>
           </div>
-          <div class="d-flex flex-wrap gap-2">
+          <div class="d-flex flex-wrap gap-2 flex-shrink-0 ms-auto">
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(docSetId)}">Document</button>` : ''}
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(docSetId)}">Questions</button>` : ''}
             ${docSetId ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>`}
