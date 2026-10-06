@@ -241,7 +241,8 @@
     }
     body.innerHTML = rows.map((row) => {
       const status = row.status || 'draft';
-      const editable = row.canEdit === true;
+      // Creator-only edits: never trust canEdit alone if isOwner is false.
+      const editable = row.isOwner === true && row.canEdit === true;
       const publish = !editable
         ? ''
         : (status === 'published'
@@ -256,7 +257,7 @@
         ? `<button type="button" class="btn btn-sm btn-outline-danger" data-delete-tutorial="${esc(row.id)}">Delete</button>`
         : '';
       const updated = row.updatedAt && typeof formatDate === 'function' ? formatDate(row.updatedAt) : '—';
-      const creator = row.createdByName || (row.isOwner ? 'You' : 'Staff');
+      const creator = row.isOwner ? 'You' : (row.createdByName || 'Staff');
       return `<tr>
         <td class="fw-semibold">${esc(row.title)}</td>
         <td>${esc(categoryName(row.categoryId))}</td>
@@ -1070,15 +1071,15 @@
 
   function paintCourseHeader() {
     const course = state.active || {};
-    const editable = course.canEdit === true;
+    const editable = course.isOwner === true && course.canEdit === true;
     document.getElementById('moduleTutorialTitle').textContent = course.title || 'Course';
     document.getElementById('moduleTutorialMeta').textContent = [
       categoryName(course.categoryId),
       course.topic || '',
       visibilityText(course),
       course.status || 'draft',
-      course.createdByName ? `Created by ${course.createdByName}` : '',
-      editable ? '' : 'View only',
+      course.isOwner ? 'Created by You' : (course.createdByName ? `Created by ${course.createdByName}` : ''),
+      editable ? '' : 'View only — you cannot edit courses created by other staff',
     ].filter(Boolean).join(' · ');
     const publish = document.getElementById('builderPublish');
     if (publish) {
@@ -1131,7 +1132,7 @@
     const root = document.getElementById('moduleNav');
     const hintHost = document.getElementById('moduleReorderHint');
     const modules = (state.active && state.active.modules) || [];
-    const editable = !state.active || state.active.canEdit === true;
+    const editable = !!(state.active && state.active.isOwner === true && state.active.canEdit === true);
     if (!root) return;
     if (hintHost) {
       if (editable && modules.length > 1) {
@@ -1931,7 +1932,7 @@
     const published = !state.creatingModule && state.active && state.active.status === 'published';
     status.textContent = state.creatingModule ? 'Draft' : (published ? 'Published' : 'Draft');
     status.classList.toggle('is-published', !!published);
-    const editable = state.creatingModule || (state.active && state.active.canEdit === true);
+    const editable = state.creatingModule || !!(state.active && state.active.isOwner === true && state.active.canEdit === true);
     const saveBtn = document.getElementById('articleSave');
     if (saveBtn) saveBtn.classList.toggle('d-none', !editable);
     ['moduleTitle', 'moduleSubtitle'].forEach((id) => {

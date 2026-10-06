@@ -930,7 +930,7 @@ final class TutorialService
             if (!$this->topicsSimilar($needle, $title) && !$this->topicsSimilar($needle, $topic)) {
                 continue;
             }
-            $isOwner = (string) ($row['createdBy'] ?? '') === $userId;
+            $isOwner = $this->sameUserId((string) ($row['createdBy'] ?? ''), $userId);
             $matches[] = [
                 'id' => $id,
                 'title' => $title,
@@ -1840,7 +1840,15 @@ final class TutorialService
             return true;
         }
 
-        return (string) ($row['createdBy'] ?? '') === $this->userId($user);
+        return $this->sameUserId((string) ($row['createdBy'] ?? ''), $this->userId($user));
+    }
+
+    private function sameUserId(string $left, string $right): bool
+    {
+        $left = strtolower(trim($left));
+        $right = strtolower(trim($right));
+
+        return $left !== '' && $left === $right;
     }
 
     /**
@@ -1852,9 +1860,7 @@ final class TutorialService
      */
     private function canMutateManagedTutorial(array $user, array $row): bool
     {
-        $createdBy = (string) ($row['createdBy'] ?? '');
-
-        return $createdBy !== '' && $createdBy === $this->userId($user);
+        return $this->sameUserId((string) ($row['createdBy'] ?? ''), $this->userId($user));
     }
 
     /**
@@ -2329,8 +2335,9 @@ final class TutorialService
     private function managedTutorial(array $row, bool $withChildren, ?array $viewer = null): array
     {
         $createdBy = (string) ($row['createdBy'] ?? '');
-        $isOwner = is_array($viewer) && $createdBy !== '' && $createdBy === $this->userId($viewer);
-        $canEdit = is_array($viewer) ? $this->canMutateManagedTutorial($viewer, $row) : false;
+        $isOwner = is_array($viewer) && $this->sameUserId($createdBy, $this->userId($viewer));
+        // canEdit is strictly ownership — viewers never get mutate controls.
+        $canEdit = $isOwner;
         $view = [
             'id' => (string) ($row['_id'] ?? ''),
             'title' => (string) ($row['title'] ?? ''),
