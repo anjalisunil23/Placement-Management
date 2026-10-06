@@ -153,6 +153,8 @@ SYS;
             $prompt = AptitudeManualQuestionParser::stripDirectionsRangeLabel(trim($prompt));
             $qNum = max(0, (int) ($row['questionNumber'] ?? 0));
             $prompt = AptitudeManualQuestionParser::stripEmbeddedQuestionNumber($prompt, $qNum);
+            $prompt = AptitudeManualQuestionParser::cutAtNextDirectionsRange($prompt);
+            $directions = AptitudeManualQuestionParser::cutAtNextDirectionsRange($directions);
             if ($prompt === '') {
                 continue;
             }

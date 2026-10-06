@@ -439,6 +439,28 @@ final class AptitudeManualQuestionParser
         return trim($text);
     }
 
+    /**
+     * Cut everything from the next ranged Directions block onward
+     * (e.g. "Directions (20 - 23): …" belongs to a different question set).
+     */
+    public static function cutAtNextDirectionsRange(string $text): string
+    {
+        if (preg_match('/\s*Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:/iu', $text, $m, PREG_OFFSET_CAPTURE)) {
+            return trim(substr($text, 0, (int) $m[0][1]));
+        }
+
+        return trim($text);
+    }
+
+    private static function nextDirectionsRangeOffset(string $text, int $from = 0): ?int
+    {
+        if (preg_match('/Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:/iu', $text, $m, PREG_OFFSET_CAPTURE, $from)) {
+            return (int) $m[0][1];
+        }
+
+        return null;
+    }
+
     /** Strip leading "7)" / "Q7." — UI already shows Q7. */
     public static function stripLeadingQuestionNumber(string $text): string
     {
@@ -477,11 +499,12 @@ final class AptitudeManualQuestionParser
 
     private function stripTrailingDirectionsTail(string $block): string
     {
+        $block = self::cutAtNextDirectionsRange($block);
         if (preg_match('/\([a-eA-E]\)|[a-eA-E]\)/u', $block)
             && preg_match('/\s+Directions\s*:/iu', $block, $dm, PREG_OFFSET_CAPTURE)) {
             $block = trim(substr($block, 0, (int) $dm[0][1]));
         }
-        $stripped = preg_replace('/\s+Directions\s*\(\d+\s*-\s*\d+\)\s*:.*$/isu', '', $block);
+        $stripped = preg_replace('/\s+Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:.*$/isu', '', $block);
         $stripped = preg_replace('/\s+Directions\s*:[\s\S]*$/iu', '', $stripped ?? $block);
 
         return trim($stripped ?? $block);
@@ -534,7 +557,7 @@ final class AptitudeManualQuestionParser
             if (count($options) < 2) {
                 continue;
             }
-            $tail = trim(substr($afterColon, $qStart));
+            $tail = self::cutAtNextDirectionsRange(trim(substr($afterColon, $qStart)));
             $directionsPrefix = 'Directions: ' . trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
 
             $chunks = $this->splitDataSufficiencyQuestionChunks($tail);
@@ -543,7 +566,7 @@ final class AptitudeManualQuestionParser
             }
 
             foreach ($chunks as $chunk) {
-                $chunk = trim($chunk);
+                $chunk = self::cutAtNextDirectionsRange(trim($chunk));
                 if ($chunk === '' || !preg_match('/^\s*(\d{1,3})[\.\)]\s*/u', $chunk, $qNumMatch)) {
                     continue;
                 }
@@ -553,7 +576,7 @@ final class AptitudeManualQuestionParser
                 }
 
                 $promptBody = preg_replace('/^\s*\d{1,3}[\.\)]\s*/u', '', $chunk) ?? $chunk;
-                $promptBody = trim($promptBody);
+                $promptBody = self::cutAtNextDirectionsRange(trim($promptBody));
                 if ($promptBody === '') {
                     continue;
                 }
@@ -639,7 +662,7 @@ final class AptitudeManualQuestionParser
             if (count($options) < 2) {
                 continue;
             }
-            $tail = trim(substr($afterColon, $qStart));
+            $tail = self::cutAtNextDirectionsRange(trim(substr($afterColon, $qStart)));
             $directionsPrefix = 'Directions: ' . trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
 
             $chunks = $this->splitStatementsConclusionsQuestionChunks($tail);
@@ -648,7 +671,7 @@ final class AptitudeManualQuestionParser
             }
 
             foreach ($chunks as $chunk) {
-                $chunk = trim($chunk);
+                $chunk = self::cutAtNextDirectionsRange(trim($chunk));
                 if ($chunk === '' || !preg_match('/^\s*(\d{1,3})\)\s*/u', $chunk, $qNumMatch)) {
                     continue;
                 }
@@ -658,7 +681,7 @@ final class AptitudeManualQuestionParser
                 }
 
                 $promptBody = preg_replace('/^\s*\d{1,3}\)\s*/u', '', $chunk) ?? $chunk;
-                $promptBody = trim($promptBody);
+                $promptBody = self::cutAtNextDirectionsRange(trim($promptBody));
                 if ($promptBody === '') {
                     continue;
                 }
@@ -742,13 +765,19 @@ final class AptitudeManualQuestionParser
         while ($pos < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+Statements\b/iu', $tail, $m, PREG_OFFSET_CAPTURE, $pos)) {
             $at = (int) ($m[0][1] ?? 0);
             $end = $len;
+            $dirAt = self::nextDirectionsRangeOffset($tail, $at + 1);
+            if ($dirAt !== null && $dirAt < $end) {
+                $end = $dirAt;
+            }
             $scan = $at + 1;
             while ($scan < $len && preg_match('/(?<![0-9])(\d{1,3})\)\s+Statements\b/iu', $tail, $m2, PREG_OFFSET_CAPTURE, $scan)) {
                 $at2 = (int) ($m2[0][1] ?? 0);
-                $end = $at2;
+                if ($at2 < $end) {
+                    $end = $at2;
+                }
                 break;
             }
-            $chunk = trim(substr($tail, $at, $end - $at));
+            $chunk = self::cutAtNextDirectionsRange(trim(substr($tail, $at, $end - $at)));
             if ($chunk !== '' && $this->chunkHasStatementsConclusions($chunk)) {
                 $chunks[] = $chunk;
             }
@@ -824,6 +853,10 @@ final class AptitudeManualQuestionParser
                 continue;
             }
             $end = $len;
+            $dirAt = self::nextDirectionsRangeOffset($tail, $at + 1);
+            if ($dirAt !== null && $dirAt < $end) {
+                $end = $dirAt;
+            }
             $scan = $at + 1;
             while ($scan < $len && preg_match('/(?<![0-9])(\d{1,3})[\.\)]\s+[A-Za-z(]/u', $tail, $m2, PREG_OFFSET_CAPTURE, $scan)) {
                 $at2 = (int) ($m2[0][1] ?? 0);
@@ -831,10 +864,12 @@ final class AptitudeManualQuestionParser
                     $scan = $at2 + 1;
                     continue;
                 }
-                $end = $at2;
+                if ($at2 < $end) {
+                    $end = $at2;
+                }
                 break;
             }
-            $chunk = trim(substr($tail, $at, $end - $at));
+            $chunk = self::cutAtNextDirectionsRange(trim(substr($tail, $at, $end - $at)));
             if ($chunk !== '' && $this->chunkHasDataSufficiencyStatements($chunk)) {
                 $chunks[] = $chunk;
             }
