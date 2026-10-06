@@ -414,15 +414,18 @@ final class AptitudeManualQuestionParser
             '/Directions\s*\((\d+)\s*[-–]\s*(\d+)\)\s*:([\s\S]*?)(?=\n\s*(?:\d{1,3}\)\s|\d{1,4}[\.\):]\s))/iu',
             $text,
             $matches,
-            PREG_SET_ORDER
+            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
         )) {
             foreach ($matches as $m) {
-                $start = (int) $m[1];
-                $end = (int) $m[2];
+                $start = (int) ($m[1][0] ?? 0);
+                $end = (int) ($m[2][0] ?? 0);
                 if ($start <= 0 || $end < $start || $end - $start > 30) {
                     continue;
                 }
-                $body = $this->normalizePassageBody((string) ($m[3] ?? ''));
+                $matchStart = (int) ($m[0][1] ?? 0);
+                $afterPos = $matchStart + strlen((string) ($m[0][0] ?? ''));
+                $body = $this->normalizePassageBody((string) ($m[3][0] ?? ''));
+                $body = $this->ensureArrangementLineInPassage($body, $text, $matchStart, $afterPos);
                 if ($body === '') {
                     continue;
                 }
@@ -444,29 +447,22 @@ final class AptitudeManualQuestionParser
                 if ($this->isSharedAnswerKeyDirections($rawBody)) {
                     continue;
                 }
+                $matchStart = (int) ($m[0][1] ?? 0);
+                $afterPos = $matchStart + strlen((string) ($m[0][0] ?? ''));
                 $body = $this->normalizePassageBody($rawBody);
+                $body = $this->ensureArrangementLineInPassage($body, $text, $matchStart, $afterPos);
                 if ($body === '' || mb_strlen($body) < 12) {
                     continue;
                 }
-                $afterPos = (int) ($m[0][1] ?? 0) + strlen((string) ($m[0][0] ?? ''));
-                $tail = substr($text, $afterPos);
-                if (!is_string($tail) || !preg_match('/^\s*(\d{1,3})\)\s+/u', $tail, $qm)) {
+                $maxSpan = $this->openDirectionsQuestionSpan($rawBody);
+                $following = $this->listFollowingQuestionNumbers($text, $afterPos, $maxSpan);
+                if ($following === []) {
                     continue;
                 }
-                $firstQ = (int) $qm[1];
-                if ($firstQ <= 0) {
-                    continue;
-                }
-                $span = preg_match('/\bquestions\b/iu', $rawBody) ? 5 : 1;
-                for ($q = $firstQ; $q < $firstQ + $span; $q++) {
-                    if (isset($map[$q])) {
-                        continue;
+                foreach ($following as $q) {
+                    if (!isset($map[$q])) {
+                        $map[$q] = $body;
                     }
-                    // Stop if a later Directions/section appears before this question number.
-                    if ($q > $firstQ && !$this->questionFollowsSamePassage($text, $afterPos, $q)) {
-                        break;
-                    }
-                    $map[$q] = $body;
                 }
             }
         }
@@ -474,15 +470,111 @@ final class AptitudeManualQuestionParser
         return $map;
     }
 
+    /**
+     * Singular "the following question" → only the next item; otherwise shared Directions
+     * apply to the following items until the next Directions/section (e.g. Verbal Q46–48).
+     */
+    private function openDirectionsQuestionSpan(string $rawBody): int
+    {
+        // e.g. arrangement: "The following question is based on…" → only the next item.
+        if (preg_match('/\bthe\s+following\s+question\b/iu', $rawBody) === 1) {
+            return 1;
+        }
+
+        return 12;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function listFollowingQuestionNumbers(string $text, int $from, int $max): array
+    {
+        if ($max < 1) {
+            return [];
+        }
+        $slice = substr($text, $from);
+        if (!is_string($slice) || $slice === '') {
+            return [];
+        }
+        if (!preg_match_all('/(?<![0-9])(\d{1,3})\)\s+\S/u', $slice, $mm, PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+        $nums = [];
+        $lastAt = 0;
+        foreach ($mm[1] as $hit) {
+            $q = (int) ($hit[0] ?? 0);
+            $at = (int) ($hit[1] ?? 0);
+            if ($q <= 0) {
+                continue;
+            }
+            $between = substr($slice, $lastAt, max(0, $at - $lastAt));
+            if ($nums !== [] && is_string($between)) {
+                if (preg_match('/Directions\s*:/iu', $between) === 1
+                    || self::nextDirectionsRangeOffset($between) !== null
+                    || self::nextSectionHeadingOffset($between) !== null) {
+                    break;
+                }
+            }
+            $nums[] = $q;
+            $lastAt = $at;
+            if (count($nums) >= $max) {
+                break;
+            }
+        }
+
+        return $nums;
+    }
+
     private function normalizePassageBody(string $body): string
     {
         $body = self::cutAtNextDirectionsRange($body);
         $body = self::cutAtNextSectionHeading($body);
-        $body = trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
+        $body = trim(preg_replace('/[^\S\n]+/u', ' ', $body) ?? $body);
+        $body = preg_replace('/\n{2,}/u', "\n", $body) ?? $body;
         $body = self::stripDirectionsRangeLabel($body);
         $body = preg_replace('/^\s*Directions\s*:\s*/iu', '', $body) ?? $body;
 
         return trim($body);
+    }
+
+    /**
+     * If Directions mention a letter/number/symbol arrangement but the token row was
+     * split onto another line/page, pull that row into the passage.
+     */
+    private function ensureArrangementLineInPassage(string $body, string $fullText, int $dirStart, int $dirEnd): string
+    {
+        $needsLine = preg_match('/letter[\s\/]*number[\s\/]*symbol\s+arrangement|above\s+arrangement/iu', $body) === 1
+            || preg_match('/letter[\s\/]*number[\s\/]*symbol\s+arrangement/iu', substr($fullText, $dirStart, max(0, $dirEnd - $dirStart) + 240)) === 1;
+        if (!$needsLine) {
+            return $body;
+        }
+        if (JdTextExtractionService::isSymbolArrangementLine($body)
+            || preg_match('/(?:^|\n|\s)((?:[\p{L}\p{N}@#%©$₹*&□■â]\s+){7,}[\p{L}\p{N}@#%©$₹*&□■â])/u', $body) === 1) {
+            return $body;
+        }
+
+        $window = substr($fullText, $dirStart, 1200);
+        if (!is_string($window)) {
+            return $body;
+        }
+        foreach (preg_split('/\n/u', $window) ?: [] as $line) {
+            $line = trim($line);
+            if ($line !== '' && JdTextExtractionService::isSymbolArrangementLine($line)) {
+                return trim($body . "\n" . $line);
+            }
+        }
+        if (preg_match(
+            '/((?:[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ]\s+){7,}[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫âÃÂ])/u',
+            $window,
+            $am
+        )) {
+            $candidate = trim(preg_replace('/\s+/u', ' ', $am[1]) ?? $am[1]);
+            if ($candidate !== '' && !str_contains($body, $candidate)) {
+                return trim($body . "\n" . $candidate);
+            }
+        }
+
+        return $body;
     }
 
     private function isSharedAnswerKeyDirections(string $body): bool

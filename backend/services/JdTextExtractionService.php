@@ -149,12 +149,24 @@ final class JdTextExtractionService
             "$1\n\n$2",
             $text
         ) ?? $text;
+        // Keep symbol-arrangement token rows on their own line before the next question.
+        $text = preg_replace(
+            '/(arrangement[^\n]{0,160}?)\s+((?:[\p{L}\p{N}@#%©$₹*&□■â]\s+){7,}[\p{L}\p{N}@#%©$₹*&□■â])\s+(?=\d{1,3}\)\s)/iu',
+            "$1\n$2\n",
+            $text
+        ) ?? $text;
         // Option line glued to a directions block (e.g. "e) 17 Directions (7 - 11):").
         $text = preg_replace('/(\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
         $text = preg_replace('/(\d{1,3}\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
+        $beforeRepair = $text;
         $text = self::repairCommonPdfMojibake($text);
         if (self::isGarbledExtract($text)) {
-            return '';
+            // Mojibake repair can smash symbol-arrangement lines (© □ â); keep the pre-repair text.
+            if (!self::isGarbledExtract($beforeRepair)) {
+                $text = $beforeRepair;
+            } else {
+                return '';
+            }
         }
         if (mb_strlen($text) > self::MAX_TEXT_CHARS) {
             $text = mb_substr($text, 0, self::MAX_TEXT_CHARS);
@@ -298,8 +310,36 @@ final class JdTextExtractionService
         if (str_contains($line, '?')) {
             return true;
         }
+        if (self::isSymbolArrangementLine($line)) {
+            return true;
+        }
 
         return false;
+    }
+
+    /** Letter/number/symbol bank-exam arrangement rows must not be treated as headers. */
+    public static function isSymbolArrangementLine(string $line): bool
+    {
+        $line = trim(preg_replace('/\s+/u', ' ', $line) ?? $line);
+        if ($line === '' || mb_strlen($line) < 11) {
+            return false;
+        }
+        // e.g. "T 8 3 1 7 F J 5 % E R @ 4 D A 2 B © Q K 3 1 â □ □ U H 6 L"
+        if (preg_match('/^(?:[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫◊◆âÃÂ?¿¡\/\\\\]\s+){7,}[\p{L}\p{N}@#%©®™$₹*&+\-=□■▪▫◊◆âÃÂ?¿¡\/\\\\]$/u', $line) !== 1) {
+            return false;
+        }
+        $tokens = preg_split('/\s+/u', $line) ?: [];
+        if (count($tokens) < 8) {
+            return false;
+        }
+        $short = 0;
+        foreach ($tokens as $tok) {
+            if (mb_strlen($tok) <= 2) {
+                $short++;
+            }
+        }
+
+        return $short / count($tokens) >= 0.75;
     }
 
     public static function isGarbledExtract(string $text): bool
@@ -484,8 +524,25 @@ final class JdTextExtractionService
         if ($text === '' || !preg_match('/[âÃÂ]/u', $text)) {
             return $text;
         }
+
+        // Arrangement lines often contain â / □ as printed (or OCR) tokens. A whole-document
+        // Latin-1 iconv would delete © □ and can make a good extract look "garbled".
+        $hasArrangement = preg_match('/letter[\s\/]*number[\s\/]*symbol\s+arrangement/iu', $text) === 1;
+        if ($hasArrangement || preg_match('/(?:^|\n)\s*(?:[\p{L}\p{N}@#%©$₹*&]\s+){7,}[\p{L}\p{N}@#%©$₹*&□■]/mu', $text) === 1) {
+            return str_replace(
+                ["â€™", "â€œ", "â€", "â€˜", "â€“", "â€”", "Â ", "Â"],
+                ["'", '"', '"', "'", '–', '—', ' ', ''],
+                $text
+            );
+        }
+
         $fixed = @iconv('UTF-8', 'ISO-8859-1//IGNORE', $text);
         if (is_string($fixed) && $fixed !== '' && mb_strlen($fixed) > 0) {
+            $origSpecial = preg_match_all('/[©#₹□■▪▫]/u', $text);
+            $fixSpecial = preg_match_all('/[©#₹□■▪▫]/u', $fixed);
+            if ($fixSpecial < $origSpecial) {
+                return $text;
+            }
             if (!self::hasLikelyFontEncodingIssues($fixed)
                 || self::manualExtractQuality($fixed) > self::manualExtractQuality($text)) {
                 return $fixed;
