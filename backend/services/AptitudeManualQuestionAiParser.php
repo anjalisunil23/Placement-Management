@@ -154,7 +154,9 @@ SYS;
             $qNum = max(0, (int) ($row['questionNumber'] ?? 0));
             $prompt = AptitudeManualQuestionParser::stripEmbeddedQuestionNumber($prompt, $qNum);
             $prompt = AptitudeManualQuestionParser::cutAtNextDirectionsRange($prompt);
+            $prompt = AptitudeManualQuestionParser::cutAtNextSectionHeading($prompt);
             $directions = AptitudeManualQuestionParser::cutAtNextDirectionsRange($directions);
+            $directions = AptitudeManualQuestionParser::cutAtNextSectionHeading($directions);
             if ($prompt === '') {
                 continue;
             }

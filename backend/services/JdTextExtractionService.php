@@ -143,6 +143,12 @@ final class JdTextExtractionService
         $text = preg_replace('/(\s)(\d{1,3}\)\s+(?=[A-Za-z(]))/u', "\n$2", $text) ?? $text;
         $text = preg_replace('/(\s)(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "\n\n$2", $text) ?? $text;
         $text = preg_replace('/(\s)(Directions\s*:)/iu', "\n\n$2", $text) ?? $text;
+        // Keep section topic headings on their own line (not glued to option E).
+        $text = preg_replace(
+            '/(\S)\s+((?:Verbal\s+Ability|Quantitative\s+Aptitude|Reasoning(?:\s+Ability)?|English\s+Language)\s*(?:\([^)]*\))?)/iu',
+            "$1\n\n$2",
+            $text
+        ) ?? $text;
         // Option line glued to a directions block (e.g. "e) 17 Directions (7 - 11):").
         $text = preg_replace('/(\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;
         $text = preg_replace('/(\d{1,3}\))\s*(Directions\s*\(\d+\s*-\s*\d+\)\s*:)/iu', "$1\n\n$2", $text) ?? $text;

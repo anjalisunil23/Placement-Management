@@ -76,10 +76,18 @@ final class AptitudeManualQuestionParser
                 if ($qNum !== null && empty($parsed['questionNumber'])) {
                     $parsed['questionNumber'] = $qNum;
                 }
-                $parsed['prompt'] = self::stripEmbeddedQuestionNumber(
-                    (string) ($parsed['prompt'] ?? ''),
-                    (int) ($parsed['questionNumber'] ?? $qNum ?? 0)
+                $parsed['prompt'] = self::cutAtNextSectionHeading(
+                    self::stripEmbeddedQuestionNumber(
+                        (string) ($parsed['prompt'] ?? ''),
+                        (int) ($parsed['questionNumber'] ?? $qNum ?? 0)
+                    )
                 );
+                if (isset($parsed['options']) && is_array($parsed['options'])) {
+                    $parsed['options'] = array_map(
+                        static fn ($o) => self::cutAtNextSectionHeading((string) $o),
+                        $parsed['options']
+                    );
+                }
                 $out[] = $parsed;
             }
         }
@@ -397,37 +405,119 @@ final class AptitudeManualQuestionParser
     }
 
     /**
-     * @return array<int, string> question number => directions + passage prefix
+     * @return array<int, string> question number => passage / arrangement prefix (no Directions label)
      */
     private function mapDirectionPassages(string $text): array
     {
         $map = [];
-        if (!preg_match_all(
-            '/Directions\s*\((\d+)\s*-\s*(\d+)\)\s*:([\s\S]*?)(?=\n\s*(?:\d{1,3}\)\s|\d{1,4}[\.\):]\s))/iu',
+        if (preg_match_all(
+            '/Directions\s*\((\d+)\s*[-–]\s*(\d+)\)\s*:([\s\S]*?)(?=\n\s*(?:\d{1,3}\)\s|\d{1,4}[\.\):]\s))/iu',
             $text,
             $matches,
             PREG_SET_ORDER
         )) {
-            return $map;
+            foreach ($matches as $m) {
+                $start = (int) $m[1];
+                $end = (int) $m[2];
+                if ($start <= 0 || $end < $start || $end - $start > 30) {
+                    continue;
+                }
+                $body = $this->normalizePassageBody((string) ($m[3] ?? ''));
+                if ($body === '') {
+                    continue;
+                }
+                for ($q = $start; $q <= $end; $q++) {
+                    $map[$q] = $body;
+                }
+            }
         }
-        foreach ($matches as $m) {
-            $start = (int) $m[1];
-            $end = (int) $m[2];
-            if ($start <= 0 || $end < $start || $end - $start > 30) {
-                continue;
-            }
-            $body = trim(preg_replace('/\s+/u', ' ', $m[3]) ?? $m[3]);
-            $body = self::stripDirectionsRangeLabel($body);
-            if ($body === '') {
-                continue;
-            }
-            // Keep the passage only — do not prefix "Directions (N–M):" on created questions.
-            for ($q = $start; $q <= $end; $q++) {
-                $map[$q] = $body;
+
+        // Unnumbered "Directions:" + arrangement/study text applying to the next question(s).
+        if (preg_match_all(
+            '/Directions\s*(?!\(\s*\d+\s*[-–]\s*\d+\s*\))\s*:\s*([\s\S]*?)(?=\n\s*(?:\d{1,3}\)\s|\d{1,4}[\.\):]\s))/iu',
+            $text,
+            $openMatches,
+            PREG_SET_ORDER | PREG_OFFSET_CAPTURE
+        )) {
+            foreach ($openMatches as $m) {
+                $rawBody = (string) ($m[1][0] ?? '');
+                if ($this->isSharedAnswerKeyDirections($rawBody)) {
+                    continue;
+                }
+                $body = $this->normalizePassageBody($rawBody);
+                if ($body === '' || mb_strlen($body) < 12) {
+                    continue;
+                }
+                $afterPos = (int) ($m[0][1] ?? 0) + strlen((string) ($m[0][0] ?? ''));
+                $tail = substr($text, $afterPos);
+                if (!is_string($tail) || !preg_match('/^\s*(\d{1,3})\)\s+/u', $tail, $qm)) {
+                    continue;
+                }
+                $firstQ = (int) $qm[1];
+                if ($firstQ <= 0) {
+                    continue;
+                }
+                $span = preg_match('/\bquestions\b/iu', $rawBody) ? 5 : 1;
+                for ($q = $firstQ; $q < $firstQ + $span; $q++) {
+                    if (isset($map[$q])) {
+                        continue;
+                    }
+                    // Stop if a later Directions/section appears before this question number.
+                    if ($q > $firstQ && !$this->questionFollowsSamePassage($text, $afterPos, $q)) {
+                        break;
+                    }
+                    $map[$q] = $body;
+                }
             }
         }
 
         return $map;
+    }
+
+    private function normalizePassageBody(string $body): string
+    {
+        $body = self::cutAtNextDirectionsRange($body);
+        $body = self::cutAtNextSectionHeading($body);
+        $body = trim(preg_replace('/\s+/u', ' ', $body) ?? $body);
+        $body = self::stripDirectionsRangeLabel($body);
+        $body = preg_replace('/^\s*Directions\s*:\s*/iu', '', $body) ?? $body;
+
+        return trim($body);
+    }
+
+    private function isSharedAnswerKeyDirections(string $body): bool
+    {
+        return preg_match('/Mark\s+your\s+answer\s+as\s*\(\s*1\s*\)/iu', $body) === 1
+            || preg_match('/statement\s*\(\s*i\s*\)/iu', $body) === 1
+            || (
+                preg_match('/\bconclusions?\b/iu', $body) === 1
+                && preg_match('/\bA\)\s*If\s+(?:only|either|both|neither)/iu', $body) === 1
+            );
+    }
+
+    private function questionFollowsSamePassage(string $text, int $passageEndPos, int $qNum): bool
+    {
+        $slice = substr($text, $passageEndPos);
+        if (!is_string($slice)) {
+            return false;
+        }
+        $n = preg_quote((string) $qNum, '/');
+        if (!preg_match('/(?<![0-9])' . $n . '\)\s+/u', $slice, $m, PREG_OFFSET_CAPTURE)) {
+            return false;
+        }
+        $at = (int) ($m[0][1] ?? 0);
+        $between = substr($slice, 0, $at);
+        if (self::nextDirectionsRangeOffset($between) !== null) {
+            return false;
+        }
+        if (preg_match('/Directions\s*:/iu', $between) === 1) {
+            return false;
+        }
+        if (self::nextSectionHeadingOffset($between) !== null) {
+            return false;
+        }
+
+        return true;
     }
 
     /** Remove leading "Directions (N–M):" / "Directions (N-M):" labels from created question text. */
@@ -452,10 +542,38 @@ final class AptitudeManualQuestionParser
         return trim($text);
     }
 
+    /**
+     * Cut next topic/section headings (e.g. "Verbal Ability (English Language)") so they
+     * are not glued onto the previous question's options or prompt.
+     */
+    public static function cutAtNextSectionHeading(string $text): string
+    {
+        $at = self::nextSectionHeadingOffset($text);
+        if ($at === null) {
+            return trim($text);
+        }
+
+        return trim(substr($text, 0, $at));
+    }
+
     private static function nextDirectionsRangeOffset(string $text, int $from = 0): ?int
     {
         if (preg_match('/Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:/iu', $text, $m, PREG_OFFSET_CAPTURE, $from)) {
             return (int) $m[0][1];
+        }
+
+        return null;
+    }
+
+    private static function nextSectionHeadingOffset(string $text, int $from = 0): ?int
+    {
+        $pattern = '/(?:^|[\n\r]\s*|\s{2,}|(?<=[a-z0-9.]))'
+            . '((?:Verbal\s+Ability|Quantitative\s+Aptitude|Reasoning(?:\s+Ability)?'
+            . '|English\s+Language|General\s+Awareness|Computer\s+Knowledge'
+            . '|Numerical\s+Ability|Logical\s+Reasoning)'
+            . '(?:\s*\([^)]*\))?)/iu';
+        if (preg_match($pattern, $text, $m, PREG_OFFSET_CAPTURE, $from)) {
+            return (int) ($m[1][1] ?? $m[0][1] ?? 0);
         }
 
         return null;
@@ -500,6 +618,7 @@ final class AptitudeManualQuestionParser
     private function stripTrailingDirectionsTail(string $block): string
     {
         $block = self::cutAtNextDirectionsRange($block);
+        $block = self::cutAtNextSectionHeading($block);
         if (preg_match('/\([a-eA-E]\)|[a-eA-E]\)/u', $block)
             && preg_match('/\s+Directions\s*:/iu', $block, $dm, PREG_OFFSET_CAPTURE)) {
             $block = trim(substr($block, 0, (int) $dm[0][1]));
@@ -939,8 +1058,10 @@ final class AptitudeManualQuestionParser
 
     private function cleanOptionText(string $text): string
     {
+        $text = self::cutAtNextDirectionsRange($text);
+        $text = self::cutAtNextSectionHeading($text);
         $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
-        $text = preg_replace('/\s+Directions\s*\(\d+\s*-\s*\d+\)\s*:.*$/iu', '', $text) ?? $text;
+        $text = preg_replace('/\s+Directions\s*\(\s*\d+\s*[-–]\s*\d+\s*\)\s*:.*$/iu', '', $text) ?? $text;
         $text = preg_replace('/\s+\d{1,3}\)\s+Study\s+the\s+following.*$/iu', '', $text) ?? $text;
 
         return trim($text);
