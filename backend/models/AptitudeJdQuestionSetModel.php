@@ -285,7 +285,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             }
             $norm['id'] = 'jdq-' . ($i + 1) . '-' . bin2hex(random_bytes(4));
             $norm['source'] = 'MANUAL_UPLOAD';
-            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'answerSource', 'aiAnalyzed', 'directionsBlock', 'questionType'] as $metaKey) {
+            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'answerSource', 'aiAnalyzed', 'aiAnalyzeFailed', 'directionsBlock', 'questionType'] as $metaKey) {
                 if (array_key_exists($metaKey, $q)) {
                     $norm[$metaKey] = $q[$metaKey];
                 }
@@ -604,6 +604,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 $questionView['answerKnown'] = !empty($q['answerKnown']);
                 $questionView['answerSource'] = (string) ($q['answerSource'] ?? '');
                 $questionView['aiAnalyzed'] = !empty($q['aiAnalyzed']);
+                $questionView['aiAnalyzeFailed'] = !empty($q['aiAnalyzeFailed']);
             }
             $questions[] = $questionView;
         }

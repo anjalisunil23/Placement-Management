@@ -1257,7 +1257,7 @@ final class AptitudeService
         $pendingBefore = 0;
         $eligibleBefore = 0;
         foreach ($questions as $q) {
-            if (!is_array($q) || !empty($q['answerKnown'])) {
+            if (!is_array($q) || !empty($q['answerKnown']) || !empty($q['aiAnalyzeFailed'])) {
                 continue;
             }
             $pendingBefore++;
@@ -1294,14 +1294,14 @@ final class AptitudeService
 
         $pendingAfter = 0;
         foreach ($questions as $q) {
-            if (is_array($q) && empty($q['answerKnown'])) {
+            if (is_array($q) && empty($q['answerKnown']) && empty($q['aiAnalyzeFailed'])) {
                 $pendingAfter++;
             }
         }
 
         $eligibleAfter = 0;
         foreach ($questions as $q) {
-            if (!is_array($q) || !empty($q['answerKnown'])) {
+            if (!is_array($q) || !empty($q['answerKnown']) || !empty($q['aiAnalyzeFailed'])) {
                 continue;
             }
             $opts = array_values(array_filter(

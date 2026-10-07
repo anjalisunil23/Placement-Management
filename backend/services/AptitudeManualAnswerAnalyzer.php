@@ -34,7 +34,7 @@ final class AptitudeManualAnswerAnalyzer
 
         $pending = [];
         foreach ($questions as $i => $q) {
-            if (!empty($q['answerKnown'])) {
+            if (!empty($q['answerKnown']) || !empty($q['aiAnalyzeFailed'])) {
                 continue;
             }
             $opts = array_values(array_filter(
@@ -58,7 +58,7 @@ final class AptitudeManualAnswerAnalyzer
             if ($maxResolve > 0 && $resolved >= $maxResolve) {
                 break;
             }
-            $hits = $this->analyzeBatch($batch);
+            $hits = $this->analyzeBatchWithFallback($batch);
             foreach ($hits as $idx => $hit) {
                 $idx = (int) $idx;
                 if (!isset($questions[$idx]) || !is_array($questions[$idx])) {
@@ -90,7 +90,36 @@ final class AptitudeManualAnswerAnalyzer
             }
         }
 
+        if ($maxResolve === 1 && count($pending) === 1 && $resolved === 0) {
+            $onlyIdx = (int) array_key_first($pending);
+            if (isset($questions[$onlyIdx]) && is_array($questions[$onlyIdx])) {
+                $questions[$onlyIdx]['aiAnalyzeFailed'] = true;
+            }
+        }
+
         return $resolved;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $batch
+     * @return array<int, array{answerLetter:string,explanation:string}>
+     */
+    private function analyzeBatchWithFallback(array $batch): array
+    {
+        $hits = $this->analyzeBatch($batch);
+        if ($hits !== [] || count($batch) <= 1) {
+            return $hits;
+        }
+
+        $merged = [];
+        foreach ($batch as $idx => $q) {
+            $one = $this->analyzeBatch([(int) $idx => $q]);
+            foreach ($one as $k => $v) {
+                $merged[(int) $k] = $v;
+            }
+        }
+
+        return $merged;
     }
 
     /**
@@ -118,12 +147,17 @@ final class AptitudeManualAnswerAnalyzer
                 continue;
             }
             $num = (int) ($q['questionNumber'] ?? 0);
+            $directions = trim((string) ($q['directionsBlock'] ?? ''));
+            $prompt = trim((string) ($q['prompt'] ?? ''));
+            if ($directions !== '' && !str_contains($prompt, mb_substr($directions, 0, 40))) {
+                $prompt = $directions . "\n\n" . $prompt;
+            }
             $items[] = [
                 'index' => (int) $idx,
                 'questionNumber' => $num > 0 ? $num : null,
-                'prompt' => trim((string) ($q['prompt'] ?? '')),
+                'prompt' => mb_strlen($prompt) > 3500 ? (mb_substr($prompt, 0, 3500) . '…') : $prompt,
                 'options' => $optLines,
-                'questionType' => $questionType,
+                'questionType' => $questionType !== '' ? $questionType : 'MCQ',
             ];
         }
         if ($items === []) {
@@ -155,17 +189,38 @@ SYS;
             return [];
         }
 
+        $indexByQuestionNumber = [];
+        foreach ($items as $item) {
+            $qn = (int) ($item['questionNumber'] ?? 0);
+            if ($qn > 0) {
+                $indexByQuestionNumber[$qn] = (int) $item['index'];
+            }
+        }
+
         $out = [];
-        foreach ((array) ($raw['answers'] ?? []) as $row) {
+        $answerRows = (array) ($raw['answers'] ?? []);
+        if ($answerRows === [] && isset($raw['index'])) {
+            $answerRows = [$raw];
+        }
+        foreach ($answerRows as $pos => $row) {
             if (!is_array($row)) {
                 continue;
             }
             $idx = (int) ($row['index'] ?? -1);
+            if ($idx < 0 && isset($row['questionNumber'])) {
+                $idx = (int) ($indexByQuestionNumber[(int) $row['questionNumber']] ?? -1);
+            }
+            if ($idx < 0 && count($items) === 1) {
+                $idx = (int) ($items[0]['index'] ?? -1);
+            }
+            if ($idx < 0 && is_int($pos) && isset($items[$pos])) {
+                $idx = (int) $items[$pos]['index'];
+            }
             if ($idx < 0) {
                 continue;
             }
-            $letter = strtoupper(trim((string) ($row['answerLetter'] ?? '')));
-            if (!preg_match('/^[A-E1-5]$/', $letter)) {
+            $letter = $this->normalizeAnswerLetter((string) ($row['answerLetter'] ?? $row['answer'] ?? ''));
+            if ($letter === '') {
                 continue;
             }
             $out[$idx] = [
@@ -180,16 +235,41 @@ SYS;
     /**
      * @param list<string> $options
      */
+    private function normalizeAnswerLetter(string $raw): string
+    {
+        $letter = strtoupper(trim($raw));
+        if ($letter === '') {
+            return '';
+        }
+        if (preg_match('/^([A-E])$/', $letter, $m) === 1) {
+            return $m[1];
+        }
+        if (preg_match('/^([1-5])$/', $letter, $m) === 1) {
+            return $m[1];
+        }
+        if (preg_match('/(?:OPTION|ANSWER|CHOICE)\s*([A-E1-5])/i', $raw, $m) === 1) {
+            return strtoupper($m[1]);
+        }
+        if (preg_match('/\b([A-E])\b/', $letter, $m) === 1) {
+            return $m[1];
+        }
+        if (preg_match('/\b([1-5])\b/', $letter, $m) === 1) {
+            return $m[1];
+        }
+
+        return '';
+    }
+
     private function resolveOptionIndex(string $letter, array $options, string $questionType): int
     {
         if ($letter === '') {
             return -1;
         }
-        if ($questionType === 'DATA_SUFFICIENCY' && preg_match('/^[1-5]$/', $letter) === 1) {
-            return ((int) $letter) - 1;
-        }
         if (preg_match('/^[A-E]$/', $letter) === 1) {
             return ord($letter) - ord('A');
+        }
+        if (preg_match('/^[1-5]$/', $letter) === 1) {
+            return ((int) $letter) - 1;
         }
 
         return -1;

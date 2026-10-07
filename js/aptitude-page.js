@@ -1759,42 +1759,52 @@
     statusEl.innerHTML = html;
   }
 
+  let jdAnswerInferInflight = false;
+
+  function jdPendingAnswerCount(detail) {
+    return (detail?.questions || []).filter((q) => !q.answerKnown && !q.aiAnalyzeFailed).length;
+  }
+
   async function inferJdSetAnswersAfterUpload(setId, { statusEl, questionCount = 0, pendingStart = 0 } = {}) {
     const sid = String(setId || '');
     if (!sid) return { pending: 0, answersKnown: 0 };
     const total = Math.max(0, Number(questionCount) || 0);
-    const batchLimit = 6;
+    const batchLimit = 4;
     let pending = Math.max(0, Number(pendingStart) || 0);
     let answersKnown = Math.max(0, total > 0 ? total - pending : 0);
     let rounds = 0;
-    while (pending > 0 && rounds < 80) {
+    let consecutiveZeros = 0;
+    let useLimit = batchLimit;
+    while (pending > 0 && rounds < 120) {
       const batchNum = rounds + 1;
       setManualJdSaveStatus(
         statusEl,
-        `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Batch ${batchNum}: contacting AI for up to ${batchLimit} question(s)… `
+        `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Batch ${batchNum}: contacting AI for up to ${useLimit} question(s)… `
           + `${answersKnown}/${total || '?'} done`
           + (pending > 0 ? `, ${pending} remaining` : '')
           + '. Each batch may take up to a minute.'
       );
       const res = await api(`/aptitude/jd-sets/${encodeURIComponent(sid)}/analyze-answers`, {
         method: 'POST',
-        body: { limit: batchLimit },
+        body: { limit: useLimit },
         timeoutMs: 180000,
       });
       if (!res?.success) throw new Error(res?.message || 'Could not infer answers.');
       pending = Number(res.data?.pending ?? 0);
       answersKnown = Number(res.data?.answersKnown ?? answersKnown);
       const analyzed = Number(res.data?.analyzed ?? 0);
-      const eligible = Number(res.data?.eligible ?? -1);
       if (res.data?.set) jdSetDetailsCache[sid] = res.data.set;
       if (analyzed <= 0 && pending > 0) {
-        const hint = res.data?.message
-          || res.message
-          || (eligible === 0
-            ? 'Questions are missing answer options — edit them or re-upload a clearer PDF.'
-            : 'Ensure OpenAI is configured on the server, then try again.');
-        throw new Error(hint);
+        consecutiveZeros += 1;
+        if (useLimit > 1) {
+          useLimit = 1;
+          continue;
+        }
+        if (consecutiveZeros >= 10) break;
+        continue;
       }
+      consecutiveZeros = 0;
+      useLimit = batchLimit;
       rounds += 1;
       setManualJdSaveStatus(
         statusEl,
@@ -1805,6 +1815,27 @@
       if (total <= 0 && pending <= 0) break;
     }
     return { pending, answersKnown };
+  }
+
+  async function resumeJdAnswerInferenceIfNeeded(setId, detail, statusEl) {
+    const sid = String(setId || '');
+    if (!sid || !access.canManage || jdAnswerInferInflight) return detail;
+    const pending = jdPendingAnswerCount(detail);
+    if (pending <= 0) return detail;
+    jdAnswerInferInflight = true;
+    try {
+      await inferJdSetAnswersAfterUpload(sid, {
+        statusEl,
+        questionCount: (detail?.questions || []).length,
+        pendingStart: pending,
+      });
+      return jdSetDetailsCache[sid] || (await getJdSetDetail(sid)) || detail;
+    } catch (err) {
+      toast(err?.message || 'Could not finish inferring answers.', 'error');
+      return detail;
+    } finally {
+      jdAnswerInferInflight = false;
+    }
   }
 
   async function saveJdManualUpload() {
@@ -1933,14 +1964,19 @@
           status,
           `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Saved ${count} question(s). Starting automatic answer inference…`
         );
-        const inferred = await inferJdSetAnswersAfterUpload(setId, {
-          statusEl: status,
-          questionCount: count,
-          pendingStart: answersPending,
-        });
-        answersPending = Number(inferred.pending ?? answersPending);
-        answersKnown = Number(inferred.answersKnown ?? answersKnown);
-        answersAnalyzed = Math.max(answersAnalyzed, Math.max(0, answersKnown - answersFromKey));
+        try {
+          const inferred = await inferJdSetAnswersAfterUpload(setId, {
+            statusEl: status,
+            questionCount: count,
+            pendingStart: answersPending,
+          });
+          answersPending = Number(inferred.pending ?? answersPending);
+          answersKnown = Number(inferred.answersKnown ?? answersKnown);
+          answersAnalyzed = Math.max(answersAnalyzed, Math.max(0, answersKnown - answersFromKey));
+        } catch (inferErr) {
+          toast(inferErr?.message || 'Some answers could not be inferred. Open Questions to continue automatically.', 'error');
+          delete jdSetDetailsCache[setId];
+        }
       }
       const answerHint = count > 0 && answersKnown > 0
         ? ` Answers shown for ${answersKnown}/${count}`
@@ -2409,11 +2445,14 @@
       const ocrNote = meta.ocrAttempted ? ' · OCR' : '';
       const pages = meta.pageCount > 0 ? ` · ${meta.pageCount} page(s) processed` : '';
       const fname = esc(detail?.jdFilename || 'Uploaded manual');
-      const unknownCount = qs.filter((q) => !q.answerKnown).length;
+      const unknownCount = qs.filter((q) => !q.answerKnown && !q.aiAnalyzeFailed).length;
       const knownCount = qs.length - unknownCount;
+      const failedCount = qs.filter((q) => !q.answerKnown && q.aiAnalyzeFailed).length;
       const pendingNote = editable && unknownCount > 0
-        ? `<div class="small text-warning mb-3">${unknownCount} answer(s) could not be inferred automatically — use Edit on those questions.</div>`
-        : '';
+        ? `<div class="small text-info mb-3" data-jd-infer-status>${unknownCount} answer(s) still being inferred automatically…</div>`
+        : (editable && failedCount > 0
+          ? `<div class="small text-warning mb-3">${failedCount} answer(s) need manual Edit — AI could not infer them.</div>`
+          : '');
       const summary = `<div class="small text-muted-2 mb-3 border-bottom pb-2">
         <div><span class="fw-semibold text-body">${fname}</span></div>
         <div>Questions detected: <strong>${qs.length}</strong>${knownCount > 0 ? ` · Answers with explanations: <strong>${knownCount}</strong>` : ''}${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
@@ -2617,12 +2656,20 @@
         panel.innerHTML = '<div class="small text-muted-2 py-2"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading questions…</div>';
         panel.classList.remove('d-none');
         try {
-          const detail = await getDetail(id);
+          let detail = await getDetail(id);
           panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
-          const qPanel = panel.querySelector('[data-jd-questions-panel]');
+          let qPanel = panel.querySelector('[data-jd-questions-panel]');
           bindManualQuestionEditEvents(qPanel);
           bindManualQuestionShowAll(qPanel);
           btn.textContent = 'Hide';
+          if (allowDelete && access.canManage && jdPendingAnswerCount(detail) > 0) {
+            const statusEl = panel.querySelector('[data-jd-infer-status]') || panel;
+            detail = await resumeJdAnswerInferenceIfNeeded(id, detail, statusEl);
+            panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
+            qPanel = panel.querySelector('[data-jd-questions-panel]');
+            bindManualQuestionEditEvents(qPanel);
+            bindManualQuestionShowAll(qPanel);
+          }
         } catch (err) {
           panel.innerHTML = `<p class="small text-danger mb-0">${esc(err?.message || 'Could not load questions.')}</p>`;
           btn.textContent = 'Questions';
