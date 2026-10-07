@@ -2335,7 +2335,7 @@ final class OfficerDataService
         if ($detailsModel->isAvailable()) {
             $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
             $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students);
-            $merged['alumniRoleReconcile'] = $detailsModel->reconcileAlumniWithoutExplicitAesRole();
+            $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows($alumni);
         }
 
         // Legacy file snapshot kept for rollback/audit only.
@@ -2438,7 +2438,7 @@ final class OfficerDataService
     private function recordQualifiesForSyncPass(array $record, string $syncStudRole): bool
     {
         if ($syncStudRole === 'alumni') {
-            return $this->recordQualifiesForAlumniTab($record);
+            return AesApiService::qualifiesAsAlumniDirectoryRecord($record);
         }
 
         $role = AesApiService::normalizeStudRole($record);
@@ -3155,7 +3155,7 @@ final class OfficerDataService
 
         $rows = array_values(array_filter(
             $rows,
-            static fn (array $row): bool => AesApiService::normalizeStudRole($row) === 'alumni'
+            static fn (array $row): bool => AesApiService::qualifiesAsAlumniDirectoryRecord($row)
         ));
         foreach ($rows as &$row) {
             $row['studRole'] = 'alumni';
@@ -3590,15 +3590,7 @@ final class OfficerDataService
      */
     private function recordQualifiesForAlumniTab(array $record): bool
     {
-        $role = AesApiService::normalizeStudRole($record);
-        if ($role === 'alumni') {
-            return true;
-        }
-        if ($role === 'student') {
-            return false;
-        }
-
-        return false;
+        return AesApiService::qualifiesAsAlumniDirectoryRecord($record);
     }
 
     /**

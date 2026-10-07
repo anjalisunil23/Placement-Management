@@ -544,6 +544,64 @@ class StudentDetailsModel extends BaseModel
     }
 
     /**
+     * Demote alumni rows absent from the latest AES alumni fetch (upsert-only sync leaves stale rows).
+     *
+     * @param list<array<string, mixed>> $authoritativeAlumniRecords
+     * @return array{demoted:int}
+     */
+    public function reconcileStaleAlumniRows(array $authoritativeAlumniRecords): array
+    {
+        $stats = ['demoted' => 0];
+        if (!$this->bootstrapTable()) {
+            return $stats;
+        }
+
+        $authoritative = [];
+        foreach ($authoritativeAlumniRecords as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = self::resolveAesAdmno($record);
+            if ($key !== '' && AesApiService::qualifiesAsAlumniDirectoryRecord($record)) {
+                $authoritative[$key] = true;
+            }
+        }
+
+        try {
+            $stmt = $this->db->query(
+                'SELECT id, payload FROM `student_details` WHERE stud_role = \'alumni\''
+            );
+        } catch (\Throwable) {
+            return $stats;
+        }
+
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $doc = $this->rowToDoc($row);
+            $admno = self::resolveAesAdmno($doc);
+            if ($admno === '' || isset($authoritative[$admno])) {
+                continue;
+            }
+
+            $id = (string) ($doc['_id'] ?? $row['id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            unset($doc['_id']);
+            $doc['studRole'] = 'student';
+            $doc['stud_role'] = 'Student';
+            $this->applyRegistrationStatusToPayload($doc);
+            $doc['updatedAt'] = DocumentHelper::now();
+            $this->update($id, $doc);
+            $stats['demoted']++;
+        }
+
+        return $stats;
+    }
+
+    /**
      * Demote alumni rows stored without explicit AES stud_role = Alumni.
      *
      * @return array{demoted:int}
@@ -880,7 +938,7 @@ class StudentDetailsModel extends BaseModel
         $existingRole = (string) ($existing['studRole'] ?? '');
         $incomingRole = (string) ($incoming['studRole'] ?? '');
         if ($incomingRole === 'alumni'
-            && AesApiService::normalizeStudRole($record) !== 'alumni') {
+            && AesApiService::normalizeStudRole($record) === 'student') {
             $incoming['studRole'] = 'student';
             $incoming['stud_role'] = 'Student';
         }
