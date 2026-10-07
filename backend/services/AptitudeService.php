@@ -821,6 +821,7 @@ final class AptitudeService
                 'answersAnalyzed' => $answersAnalyzed,
                 'answersFromKey' => $answersFromKey,
                 'answersKnown' => $answersKnown,
+                'answersPending' => max(0, count($parsed) - $answersKnown),
                 'importMeta' => $importMeta,
             ];
         } catch (\InvalidArgumentException $e) {
@@ -1205,6 +1206,93 @@ final class AptitudeService
     /**
      * @return array<string, mixed>
      */
+    /**
+     * Infer answers/explanations for unanswered MCQs in a local bank JD set (batched).
+     *
+     * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
+    public function analyzeJdSetAnswers(array $admin, string $id, int $limit = 12): array
+    {
+        @set_time_limit(max(120, (int) ($_ENV['APTITUDE_MANUAL_UPLOAD_TIME_LIMIT'] ?? 600)));
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid JD set id.', 400);
+        }
+        $limit = max(1, min(30, $limit));
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $set = $model->findById($id);
+        if ($set === null) {
+            Response::notFound('JD question set not found.');
+        }
+        if (!(new OpenAIService())->isConfigured()) {
+            Response::error('OpenAI is not configured on the server. Answers cannot be inferred automatically.', 422);
+        }
+
+        $questions = array_values((array) ($set['questions'] ?? []));
+        $pendingBefore = 0;
+        foreach ($questions as $q) {
+            if (is_array($q) && empty($q['answerKnown'])) {
+                $pendingBefore++;
+            }
+        }
+        if ($pendingBefore === 0) {
+            return [
+                'set' => $model->detailView($set),
+                'analyzed' => 0,
+                'pending' => 0,
+                'answersKnown' => $this->countKnownAnswers($questions),
+            ];
+        }
+
+        $analyzed = (new AptitudeManualAnswerAnalyzer())->analyze($questions, $limit);
+        $importMeta = is_array($set['importMeta'] ?? null) ? $set['importMeta'] : [];
+        $importMeta['answersAnalyzed'] = (int) ($importMeta['answersAnalyzed'] ?? 0) + $analyzed;
+        $importMeta['answersKnown'] = $this->countKnownAnswers($questions);
+
+        $detail = $model->saveQuestions($id, $questions);
+        if ($detail === null) {
+            Response::error('Could not save analyzed answers.', 500);
+        }
+        $model->update($id, ['importMeta' => $importMeta]);
+        $saved = $model->findById($id);
+        $detail = $saved !== null ? $model->detailView($saved) : $detail;
+
+        $pendingAfter = 0;
+        foreach ($questions as $q) {
+            if (is_array($q) && empty($q['answerKnown'])) {
+                $pendingAfter++;
+            }
+        }
+
+        return [
+            'set' => $detail,
+            'analyzed' => $analyzed,
+            'pending' => $pendingAfter,
+            'answersKnown' => $this->countKnownAnswers($questions),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @param array<string, mixed> $patch
+     * @return array<string, mixed>
+     */
+    public function patchJdSetQuestion(array $admin, string $setId, string $questionId, array $patch): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($setId)) {
+            Response::error('Invalid JD set id.', 400);
+        }
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $detail = $model->patchQuestion($setId, $questionId, $patch);
+        if ($detail === null) {
+            Response::notFound('JD question set or question not found.');
+        }
+
+        return $detail;
+    }
+
     public function getJdQuestionSet(string $id): array
     {
         $model = new \PMS\Models\AptitudeJdQuestionSetModel();

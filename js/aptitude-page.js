@@ -1888,8 +1888,13 @@
           ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.${answerHint}`
           : 'Saved manual to local bank (no MCQs detected in file).';
       }
+      const answersPending = Number(res.data?.answersPending ?? 0);
+      if (answersPending > 0) {
+        msg += ` Open Questions and use Analyze answers with AI for the remaining ${answersPending}.`;
+      }
       toast(msg.trim(), 'success');
       delete jdSetDetailsCache[String(res.data?.id || '')];
+      jdSetAutoAnalyzeDone.delete(String(res.data?.id || ''));
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();
       await loadJdLibrary();
@@ -2093,7 +2098,7 @@
       ? '<div class="small text-info mb-1">Answer inferred by AI — verify before publishing.</div>'
       : '';
     const answerLine = manualPreview && !answerKnown
-      ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>')
+      ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Pending — use <strong>Analyze answers with AI</strong> above or edit manually.</div>')
       : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : (isSc ? `${esc(answerLabel)})` : `${esc(answerLabel)}.`)} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
     const normOpts = displayOpts.map((o) => String(o || '').trim().toLowerCase()).filter(Boolean);
     const hasDupOpts = manualPreview && normOpts.length >= 2 && new Set(normOpts).size < normOpts.length;
@@ -2224,6 +2229,46 @@
     };
   }
 
+  const jdSetAutoAnalyzeDone = new Set();
+
+  async function runJdAnalyzeAnswers(setId, panel, { limit = 12, silent = false } = {}) {
+    const sid = String(setId || '');
+    if (!sid) return null;
+    const btn = panel?.querySelector('[data-jd-analyze-answers]');
+    btn?.setAttribute('disabled', 'disabled');
+    try {
+      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(sid)}/analyze-answers`, {
+        method: 'POST',
+        body: { limit },
+        timeoutMs: 300000,
+      });
+      if (!res?.success) throw new Error(res?.message || 'Could not analyze answers.');
+      const detail = res.data?.set || res.data;
+      if (detail) jdSetDetailsCache[sid] = detail;
+      if (panel && detail) {
+        const host = panel.closest('[data-jd-questions]') || panel.parentElement;
+        if (host) {
+          host.innerHTML = renderManualQuestionsPanel(detail, { setId: sid, editable: access.canManage });
+          bindManualQuestionEditEvents(host.querySelector('[data-jd-questions-panel]'));
+        }
+      }
+      if (!silent) {
+        const n = Number(res.data?.analyzed ?? 0);
+        const pending = Number(res.data?.pending ?? 0);
+        if (n > 0) {
+          toast(`Analyzed ${n} answer(s)${pending > 0 ? ` — ${pending} still pending` : ''}.`, 'success');
+        } else if (pending > 0) {
+          toast('Could not infer more answers yet. Edit manually or run Analyze again.', 'info');
+        } else {
+          toast('All answers are set.', 'success');
+        }
+      }
+      return res.data;
+    } finally {
+      btn?.removeAttribute('disabled');
+    }
+  }
+
   function bindManualQuestionEditEvents(panel) {
     if (!panel || panel.dataset.jdQEditBound === '1') return;
     panel.dataset.jdQEditBound = '1';
@@ -2264,6 +2309,20 @@
         return;
       }
 
+      const analyzeBtn = e.target.closest('[data-jd-analyze-answers]');
+      if (analyzeBtn) {
+        e.preventDefault();
+        analyzeBtn.setAttribute('disabled', 'disabled');
+        try {
+          await runJdAnalyzeAnswers(setId, panel, { limit: 12 });
+        } catch (err) {
+          toast(err?.message || 'Could not analyze answers.', 'error');
+        } finally {
+          analyzeBtn.removeAttribute('disabled');
+        }
+        return;
+      }
+
       const saveBtn = e.target.closest('[data-jd-q-save]');
       if (saveBtn) {
         e.preventDefault();
@@ -2290,6 +2349,16 @@
         }
       }
     });
+
+    const setId = String(panel.getAttribute('data-jd-set-id') || '');
+    if (access.canManage && setId && !jdSetAutoAnalyzeDone.has(setId)) {
+      const detail = jdSetDetailsCache[setId];
+      const pending = (detail?.questions || []).filter((q) => !q.answerKnown).length;
+      if (pending > 0) {
+        jdSetAutoAnalyzeDone.add(setId);
+        runJdAnalyzeAnswers(setId, panel, { limit: Math.min(12, pending), silent: pending <= 3 }).catch(() => {});
+      }
+    }
   }
 
   function splitManualTextIntoBlocks(text) {
@@ -2323,11 +2392,19 @@
       const ocrNote = meta.ocrAttempted ? ' · OCR' : '';
       const pages = meta.pageCount > 0 ? ` · ${meta.pageCount} page(s) processed` : '';
       const fname = esc(detail?.jdFilename || 'Uploaded manual');
+      const unknownCount = qs.filter((q) => !q.answerKnown).length;
+      const knownCount = qs.length - unknownCount;
+      const analyzeBar = editable && unknownCount > 0
+        ? `<div class="alert alert-info py-2 px-3 small mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <span>${unknownCount} question(s) still need answers${knownCount > 0 ? ` (${knownCount} already set)` : ''}.</span>
+            <button type="button" class="btn btn-sm btn-primary" data-jd-analyze-answers="1">Analyze answers with AI</button>
+          </div>`
+        : '';
       const summary = `<div class="small text-muted-2 mb-3 border-bottom pb-2">
         <div><span class="fw-semibold text-body">${fname}</span></div>
-        <div>Questions detected: <strong>${qs.length}</strong>${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
+        <div>Questions detected: <strong>${qs.length}</strong>${knownCount > 0 ? ` · Answers known: <strong>${knownCount}</strong>` : ''}${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
         ${sections.length ? `<div class="mt-1">Sections: ${sections.map((s) => esc(s)).join(', ')}</div>` : ''}
-      </div>`;
+      </div>${analyzeBar}`;
       let lastDirections = null;
       const cards = qs.map((q, i) => {
         const dir = String(q.directionsBlock || '').trim();

@@ -705,4 +705,76 @@ class AptitudeJdQuestionSetModel extends BaseModel
     {
         return $this->detailView($row, true);
     }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     * @return array<string, mixed>|null
+     */
+    public function saveQuestions(string $setId, array $questions): ?array
+    {
+        if (!Security::isValidId($setId)) {
+            return null;
+        }
+        $set = $this->findById($setId);
+        if ($set === null) {
+            return null;
+        }
+        if (!$this->update($setId, [
+            'questions' => array_values($questions),
+            'questionCount' => count($questions),
+        ])) {
+            return null;
+        }
+        $saved = $this->findById($setId);
+
+        return $saved !== null ? $this->detailView($saved) : null;
+    }
+
+    /**
+     * @param array<string, mixed> $patch
+     * @return array<string, mixed>|null
+     */
+    public function patchQuestion(string $setId, string $questionId, array $patch): ?array
+    {
+        if (!Security::isValidId($setId) || trim($questionId) === '') {
+            return null;
+        }
+        $set = $this->findById($setId);
+        if ($set === null) {
+            return null;
+        }
+        $questions = array_values((array) ($set['questions'] ?? []));
+        $found = false;
+        foreach ($questions as &$q) {
+            if (!is_array($q) || (string) ($q['id'] ?? '') !== $questionId) {
+                continue;
+            }
+            if (array_key_exists('prompt', $patch)) {
+                $q['prompt'] = trim((string) $patch['prompt']);
+            }
+            if (array_key_exists('options', $patch) && is_array($patch['options'])) {
+                $q['options'] = array_values(array_map(static fn ($o) => trim((string) $o), $patch['options']));
+            }
+            if (array_key_exists('correctIndex', $patch)) {
+                $q['correctIndex'] = max(0, (int) $patch['correctIndex']);
+            }
+            if (array_key_exists('explanation', $patch)) {
+                $q['explanation'] = trim((string) $patch['explanation']);
+            }
+            if (array_key_exists('answerKnown', $patch)) {
+                $q['answerKnown'] = !empty($patch['answerKnown']);
+            }
+            if (!empty($patch['answerKnown'])) {
+                $q['lockCorrectIndex'] = true;
+            }
+            $found = true;
+            break;
+        }
+        unset($q);
+        if (!$found) {
+            return null;
+        }
+
+        return $this->saveQuestions($setId, $questions);
+    }
 }

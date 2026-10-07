@@ -21,8 +21,9 @@ final class AptitudeManualAnswerAnalyzer
 
     /**
      * @param list<array<string, mixed>> $questions
+     * @param int $maxResolve Stop after this many newly resolved answers (0 = no limit).
      */
-    public function analyze(array &$questions): int
+    public function analyze(array &$questions, int $maxResolve = 0): int
     {
         if (!$this->openai->isConfigured() || $questions === []) {
             return 0;
@@ -45,9 +46,15 @@ final class AptitudeManualAnswerAnalyzer
         if ($pending === []) {
             return 0;
         }
+        if ($maxResolve > 0 && count($pending) > $maxResolve) {
+            $pending = array_slice($pending, 0, $maxResolve, true);
+        }
 
         $resolved = 0;
         foreach (array_chunk($pending, self::BATCH_SIZE, true) as $batch) {
+            if ($maxResolve > 0 && $resolved >= $maxResolve) {
+                break;
+            }
             $hits = $this->analyzeBatch($batch);
             foreach ($hits as $idx => $hit) {
                 $idx = (int) $idx;
@@ -74,6 +81,9 @@ final class AptitudeManualAnswerAnalyzer
                     $questions[$idx]['explanation'] = $reconciled['explanation'];
                 }
                 $resolved++;
+                if ($maxResolve > 0 && $resolved >= $maxResolve) {
+                    break 2;
+                }
             }
         }
 
