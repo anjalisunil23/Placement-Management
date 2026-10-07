@@ -119,15 +119,15 @@ final class AptitudeManualAnswerAnalyzer
 
         $system = <<<'SYS'
 You solve multiple-choice aptitude questions. Return JSON only:
-{"answers":[{"index":0,"answerLetter":"B","explanation":"One short sentence."}]}
+{"answers":[{"index":0,"answerLetter":"B","explanation":"1. First step\n2. Second step\n3. Final answer is 36 (option B)."}]}
 
 Rules:
 - index must match the input index field exactly.
 - answerLetter: use A–E for standard MCQ and statements/conclusions items; use 1–5 for data sufficiency items.
-- explanation: brief reason (one sentence) that states the same final value as your chosen option text.
+- explanation: 2–5 numbered steps on separate lines ("1. ", "2. ", …) showing the working. Include conversions, formulas, or logical checks as needed. The last step must state the final answer value and that it matches your chosen option.
 - answerLetter and explanation must agree; if the computed result is 4%, choose the option that says 4%, not another percentage.
 - Use only the given prompt and options; do not invent extra facts beyond standard logical/mathematical reasoning.
-- For statements/conclusions, apply syllogism rules to conclusions I and II, then pick the matching A–E rule option.
+- For statements/conclusions, apply syllogism rules to conclusions I and II in separate steps, then pick the matching A–E rule option.
 SYS;
 
         $user = "Solve each question and pick the correct option letter.\n\n"

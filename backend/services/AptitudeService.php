@@ -1334,6 +1334,7 @@ final class AptitudeService
         if (in_array($contestType, ['weekly', 'monthly'], true) && !AptitudeAccessService::canManageContests($admin)) {
             Response::forbidden('You cannot delete aptitude contests.');
         }
+        $this->attempts->deleteForTest($id);
         if (!$this->tests->delete($id)) {
             Response::error('Could not delete test.', 500);
         }
@@ -2751,6 +2752,8 @@ final class AptitudeService
         if (!AptitudeTestModel::isCompanyTest($data)) {
             return $data;
         }
+        $data['testKind'] = 'company';
+        $data['contestType'] = 'none';
         $companyId = trim((string) ($data['companyId'] ?? ''));
         if ($companyId === '' || !Security::isValidId($companyId)) {
             Response::error('Select a company for this company test.', 422);
@@ -2774,8 +2777,6 @@ final class AptitudeService
         if (!in_array($source, ['manual', 'random_jd'], true)) {
             $source = 'manual';
         }
-        $data['testKind'] = 'company';
-        $data['contestType'] = 'none';
         $data['questionSource'] = $source;
 
         return $data;

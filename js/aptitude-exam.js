@@ -669,6 +669,24 @@
       });
     }
 
+    function explanationNeedsPreWrap(text) {
+      const raw = String(text || '').trim();
+      if (!raw) return false;
+      if (/\n/.test(raw)) return true;
+      return /(?:^|\n)\s*(?:\d+[\.\)]\s|[-•*]\s|Step\s+\d)/i.test(raw);
+    }
+
+    function renderExplanationHtml(explanation) {
+      const raw = String(explanation || '').trim();
+      if (!raw) return '';
+      const preWrap = explanationNeedsPreWrap(raw);
+      const style = preWrap ? ' style="white-space:pre-wrap"' : '';
+      if (/<[^>]+>/.test(raw)) {
+        return `<div class="small apt-rich"${style}>${sanitizeRichHtml(raw)}</div>`;
+      }
+      return `<div class="small apt-explanation"${style}>${esc(raw)}</div>`;
+    }
+
     function explanationFromAnalysis(a) {
       const raw = String(a?.explanation || a?.solution || '').trim();
       const text = raw.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
@@ -743,7 +761,7 @@
             return exp
               ? `<div class="mt-2 pt-2 border-top">
                   <div class="small fw-semibold mb-1">Explanation</div>
-                  <div class="small apt-rich">${sanitizeRichHtml(exp)}</div>
+                  ${renderExplanationHtml(exp)}
                 </div>`
               : '';
           })()}

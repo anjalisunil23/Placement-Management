@@ -71,8 +71,19 @@ class AptitudeTestModel extends BaseModel
         if (self::normalizeTestKind((string) ($test['testKind'] ?? '')) === 'company') {
             return true;
         }
+        if (trim((string) ($test['companyId'] ?? '')) !== '') {
+            return true;
+        }
+        if (self::normalizeQuestionSource((string) ($test['questionSource'] ?? '')) === 'random_jd') {
+            return true;
+        }
+        foreach ((array) ($test['jdFilterRules'] ?? []) as $rule) {
+            if (is_array($rule) && trim((string) ($rule['jdSetId'] ?? '')) !== '') {
+                return true;
+            }
+        }
 
-        return trim((string) ($test['companyId'] ?? '')) !== '';
+        return false;
     }
 
     /**

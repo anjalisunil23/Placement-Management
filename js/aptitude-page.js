@@ -202,7 +202,28 @@
     if (boot?.meta) meta = { ...meta, ...boot.meta };
     if (boot?.myProgress) myProgress = boot.myProgress;
     const cachedTests = readSessionCache(APT_TESTS_CACHE_KEY);
-    if (Array.isArray(cachedTests) && cachedTests.length) tests = cachedTests;
+    // Students always fetch fresh tests so admin deletes are not shown from cache.
+    if (access.canManage && Array.isArray(cachedTests) && cachedTests.length) {
+      tests = cachedTests;
+    }
+  }
+
+  function removeTestFromClientState(id) {
+    const sid = String(id || '');
+    if (!sid) return;
+    tests = tests.filter((t) => String(t.id) !== sid);
+    writeSessionCache(APT_TESTS_CACHE_KEY, tests);
+  }
+
+  function refreshTakeUiAfterTestsChange() {
+    renderTestList();
+    if (access.canManage) renderManage();
+    if (!access.canTake) return;
+    if (studentJdSelectedCompanyId) {
+      showStudentJdCompanyDetail(studentJdSelectedCompanyId);
+    } else if (takeListPanel === 'company') {
+      renderStudentJdBlock();
+    }
   }
 
   function paintCachedTakeUi() {
@@ -1988,6 +2009,24 @@
     return /\.(jpg|jpeg|png)$/i.test(String(detail?.jdFilename || ''));
   }
 
+  function explanationNeedsPreWrap(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return false;
+    if (/\n/.test(raw)) return true;
+    return /(?:^|\n)\s*(?:\d+[\.\)]\s|[-•*]\s|Step\s+\d)/i.test(raw);
+  }
+
+  function renderExplanationBlock(explanation, { label = 'Explanation', className = 'small mt-2' } = {}) {
+    const raw = String(explanation || '').trim();
+    if (!raw) return '';
+    const preWrap = explanationNeedsPreWrap(raw);
+    const style = preWrap ? ' style="white-space:pre-wrap"' : '';
+    if (/<[^>]+>/.test(raw)) {
+      return `<div class="${className}"><span class="fw-semibold">${esc(label)}:</span><div class="apt-rich mt-1"${style}>${raw}</div></div>`;
+    }
+    return `<div class="${className}"><span class="fw-semibold">${esc(label)}:</span><div class="apt-explanation mt-1"${style}>${esc(raw)}</div></div>`;
+  }
+
   function renderMcqPickDetailHtml(q, index, { compact = false, manualPreview = false } = {}) {
     const isDs = q.questionType === 'DATA_SUFFICIENCY';
     const isSc = q.questionType === 'STATEMENTS_CONCLUSIONS';
@@ -2047,7 +2086,7 @@
         : '<div class="text-muted-2">No options</div>'}</div>
       ${answerLine}
       ${importMetaLines}
-      ${explanation ? `<div class="small mt-2"><span class="fw-semibold">Explanation:</span> ${esc(explanation)}</div>` : ''}
+      ${renderExplanationBlock(explanation)}
     </div>`;
   }
 
@@ -2085,7 +2124,7 @@
         }).join('')}</select>
       </div>
       <label class="form-label small mb-1">Explanation</label>
-      <textarea class="form-control form-control-sm mb-2" rows="2" data-jd-q-field="explanation">${esc(String(q.explanation || ''))}</textarea>
+      <textarea class="form-control form-control-sm mb-2" rows="5" data-jd-q-field="explanation" placeholder="Use numbered steps, e.g.&#10;1. Convert units&#10;2. Apply formula&#10;3. Answer is 4% (option C).">${esc(String(q.explanation || ''))}</textarea>
       <div class="form-check mb-2">
         <input class="form-check-input" type="checkbox" id="jd-q-answer-known-${qIndex}" data-jd-q-field="answerKnown" ${q.answerKnown !== false && q.answerKnown !== 0 ? 'checked' : ''}/>
         <label class="form-check-label small" for="jd-q-answer-known-${qIndex}">Answer is known (show correct option in preview)</label>
@@ -3094,10 +3133,10 @@
         return;
       }
       saveDemoTestsStore(loadDemoTestsStore().filter((t) => String(t.id) !== String(id)));
+      removeTestFromClientState(id);
       toast('Test deleted (demo).', 'success');
-      await loadTests();
-      renderTestList();
-      renderManage();
+      await loadTests({ force: true });
+      refreshTakeUiAfterTestsChange();
       return;
     }
     if (!isLiveAptitudeId(id)) {
@@ -3109,10 +3148,10 @@
       toast(res?.message || 'Could not delete test.', 'error');
       return;
     }
+    removeTestFromClientState(id);
     toast('Test deleted.', 'success');
-    await loadTests();
-    renderTestList();
-    renderManage();
+    await loadTests({ force: true });
+    refreshTakeUiAfterTestsChange();
   }
 
   async function setContestResultsPublished(id, published) {
@@ -4401,7 +4440,7 @@
               ${[0, 1, 2, 3].map((oi) => `<label class="form-check form-check-inline ms-1"><input class="form-check-input" type="radio" name="ai-correct-${i}" data-ai-set-correct="${i}" value="${oi}" ${correct === oi ? 'checked' : ''}/> ${letters[oi]}</label>`).join('')}
             </div>
             <div class="small text-muted-2">${esc(q.category || '')} · ${esc(q.topic || '')} · ${esc(q.difficulty || '')}</div>
-            <div class="small mt-1"><span class="fw-semibold">Explanation:</span> ${esc(q.explanation || '')}</div>
+            ${renderExplanationBlock(q.explanation, { className: 'small mt-1' })}
             ${mismatchWarn}
             ${dup}
             <div class="d-flex flex-wrap gap-2 mt-2">
@@ -5918,7 +5957,11 @@
   function isCompanyTest(t) {
     if (!t) return false;
     if (String(t.testKind || '') === 'company') return true;
-    return String(t.companyId || '').trim() !== '';
+    if (String(t.companyId || '').trim() !== '') return true;
+    if (String(t?.questionSource || '') === 'random_jd') return true;
+    return (Array.isArray(t?.jdFilterRules) ? t.jdFilterRules : []).some(
+      (r) => String(r?.jdSetId || '').trim() !== ''
+    );
   }
 
   function isCompanyMockTest(t) {
@@ -6820,8 +6863,9 @@
     body.innerHTML = renderProgressDetail(res.data || {});
   }
 
-  async function loadTests() {
-    if (testsInflight) return testsInflight;
+  async function loadTests(options = {}) {
+    const force = options.force === true;
+    if (testsInflight && !force) return testsInflight;
     testsInflight = (async () => {
     if (Auth.hasRealAuth() && !Auth.isDemo()) {
       const res = await api('/aptitude/tests').catch(() => null);
@@ -6980,7 +7024,7 @@
     let visible = tests.filter((t) => {
       const isContest = isContestTest(t);
       if (wantContests !== isContest) return false;
-      if (!access.canManage && !wantContests && isCompanyTest(t)) return false;
+      if (!wantContests && isCompanyTest(t)) return false;
       if (isContest && String(t.contestType || '') !== takeContestType) return false;
       if (access.canManage) return true;
       if ((t.status || 'published') !== 'published') return false;
@@ -7035,6 +7079,11 @@
   }
 
   function openExam(test) {
+    if (!test || !tests.some((t) => String(t.id) === String(test.id))) {
+      toast('This test is no longer available.', 'info');
+      loadTests({ force: true }).then(() => refreshTakeUiAfterTestsChange()).catch(() => {});
+      return;
+    }
     if (access.canTake && isContestTest(test)) {
       const life = contestStatusClient(test);
       if (life === 'UPCOMING') {
@@ -7766,6 +7815,18 @@
       e.preventDefault();
       applyMyResultsContestType(link.getAttribute('data-results-contest-type'));
     });
+
+    let testsRefreshTimer = null;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || !access.canTake) return;
+      clearTimeout(testsRefreshTimer);
+      testsRefreshTimer = setTimeout(() => {
+        loadTests({ force: true })
+          .then(() => refreshTakeUiAfterTestsChange())
+          .catch(() => {});
+      }, 300);
+    });
+
     bindPracticeNav('progressContestTypeNav', (e) => {
       const link = e.target.closest('[data-progress-contest-type]');
       if (!link) return;
