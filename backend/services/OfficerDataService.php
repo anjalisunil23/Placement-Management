@@ -2451,7 +2451,7 @@ final class OfficerDataService
             'failed'               => (int) ($merged['failed'] ?? 0),
             'skipped'              => (int) ($merged['skipped'] ?? 0),
             'durationMs'           => (int) ($merged['durationMs'] ?? 0),
-            'source'               => 'student_details',
+            'source'               => $detailsModel->isAvailable() ? 'student_details' : 'legacy_snapshot',
             'syncReport'           => $lastSyncReport,
         ];
     }

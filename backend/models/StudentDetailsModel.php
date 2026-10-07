@@ -13,7 +13,7 @@ use PMS\Models\PlacementPolicySettingsModel;
 use PMS\Models\StudentModel;
 
 /**
- * AES student master / directory — local source of truth after synchronization.
+ * Legacy AES directory table (retired). Kept for static helpers; table is no longer used.
  */
 class StudentDetailsModel extends BaseModel
 {
@@ -51,18 +51,7 @@ class StudentDetailsModel extends BaseModel
             return true;
         }
         try {
-            $migration = dirname(__DIR__) . '/database/migrations/001_create_student_details.sql';
-            if (is_readable($migration)) {
-                $sql = (string) file_get_contents($migration);
-                foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmt) {
-                    if ($stmt !== '' && stripos($stmt, 'CREATE TABLE') !== false) {
-                        $this->db->exec($stmt);
-                        break;
-                    }
-                }
-            }
             $this->db->query('SELECT 1 FROM `student_details` LIMIT 1');
-            $this->ensureRegistrationStatusColumn();
             self::$tableReady = true;
 
             return true;
@@ -70,30 +59,6 @@ class StudentDetailsModel extends BaseModel
             self::$tableUnavailable = true;
 
             return false;
-        }
-    }
-
-    private function ensureRegistrationStatusColumn(): void
-    {
-        try {
-            $stmt = $this->db->query(
-                "SHOW COLUMNS FROM `student_details` LIKE 'registration_status'"
-            );
-            if ($stmt->fetch()) {
-                return;
-            }
-            $migration = dirname(__DIR__) . '/database/migrations/002_add_registration_status_to_student_details.sql';
-            if (!is_readable($migration)) {
-                return;
-            }
-            $sql = (string) file_get_contents($migration);
-            foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmtSql) {
-                if ($stmtSql !== '' && stripos($stmtSql, 'ALTER TABLE') !== false) {
-                    $this->db->exec($stmtSql);
-                }
-            }
-        } catch (\Throwable) {
-            // Column may already exist or host may restrict DDL at runtime.
         }
     }
 
