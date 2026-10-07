@@ -838,14 +838,88 @@ class StudentDetailsModel extends BaseModel
             return (int) ($stmt->fetchColumn() ?: 0);
         } catch (\Throwable) {
             $fallbackLimit = self::resolveSqlListLimit() ?? PHP_INT_MAX;
+            $docs = $this->findAll([], $fallbackLimit);
+            if ($studRole === '' || $studRole === 'all') {
+                return count($docs);
+            }
+            if (strtolower($studRole) === 'alumni') {
+                return count(array_filter(
+                    $docs,
+                    static fn (array $doc): bool => self::recordInAesAlumniDirectory($doc)
+                ));
+            }
 
-            return count($this->findAll(
-                $studRole !== '' && $studRole !== 'all'
-                    ? ['studRole' => strtolower($studRole) === 'alumni' ? 'alumni' : 'student']
-                    : [],
-                $fallbackLimit
+            return count(array_filter(
+                $docs,
+                static fn (array $doc): bool => strtolower(trim((string) ($doc['studRole'] ?? ''))) === 'student'
             ));
         }
+    }
+
+    /**
+     * Ensure every AES alumni directory admission number is counted as alumni locally.
+     *
+     * @param list<array<string, mixed>> $alumniRecords
+     * @return array{marked:int,alreadyMarked:int,missing:int}
+     */
+    public function markAesAlumniDirectoryFromRecords(array $alumniRecords): array
+    {
+        $stats = ['marked' => 0, 'alreadyMarked' => 0, 'missing' => 0];
+        if (!$this->bootstrapTable()) {
+            return $stats;
+        }
+
+        $admnos = [];
+        foreach ($alumniRecords as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = self::resolveAesAdmno($record);
+            if ($key !== '') {
+                $admnos[$key] = true;
+            }
+        }
+        if ($admnos === []) {
+            return $stats;
+        }
+
+        foreach (array_chunk(array_keys($admnos), 200) as $chunk) {
+            $holders = implode(',', array_fill(0, count($chunk), '?'));
+            try {
+                $stmt = $this->db->prepare(
+                    'UPDATE `student_details`
+                     SET payload = JSON_SET(payload, \'$.aesAlumniDirectory\', CAST(\'true\' AS JSON)),
+                         updated_at = NOW(6)
+                     WHERE aes_admno IN (' . $holders . ')
+                       AND NOT ' . self::sqlAlumniMembershipCondition()
+                );
+                $stmt->execute($chunk);
+                $stats['marked'] += (int) $stmt->rowCount();
+            } catch (\Throwable) {
+                foreach ($chunk as $admno) {
+                    $doc = $this->findByAesAdmno($admno);
+                    if ($doc === null) {
+                        $stats['missing']++;
+                        continue;
+                    }
+                    if (self::recordInAesAlumniDirectory($doc)) {
+                        $stats['alreadyMarked']++;
+                        continue;
+                    }
+                    $id = (string) ($doc['_id'] ?? '');
+                    unset($doc['_id']);
+                    $doc['aesAlumniDirectory'] = true;
+                    $doc['updatedAt'] = DocumentHelper::now();
+                    if ($id !== '' && $this->update($id, $doc)) {
+                        $stats['marked']++;
+                    }
+                }
+
+                continue;
+            }
+        }
+
+        return $stats;
     }
 
     /**
@@ -1203,7 +1277,10 @@ class StudentDetailsModel extends BaseModel
      */
     public static function sqlAlumniMembershipCondition(): string
     {
-        return '(stud_role = \'alumni\' OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.aesAlumniDirectory\')), \'false\') = \'true\')';
+        return '(stud_role = \'alumni\''
+            . ' OR JSON_CONTAINS(payload, \'true\', \'$.aesAlumniDirectory\')'
+            . ' OR JSON_CONTAINS(payload, \'\"true\"\', \'$.aesAlumniDirectory\')'
+            . ' OR JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.aesAlumniDirectory\')) IN (\'true\', \'1\'))';
     }
 
     public static function recordInAesAlumniDirectory(array $doc): bool
@@ -1212,7 +1289,9 @@ class StudentDetailsModel extends BaseModel
             return true;
         }
 
-        return !empty($doc['aesAlumniDirectory']);
+        $flag = $doc['aesAlumniDirectory'] ?? false;
+
+        return $flag === true || $flag === 1 || $flag === '1' || $flag === 'true';
     }
 
     /**

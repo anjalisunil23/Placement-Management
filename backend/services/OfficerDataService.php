@@ -2280,17 +2280,16 @@ final class OfficerDataService
         $studentAlumniOverlap = (int) ($payload['studentAlumniOverlap'] ?? 0);
 
         if ($detailsModel->isAvailable()) {
+            $storedStudents = $detailsModel->countByRole('student');
+            $storedAlumni = $detailsModel->countByRole('alumni');
             $meta = $detailsModel->latestSyncMeta();
-            if (is_array($meta)) {
-                $storedStudents = (int) ($meta['studentRecordCount'] ?? 0);
-                $storedAlumni = (int) ($meta['alumniRecordCount'] ?? 0);
-
+            if ($storedStudents > 0 || $storedAlumni > 0 || is_array($meta)) {
                 $snapshotSyncedAt = isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : '';
 
                 return [
                     'syncedAt'            => $snapshotSyncedAt !== ''
                         ? $snapshotSyncedAt
-                        : ($meta['syncedAt'] ?? null),
+                        : (is_array($meta) ? ($meta['syncedAt'] ?? null) : null),
                     'studentRecordCount'  => $storedStudents,
                     'alumniRecordCount'   => $storedAlumni,
                     'lastSyncReport'      => is_array($payload['lastSyncReport'] ?? null)
@@ -2303,10 +2302,10 @@ final class OfficerDataService
                         ? $fetchedAlumni
                         : $storedAlumni,
                     'studentAlumniOverlap' => $studentAlumniOverlap,
-                    'recordCount'         => (int) ($meta['recordCount'] ?? ($storedStudents + $storedAlumni)),
-                    'hasStudentSnapshot'  => ((int) ($meta['studentRecordCount'] ?? 0)) > 0,
-                    'hasAlumniSnapshot'   => ((int) ($meta['alumniRecordCount'] ?? 0)) > 0,
-                    'hasSnapshot'         => ((int) ($meta['recordCount'] ?? 0)) > 0,
+                    'recordCount'         => $detailsModel->countByRole('all'),
+                    'hasStudentSnapshot'  => $storedStudents > 0,
+                    'hasAlumniSnapshot'   => $storedAlumni > 0,
+                    'hasSnapshot'         => ($storedStudents + $storedAlumni) > 0,
                     'source'              => 'student_details',
                 ];
             }
@@ -2375,10 +2374,12 @@ final class OfficerDataService
         }
 
         $merged = $syncSvc->mergeSyncStats([$studentStats, $alumniStats, $backfillStats]);
+        $directoryMarkStats = ['marked' => 0, 'alreadyMarked' => 0, 'missing' => 0];
         if ($detailsModel->isAvailable()) {
             $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
             $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumni);
             $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows($alumni);
+            $directoryMarkStats = $detailsModel->markAesAlumniDirectoryFromRecords($alumni);
         }
 
         $studentCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('student') : count($students);
@@ -2399,7 +2400,9 @@ final class OfficerDataService
             'skipped'                  => (int) ($merged['skipped'] ?? 0),
             'skippedEmptyAdmno'        => (int) ($merged['skippedEmptyAdmno'] ?? 0),
             'skippedRetainedAsStudent' => (int) ($merged['skippedRetainedAsStudent'] ?? 0),
-            'markedAesAlumniDirectory' => (int) ($merged['markedAesAlumniDirectory'] ?? 0),
+            'markedAesAlumniDirectory' => (int) ($merged['markedAesAlumniDirectory'] ?? 0)
+                + (int) ($directoryMarkStats['marked'] ?? 0),
+            'directoryMark'            => $directoryMarkStats,
             'failed'                   => (int) ($merged['failed'] ?? 0),
             'storedStudents'           => $studentCount,
             'storedAlumni'             => $alumniCount,
