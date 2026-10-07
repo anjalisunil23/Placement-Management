@@ -93,4 +93,6 @@ foreach ($stats as $k => $v) {
 }
 
 echo "\nstudent_details row count: " . $detailsModel->countByRole('all') . "\n";
+$regStats = $detailsModel->refreshRegistrationStatuses();
+echo 'registration_status refresh — updated: ' . ($regStats['updated'] ?? 0) . "\n";
 echo "Done.\n";

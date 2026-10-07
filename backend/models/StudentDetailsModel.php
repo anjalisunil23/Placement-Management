@@ -9,6 +9,8 @@ use PMS\Services\AesApiService;
 use PMS\Services\DepartmentProgrammeCatalog;
 use PMS\Utils\DocumentHelper;
 use PMS\Utils\Security;
+use PMS\Models\PlacementPolicySettingsModel;
+use PMS\Models\StudentModel;
 
 /**
  * AES student master / directory — local source of truth after synchronization.
@@ -59,6 +61,7 @@ class StudentDetailsModel extends BaseModel
                 }
             }
             $this->db->query('SELECT 1 FROM `student_details` LIMIT 1');
+            $this->ensureRegistrationStatusColumn();
             self::$tableReady = true;
 
             return true;
@@ -66,6 +69,30 @@ class StudentDetailsModel extends BaseModel
             self::$tableUnavailable = true;
 
             return false;
+        }
+    }
+
+    private function ensureRegistrationStatusColumn(): void
+    {
+        try {
+            $stmt = $this->db->query(
+                "SHOW COLUMNS FROM `student_details` LIKE 'registration_status'"
+            );
+            if ($stmt->fetch()) {
+                return;
+            }
+            $migration = dirname(__DIR__) . '/database/migrations/002_add_registration_status_to_student_details.sql';
+            if (!is_readable($migration)) {
+                return;
+            }
+            $sql = (string) file_get_contents($migration);
+            foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmtSql) {
+                if ($stmtSql !== '' && stripos($stmtSql, 'ALTER TABLE') !== false) {
+                    $this->db->exec($stmtSql);
+                }
+            }
+        } catch (\Throwable) {
+            // Column may already exist or host may restrict DDL at runtime.
         }
     }
 
@@ -116,6 +143,7 @@ class StudentDetailsModel extends BaseModel
 
         if ($existing === null) {
             $incoming['createdAt'] = $now;
+            $this->applyRegistrationStatusToPayload($incoming);
             $id = $this->insert($incoming);
 
             return ['action' => 'inserted', 'id' => $id, 'aesAdmno' => $aesAdmno];
@@ -125,7 +153,10 @@ class StudentDetailsModel extends BaseModel
         unset($merged['_id']);
         $beforeHash = self::contentHash($existing);
         $afterHash = self::contentHash($merged);
-        if ($beforeHash === $afterHash) {
+        $this->applyRegistrationStatusToPayload($merged);
+        $registrationChanged = (string) ($merged['registrationStatus'] ?? '')
+            !== (string) ($existing['registrationStatus'] ?? '');
+        if ($beforeHash === $afterHash && !$registrationChanged) {
             return ['action' => 'unchanged', 'id' => (string) ($existing['_id'] ?? ''), 'aesAdmno' => $aesAdmno];
         }
 
@@ -134,6 +165,158 @@ class StudentDetailsModel extends BaseModel
         $this->update($id, $merged);
 
         return ['action' => 'updated', 'id' => $id, 'aesAdmno' => $aesAdmno];
+    }
+
+    /**
+     * Portal registration status from placement policy acceptance (not AES).
+     *
+     * @return 'registered'|'non_registered'|null null for alumni
+     */
+    public static function registrationStatusFromStudentProfile(array $student, string $studRole): ?string
+    {
+        if ($studRole === 'alumni') {
+            return null;
+        }
+
+        $registration = (new PlacementPolicySettingsModel())->registrationState($student);
+
+        return !empty($registration['policyAccepted']) ? 'registered' : 'non_registered';
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function applyRegistrationStatusToPayload(array &$payload, ?array $studentProfile = null): void
+    {
+        $studRole = (string) ($payload['studRole'] ?? '');
+        if ($studRole === 'alumni') {
+            unset($payload['registrationStatus']);
+
+            return;
+        }
+
+        if ($studentProfile === null) {
+            $admno = self::resolveAesAdmno($payload);
+            if ($admno !== '') {
+                $studentProfile = (new StudentModel())->findByRegisterNumber($admno);
+            }
+        }
+
+        if (!is_array($studentProfile)) {
+            $payload['registrationStatus'] = 'non_registered';
+
+            return;
+        }
+
+        $status = self::registrationStatusFromStudentProfile($studentProfile, 'student');
+        if ($status === null) {
+            unset($payload['registrationStatus']);
+
+            return;
+        }
+
+        $payload['registrationStatus'] = $status;
+    }
+
+    public function updateRegistrationStatusForAdmno(string $aesAdmno, ?string $status = null): bool
+    {
+        if (!$this->bootstrapTable()) {
+            return false;
+        }
+        $aesAdmno = strtoupper(trim($aesAdmno));
+        if ($aesAdmno === '') {
+            return false;
+        }
+
+        $doc = $this->findByAesAdmno($aesAdmno);
+        if ($doc === null) {
+            return false;
+        }
+
+        if ((string) ($doc['studRole'] ?? '') === 'alumni') {
+            return false;
+        }
+
+        if ($status === null) {
+            $student = (new StudentModel())->findByRegisterNumber($aesAdmno);
+            $status = is_array($student)
+                ? self::registrationStatusFromStudentProfile($student, 'student')
+                : 'non_registered';
+        }
+
+        if ($status !== 'registered' && $status !== 'non_registered') {
+            return false;
+        }
+
+        if ((string) ($doc['registrationStatus'] ?? '') === $status) {
+            return true;
+        }
+
+        $id = (string) ($doc['_id'] ?? '');
+        unset($doc['_id']);
+        $doc['registrationStatus'] = $status;
+        $doc['updatedAt'] = DocumentHelper::now();
+        if ($id !== '') {
+            $this->update($id, $doc);
+        }
+
+        return true;
+    }
+
+    /**
+     * Refresh registration_status for studying rows from the students table.
+     *
+     * @param list<string> $aesAdmnos empty = all studying rows
+     * @return array{updated:int,unchanged:int,skipped:int}
+     */
+    public function refreshRegistrationStatuses(array $aesAdmnos = []): array
+    {
+        $stats = ['updated' => 0, 'unchanged' => 0, 'skipped' => 0];
+        if (!$this->bootstrapTable()) {
+            return $stats;
+        }
+
+        $studentModel = new StudentModel();
+        $targets = [];
+        if ($aesAdmnos !== []) {
+            foreach ($aesAdmnos as $admno) {
+                $key = strtoupper(trim((string) $admno));
+                if ($key !== '') {
+                    $targets[$key] = true;
+                }
+            }
+        } else {
+            foreach ($this->listDirectoryRecords('', true, 'student', self::LIST_MAX) as $row) {
+                $key = self::resolveAesAdmno($row);
+                if ($key !== '') {
+                    $targets[$key] = true;
+                }
+            }
+        }
+
+        foreach (array_keys($targets) as $admno) {
+            $doc = $this->findByAesAdmno($admno);
+            if ($doc === null || (string) ($doc['studRole'] ?? '') === 'alumni') {
+                $stats['skipped']++;
+                continue;
+            }
+            $before = (string) ($doc['registrationStatus'] ?? '');
+            $this->applyRegistrationStatusToPayload($doc, $studentModel->findByRegisterNumber($admno));
+            $after = (string) ($doc['registrationStatus'] ?? '');
+            if ($before === $after) {
+                $stats['unchanged']++;
+                continue;
+            }
+            $id = (string) ($doc['_id'] ?? '');
+            unset($doc['_id']);
+            $doc['updatedAt'] = DocumentHelper::now();
+            if ($id !== '') {
+                $this->update($id, $doc);
+            }
+            $stats['updated']++;
+        }
+
+        return $stats;
     }
 
     public function findByAesAdmno(string $aesAdmno): ?array
@@ -169,7 +352,8 @@ class StudentDetailsModel extends BaseModel
         string $deptAesId = '',
         bool $campusWide = true,
         string $studRole = '',
-        int $limit = self::LIST_MAX
+        int $limit = self::LIST_MAX,
+        string $registrationStatus = ''
     ): array {
         if (!$this->bootstrapTable()) {
             return [];
@@ -186,6 +370,11 @@ class StudentDetailsModel extends BaseModel
         if ($studRole !== '' && $studRole !== 'all') {
             $sql .= ' AND stud_role = ?';
             $params[] = strtolower($studRole) === 'alumni' ? 'alumni' : 'student';
+        }
+        $registrationStatus = strtolower(trim($registrationStatus));
+        if ($registrationStatus === 'registered' || $registrationStatus === 'non_registered') {
+            $sql .= ' AND registration_status = ?';
+            $params[] = $registrationStatus;
         }
 
         $sql .= ' ORDER BY JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.studentName\')) ASC LIMIT ' . $limit;
@@ -272,6 +461,28 @@ class StudentDetailsModel extends BaseModel
         }
 
         return $rows;
+    }
+
+    public function countByRegistrationStatus(string $studRole, string $registrationStatus): int
+    {
+        if (!$this->bootstrapTable()) {
+            return 0;
+        }
+        $studRole = strtolower($studRole) === 'alumni' ? 'alumni' : 'student';
+        $registrationStatus = strtolower(trim($registrationStatus));
+        if ($registrationStatus !== 'registered' && $registrationStatus !== 'non_registered') {
+            return 0;
+        }
+        try {
+            $stmt = $this->db->prepare(
+                'SELECT COUNT(*) FROM `student_details` WHERE stud_role = ? AND registration_status = ?'
+            );
+            $stmt->execute([$studRole, $registrationStatus]);
+
+            return (int) ($stmt->fetchColumn() ?: 0);
+        } catch (\Throwable) {
+            return 0;
+        }
     }
 
     public function countByRole(string $studRole = ''): int
@@ -402,6 +613,9 @@ class StudentDetailsModel extends BaseModel
             'studRole'       => $studRole,
             'stud_role'      => $studRole === 'alumni' ? 'Alumni' : 'Student',
         ];
+        if ($studRole === 'alumni') {
+            unset($payload['registrationStatus']);
+        }
 
         if (!empty($options['placeHubStudentId'])) {
             $payload['placeHubStudentId'] = (string) $options['placeHubStudentId'];
@@ -440,6 +654,7 @@ class StudentDetailsModel extends BaseModel
             'stud_personal_mails'=> (string) ($doc['personalEmail'] ?? ''),
             'stud_role'          => (string) ($doc['stud_role'] ?? ''),
             'studRole'           => (string) ($doc['studRole'] ?? ''),
+            'registrationStatus' => (string) ($doc['registrationStatus'] ?? ''),
             'studentId'          => (string) ($doc['studentId'] ?? $admno),
             'departmentId'       => (string) ($doc['departmentId'] ?? ''),
         ];

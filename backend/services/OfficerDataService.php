@@ -2273,6 +2273,23 @@ final class OfficerDataService
      */
     public function getCampusStudyingDirectorySyncMeta(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $meta = $detailsModel->latestSyncMeta();
+            if (is_array($meta)) {
+                return [
+                    'syncedAt'            => $meta['syncedAt'] ?? null,
+                    'studentRecordCount'  => (int) ($meta['studentRecordCount'] ?? 0),
+                    'alumniRecordCount'   => (int) ($meta['alumniRecordCount'] ?? 0),
+                    'recordCount'         => (int) ($meta['recordCount'] ?? 0),
+                    'hasStudentSnapshot'  => ((int) ($meta['studentRecordCount'] ?? 0)) > 0,
+                    'hasAlumniSnapshot'   => ((int) ($meta['alumniRecordCount'] ?? 0)) > 0,
+                    'hasSnapshot'         => ((int) ($meta['recordCount'] ?? 0)) > 0,
+                    'source'              => 'student_details',
+                ];
+            }
+        }
+
         $payload = $this->readCampusDirectorySnapshotPayload();
         $students = $this->studyingRecordsFromCampusDirectoryPayload($payload);
         $alumni = $this->alumniRecordsFromCampusDirectoryPayload($payload);
@@ -2285,6 +2302,7 @@ final class OfficerDataService
             'hasStudentSnapshot'  => $students !== [],
             'hasAlumniSnapshot'   => $alumni !== [],
             'hasSnapshot'         => $students !== [] || $alumni !== [],
+            'source'              => 'legacy_snapshot',
         ];
     }
 
@@ -2299,15 +2317,40 @@ final class OfficerDataService
         $students = $this->fetchLiveCampusStudyingDirectoryRecords();
         $alumni = $this->fetchLiveCampusAlumniDirectoryRecords();
         $syncedAt = DocumentHelper::now();
+
+        $syncSvc = new StudentDetailsSyncService();
+        $studentStats = $syncSvc->syncFromAesRecords($students, [
+            'syncSource' => 'admin_campus',
+            'studRole'   => 'student',
+        ]);
+        $alumniStats = $syncSvc->syncFromAesRecords($alumni, [
+            'syncSource' => 'admin_campus',
+            'studRole'   => 'alumni',
+        ]);
+        $merged = $syncSvc->mergeSyncStats([$studentStats, $alumniStats]);
+        if ((new \PMS\Models\StudentDetailsModel())->isAvailable()) {
+            $merged['registrationRefresh'] = (new \PMS\Models\StudentDetailsModel())
+                ->refreshRegistrationStatuses();
+        }
+
+        // Legacy file snapshot kept for rollback/audit only.
         $this->writeCampusDirectorySnapshot($students, $alumni, $adminUserId, $syncedAt);
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
         self::$aesAlumniDirectoryCache = [];
 
         return [
-            'syncedAt'           => $syncedAt,
+            'syncedAt'           => $merged['syncedAt'] ?? $syncedAt,
             'studentRecordCount' => count($students),
             'alumniRecordCount'  => count($alumni),
             'recordCount'        => count($students) + count($alumni),
+            'fetched'            => (int) ($merged['fetched'] ?? 0),
+            'inserted'           => (int) ($merged['inserted'] ?? 0),
+            'updated'            => (int) ($merged['updated'] ?? 0),
+            'unchanged'          => (int) ($merged['unchanged'] ?? 0),
+            'failed'             => (int) ($merged['failed'] ?? 0),
+            'skipped'            => (int) ($merged['skipped'] ?? 0),
+            'durationMs'         => (int) ($merged['durationMs'] ?? 0),
+            'source'             => 'student_details',
         ];
     }
 
@@ -2375,10 +2418,104 @@ final class OfficerDataService
 
         $rows = array_values(array_filter(
             $rows,
-            static fn (array $row): bool => AesApiService::normalizeStudRole($row) !== 'alumni'
+            fn (array $row): bool => $this->rowQualifiesForFinalYearStudentsTab($row)
         ));
+        foreach ($rows as &$row) {
+            $row = $this->enrichFinalYearStudentsTabRow($row);
+        }
+        unset($row);
 
         return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function enrichFinalYearStudentsTabRow(array $row): array
+    {
+        $role = $this->resolveRowStudRole($row);
+        if ($role === 'student') {
+            $row['studRole'] = 'student';
+            $row['stud_role'] = 'Student';
+        }
+        if (!isset($row['registrationStatus']) || $row['registrationStatus'] === '') {
+            $row['registrationStatus'] = !empty($row['policyAccepted']) ? 'registered' : 'non_registered';
+        }
+        if (!array_key_exists('policyAccepted', $row)) {
+            $row['policyAccepted'] = ($row['registrationStatus'] ?? '') === 'registered';
+        }
+
+        return $row;
+    }
+
+    /**
+     * Registered / Non-Registered tabs: AES stud_role = student only (never alumni).
+     *
+     * @param array<string, mixed> $row
+     */
+    private function rowQualifiesForFinalYearStudentsTab(array $row): bool
+    {
+        return $this->resolveRowStudRole($row) === 'student';
+    }
+
+    /**
+     * Resolve AES student vs alumni for Students page tabs.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function resolveRowStudRole(array $row): ?string
+    {
+        $role = AesApiService::normalizeStudRole($row);
+        if ($role !== null) {
+            return $role;
+        }
+
+        $admno = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+        if ($admno === '') {
+            return null;
+        }
+        if (isset($this->alumniAdmnoIndex()[$admno])) {
+            return 'alumni';
+        }
+
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $doc = $detailsModel->findByAesAdmno($admno);
+            if (is_array($doc)) {
+                $storedRole = AesApiService::normalizeStudRole($doc);
+
+                return $storedRole ?? (string) ($doc['studRole'] ?? 'student');
+            }
+        }
+
+        return 'student';
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function alumniAdmnoIndex(): array
+    {
+        static $cache = null;
+        if (is_array($cache)) {
+            return $cache;
+        }
+
+        $cache = [];
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if (!$detailsModel->isAvailable()) {
+            return $cache;
+        }
+
+        foreach ($detailsModel->listDirectoryRecords('', true, 'alumni', \PMS\Models\StudentDetailsModel::LIST_MAX) as $record) {
+            $key = strtoupper(trim((string) ($record['admno'] ?? $record['stud_admno'] ?? '')));
+            if ($key !== '') {
+                $cache[$key] = true;
+            }
+        }
+
+        return $cache;
     }
 
     /**
@@ -2462,6 +2599,9 @@ final class OfficerDataService
 
             $admno = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
             if ($admno === '' || !preg_match('/^[A-Z0-9]{4,20}$/', $admno)) {
+                continue;
+            }
+            if (isset($this->alumniAdmnoIndex()[$admno])) {
                 continue;
             }
             $userId = (string) ($student['userId'] ?? '');
@@ -2661,9 +2801,19 @@ final class OfficerDataService
             $aesRow['id'] = $localRow['id'] ?? $localRow['_id'];
             unset($aesRow['aesOnly'], $aesRow['isNew']);
         }
-        if (!empty($localRow['policyAccepted'])) {
-            $aesRow['policyAccepted'] = true;
-            $aesRow['policyAcceptedAt'] = $localRow['policyAcceptedAt'] ?? ($aesRow['policyAcceptedAt'] ?? '');
+        $policyModel = new PlacementPolicySettingsModel();
+        if (is_array($localRow) && $localRow !== []) {
+            $registration = $policyModel->registrationState($localRow);
+            $aesRow['policyAccepted'] = !empty($registration['policyAccepted']);
+            $aesRow['placementPolicyAccepted'] = !empty($registration['placementPolicyAccepted']);
+            $aesRow['internshipPolicyAccepted'] = !empty($registration['internshipPolicyAccepted']);
+            $aesRow['policyRegistrationRequired'] = !empty($registration['policyRegistrationRequired']);
+            $aesRow['registrationStatus'] = !empty($registration['policyAccepted'])
+                ? 'registered'
+                : 'non_registered';
+            if (!empty($localRow['policyAcceptedAt'])) {
+                $aesRow['policyAcceptedAt'] = $localRow['policyAcceptedAt'];
+            }
         }
         // Keep local self-placement pending/approved state on AES-merged directory rows.
         if (!empty($localRow['selfPlacement']) && is_array($localRow['selfPlacement'])) {
@@ -2908,6 +3058,17 @@ final class OfficerDataService
             )
         );
 
+        $rows = array_values(array_filter(
+            $rows,
+            static fn (array $row): bool => AesApiService::normalizeStudRole($row) === 'alumni'
+        ));
+        foreach ($rows as &$row) {
+            $row['studRole'] = 'alumni';
+            $row['stud_role'] = 'Alumni';
+            unset($row['registrationStatus'], $row['policyAccepted']);
+        }
+        unset($row);
+
         return $rows;
     }
 
@@ -2968,6 +3129,21 @@ final class OfficerDataService
             unset(self::$aesDirectoryCache[$cacheKey]);
         } elseif (isset(self::$aesDirectoryCache[$cacheKey])) {
             return self::$aesDirectoryCache[$cacheKey];
+        }
+
+        if (!$forceLive && !($liveRegistry && $forceLive)) {
+            $detailsModel = new \PMS\Models\StudentDetailsModel();
+            if ($detailsModel->isAvailable()) {
+                $local = $detailsModel->listDirectoryRecords(
+                    $deptAesId,
+                    $campusWide,
+                    'student',
+                    \PMS\Models\StudentDetailsModel::LIST_MAX
+                );
+                if ($local !== []) {
+                    return self::$aesDirectoryCache[$cacheKey] = $local;
+                }
+            }
         }
 
         if ($campusWide) {
@@ -3042,11 +3218,27 @@ final class OfficerDataService
      */
     private function readCampusStudyingDirectorySnapshotRecords(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $rows = $detailsModel->listDirectoryRecords('', true, 'student', \PMS\Models\StudentDetailsModel::LIST_MAX);
+            if ($rows !== []) {
+                return $rows;
+            }
+        }
+
         return $this->studyingRecordsFromCampusDirectoryPayload($this->readCampusDirectorySnapshotPayload());
     }
 
     private function readCampusAlumniDirectorySnapshotRecords(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $rows = $detailsModel->listDirectoryRecords('', true, 'alumni', \PMS\Models\StudentDetailsModel::LIST_MAX);
+            if ($rows !== []) {
+                return $rows;
+            }
+        }
+
         return $this->alumniRecordsFromCampusDirectoryPayload($this->readCampusDirectorySnapshotPayload());
     }
 
@@ -4013,6 +4205,36 @@ final class OfficerDataService
             $userOut = is_array($row['user'] ?? null) ? $row['user'] : [];
             $userOut['name'] = $name;
             $row['user'] = $userOut;
+        }
+
+        $policyModel = new PlacementPolicySettingsModel();
+        if (is_array($local) && $local !== []) {
+            $registration = $policyModel->registrationState($local);
+            $row['policyAccepted'] = !empty($registration['policyAccepted']);
+            $row['placementPolicyAccepted'] = !empty($registration['placementPolicyAccepted']);
+            $row['internshipPolicyAccepted'] = !empty($registration['internshipPolicyAccepted']);
+            $row['policyRegistrationRequired'] = !empty($registration['policyRegistrationRequired']);
+            $row['registrationStatus'] = !empty($registration['policyAccepted'])
+                ? 'registered'
+                : 'non_registered';
+            if (!empty($local['policyAcceptedAt'])) {
+                $row['policyAcceptedAt'] = (string) $local['policyAcceptedAt'];
+            }
+        } elseif ($studRole !== 'alumni') {
+            $regStatus = trim((string) ($record['registrationStatus'] ?? ''));
+            if ($regStatus !== 'registered' && $regStatus !== 'non_registered') {
+                $detailsModel = new \PMS\Models\StudentDetailsModel();
+                if ($detailsModel->isAvailable()) {
+                    $doc = $detailsModel->findByAesAdmno($admno);
+                    if (is_array($doc)) {
+                        $regStatus = trim((string) ($doc['registrationStatus'] ?? ''));
+                    }
+                }
+            }
+            if ($regStatus === 'registered' || $regStatus === 'non_registered') {
+                $row['registrationStatus'] = $regStatus;
+                $row['policyAccepted'] = $regStatus === 'registered';
+            }
         }
 
         $self = is_array($row['selfPlacement'] ?? null) ? $row['selfPlacement'] : null;

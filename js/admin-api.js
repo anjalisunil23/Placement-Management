@@ -105,6 +105,9 @@ const AdminApi = {
       policyRegistrationRequired: row.policyRegistrationRequired === true,
       placementPolicyAccepted: row.placementPolicyAccepted === true,
       internshipPolicyAccepted: row.internshipPolicyAccepted === true,
+      studRole: row.studRole || row.stud_role || '',
+      stud_role: row.stud_role || row.studRole || '',
+      registrationStatus: row.registrationStatus || '',
     };
   },
 

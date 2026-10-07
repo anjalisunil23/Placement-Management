@@ -51,6 +51,7 @@ final class StudentDetailsSyncService
             'syncSource' => (string) ($options['syncSource'] ?? 'aes'),
         ];
 
+        $syncedAdmnos = [];
         foreach ($records as $record) {
             if (!is_array($record)) {
                 $stats['skipped']++;
@@ -59,6 +60,10 @@ final class StudentDetailsSyncService
             try {
                 $result = $model->upsertFromAesRecord($record, $options);
                 $action = (string) ($result['action'] ?? 'failed');
+                $admno = strtoupper(trim((string) ($result['aesAdmno'] ?? '')));
+                if ($admno !== '') {
+                    $syncedAdmnos[$admno] = true;
+                }
                 if ($action === 'inserted') {
                     $stats['inserted']++;
                 } elseif ($action === 'updated') {
@@ -73,6 +78,10 @@ final class StudentDetailsSyncService
             } catch (\Throwable) {
                 $stats['failed']++;
             }
+        }
+
+        if ($syncedAdmnos !== []) {
+            $stats['registrationRefresh'] = $model->refreshRegistrationStatuses(array_keys($syncedAdmnos));
         }
 
         $stats['durationMs'] = (int) round((microtime(true) - $startedAt) * 1000);

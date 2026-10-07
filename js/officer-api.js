@@ -67,6 +67,9 @@ const OfficerApi = {
       policyAccepted: !!(row.policyAccepted),
       policyAcceptedAt: row.policyAcceptedAt || '',
       policyVersion: row.policyVersion || '',
+      studRole: row.studRole || row.stud_role || '',
+      stud_role: row.stud_role || row.studRole || '',
+      registrationStatus: row.registrationStatus || '',
     };
   },
 

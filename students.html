@@ -2323,8 +2323,22 @@ function adminAlumniEmptyHint() {
   return adminAesDirectoryEmptyHint();
 }
 
+function normalizeStudRole(s) {
+  const raw = String(s?.studRole || s?.stud_role || '').trim().toLowerCase();
+  if (raw === 'alumni' || raw === 'alumnus') return 'alumni';
+  if (raw === 'student' || raw === 'stud') return 'student';
+  return '';
+}
+
+function isFinalYearStudentTabRow(s) {
+  return normalizeStudRole(s) === 'student';
+}
+
 function isFinalYearPolicyRegistered(s) {
-  return !!(s && s.policyAccepted);
+  if (!s) return false;
+  if (s.registrationStatus === 'registered') return true;
+  if (s.registrationStatus === 'non_registered') return false;
+  return !!s.policyAccepted;
 }
 
 function finalYearMatchesQuery(s, q) {
@@ -2342,6 +2356,7 @@ function filteredFinalYearStudents(kind) {
     ? (document.getElementById('searchFinalYearRegistered')?.value.trim() || '')
     : '';
   return finalYearStudentsAll.filter(s => {
+    if (!isFinalYearStudentTabRow(s)) return false;
     if (role === 'staff' && staffAssignedClassBatches().length && !studentInStaffScope(s)) return false;
     const registered = isFinalYearPolicyRegistered(s);
     if (kind === 'registered' ? !registered : registered) return false;
@@ -2679,6 +2694,7 @@ function renderAssignVolunteerPicker() {
   if (!root) return;
   const q = document.getElementById('assignVolunteerSearch')?.value.trim().toLowerCase() || '';
   const candidates = finalYearStudentsAll.filter((s) => {
+    if (!isFinalYearStudentTabRow(s)) return false;
     if (!isFinalYearPolicyRegistered(s)) return false;
     if (isStudentVolunteer(s)) return false;
     if (!q) return true;
