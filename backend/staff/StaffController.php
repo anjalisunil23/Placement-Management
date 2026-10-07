@@ -459,11 +459,11 @@ final class StaffController
             : ($syncError !== '' && $inTable > 0
                 ? "AES returned no new roster for this sync pass. Grid shows {$inTable} existing row(s) — check batch label or run sync again after deploy."
                 : ($aesFetched > 0
-                ? "Fetched {$aesFetched} student(s) from AES; saved {$count} to student_placements ({$studying} studying, {$alumni} alumni)"
+                ? "Fetched {$aesFetched} student(s) from AES; synced master data to student_details ({$studying} studying, {$alumni} alumni); placement overlay {$count} row(s) in student_placements"
                     . ($profilesBackfilled > 0 ? "; enriched {$profilesBackfilled} row(s) from live AES profiles." : '')
                     . " Grid shows {$inTable} row(s) for these filters."
                 : ($inTable > 0
-                    ? 'AES returned no roster for these filters. Grid shows existing student_placements rows only — try a specific batch (e.g. INMCA) or check AES from the server.'
+                    ? 'AES returned no roster for these filters. Grid shows existing student_details rows — try a specific batch (e.g. INMCA) or check AES from the server.'
                     : 'AES returned no roster to import. Pick department, branch, and batch (Integrated MCA / INMCA) or verify AES is reachable from the server.')));
         Response::success(
             DocumentHelper::jsonSafe($result),

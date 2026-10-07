@@ -791,9 +791,40 @@ final class PlacementFilterService
             }
         }
 
-        $api = new AesApiService();
         $deptAesId = $this->resolveParentDeptAesId($ctx);
         if ($deptAesId !== '' && !$filterMode && $this->placementStudRole($ctx) !== 'alumni') {
+            $detailsModel = new \PMS\Models\StudentDetailsModel();
+            if ($detailsModel->isAvailable()) {
+                foreach ($detailsModel->listDirectoryRecords($deptAesId, false, 'student', 5000) as $record) {
+                    $recordDept = trim((string) ($record['stud_deptcode'] ?? ''));
+                    if ($recordDept !== '' && strcasecmp($recordDept, $deptAesId) !== 0) {
+                        continue;
+                    }
+                    $batch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+                    $course = $this->normalizeProgrammeForClass(
+                        (string) ($record['stud_course'] ?? $record['stud_cource_short'] ?? ''),
+                        $batch
+                    );
+                    $branch = trim((string) ($record['stud_branch'] ?? ''));
+                    if ($course === '' && $batch === '') {
+                        continue;
+                    }
+                    $row = [
+                        'stud_course' => $course,
+                        'stud_branch' => $branch !== '' ? $branch : 'Regular',
+                        'stud_class' => $batch,
+                    ];
+                    $key = strtolower(implode('|', $row));
+                    if (!isset($seen[$key])) {
+                        $seen[$key] = true;
+                        $rows[] = $row;
+                    }
+                }
+            }
+        }
+
+        $api = new AesApiService();
+        if ($deptAesId !== '' && !$filterMode && $this->placementStudRole($ctx) !== 'alumni' && $rows === []) {
             try {
                 foreach ($api->fetchAllStudInfo4Placement(['stud_deptcode' => $deptAesId], true) as $record) {
                     $recordDept = trim((string) ($record['stud_deptcode'] ?? ''));

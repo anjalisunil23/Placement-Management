@@ -2203,6 +2203,23 @@ final class OfficerDataService
      */
     public function getCampusStudyingDirectorySyncMeta(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $meta = $detailsModel->latestSyncMeta();
+            if (is_array($meta)) {
+                return [
+                    'syncedAt'            => $meta['syncedAt'] ?? null,
+                    'studentRecordCount'  => (int) ($meta['studentRecordCount'] ?? 0),
+                    'alumniRecordCount'   => (int) ($meta['alumniRecordCount'] ?? 0),
+                    'recordCount'         => (int) ($meta['recordCount'] ?? 0),
+                    'hasStudentSnapshot'  => ((int) ($meta['studentRecordCount'] ?? 0)) > 0,
+                    'hasAlumniSnapshot'   => ((int) ($meta['alumniRecordCount'] ?? 0)) > 0,
+                    'hasSnapshot'         => ((int) ($meta['recordCount'] ?? 0)) > 0,
+                    'source'              => 'student_details',
+                ];
+            }
+        }
+
         $payload = $this->readCampusDirectorySnapshotPayload();
         $students = $this->studyingRecordsFromCampusDirectoryPayload($payload);
         $alumni = $this->alumniRecordsFromCampusDirectoryPayload($payload);
@@ -2215,6 +2232,7 @@ final class OfficerDataService
             'hasStudentSnapshot'  => $students !== [],
             'hasAlumniSnapshot'   => $alumni !== [],
             'hasSnapshot'         => $students !== [] || $alumni !== [],
+            'source'              => 'legacy_snapshot',
         ];
     }
 
@@ -2229,15 +2247,36 @@ final class OfficerDataService
         $students = $this->fetchLiveCampusStudyingDirectoryRecords();
         $alumni = $this->fetchLiveCampusAlumniDirectoryRecords();
         $syncedAt = DocumentHelper::now();
+
+        $syncSvc = new StudentDetailsSyncService();
+        $studentStats = $syncSvc->syncFromAesRecords($students, [
+            'syncSource' => 'admin_campus',
+            'studRole'   => 'student',
+        ]);
+        $alumniStats = $syncSvc->syncFromAesRecords($alumni, [
+            'syncSource' => 'admin_campus',
+            'studRole'   => 'alumni',
+        ]);
+        $merged = $syncSvc->mergeSyncStats([$studentStats, $alumniStats]);
+
+        // Legacy file snapshot kept for rollback/audit only.
         $this->writeCampusDirectorySnapshot($students, $alumni, $adminUserId, $syncedAt);
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
         self::$aesAlumniDirectoryCache = [];
 
         return [
-            'syncedAt'           => $syncedAt,
+            'syncedAt'           => $merged['syncedAt'] ?? $syncedAt,
             'studentRecordCount' => count($students),
             'alumniRecordCount'  => count($alumni),
             'recordCount'        => count($students) + count($alumni),
+            'fetched'            => (int) ($merged['fetched'] ?? 0),
+            'inserted'           => (int) ($merged['inserted'] ?? 0),
+            'updated'            => (int) ($merged['updated'] ?? 0),
+            'unchanged'          => (int) ($merged['unchanged'] ?? 0),
+            'failed'             => (int) ($merged['failed'] ?? 0),
+            'skipped'            => (int) ($merged['skipped'] ?? 0),
+            'durationMs'         => (int) ($merged['durationMs'] ?? 0),
+            'source'             => 'student_details',
         ];
     }
 
@@ -2900,6 +2939,21 @@ final class OfficerDataService
             return self::$aesDirectoryCache[$cacheKey];
         }
 
+        if (!$forceLive && !($liveRegistry && $forceLive)) {
+            $detailsModel = new \PMS\Models\StudentDetailsModel();
+            if ($detailsModel->isAvailable()) {
+                $local = $detailsModel->listDirectoryRecords(
+                    $deptAesId,
+                    $campusWide,
+                    'student',
+                    \PMS\Models\StudentDetailsModel::LIST_MAX
+                );
+                if ($local !== []) {
+                    return self::$aesDirectoryCache[$cacheKey] = $local;
+                }
+            }
+        }
+
         if ($campusWide) {
             $records = ($liveRegistry || $forceLive)
                 ? $this->fetchLiveCampusStudyingDirectoryRecords()
@@ -2972,11 +3026,27 @@ final class OfficerDataService
      */
     private function readCampusStudyingDirectorySnapshotRecords(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $rows = $detailsModel->listDirectoryRecords('', true, 'student', \PMS\Models\StudentDetailsModel::LIST_MAX);
+            if ($rows !== []) {
+                return $rows;
+            }
+        }
+
         return $this->studyingRecordsFromCampusDirectoryPayload($this->readCampusDirectorySnapshotPayload());
     }
 
     private function readCampusAlumniDirectorySnapshotRecords(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $rows = $detailsModel->listDirectoryRecords('', true, 'alumni', \PMS\Models\StudentDetailsModel::LIST_MAX);
+            if ($rows !== []) {
+                return $rows;
+            }
+        }
+
         return $this->alumniRecordsFromCampusDirectoryPayload($this->readCampusDirectorySnapshotPayload());
     }
 

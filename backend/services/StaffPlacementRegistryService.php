@@ -7,6 +7,7 @@ namespace PMS\Services;
 use PMS\Middleware\AuthMiddleware;
 use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
+use PMS\Models\StudentDetailsModel;
 use PMS\Models\StudentModel;
 use PMS\Models\StudentPlacementModel;
 use PMS\Utils\DocumentHelper;
@@ -115,7 +116,7 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * Manual AES → student_placements sync (placement / higher-education registry only).
+     * Manual AES sync: student_details (master) + student_placements (placement overlay).
      *
      * @param array<string, mixed> $staffCtx
      * @param array<string, string> $filters
@@ -156,6 +157,8 @@ final class StaffPlacementRegistryService
             'aesRosterFetched'    => $aesFetched,
             'profilesBackfilled'  => $profilesBackfilled,
             'syncError'           => $syncError,
+            'detailsInserted'     => (int) ($student['detailsInserted'] ?? 0) + (int) ($alumni['detailsInserted'] ?? 0),
+            'detailsUpdated'      => (int) ($student['detailsUpdated'] ?? 0) + (int) ($alumni['detailsUpdated'] ?? 0),
             'scope'               => array_merge($student['scope'] ?? [], ['studRole' => 'all']),
         ];
     }
@@ -199,6 +202,14 @@ final class StaffPlacementRegistryService
             $studRole
         );
         $aesRosterFetched = count($classRows);
+        $detailsStats = ['inserted' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'skipped' => 0];
+        if ($classRows !== []) {
+            $detailsStats = (new StudentDetailsSyncService())->syncFromAesRecords($classRows, [
+                'syncSource'   => 'staff_registry',
+                'studRole'     => $roleTag,
+                'departmentId' => $deptId,
+            ]);
+        }
         $studentsSynced = 0;
         if ($classRows !== []) {
             if ($program !== '' && $batch !== '') {
@@ -221,6 +232,10 @@ final class StaffPlacementRegistryService
         $out = [
             'studentsSynced'   => $studentsSynced,
             'aesRosterFetched' => $aesRosterFetched,
+            'detailsInserted'  => (int) ($detailsStats['inserted'] ?? 0),
+            'detailsUpdated'   => (int) ($detailsStats['updated'] ?? 0),
+            'detailsUnchanged' => (int) ($detailsStats['unchanged'] ?? 0),
+            'detailsFailed'    => (int) ($detailsStats['failed'] ?? 0),
             'scope'            => [
                 'departmentId'    => $deptId,
                 'departmentAesId' => $deptAesId,
@@ -688,25 +703,40 @@ final class StaffPlacementRegistryService
         $batch = trim((string) ($filters['batch'] ?? ''));
 
         $placementModel = new StudentPlacementModel();
+        $detailsModel = new StudentDetailsModel();
         $legacyFlat = $placementModel->hasLegacyFlatPlacementColumns();
 
-        // Legacy flat tables key rows by placement year, not AES stud_class — do not
-        // batch-filter them on list load (would always return []). Overlay / AES merge
-        // keeps the selected class when AES has the roster; otherwise show dept table.
+        // Master roster from student_details; placement overlay from student_placements.
         $tableBatch = ($legacyFlat && $batch !== '') ? '' : $batch;
-        $tableRows = $placementModel->listRosterRowsForRegistryScope(
-            $departmentId,
-            $program,
-            $tableBatch,
-            5000,
-            $batch !== ''
-        );
+        $tableRows = [];
+        if ($detailsModel->isAvailable()) {
+            $tableRows = $detailsModel->listRosterRowsForRegistryScope(
+                $departmentId,
+                $program,
+                $tableBatch !== '' ? $tableBatch : $batch,
+                5000
+            );
+        }
+        if ($tableRows === []) {
+            $tableRows = $placementModel->listRosterRowsForRegistryScope(
+                $departmentId,
+                $program,
+                $tableBatch,
+                5000,
+                $batch !== ''
+            );
+        }
         // Ensure CA/MCA legacy courseId=1001 rows are present even when dept.aesId differs.
         if ($legacyFlat && $tableRows === [] && $departmentId !== '') {
             $tableRows = $placementModel->listLegacyFlatRosterRows($departmentId, $program);
         }
 
-        $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
+        $tableRows = $this->overlayPlacementRegistryOnRoster($tableRows, $departmentId, $program, $legacyFlat);
+
+        $aesRows = [];
+        if ($tableRows === [] && empty($listCtx['placementForceLiveAes'])) {
+            $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
+        }
         if ($aesRows !== []) {
             $tableRows = $this->mergeCompleteClassRoster($tableRows, $aesRows);
         }
@@ -1061,13 +1091,13 @@ final class StaffPlacementRegistryService
     public static function registryTableColumns(): array
     {
         return [
-            ['key' => '_sl', 'label' => 'Sl#', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_placements', 'group' => 'snapshot'],
-            ['key' => 'studentName', 'label' => 'Student name', 'sortable' => true, 'sortKey' => 'studentName', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'studentName'],
-            ['key' => 'registerNumber', 'label' => 'Register no.', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'registerNumber'],
-            ['key' => 'classBatch', 'label' => 'Class batch', 'sortable' => true, 'sortKey' => 'classBatch', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'classBatch'],
-            ['key' => 'programme', 'label' => 'Programme', 'sortable' => true, 'sortKey' => 'programme', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'programme'],
-            ['key' => 'phone', 'label' => 'Phone', 'sortable' => true, 'sortKey' => 'phone', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'phone'],
-            ['key' => 'email', 'label' => 'Email', 'sortable' => true, 'sortKey' => 'email', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'email'],
+            ['key' => '_sl', 'label' => 'Sl#', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_details', 'group' => 'snapshot'],
+            ['key' => 'studentName', 'label' => 'Student name', 'sortable' => true, 'sortKey' => 'studentName', 'source' => 'student_details', 'group' => 'snapshot', 'payloadField' => 'studentName'],
+            ['key' => 'registerNumber', 'label' => 'Register no.', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_details', 'group' => 'snapshot', 'payloadField' => 'registerNumber'],
+            ['key' => 'classBatch', 'label' => 'Class batch', 'sortable' => true, 'sortKey' => 'classBatch', 'source' => 'student_details', 'group' => 'snapshot', 'payloadField' => 'classBatch'],
+            ['key' => 'programme', 'label' => 'Programme', 'sortable' => true, 'sortKey' => 'programme', 'source' => 'student_details', 'group' => 'snapshot', 'payloadField' => 'programme'],
+            ['key' => 'phone', 'label' => 'Phone', 'sortable' => true, 'sortKey' => 'phone', 'source' => 'student_details', 'group' => 'snapshot', 'payloadField' => 'phone'],
+            ['key' => 'email', 'label' => 'Email', 'sortable' => true, 'sortKey' => 'email', 'source' => 'student_details', 'group' => 'snapshot', 'payloadField' => 'email'],
             ['key' => 'company', 'label' => 'Company / institution', 'sortable' => true, 'sortKey' => 'company', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'company'],
             ['key' => 'recordType', 'label' => 'Record type', 'sortable' => true, 'sortKey' => 'recordType', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'recordType'],
             ['key' => 'role', 'label' => 'Role', 'sortable' => true, 'sortKey' => 'role', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'role'],
@@ -3024,6 +3054,29 @@ final class StaffPlacementRegistryService
             'email'       => $personal['collegeEmail'] ?? $student['collegeEmail'] ?? $student['email'] ?? '',
             'admissionNo' => $student['admno'] ?? $student['admissionNo'] ?? $register,
         ]);
+    }
+
+    /**
+     * Join student_details roster rows with placement overlay from student_placements.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function overlayPlacementRegistryOnRoster(
+        array $rows,
+        string $departmentId,
+        string $program,
+        bool $legacyFlat
+    ): array {
+        if ($rows === []) {
+            return [];
+        }
+        $rows = $this->attachRegistryPlacements($rows);
+        if ($legacyFlat) {
+            $rows = $this->overlayLegacyFlatPlacements($rows, $departmentId, $program, true);
+        }
+
+        return $rows;
     }
 
     /**
