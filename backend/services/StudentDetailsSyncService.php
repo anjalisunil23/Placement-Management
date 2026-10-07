@@ -49,6 +49,7 @@ final class StudentDetailsSyncService
             'skipped'                  => 0,
             'skippedEmptyAdmno'        => 0,
             'skippedRetainedAsStudent' => 0,
+            'markedAesAlumniDirectory' => 0,
             'syncedAt'                 => $syncedAt,
             'syncSource'               => (string) ($options['syncSource'] ?? 'aes'),
             'studRole'                 => (string) ($options['studRole'] ?? ''),
@@ -83,6 +84,9 @@ final class StudentDetailsSyncService
                     }
                 } else {
                     $stats['failed']++;
+                }
+                if (!empty($result['markedAesAlumniDirectory'])) {
+                    $stats['markedAesAlumniDirectory']++;
                 }
             } catch (\Throwable) {
                 $stats['failed']++;
@@ -134,6 +138,7 @@ final class StudentDetailsSyncService
                 'skipped',
                 'skippedEmptyAdmno',
                 'skippedRetainedAsStudent',
+                'markedAesAlumniDirectory',
                 'durationMs',
             ] as $key) {
                 $merged[$key] += (int) ($part[$key] ?? 0);
@@ -149,6 +154,7 @@ final class StudentDetailsSyncService
                     'skipped'                  => (int) ($part['skipped'] ?? 0),
                     'skippedEmptyAdmno'        => (int) ($part['skippedEmptyAdmno'] ?? 0),
                     'skippedRetainedAsStudent' => (int) ($part['skippedRetainedAsStudent'] ?? 0),
+                    'markedAesAlumniDirectory' => (int) ($part['markedAesAlumniDirectory'] ?? 0),
                 ];
             }
             if (!empty($part['syncedAt'])) {

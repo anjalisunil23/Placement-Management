@@ -2295,10 +2295,10 @@ async function runCampusAesDirectorySync() {
     const aesStudents = report.aesStudentsReceived ?? result.fetchedStudents ?? sc;
     const aesAlumni = report.aesAlumniReceived ?? result.fetchedAlumni ?? ac;
     const overlap = report.aesCanonicalOverlap ?? result.studentAlumniOverlap ?? 0;
-    const retained = report.skippedRetainedAsStudent ?? 0;
+    const markedOverlap = report.markedAesAlumniDirectory ?? 0;
     const diagnosis = report.diagnosis?.code ?? '';
     toast(
-      `AES received ${aesStudents} students + ${aesAlumni} alumni. Stored ${sc} + ${ac}. Inserted ${report.inserted ?? result.inserted ?? 0}, updated ${report.updated ?? result.updated ?? 0}, skipped ${report.skipped ?? result.skipped ?? 0}${retained ? ` (${retained} retained as students` + (overlap ? `, overlap ${overlap}` : '') + ')' : ''}, failed ${report.failed ?? result.failed ?? 0}${diagnosis ? `. Diagnosis ${diagnosis}` : ''}.`,
+      `AES received ${aesStudents} students + ${aesAlumni} alumni. Stored ${sc} students + ${ac} alumni. Inserted ${report.inserted ?? result.inserted ?? 0}, updated ${report.updated ?? result.updated ?? 0}, skipped ${report.skipped ?? result.skipped ?? 0}, failed ${report.failed ?? result.failed ?? 0}${markedOverlap ? ` (${markedOverlap} studying rows marked in AES alumni directory` + (overlap ? `, overlap ${overlap}` : '') + ')' : overlap ? ` (overlap ${overlap})` : ''}${diagnosis ? `. Diagnosis ${diagnosis}` : ''}.`,
       'success'
     );
     await refreshCampusAesDirectorySyncStatus();

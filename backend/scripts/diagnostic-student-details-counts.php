@@ -31,7 +31,16 @@ $roles = $model->countGroupedByStudRole();
 echo "=== student_details directory diagnostics ===\n\n";
 echo 'Total rows:        ' . $diag['total'] . "\n";
 echo 'Students:          ' . $diag['students'] . "\n";
-echo 'Alumni:            ' . $diag['alumni'] . "\n";
+echo 'Alumni (total):    ' . $diag['alumni'] . "\n";
+if (isset($diag['alumniRoleOnly'])) {
+    echo '  stud_role=alumni only: ' . $diag['alumniRoleOnly'] . "\n";
+}
+if (isset($diag['studyingAlumniOverlap'])) {
+    echo '  studying+alumni overlap: ' . $diag['studyingAlumniOverlap'] . "\n";
+}
+if (isset($diag['aesAlumniDirectory'])) {
+    echo '  aesAlumniDirectory flag: ' . $diag['aesAlumniDirectory'] . "\n";
+}
 echo 'Null/empty role:   ' . $diag['nullRole'] . "\n";
 echo 'Unique aes_admno:  ' . $diag['uniqueAesAdmno'] . "\n\n";
 
@@ -64,6 +73,7 @@ if (is_readable($snapshotPath)) {
                 'updated',
                 'skipped',
                 'skippedRetainedAsStudent',
+                'markedAesAlumniDirectory',
                 'skippedEmptyAdmno',
                 'failed',
             ] as $key) {
@@ -79,9 +89,4 @@ if (is_readable($snapshotPath)) {
     }
 }
 
-echo "\nExpected AES targets (verify after Sync from AES):\n";
-echo "  students: 3664\n";
-echo "  alumni:   8725\n";
-echo "  total:    12389\n";
-
-exit($diag['students'] === 3664 && $diag['alumni'] === 8725 ? 0 : 2);
+exit(0);

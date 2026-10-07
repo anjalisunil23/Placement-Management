@@ -2399,6 +2399,7 @@ final class OfficerDataService
             'skipped'                  => (int) ($merged['skipped'] ?? 0),
             'skippedEmptyAdmno'        => (int) ($merged['skippedEmptyAdmno'] ?? 0),
             'skippedRetainedAsStudent' => (int) ($merged['skippedRetainedAsStudent'] ?? 0),
+            'markedAesAlumniDirectory' => (int) ($merged['markedAesAlumniDirectory'] ?? 0),
             'failed'                   => (int) ($merged['failed'] ?? 0),
             'storedStudents'           => $studentCount,
             'storedAlumni'             => $alumniCount,

@@ -142,16 +142,15 @@ class StudentDetailsModel extends BaseModel
 
         $existing = $this->findByAesAdmno($aesAdmno);
         $syncHint = strtolower(trim((string) ($options['studRole'] ?? '')));
-        if ($syncHint === 'alumni'
-            && is_array($existing)
-            && (string) ($existing['studRole'] ?? '') === 'student'
-            && AesApiService::normalizeStudRole($record) !== 'alumni') {
-            return [
-                'action'     => 'skipped',
-                'id'         => (string) ($existing['_id'] ?? ''),
-                'aesAdmno'   => $aesAdmno,
-                'skipReason' => 'retained_as_student',
-            ];
+        $markedAesAlumniDirectory = false;
+        if ($syncHint === 'alumni') {
+            $incoming['aesAlumniDirectory'] = true;
+            if (is_array($existing) && (string) ($existing['studRole'] ?? '') === 'student') {
+                // AES counts these in both studying and alumni totals; keep placement role as student.
+                $incoming['studRole'] = 'student';
+                $incoming['stud_role'] = 'Student';
+                $markedAesAlumniDirectory = empty($existing['aesAlumniDirectory']);
+            }
         }
 
         $incoming = self::guardStudRoleTransition($record, $existing, $incoming, $options);
@@ -166,7 +165,12 @@ class StudentDetailsModel extends BaseModel
             $this->applyRegistrationStatusToPayload($incoming);
             $id = $this->insert($incoming);
 
-            return ['action' => 'inserted', 'id' => $id, 'aesAdmno' => $aesAdmno];
+            return [
+                'action'                   => 'inserted',
+                'id'                       => $id,
+                'aesAdmno'                 => $aesAdmno,
+                'markedAesAlumniDirectory' => $markedAesAlumniDirectory,
+            ];
         }
 
         $merged = StudentPlacementModel::mergeNonEmptyValues($existing, $incoming);
@@ -176,7 +180,9 @@ class StudentDetailsModel extends BaseModel
         $this->applyRegistrationStatusToPayload($merged);
         $registrationChanged = (string) ($merged['registrationStatus'] ?? '')
             !== (string) ($existing['registrationStatus'] ?? '');
-        if ($beforeHash === $afterHash && !$registrationChanged) {
+        $directoryFlagChanged = !empty($merged['aesAlumniDirectory'])
+            && empty($existing['aesAlumniDirectory']);
+        if ($beforeHash === $afterHash && !$registrationChanged && !$directoryFlagChanged) {
             if (!empty($options['touchSyncedAt'])) {
                 $touch = $existing;
                 unset($touch['_id']);
@@ -185,14 +191,24 @@ class StudentDetailsModel extends BaseModel
                 $this->update((string) ($existing['_id'] ?? ''), $touch);
             }
 
-            return ['action' => 'unchanged', 'id' => (string) ($existing['_id'] ?? ''), 'aesAdmno' => $aesAdmno];
+            return [
+                'action'                   => 'unchanged',
+                'id'                       => (string) ($existing['_id'] ?? ''),
+                'aesAdmno'                 => $aesAdmno,
+                'markedAesAlumniDirectory' => false,
+            ];
         }
 
         $merged['updatedAt'] = $now;
         $id = (string) ($existing['_id'] ?? '');
         $this->update($id, $merged);
 
-        return ['action' => 'updated', 'id' => $id, 'aesAdmno' => $aesAdmno];
+        return [
+            'action'                   => 'updated',
+            'id'                       => $id,
+            'aesAdmno'                 => $aesAdmno,
+            'markedAesAlumniDirectory' => $markedAesAlumniDirectory || $directoryFlagChanged,
+        ];
     }
 
     /**
@@ -466,8 +482,12 @@ class StudentDetailsModel extends BaseModel
             $params[] = $deptAesId;
         }
         if ($studRole !== '' && $studRole !== 'all') {
-            $sql .= ' AND stud_role = ?';
-            $params[] = strtolower($studRole) === 'alumni' ? 'alumni' : 'student';
+            if (strtolower($studRole) === 'alumni') {
+                $sql .= ' AND ' . self::sqlAlumniMembershipCondition();
+            } else {
+                $sql .= ' AND stud_role = ?';
+                $params[] = 'student';
+            }
         }
         $registrationStatus = strtolower(trim($registrationStatus));
         if ($registrationStatus === 'registered' || $registrationStatus === 'non_registered') {
@@ -494,9 +514,17 @@ class StudentDetailsModel extends BaseModel
 
             $fallbackLimit = $sqlLimit ?? PHP_INT_MAX;
 
+            $docs = $this->findAll($filter, $fallbackLimit);
+            if ($studRole !== '' && strtolower($studRole) === 'alumni') {
+                $docs = array_values(array_filter(
+                    $docs,
+                    static fn (array $doc): bool => self::recordInAesAlumniDirectory($doc)
+                ));
+            }
+
             return array_map(
                 fn (array $doc): array => self::toDirectoryRecord($doc),
-                $this->findAll($filter, $fallbackLimit)
+                $docs
             );
         }
 
@@ -646,6 +674,7 @@ class StudentDetailsModel extends BaseModel
             unset($doc['_id']);
             $doc['studRole'] = 'student';
             $doc['stud_role'] = 'Student';
+            unset($doc['aesAlumniDirectory']);
             $this->applyRegistrationStatusToPayload($doc);
             $doc['updatedAt'] = DocumentHelper::now();
             if ($id !== '') {
@@ -713,6 +742,7 @@ class StudentDetailsModel extends BaseModel
             unset($doc['_id']);
             $doc['studRole'] = 'student';
             $doc['stud_role'] = 'Student';
+            unset($doc['aesAlumniDirectory']);
             $this->applyRegistrationStatusToPayload($doc);
             $doc['updatedAt'] = DocumentHelper::now();
             $this->update($id, $doc);
@@ -796,10 +826,13 @@ class StudentDetailsModel extends BaseModel
         try {
             if ($studRole === '' || $studRole === 'all') {
                 $stmt = $this->db->query('SELECT COUNT(*) FROM `student_details`');
+            } elseif (strtolower($studRole) === 'alumni') {
+                $stmt = $this->db->query(
+                    'SELECT COUNT(*) FROM `student_details` WHERE ' . self::sqlAlumniMembershipCondition()
+                );
             } else {
-                $role = strtolower($studRole) === 'alumni' ? 'alumni' : 'student';
                 $stmt = $this->db->prepare('SELECT COUNT(*) FROM `student_details` WHERE stud_role = ?');
-                $stmt->execute([$role]);
+                $stmt->execute(['student']);
             }
 
             return (int) ($stmt->fetchColumn() ?: 0);
@@ -864,11 +897,15 @@ class StudentDetailsModel extends BaseModel
         }
 
         try {
+            $alumniMembership = self::sqlAlumniMembershipCondition();
             $stmt = $this->db->query(
                 'SELECT
                     COUNT(*) AS total,
                     SUM(stud_role = \'student\') AS students,
-                    SUM(stud_role = \'alumni\') AS alumni,
+                    SUM(stud_role = \'alumni\') AS alumni_role_only,
+                    SUM(' . $alumniMembership . ') AS alumni,
+                    SUM(stud_role = \'student\' AND ' . $alumniMembership . ') AS studying_alumni_overlap,
+                    SUM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.aesAlumniDirectory\')), \'false\') = \'true\') AS aes_alumni_directory,
                     SUM(stud_role IS NULL OR TRIM(stud_role) = \'\') AS null_role,
                     COUNT(DISTINCT aes_admno) AS unique_aes_admno
                  FROM `student_details`'
@@ -876,11 +913,14 @@ class StudentDetailsModel extends BaseModel
             $row = $stmt->fetch();
 
             return [
-                'total'          => (int) ($row['total'] ?? 0),
-                'students'       => (int) ($row['students'] ?? 0),
-                'alumni'         => (int) ($row['alumni'] ?? 0),
-                'nullRole'       => (int) ($row['null_role'] ?? 0),
-                'uniqueAesAdmno' => (int) ($row['unique_aes_admno'] ?? 0),
+                'total'                  => (int) ($row['total'] ?? 0),
+                'students'               => (int) ($row['students'] ?? 0),
+                'alumniRoleOnly'         => (int) ($row['alumni_role_only'] ?? 0),
+                'alumni'                 => (int) ($row['alumni'] ?? 0),
+                'studyingAlumniOverlap'  => (int) ($row['studying_alumni_overlap'] ?? 0),
+                'aesAlumniDirectory'     => (int) ($row['aes_alumni_directory'] ?? 0),
+                'nullRole'               => (int) ($row['null_role'] ?? 0),
+                'uniqueAesAdmno'         => (int) ($row['unique_aes_admno'] ?? 0),
             ];
         } catch (\Throwable) {
             return [
@@ -1156,6 +1196,23 @@ class StudentDetailsModel extends BaseModel
         }
 
         return $incoming;
+    }
+
+    /**
+     * AES alumni directory membership (stud_role = alumni OR synced from alumni pass while studying).
+     */
+    public static function sqlAlumniMembershipCondition(): string
+    {
+        return '(stud_role = \'alumni\' OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.aesAlumniDirectory\')), \'false\') = \'true\')';
+    }
+
+    public static function recordInAesAlumniDirectory(array $doc): bool
+    {
+        if (strtolower(trim((string) ($doc['studRole'] ?? ''))) === 'alumni') {
+            return true;
+        }
+
+        return !empty($doc['aesAlumniDirectory']);
     }
 
     /**
