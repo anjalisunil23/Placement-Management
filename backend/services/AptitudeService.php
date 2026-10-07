@@ -1219,7 +1219,7 @@ final class AptitudeService
         if (!Security::isValidId($id)) {
             Response::error('Invalid JD set id.', 400);
         }
-        $limit = max(1, min(30, $limit));
+        $limit = max(1, min(24, $limit));
         $model = new \PMS\Models\AptitudeJdQuestionSetModel();
         $set = $model->findById($id);
         if ($set === null) {

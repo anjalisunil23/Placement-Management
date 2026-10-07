@@ -2069,7 +2069,7 @@
     const opts = (q.options || []).filter((o) => String(o || '').trim() && String(o).trim() !== '—').slice(0, 5);
     const pad = opts.length ? opts : (q.options || []).slice(0, 5);
     const displayOpts = pad.length ? pad : [];
-    const answerKnown = q.answerKnown !== false && q.answerKnown !== 0;
+    const answerKnown = !!q.answerKnown;
     const correct = Math.max(0, Math.min(Math.max(displayOpts.length, 1) - 1, Number(q.correctIndex ?? 0)));
     const promptRaw = String(q.prompt || '').trim();
     const promptWrapStyle = (isSc || isDs || /\n/.test(promptRaw)) ? ' style="white-space:pre-wrap"' : '';
@@ -2230,12 +2230,28 @@
   }
 
   const jdSetAutoAnalyzeDone = new Set();
+  let jdAnalyzeInflight = false;
 
-  async function runJdAnalyzeAnswers(setId, panel, { limit = 12, silent = false } = {}) {
+  function jdPendingAnswerCount(detail) {
+    return (detail?.questions || []).filter((q) => !q.answerKnown).length;
+  }
+
+  function rerenderJdQuestionsPanel(setId, detail, panel) {
+    const sid = String(setId || detail?.id || '');
+    const host = panel?.closest('[data-jd-questions]') || panel?.parentElement;
+    if (!host || !detail) return null;
+    host.innerHTML = renderManualQuestionsPanel(detail, { setId: sid, editable: access.canManage });
+    const nextPanel = host.querySelector('[data-jd-questions-panel]');
+    bindManualQuestionEditEvents(nextPanel);
+    return nextPanel;
+  }
+
+  async function runJdAnalyzeAnswers(setId, panel, { limit = 18, silent = false, manageUi = true } = {}) {
     const sid = String(setId || '');
     if (!sid) return null;
     const btn = panel?.querySelector('[data-jd-analyze-answers]');
-    btn?.setAttribute('disabled', 'disabled');
+    const statusEl = panel?.querySelector('[data-jd-analyze-status]');
+    if (manageUi) btn?.setAttribute('disabled', 'disabled');
     try {
       const res = await api(`/aptitude/jd-sets/${encodeURIComponent(sid)}/analyze-answers`, {
         method: 'POST',
@@ -2245,12 +2261,9 @@
       if (!res?.success) throw new Error(res?.message || 'Could not analyze answers.');
       const detail = res.data?.set || res.data;
       if (detail) jdSetDetailsCache[sid] = detail;
+      let nextPanel = panel;
       if (panel && detail) {
-        const host = panel.closest('[data-jd-questions]') || panel.parentElement;
-        if (host) {
-          host.innerHTML = renderManualQuestionsPanel(detail, { setId: sid, editable: access.canManage });
-          bindManualQuestionEditEvents(host.querySelector('[data-jd-questions-panel]'));
-        }
+        nextPanel = rerenderJdQuestionsPanel(sid, detail, panel) || panel;
       }
       if (!silent) {
         const n = Number(res.data?.analyzed ?? 0);
@@ -2258,14 +2271,61 @@
         if (n > 0) {
           toast(`Analyzed ${n} answer(s)${pending > 0 ? ` — ${pending} still pending` : ''}.`, 'success');
         } else if (pending > 0) {
-          toast('Could not infer more answers yet. Edit manually or run Analyze again.', 'info');
+          toast(res?.message || 'Could not infer answers. Check OpenAI is configured on the server, then try again.', 'error');
         } else {
           toast('All answers are set.', 'success');
         }
       }
-      return res.data;
+      return { ...res.data, panel: nextPanel };
     } finally {
+      if (manageUi) btn?.removeAttribute('disabled');
+      if (statusEl && manageUi) statusEl.textContent = '';
+    }
+  }
+
+  async function runJdAnalyzeAllAnswers(setId, panel) {
+    if (jdAnalyzeInflight) return;
+    const sid = String(setId || '');
+    if (!sid || !panel) return;
+    jdAnalyzeInflight = true;
+    const btn = panel.querySelector('[data-jd-analyze-answers]');
+    const statusEl = panel.querySelector('[data-jd-analyze-status]');
+    btn?.setAttribute('disabled', 'disabled');
+    let totalAnalyzed = 0;
+    let currentPanel = panel;
+    try {
+      for (let round = 0; round < 60; round += 1) {
+        const detail = jdSetDetailsCache[sid] || (await getJdSetDetail(sid));
+        const pending = jdPendingAnswerCount(detail);
+        if (pending <= 0) break;
+        if (statusEl) {
+          statusEl.textContent = totalAnalyzed > 0
+            ? `Analyzing… ${totalAnalyzed} done, ${pending} remaining (batch ${round + 1})`
+            : `Analyzing ${pending} question(s)… this may take several minutes.`;
+        }
+        const result = await runJdAnalyzeAnswers(sid, currentPanel, {
+          limit: 18,
+          silent: true,
+          manageUi: false,
+        });
+        currentPanel = result?.panel || currentPanel;
+        const n = Number(result?.analyzed ?? 0);
+        totalAnalyzed += n;
+        if (n <= 0) break;
+      }
+      const finalDetail = jdSetDetailsCache[sid] || (await getJdSetDetail(sid));
+      const pending = jdPendingAnswerCount(finalDetail);
+      if (totalAnalyzed > 0) {
+        toast(`Analyzed ${totalAnalyzed} answer(s)${pending > 0 ? ` — ${pending} still pending` : ''}.`, pending > 0 ? 'info' : 'success');
+      } else if (pending > 0) {
+        toast('Could not infer answers. Ensure OpenAI is configured on the server, then try again.', 'error');
+      }
+    } catch (err) {
+      toast(err?.message || 'Could not analyze answers.', 'error');
+    } finally {
+      jdAnalyzeInflight = false;
       btn?.removeAttribute('disabled');
+      if (statusEl) statusEl.textContent = '';
     }
   }
 
@@ -2312,14 +2372,7 @@
       const analyzeBtn = e.target.closest('[data-jd-analyze-answers]');
       if (analyzeBtn) {
         e.preventDefault();
-        analyzeBtn.setAttribute('disabled', 'disabled');
-        try {
-          await runJdAnalyzeAnswers(setId, panel, { limit: 12 });
-        } catch (err) {
-          toast(err?.message || 'Could not analyze answers.', 'error');
-        } finally {
-          analyzeBtn.removeAttribute('disabled');
-        }
+        await runJdAnalyzeAllAnswers(setId, panel);
         return;
       }
 
@@ -2352,11 +2405,13 @@
 
     const setId = String(panel.getAttribute('data-jd-set-id') || '');
     if (access.canManage && setId && !jdSetAutoAnalyzeDone.has(setId)) {
-      const detail = jdSetDetailsCache[setId];
-      const pending = (detail?.questions || []).filter((q) => !q.answerKnown).length;
-      if (pending > 0) {
+      const detail = jdSetDetailsCache[setId] || null;
+      const pending = jdPendingAnswerCount(detail);
+      if (pending > 0 && pending <= 12) {
         jdSetAutoAnalyzeDone.add(setId);
-        runJdAnalyzeAnswers(setId, panel, { limit: Math.min(12, pending), silent: pending <= 3 }).catch(() => {});
+        runJdAnalyzeAnswers(setId, panel, { limit: 18 }).catch((err) => {
+          toast(err?.message || 'Automatic answer analysis failed. Click Analyze all answers with AI.', 'error');
+        });
       }
     }
   }
@@ -2396,8 +2451,8 @@
       const knownCount = qs.length - unknownCount;
       const analyzeBar = editable && unknownCount > 0
         ? `<div class="alert alert-info py-2 px-3 small mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <span>${unknownCount} question(s) still need answers${knownCount > 0 ? ` (${knownCount} already set)` : ''}.</span>
-            <button type="button" class="btn btn-sm btn-primary" data-jd-analyze-answers="1">Analyze answers with AI</button>
+            <span data-jd-analyze-status>${unknownCount} question(s) still need answers${knownCount > 0 ? ` (${knownCount} already set)` : ''}. Large sets are processed in batches automatically.</span>
+            <button type="button" class="btn btn-sm btn-primary" data-jd-analyze-answers="1">Analyze all answers with AI</button>
           </div>`
         : '';
       const summary = `<div class="small text-muted-2 mb-3 border-bottom pb-2">

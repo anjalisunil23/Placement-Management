@@ -574,14 +574,14 @@ class AptitudeJdQuestionSetModel extends BaseModel
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function detailView(array $row, bool $forStudent = false): array
+    private function detailView(array $setRow, bool $forStudent = false): array
     {
         $questions = [];
-        foreach (array_values((array) ($row['questions'] ?? [])) as $q) {
+        foreach (array_values((array) ($setRow['questions'] ?? [])) as $q) {
             if (!is_array($q)) {
                 continue;
             }
-            $row = [
+            $questionView = [
                 'id' => (string) ($q['id'] ?? ''),
                 'prompt' => (string) ($q['prompt'] ?? ''),
                 'options' => array_values((array) ($q['options'] ?? [])),
@@ -599,37 +599,37 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 'questionType' => (string) ($q['questionType'] ?? ''),
             ];
             if (!$forStudent) {
-                $row['correctIndex'] = (int) ($q['correctIndex'] ?? 0);
-                $row['explanation'] = (string) ($q['explanation'] ?? '');
-                $row['answerKnown'] = !empty($q['answerKnown']);
-                $row['answerSource'] = (string) ($q['answerSource'] ?? '');
-                $row['aiAnalyzed'] = !empty($q['aiAnalyzed']);
+                $questionView['correctIndex'] = (int) ($q['correctIndex'] ?? 0);
+                $questionView['explanation'] = (string) ($q['explanation'] ?? '');
+                $questionView['answerKnown'] = !empty($q['answerKnown']);
+                $questionView['answerSource'] = (string) ($q['answerSource'] ?? '');
+                $questionView['aiAnalyzed'] = !empty($q['aiAnalyzed']);
             }
-            $questions[] = $row;
+            $questions[] = $questionView;
         }
 
-        $id = (string) ($row['_id'] ?? '');
+        $id = (string) ($setRow['_id'] ?? '');
 
         return $this->withDocumentUrl([
             'id' => $id,
-            'companyId' => (string) ($row['companyId'] ?? ''),
-            'companyName' => (string) ($row['companyName'] ?? ''),
-            'jdTitle' => (string) ($row['jdTitle'] ?? ''),
-            'jdFilename' => (string) ($row['jdFilename'] ?? ''),
-            'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
-            'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
-            'hasDocument' => $this->rowHasManualDocument($row),
+            'companyId' => (string) ($setRow['companyId'] ?? ''),
+            'companyName' => (string) ($setRow['companyName'] ?? ''),
+            'jdTitle' => (string) ($setRow['jdTitle'] ?? ''),
+            'jdFilename' => (string) ($setRow['jdFilename'] ?? ''),
+            'jdFileUrl' => (string) ($setRow['jdFileUrl'] ?? ''),
+            'jdMimeType' => (string) ($setRow['jdMimeType'] ?? ''),
+            'hasDocument' => $this->rowHasManualDocument($setRow),
             'questionCount' => count($questions),
             'questions' => $questions,
-            'manualText' => $this->manualTextForView($row),
-            'manualSaveTarget' => (string) ($row['manualSaveTarget'] ?? 'bank'),
-            'manualSource' => (string) ($row['manualSource'] ?? ''),
-            'companyBankKind' => self::resolveCompanyBankKind($row),
-            'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
-            'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
-            'importMeta' => is_array($row['importMeta'] ?? null) ? $row['importMeta'] : [],
-            'createdAt' => (string) ($row['createdAt'] ?? ''),
-        ], $row, $forStudent);
+            'manualText' => $this->manualTextForView($setRow),
+            'manualSaveTarget' => (string) ($setRow['manualSaveTarget'] ?? 'bank'),
+            'manualSource' => (string) ($setRow['manualSource'] ?? ''),
+            'companyBankKind' => self::resolveCompanyBankKind($setRow),
+            'showInCompanyBank' => !array_key_exists('showInCompanyBank', $setRow) || !empty($setRow['showInCompanyBank']),
+            'manualParseMethod' => (string) ($setRow['manualParseMethod'] ?? ''),
+            'importMeta' => is_array($setRow['importMeta'] ?? null) ? $setRow['importMeta'] : [],
+            'createdAt' => (string) ($setRow['createdAt'] ?? ''),
+        ], $setRow, $forStudent);
     }
 
     /**
