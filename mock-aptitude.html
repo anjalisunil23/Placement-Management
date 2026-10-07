@@ -83,7 +83,7 @@
     </div>
   </div>
 
-  <ul class="nav nav-pills gap-1 mb-3 flex-wrap d-none" id="aptViewNav">
+  <ul class="nav jd-block-tabs mb-3 flex-wrap d-none" id="aptViewNav">
     <li class="nav-item"><a class="nav-link" data-view="take" href="#take">Take test</a></li>
     <li class="nav-item"><a class="nav-link" data-view="progress" href="#progress">Progress</a></li>
     <li class="nav-item"><a class="nav-link" data-view="manage" href="#manage">Manage</a></li>
@@ -105,7 +105,7 @@
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="contests">Contests</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-list="jdblock">Company Block</a></li>
             </ul>
-            <ul class="nav nav-pills gap-1 flex-wrap mt-2 d-none" id="takeContestTypeNav">
+            <ul class="nav jd-block-tabs jd-block-tabs--sub flex-wrap mt-2 d-none" id="takeContestTypeNav">
               <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-contest-type="weekly">Weekly</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-contest-type="monthly">Monthly</a></li>
             </ul>
@@ -135,12 +135,12 @@
       <div class="col-lg-5">
         <div class="card-surface p-3 p-md-4">
           <h6 class="fw-bold mb-2">My recent results</h6>
-          <ul class="nav nav-pills gap-1 mb-2 flex-wrap" id="myResultsNav">
+          <ul class="nav jd-block-tabs mb-2 flex-wrap" id="myResultsNav">
             <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-view="tests">Test results</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="contests">Contest results</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-view="company">Company test results</a></li>
           </ul>
-          <ul class="nav nav-pills gap-1 mb-2 flex-wrap d-none" id="myResultsContestTypeNav">
+          <ul class="nav jd-block-tabs jd-block-tabs--sub flex-wrap mb-2 d-none" id="myResultsContestTypeNav">
             <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-results-contest-type="weekly">Weekly</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-results-contest-type="monthly">Monthly</a></li>
           </ul>
@@ -153,12 +153,12 @@
   <div id="aptDirectory" class="d-none mt-3">
     <div class="card-surface p-3 p-md-4 mb-3">
       <p class="small text-muted-2 mb-2 d-none" id="dirScopeHint"></p>
-      <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="progressViewNav">
+      <ul class="nav jd-block-tabs mb-3 flex-wrap" id="progressViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-progress-view="tests">Test results</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-progress-view="contests">Contests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-progress-view="company">Company test results</a></li>
       </ul>
-      <ul class="nav nav-pills gap-1 mb-3 flex-wrap d-none" id="progressContestTypeNav">
+      <ul class="nav jd-block-tabs jd-block-tabs--sub flex-wrap mb-3 d-none" id="progressContestTypeNav">
         <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-progress-contest-type="weekly">Weekly</a></li>
         <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-progress-contest-type="monthly">Monthly</a></li>
       </ul>
@@ -211,7 +211,7 @@
   <div id="aptManage" class="d-none mt-3">
     <div class="card-surface p-3 p-md-4 mb-3">
       <p class="small text-muted-2 mb-2 d-none" id="manageScopeHint"></p>
-      <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageViewNav">
+      <ul class="nav jd-block-tabs mb-3 flex-wrap" id="manageViewNav">
         <li class="nav-item"><a class="nav-link active" href="#" data-manage-view="tests">Tests</a></li>
         <li class="nav-item d-none" id="manageContestNavItem"><a class="nav-link" href="#" data-manage-view="contests">Contests</a></li>
         <li class="nav-item"><a class="nav-link" href="#" data-manage-view="bank">Question bank</a></li>
@@ -236,7 +236,7 @@
       </div>
 
       <div id="manageContestsPanel" class="d-none">
-        <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="manageContestTypeNav">
+        <ul class="nav jd-block-tabs jd-block-tabs--sub flex-wrap mb-3" id="manageContestTypeNav">
           <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-contest-type="weekly">Weekly</a></li>
           <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-contest-type="monthly">Monthly</a></li>
         </ul>
@@ -290,7 +290,7 @@
             <select class="form-select form-select-sm" id="bankFilterCategory"><option value="">All categories</option></select>
           </div>
         </div>
-        <ul class="nav nav-pills gap-1 mb-3 flex-wrap" id="bankDifficultyNav">
+        <ul class="nav jd-block-tabs mb-3 flex-wrap" id="bankDifficultyNav">
           <li class="nav-item"><a class="nav-link active" href="#" data-bank-difficulty="">All</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Easy">Easy</a></li>
           <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Medium">Medium</a></li>
@@ -311,7 +311,7 @@
 
       <div id="manageJdPanel" class="d-none">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-          <ul class="nav nav-pills gap-1 flex-wrap mb-0 d-none" id="adminJdBlockViewNav">
+          <ul class="nav jd-block-tabs flex-wrap mb-0 d-none" id="adminJdBlockViewNav">
             <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-admin-jd-block-view="tests">Tests</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-admin-jd-block-view="bank">Question bank</a></li>
             <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-admin-jd-block-view="local">Local bank</a></li>

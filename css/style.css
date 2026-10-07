@@ -279,18 +279,15 @@ a{color:inherit;text-decoration:none}
   font-weight:600;
 }
 
-/* Practice tabs — tab layout, original blue palette */
-#takeListNav.jd-block-tabs,
-#studentJdBlockViewNav.jd-block-tabs{
+/* Practice page tabs — connected tab bar, original blue palette */
+.nav.jd-block-tabs{
   border-bottom:1px solid #BFDBFE;
   gap:0;
 }
-#takeListNav.jd-block-tabs .nav-item,
-#studentJdBlockViewNav.jd-block-tabs .nav-item{
+.nav.jd-block-tabs .nav-item{
   margin-bottom:-1px;
 }
-#takeListNav.jd-block-tabs .nav-link,
-#studentJdBlockViewNav.jd-block-tabs .nav-link{
+.nav.jd-block-tabs .nav-link{
   color:var(--primary);
   background:#EFF6FF;
   border:1px solid #BFDBFE;
@@ -301,26 +298,21 @@ a{color:inherit;text-decoration:none}
   margin-right:-1px;
   padding:.4rem .85rem;
 }
-#takeListNav.jd-block-tabs .nav-item:first-child .nav-link,
-#studentJdBlockViewNav.jd-block-tabs .nav-item:first-child .nav-link{
+.nav.jd-block-tabs .nav-item:first-child .nav-link{
   border-top-left-radius:6px;
 }
-#takeListNav.jd-block-tabs .nav-item:last-child .nav-link,
-#studentJdBlockViewNav.jd-block-tabs .nav-item:last-child .nav-link{
+.nav.jd-block-tabs .nav-item:last-child .nav-link{
   border-top-right-radius:6px;
   margin-right:0;
 }
-#takeListNav.jd-block-tabs .nav-link:hover,
-#takeListNav.jd-block-tabs .nav-link:focus,
-#studentJdBlockViewNav.jd-block-tabs .nav-link:hover,
-#studentJdBlockViewNav.jd-block-tabs .nav-link:focus{
+.nav.jd-block-tabs .nav-link:hover,
+.nav.jd-block-tabs .nav-link:focus{
   color:var(--primary);
   background:#DBEAFE;
   border-color:#BFDBFE;
   border-bottom:0;
 }
-#takeListNav.jd-block-tabs .nav-link.active,
-#studentJdBlockViewNav.jd-block-tabs .nav-link.active{
+.nav.jd-block-tabs .nav-link.active{
   color:#fff;
   background:var(--primary);
   border-color:var(--primary);
@@ -328,6 +320,15 @@ a{color:inherit;text-decoration:none}
   font-weight:600;
   position:relative;
   z-index:1;
+}
+/* Nested sub-tabs (e.g. Weekly / Monthly under Challenges) */
+.nav.jd-block-tabs.jd-block-tabs--sub{
+  border-bottom-color:#DBEAFE;
+  margin-top:.65rem;
+}
+.nav.jd-block-tabs.jd-block-tabs--sub .nav-link{
+  padding:.32rem .7rem;
+  font-size:.875rem;
 }
 
 .sidebar > div:last-child{
