@@ -2338,8 +2338,7 @@ final class OfficerDataService
         $students = $this->fetchCompleteCampusRecordsForSync('student');
         $studentAdmnos = $this->indexAesAdmnosFromRecords($students);
         $alumni = $this->fetchCompleteCampusRecordsForSync('alumni', $studentAdmnos);
-        $alumniExclusive = $this->excludeRecordsInAdmnoIndex($alumni, $studentAdmnos);
-        $studentAlumniOverlap = max(0, count($alumni) - count($alumniExclusive));
+        $studentAlumniOverlap = $this->countRecordsMatchingAdmnoIndex($alumni, $studentAdmnos);
         $syncedAt = DocumentHelper::now();
 
         $syncSvc = new StudentDetailsSyncService();
@@ -2347,7 +2346,7 @@ final class OfficerDataService
             'syncSource' => 'admin_campus',
             'studRole'   => 'student',
         ]);
-        $alumniStats = $syncSvc->syncFromAesRecords($alumniExclusive, [
+        $alumniStats = $syncSvc->syncFromAesRecords($alumni, [
             'syncSource' => 'admin_campus',
             'studRole'   => 'alumni',
         ]);
@@ -2355,9 +2354,9 @@ final class OfficerDataService
         $detailsModel = new \PMS\Models\StudentDetailsModel();
         if ($detailsModel->isAvailable()) {
             $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
-            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumniExclusive);
+            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumni);
             $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows(
-                $alumniExclusive,
+                $alumni,
                 $studentAdmnos
             );
         }
@@ -2365,7 +2364,7 @@ final class OfficerDataService
         // Legacy file snapshot kept for rollback/audit only.
         $this->writeCampusDirectorySnapshot(
             $students,
-            $alumniExclusive,
+            $alumni,
             $adminUserId,
             $syncedAt,
             $studentAlumniOverlap
@@ -2381,17 +2380,31 @@ final class OfficerDataService
             'studentRecordCount' => $studentCount,
             'alumniRecordCount'  => $alumniCount,
             'recordCount'        => $studentCount + $alumniCount,
-            'fetchedStudents'       => count($students),
-            'fetchedAlumni'         => count($alumniExclusive),
-            'studentAlumniOverlap'  => $studentAlumniOverlap,
-            'fetched'               => (int) ($merged['fetched'] ?? 0),
-            'inserted'           => (int) ($merged['inserted'] ?? 0),
-            'updated'            => (int) ($merged['updated'] ?? 0),
-            'unchanged'          => (int) ($merged['unchanged'] ?? 0),
-            'failed'             => (int) ($merged['failed'] ?? 0),
-            'skipped'            => (int) ($merged['skipped'] ?? 0),
-            'durationMs'         => (int) ($merged['durationMs'] ?? 0),
-            'source'             => 'student_details',
+            'fetchedStudents'      => count($students),
+            'fetchedAlumni'        => count($alumni),
+            'studentAlumniOverlap' => $studentAlumniOverlap,
+            'fetched'              => (int) ($merged['fetched'] ?? 0),
+            'inserted'             => (int) ($merged['inserted'] ?? 0),
+            'updated'              => (int) ($merged['updated'] ?? 0),
+            'unchanged'            => (int) ($merged['unchanged'] ?? 0),
+            'failed'               => (int) ($merged['failed'] ?? 0),
+            'skipped'              => (int) ($merged['skipped'] ?? 0),
+            'durationMs'           => (int) ($merged['durationMs'] ?? 0),
+            'source'               => 'student_details',
+            'syncValidation'       => [
+                'aesStudentsReceived'  => count($students),
+                'aesAlumniReceived'    => count($alumni),
+                'aesCanonicalOverlap'  => $studentAlumniOverlap,
+                'storedStudents'       => $studentCount,
+                'storedAlumni'         => $alumniCount,
+                'storedTotal'          => $studentCount + $alumniCount,
+                'inserted'             => (int) ($merged['inserted'] ?? 0),
+                'updated'              => (int) ($merged['updated'] ?? 0),
+                'skipped'              => (int) ($merged['skipped'] ?? 0),
+                'failed'               => (int) ($merged['failed'] ?? 0),
+                'roleReconcile'        => $merged['roleReconcile'] ?? null,
+                'staleAlumniReconcile' => $merged['staleAlumniReconcile'] ?? null,
+            ],
         ];
     }
 
@@ -2428,9 +2441,6 @@ final class OfficerDataService
         ): void {
             foreach ($records as $record) {
                 if (!is_array($record)) {
-                    continue;
-                }
-                if ($syncStudRole === 'alumni' && $this->recordMatchesAdmnoIndex($record, $authoritativeStudentAdmnos)) {
                     continue;
                 }
                 if ($residualAlumniPass) {
@@ -2521,7 +2531,8 @@ final class OfficerDataService
             if (!is_array($record)) {
                 continue;
             }
-            foreach ($this->aesAdmnoKeysFromRecord($record) as $key) {
+            $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            if ($key !== '') {
                 $index[$key] = true;
             }
         }
@@ -2530,57 +2541,29 @@ final class OfficerDataService
     }
 
     /**
+     * Canonical aes_admno overlap between two AES record sets (diagnostics only).
+     *
      * @param list<array<string, mixed>> $records
      * @param array<string, true> $admnoIndex
-     * @return list<array<string, mixed>>
      */
-    private function excludeRecordsInAdmnoIndex(array $records, array $admnoIndex): array
+    private function countRecordsMatchingAdmnoIndex(array $records, array $admnoIndex): int
     {
         if ($admnoIndex === []) {
-            return array_values($records);
+            return 0;
         }
 
-        $out = [];
+        $count = 0;
         foreach ($records as $record) {
-            if (!is_array($record) || $this->recordMatchesAdmnoIndex($record, $admnoIndex)) {
+            if (!is_array($record)) {
                 continue;
             }
-            $out[] = $record;
-        }
-
-        return $out;
-    }
-
-    /**
-     * @param array<string, mixed> $record
-     * @param array<string, true> $admnoIndex
-     */
-    private function recordMatchesAdmnoIndex(array $record, array $admnoIndex): bool
-    {
-        foreach ($this->aesAdmnoKeysFromRecord($record) as $key) {
-            if (isset($admnoIndex[$key])) {
-                return true;
+            $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            if ($key !== '' && isset($admnoIndex[$key])) {
+                $count++;
             }
         }
 
-        return false;
-    }
-
-    /**
-     * @param array<string, mixed> $record
-     * @return list<string>
-     */
-    private function aesAdmnoKeysFromRecord(array $record): array
-    {
-        $keys = [];
-        foreach (['aesAdmno', 'admno', 'stud_admno', 'registerNumber', 'registerno'] as $field) {
-            $key = strtoupper(trim((string) ($record[$field] ?? '')));
-            if ($key !== '') {
-                $keys[$key] = $key;
-            }
-        }
-
-        return array_values($keys);
+        return $count;
     }
 
     /**
@@ -3502,11 +3485,7 @@ final class OfficerDataService
                 continue;
             }
 
-            $admno = strtoupper(trim((string) (
-                $record['admno']
-                ?? $record['stud_admno']
-                ?? ''
-            )));
+            $admno = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
             $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
             if ($admno === '') {
                 continue;
@@ -3527,14 +3506,6 @@ final class OfficerDataService
             if ($row === null) {
                 continue;
             }
-            if (!$this->isPlacementStudentListCandidate(
-                is_array($local) ? $local : ['registerNumber' => $admno],
-                null,
-                $row,
-                false
-            )) {
-                continue;
-            }
             $seenAdmno[$admno] = true;
             $rows[] = $row;
         }
@@ -3547,10 +3518,6 @@ final class OfficerDataService
             )
         );
 
-        $rows = array_values(array_filter(
-            $rows,
-            static fn (array $row): bool => AesApiService::qualifiesAsAlumniDirectoryRecord($row)
-        ));
         foreach ($rows as &$row) {
             $row['studRole'] = 'alumni';
             $row['stud_role'] = 'Alumni';

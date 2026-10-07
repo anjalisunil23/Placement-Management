@@ -2254,19 +2254,9 @@ function formatCampusAesDirectorySyncStatus(meta) {
   const students = Number(meta.studentRecordCount ?? 0);
   const alumni = Number(meta.alumniRecordCount ?? 0);
   const total = Number(meta.recordCount ?? (students + alumni));
-  const fetchedStudents = Number(meta.fetchedStudents ?? 0);
-  const fetchedAlumni = Number(meta.fetchedAlumni ?? 0);
-  const overlap = Number(meta.studentAlumniOverlap ?? 0);
   let summary = alumni > 0
-    ? `${students} students · ${alumni} alumni · ${total} total`
-    : `${students} students · ${total} total`;
-  if (fetchedStudents > 0 || fetchedAlumni > 0) {
-    const aesStudents = fetchedStudents || students;
-    const aesAlumni = fetchedAlumni || alumni;
-    summary += overlap > 0
-      ? ` (AES: ${aesStudents} studying + ${aesAlumni} alumni, ${overlap} overlap excluded)`
-      : ` (AES: ${aesStudents} studying + ${aesAlumni} alumni)`;
-  }
+    ? `${students} students · ${alumni} alumni`
+    : `${students} students`;
   return when !== ''
     ? `${summary} · last sync ${when}`
     : summary;
@@ -2301,11 +2291,13 @@ async function runCampusAesDirectorySync() {
     if (!result) return;
     const sc = result.studentRecordCount ?? 0;
     const ac = result.alumniRecordCount ?? 0;
-    const fetchedStudents = result.fetchedStudents ?? sc;
-    const fetchedAlumni = result.fetchedAlumni ?? ac;
-    const overlap = Number(result.studentAlumniOverlap ?? 0);
-    const overlapNote = overlap > 0 ? `, ${overlap} studying overlap excluded` : '';
-    toast(`Synced ${sc} students and ${ac} alumni (${fetchedStudents} + ${fetchedAlumni} from AES${overlapNote}).`, 'success');
+    const validation = result.syncValidation ?? {};
+    const aesStudents = validation.aesStudentsReceived ?? result.fetchedStudents ?? sc;
+    const aesAlumni = validation.aesAlumniReceived ?? result.fetchedAlumni ?? ac;
+    toast(
+      `Synced ${sc} students and ${ac} alumni (AES: ${aesStudents} + ${aesAlumni}, skipped ${validation.skipped ?? result.skipped ?? 0}, failed ${validation.failed ?? result.failed ?? 0}).`,
+      'success'
+    );
     await refreshCampusAesDirectorySyncStatus();
     await loadFinalYearStudents(true);
     if (canViewAlumni) await loadAlumniStudents(true);

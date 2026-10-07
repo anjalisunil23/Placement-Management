@@ -136,7 +136,7 @@ class StudentDetailsModel extends BaseModel
         $incoming['aesAdmno'] = $aesAdmno;
 
         $existing = $this->findByAesAdmno($aesAdmno);
-        $incoming = self::guardStudRoleTransition($record, $existing, $incoming);
+        $incoming = self::guardStudRoleTransition($record, $existing, $incoming, $options);
         $now = DocumentHelper::now();
         $incoming['syncedAt'] = $now;
         if (!empty($options['syncSource'])) {
@@ -720,6 +720,84 @@ class StudentDetailsModel extends BaseModel
     }
 
     /**
+     * Distinct stored stud_role values for sync diagnostics.
+     *
+     * @return list<array{studRole:string,count:int}>
+     */
+    public function countGroupedByStudRole(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+        try {
+            $stmt = $this->db->query(
+                'SELECT stud_role, COUNT(*) AS cnt FROM `student_details`
+                 GROUP BY stud_role ORDER BY cnt DESC'
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $out = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $out[] = [
+                'studRole' => (string) ($row['stud_role'] ?? ''),
+                'count'    => (int) ($row['cnt'] ?? 0),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array{total:int,students:int,alumni:int,nullRole:int,uniqueAesAdmno:int}
+     */
+    public function directoryCountDiagnostics(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [
+                'total'         => 0,
+                'students'      => 0,
+                'alumni'        => 0,
+                'nullRole'      => 0,
+                'uniqueAesAdmno' => 0,
+            ];
+        }
+
+        try {
+            $stmt = $this->db->query(
+                'SELECT
+                    COUNT(*) AS total,
+                    SUM(stud_role = \'student\') AS students,
+                    SUM(stud_role = \'alumni\') AS alumni,
+                    SUM(stud_role IS NULL OR TRIM(stud_role) = \'\') AS null_role,
+                    COUNT(DISTINCT aes_admno) AS unique_aes_admno
+                 FROM `student_details`'
+            );
+            $row = $stmt->fetch();
+
+            return [
+                'total'          => (int) ($row['total'] ?? 0),
+                'students'       => (int) ($row['students'] ?? 0),
+                'alumni'         => (int) ($row['alumni'] ?? 0),
+                'nullRole'       => (int) ($row['null_role'] ?? 0),
+                'uniqueAesAdmno' => (int) ($row['unique_aes_admno'] ?? 0),
+            ];
+        } catch (\Throwable) {
+            return [
+                'total'          => $this->countByRole('all'),
+                'students'       => $this->countByRole('student'),
+                'alumni'         => $this->countByRole('alumni'),
+                'nullRole'       => 0,
+                'uniqueAesAdmno' => 0,
+            ];
+        }
+    }
+
+    /**
      * @return array<string, mixed>|null sync metadata for admin UI
      */
     public function latestSyncMeta(): ?array
@@ -954,18 +1032,31 @@ class StudentDetailsModel extends BaseModel
      * @param array<string, mixed> $incoming
      * @return array<string, mixed>
      */
-    private static function guardStudRoleTransition(array $record, ?array $existing, array $incoming): array
-    {
+    /**
+     * @param array<string, mixed> $options syncSource, studRole
+     */
+    private static function guardStudRoleTransition(
+        array $record,
+        ?array $existing,
+        array $incoming,
+        array $options = []
+    ): array {
         if ($existing === null) {
             return $incoming;
         }
 
-        $existingRole = (string) ($existing['studRole'] ?? '');
         $incomingRole = (string) ($incoming['studRole'] ?? '');
-        if ($incomingRole === 'alumni'
-            && AesApiService::normalizeStudRole($record) === 'student') {
+        $aesRole = AesApiService::normalizeStudRole($record);
+        if ($incomingRole === 'alumni' && $aesRole === 'student') {
             $incoming['studRole'] = 'student';
             $incoming['stud_role'] = 'Student';
+
+            return $incoming;
+        }
+
+        $syncHint = strtolower(trim((string) ($options['studRole'] ?? '')));
+        if ($syncHint === 'alumni' && $incomingRole === 'alumni' && $aesRole !== 'student') {
+            return $incoming;
         }
 
         return $incoming;
