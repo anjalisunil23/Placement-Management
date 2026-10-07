@@ -241,7 +241,7 @@
     if (!access.canTake) return;
     if (studentJdSelectedCompanyId) {
       showStudentJdCompanyDetail(studentJdSelectedCompanyId);
-    } else if (takeListPanel === 'company') {
+    } else if (takeListPanel === 'jdblock' || takeListPanel === 'companymock') {
       renderStudentJdBlock();
     }
   }
@@ -486,7 +486,11 @@
   let studentJdBlockView = 'tests';
   let adminJdBlockView = 'tests';
   const ADMIN_JD_BLOCK_VIEWS = ['tests', 'bank', 'local'];
-  const STUDENT_JD_BLOCK_VIEWS = ['tests', 'bank', 'mock'];
+  const STUDENT_JD_BLOCK_VIEWS = ['tests', 'bank'];
+
+  function isJdCompanyTakePanel(panel) {
+    return panel === 'jdblock' || panel === 'companymock';
+  }
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aptJdManualModal;
@@ -1326,15 +1330,21 @@
   }
 
   function applyTakeListPanel(panel) {
-    takeListPanel = panel === 'contests' ? 'contests' : (panel === 'jdblock' ? 'jdblock' : 'tests');
+    const prev = takeListPanel;
+    takeListPanel = panel === 'contests' ? 'contests'
+      : (panel === 'jdblock' ? 'jdblock'
+      : (panel === 'companymock' ? 'companymock' : 'tests'));
     document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
     });
     document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
-    document.getElementById('testList')?.classList.toggle('d-none', takeListPanel === 'jdblock');
-    document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', takeListPanel !== 'jdblock');
+    document.getElementById('testList')?.classList.toggle('d-none', isJdCompanyTakePanel(takeListPanel));
+    document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', !isJdCompanyTakePanel(takeListPanel));
     syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
-    if (takeListPanel === 'jdblock') {
+    if (isJdCompanyTakePanel(prev) && prev !== takeListPanel) {
+      showStudentJdCompanyGrid();
+    }
+    if (isJdCompanyTakePanel(takeListPanel)) {
       loadStudentJdBlock().catch(() => {});
     } else {
       renderTestList();
@@ -1342,9 +1352,13 @@
   }
 
   function setupTakeListNav() {
+    const show = access.canTake;
     document.querySelector('#takeListNav [data-take-list="jdblock"]')
       ?.closest('.nav-item')
-      ?.classList.toggle('d-none', !access.canTake);
+      ?.classList.toggle('d-none', !show);
+    document.querySelector('#takeListNav [data-take-list="companymock"]')
+      ?.closest('.nav-item')
+      ?.classList.toggle('d-none', !show);
   }
 
   function applyTakeContestType(type) {
@@ -3012,26 +3026,41 @@
     }
   }
 
+  function studentJdBlocksForCurrentPanel() {
+    if (takeListPanel === 'companymock') {
+      return studentJdCompanyBlocks.filter((b) => studentCompanyMockTestsFor(b.companyId).length > 0);
+    }
+    return studentJdCompanyBlocks;
+  }
+
   function showStudentJdCompanyDetail(companyId) {
     const block = studentJdCompanyBlocks.find((b) => String(b.companyId || '') === String(companyId || ''));
     studentJdSelectedCompanyId = companyId;
+    const isMockPanel = takeListPanel === 'companymock';
     document.getElementById('studentJdBlockCompanyView')?.classList.add('d-none');
     document.getElementById('studentJdBlockCompanyDetail')?.classList.remove('d-none');
-    document.getElementById('studentJdBlockDetailNav')?.classList.remove('d-none');
-    syncStudentJdBlockViewNav();
-    const showTests = studentJdBlockView === 'tests';
-    const showMock = studentJdBlockView === 'mock';
-    const showBank = studentJdBlockView === 'bank';
+    document.getElementById('studentJdBlockDetailNav')?.classList.toggle('d-none', isMockPanel);
+    if (!isMockPanel) syncStudentJdBlockViewNav();
     const testsRoot = document.getElementById('studentJdBlockCompanyTests');
     const bankSection = document.getElementById('studentJdBlockBankSection');
-    testsRoot?.classList.toggle('d-none', !showTests && !showMock);
-    bankSection?.classList.toggle('d-none', !showBank);
-    if (showTests || showMock) {
-      const companyTests = showMock
-        ? studentCompanyMockTestsFor(companyId)
-        : studentCompanyProblemsFor(companyId);
+    if (isMockPanel) {
+      testsRoot?.classList.remove('d-none');
+      bankSection?.classList.add('d-none');
       if (testsRoot) {
-        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests, { mockTests: showMock });
+        const companyTests = studentCompanyMockTestsFor(companyId);
+        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests, { mockTests: true });
+        bindStudentCompanyTestEvents(testsRoot);
+      }
+      return;
+    }
+    const showTests = studentJdBlockView === 'tests';
+    const showBank = studentJdBlockView === 'bank';
+    testsRoot?.classList.toggle('d-none', !showTests);
+    bankSection?.classList.toggle('d-none', !showBank);
+    if (showTests) {
+      const companyTests = studentCompanyProblemsFor(companyId);
+      if (testsRoot) {
+        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests);
         bindStudentCompanyTestEvents(testsRoot);
       }
     } else if (showBank) {
@@ -3057,12 +3086,17 @@
     const grid = document.getElementById('studentJdBlockCompanyGrid');
     if (!grid) return;
     const activeCompanyId = studentJdSelectedCompanyId;
-    if (!studentJdCompanyBlocks.length) {
+    const blocks = studentJdBlocksForCurrentPanel();
+    const isMockPanel = takeListPanel === 'companymock';
+    if (!blocks.length) {
       showStudentJdCompanyGrid();
-      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No Company Block entries are available yet. Check back later.</p></div>';
+      const emptyMsg = isMockPanel
+        ? 'No company mock tests are published yet. Check back later.'
+        : 'No Company Block entries are available yet. Check back later.';
+      grid.innerHTML = `<div class="col-12"><p class="text-muted-2 mb-0">${emptyMsg}</p></div>`;
       return;
     }
-    grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks);
+    grid.innerHTML = renderJdCompanyGridHtml(blocks);
     grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
       btn.addEventListener('click', () => showStudentJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
     });
@@ -6234,14 +6268,12 @@
     }
 
     if (isCompanyTest(t)) {
-      takeListPanel = 'jdblock';
-      studentJdBlockView = isCompanyMockTest(t) ? 'mock' : 'tests';
-      document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
-        link.classList.toggle('active', link.getAttribute('data-take-list') === 'jdblock');
-      });
-      document.getElementById('takeContestTypeNav')?.classList.add('d-none');
-      document.getElementById('testList')?.classList.add('d-none');
-      document.getElementById('studentJdBlockPanel')?.classList.remove('d-none');
+      if (isCompanyMockTest(t)) {
+        applyTakeListPanel('companymock');
+      } else {
+        studentJdBlockView = 'tests';
+        applyTakeListPanel('jdblock');
+      }
       await loadStudentJdBlock();
       const companyId = String(t.companyId || '');
       if (companyId) showStudentJdCompanyDetail(companyId);
@@ -6948,7 +6980,7 @@
       setupTakeListNav();
       if (!skipTests) await loadTests();
       if (!skipProgress) await loadMyProgress();
-      if (takeListPanel === 'jdblock') {
+      if (isJdCompanyTakePanel(takeListPanel)) {
         await loadStudentJdBlock();
       } else {
         renderTestList();
