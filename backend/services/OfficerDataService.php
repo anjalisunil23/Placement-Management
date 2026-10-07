@@ -2334,6 +2334,7 @@ final class OfficerDataService
         $detailsModel = new \PMS\Models\StudentDetailsModel();
         if ($detailsModel->isAvailable()) {
             $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
+            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students);
         }
 
         // Legacy file snapshot kept for rollback/audit only.
@@ -2435,10 +2436,11 @@ final class OfficerDataService
      */
     private function recordQualifiesForSyncPass(array $record, string $syncStudRole): bool
     {
-        $role = AesApiService::normalizeStudRole($record);
         if ($syncStudRole === 'alumni') {
-            return $role !== 'student';
+            return AesApiService::qualifiesAsAlumniRecord($record);
         }
+
+        $role = AesApiService::normalizeStudRole($record);
         if ($role === 'alumni') {
             return false;
         }
@@ -3809,39 +3811,7 @@ final class OfficerDataService
      */
     private function isAesAlumniDirectoryRecord(array $record): bool
     {
-        $role = AesApiService::normalizeStudRole($record);
-        if ($role === 'alumni') {
-            return true;
-        }
-        if ($role === 'student') {
-            return false;
-        }
-
-        $blob = strtolower(trim(implode(' ', array_filter([
-            (string) ($record['stud_status'] ?? ''),
-            (string) ($record['status'] ?? ''),
-            (string) ($record['student_status'] ?? ''),
-            (string) ($record['stud_type'] ?? ''),
-            (string) ($record['category'] ?? ''),
-            (string) ($record['stud_class'] ?? ''),
-            (string) ($record['classBatch'] ?? ''),
-        ]))));
-
-        if ($blob !== '' && preg_match('/\b(faculty|staff|employee|transferred)\b/', $blob) === 1) {
-            return false;
-        }
-
-        if ($blob !== '' && preg_match('/\b(alumni|alumnus|passed\s*out|passout|graduated)\b/', $blob) === 1) {
-            return true;
-        }
-
-        $batch = strtoupper(trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')));
-        if ($batch !== '' && preg_match('/\b(ALUMNI|PASS\s*OUT|PASSOUT|GRADUATED)\b/', $batch) === 1) {
-            return true;
-        }
-
-        return $blob !== ''
-            && preg_match('/\b(left|dropout|discontinued)\b/', $blob) !== 1;
+        return AesApiService::qualifiesAsAlumniRecord($record);
     }
 
     /**

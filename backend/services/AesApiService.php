@@ -724,14 +724,87 @@ final class AesApiService
         }
 
         $role = strtolower($raw);
-        if ($role === 'student' || $role === 'stud') {
-            return 'student';
-        }
-        if ($role === 'alumni' || $role === 'alumnus') {
+        if ($role === 'alumni' || $role === 'alumnus' || str_contains($role, 'alumni')) {
             return 'alumni';
+        }
+        if ($role === 'student' || $role === 'stud' || str_contains($role, 'student')) {
+            return 'student';
         }
 
         return null;
+    }
+
+    /**
+     * Alumni when AES stud_role is explicit or pass-out heuristics match.
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function qualifiesAsAlumniRecord(array $record): bool
+    {
+        $role = self::normalizeStudRole($record);
+        if ($role === 'alumni') {
+            return true;
+        }
+        if ($role === 'student') {
+            return false;
+        }
+
+        return self::qualifiesAsAlumniByHeuristics($record);
+    }
+
+    /**
+     * Pass-out / graduated hints when AES omits stud_role (never treat bare class labels as alumni).
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function qualifiesAsAlumniByHeuristics(array $record): bool
+    {
+        $blob = strtolower(trim(implode(' ', array_filter([
+            (string) ($record['stud_status'] ?? ''),
+            (string) ($record['status'] ?? ''),
+            (string) ($record['student_status'] ?? ''),
+            (string) ($record['stud_type'] ?? ''),
+            (string) ($record['category'] ?? ''),
+            (string) ($record['stud_class'] ?? ''),
+            (string) ($record['classBatch'] ?? ''),
+        ]))));
+
+        if ($blob === '') {
+            return false;
+        }
+
+        if (preg_match('/\b(faculty|staff|employee|transferred)\b/', $blob) === 1) {
+            return false;
+        }
+
+        if (preg_match('/\b(alumni|alumnus|passed\s*out|passout|graduated)\b/', $blob) === 1) {
+            return true;
+        }
+
+        $batch = strtoupper(trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')));
+
+        return $batch !== ''
+            && preg_match('/\b(ALUMNI|PASS\s*OUT|PASSOUT|GRADUATED)\b/', $batch) === 1;
+    }
+
+    /**
+     * Persisted studRole for student_details — never guess alumni without AES/heuristic proof.
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function resolveStudRoleForStorage(array $record, string $syncHint = ''): string
+    {
+        $role = self::normalizeStudRole($record);
+        if ($role !== null) {
+            return $role;
+        }
+
+        $syncHint = strtolower(trim($syncHint));
+        if ($syncHint === 'alumni' && self::qualifiesAsAlumniRecord($record)) {
+            return 'alumni';
+        }
+
+        return 'student';
     }
 
     /**

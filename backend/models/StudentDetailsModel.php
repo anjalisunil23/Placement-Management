@@ -135,6 +135,7 @@ class StudentDetailsModel extends BaseModel
         $incoming['aesAdmno'] = $aesAdmno;
 
         $existing = $this->findByAesAdmno($aesAdmno);
+        $incoming = self::guardStudRoleTransition($record, $existing, $incoming);
         $now = DocumentHelper::now();
         $incoming['syncedAt'] = $now;
         if (!empty($options['syncSource'])) {
@@ -485,6 +486,57 @@ class StudentDetailsModel extends BaseModel
         }
     }
 
+    /**
+     * After campus sync, demote alumni rows that AES still lists as studying students.
+     *
+     * @param list<array<string, mixed>> $authoritativeStudentRecords
+     * @return array{demoted:int}
+     */
+    public function reconcileMisclassifiedStudRoles(array $authoritativeStudentRecords): array
+    {
+        $stats = ['demoted' => 0];
+        if (!$this->bootstrapTable()) {
+            return $stats;
+        }
+
+        $studentAdmnos = [];
+        foreach ($authoritativeStudentRecords as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = self::resolveAesAdmno($record);
+            if ($key === '') {
+                continue;
+            }
+            if (AesApiService::resolveStudRoleForStorage($record, 'student') === 'student') {
+                $studentAdmnos[$key] = true;
+            }
+        }
+
+        if ($studentAdmnos === []) {
+            return $stats;
+        }
+
+        foreach (array_keys($studentAdmnos) as $admno) {
+            $doc = $this->findByAesAdmno($admno);
+            if ($doc === null || (string) ($doc['studRole'] ?? '') !== 'alumni') {
+                continue;
+            }
+            $id = (string) ($doc['_id'] ?? '');
+            unset($doc['_id']);
+            $doc['studRole'] = 'student';
+            $doc['stud_role'] = 'Student';
+            $this->applyRegistrationStatusToPayload($doc);
+            $doc['updatedAt'] = DocumentHelper::now();
+            if ($id !== '') {
+                $this->update($id, $doc);
+                $stats['demoted']++;
+            }
+        }
+
+        return $stats;
+    }
+
     public function countByRole(string $studRole = ''): int
     {
         if (!$this->bootstrapTable()) {
@@ -582,8 +634,10 @@ class StudentDetailsModel extends BaseModel
             $email = trim((string) ($record['stud_personal_mails'] ?? $record['personalEmail'] ?? ''));
         }
         $phone = trim((string) ($record['stud_mobiles'] ?? $record['phone'] ?? $record['cno'] ?? ''));
-        $studRole = AesApiService::normalizeStudRole($record)
-            ?? (strtolower(trim((string) ($options['studRole'] ?? ''))) === 'alumni' ? 'alumni' : 'student');
+        $studRole = AesApiService::resolveStudRoleForStorage(
+            $record,
+            (string) ($options['studRole'] ?? '')
+        );
 
         $studentId = trim((string) ($record['studentId'] ?? $record['id'] ?? ''));
         if ($studentId === '' || (!Security::isValidId($studentId) && !ctype_digit($studentId))) {
@@ -733,6 +787,33 @@ class StudentDetailsModel extends BaseModel
         }
 
         return self::payloadFromAesRecord($doc, ['syncSource' => 'backfill_student_placements']);
+    }
+
+    /**
+     * Do not flip an existing studying student to alumni without explicit AES alumni proof.
+     *
+     * @param array<string, mixed> $record raw AES row
+     * @param array<string, mixed>|null $existing
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    private static function guardStudRoleTransition(array $record, ?array $existing, array $incoming): array
+    {
+        if ($existing === null) {
+            return $incoming;
+        }
+
+        $existingRole = (string) ($existing['studRole'] ?? '');
+        $incomingRole = (string) ($incoming['studRole'] ?? '');
+        if ($incomingRole === 'alumni' && $existingRole === 'student') {
+            if (AesApiService::normalizeStudRole($record) !== 'alumni'
+                && !AesApiService::qualifiesAsAlumniRecord($record)) {
+                $incoming['studRole'] = 'student';
+                $incoming['stud_role'] = 'Student';
+            }
+        }
+
+        return $incoming;
     }
 
     /**
