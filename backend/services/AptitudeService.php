@@ -160,8 +160,11 @@ final class AptitudeService
         }
         $rows = array_values(array_filter(
             $this->tests->published(200),
-            static function ($t) use ($user, $completedIds, $inProgressIds): bool {
+            function ($t) use ($user, $completedIds, $inProgressIds): bool {
                 if (!AptitudeAccessService::testVisibleToTaker($user, $t)) {
+                    return false;
+                }
+                if (!$this->companyTestJdSetsExist($t)) {
                     return false;
                 }
                 if (!AptitudeTestModel::isContest($t)) {
@@ -1070,33 +1073,82 @@ final class AptitudeService
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function findTestsByJdSetId(string $jdSetId): array
+    {
+        $target = trim($jdSetId);
+        if ($target === '') {
+            return [];
+        }
+        $matches = [];
+        foreach ($this->tests->findAll([], 500) as $row) {
+            foreach ((array) ($row['jdFilterRules'] ?? []) as $rule) {
+                if (!is_array($rule)) {
+                    continue;
+                }
+                if (trim((string) ($rule['jdSetId'] ?? '')) === $target) {
+                    $matches[] = $row;
+                    break;
+                }
+            }
+        }
+
+        return $matches;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     private function findCompanyMockTestByJdSetId(string $jdSetId): ?array
     {
-        $target = trim($jdSetId);
-        if ($target === '') {
-            return null;
-        }
-        $rows = $this->tests->findAll([], 500);
-        foreach ($rows as $row) {
+        foreach ($this->findTestsByJdSetId($jdSetId) as $row) {
             if (!AptitudeTestModel::isCompanyTest($row)) {
                 continue;
             }
             if (AptitudeTestModel::normalizeQuestionSource((string) ($row['questionSource'] ?? '')) !== 'random_jd') {
                 continue;
             }
-            foreach ((array) ($row['jdFilterRules'] ?? []) as $rule) {
-                if (!is_array($rule)) {
-                    continue;
-                }
-                if (trim((string) ($rule['jdSetId'] ?? '')) === $target) {
-                    return $row;
-                }
-            }
+
+            return $row;
         }
 
         return null;
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     */
+    private function companyTestJdSetsExist(array $test): bool
+    {
+        if (!AptitudeTestModel::isCompanyTest($test)) {
+            return true;
+        }
+        $rules = array_values(array_filter((array) ($test['jdFilterRules'] ?? []), 'is_array'));
+        if ($rules === []) {
+            return false;
+        }
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        foreach ($rules as $rule) {
+            $setId = trim((string) ($rule['jdSetId'] ?? ''));
+            if ($setId === '') {
+                continue;
+            }
+            if ($model->findById($setId) === null) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function deleteTestRecord(string $id): void
+    {
+        if ($id === '' || !Security::isValidId($id)) {
+            return;
+        }
+        $this->attempts->deleteForTest($id);
+        $this->tests->delete($id);
     }
 
     /**
@@ -1257,6 +1309,9 @@ final class AptitudeService
                 error_log('[PMS Aptitude JD] delete file failed: ' . $e->getMessage());
             }
         }
+        foreach ($this->findTestsByJdSetId($id) as $test) {
+            $this->deleteTestRecord((string) ($test['_id'] ?? ''));
+        }
         if (!$model->deleteSet($id)) {
             Response::notFound('JD question set not found.');
         }
@@ -1334,8 +1389,8 @@ final class AptitudeService
         if (in_array($contestType, ['weekly', 'monthly'], true) && !AptitudeAccessService::canManageContests($admin)) {
             Response::forbidden('You cannot delete aptitude contests.');
         }
-        $this->attempts->deleteForTest($id);
-        if (!$this->tests->delete($id)) {
+        $this->deleteTestRecord($id);
+        if ($this->tests->findById($id) !== null) {
             Response::error('Could not delete test.', 500);
         }
     }

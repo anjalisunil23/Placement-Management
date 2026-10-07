@@ -215,6 +215,26 @@
     writeSessionCache(APT_TESTS_CACHE_KEY, tests);
   }
 
+  function testIdsLinkedToJdSet(setId) {
+    const sid = String(setId || '');
+    if (!sid) return [];
+    return tests
+      .filter((t) => primaryJdSetIdForTest(t) === sid)
+      .map((t) => String(t.id || ''))
+      .filter(Boolean);
+  }
+
+  function purgeDemoTestsLinkedToJdSet(setId) {
+    const sid = String(setId || '');
+    if (!sid) return;
+    saveDemoTestsStore(loadDemoTestsStore().filter((t) => primaryJdSetIdForTest(t) !== sid));
+  }
+
+  async function refreshAfterJdLinkedTestsRemoved() {
+    await loadTests({ force: true });
+    refreshTakeUiAfterTestsChange();
+  }
+
   function refreshTakeUiAfterTestsChange() {
     renderTestList();
     if (access.canManage) renderManage();
@@ -2382,6 +2402,7 @@
           </div>
           <div class="d-flex gap-2 flex-shrink-0 ms-auto">
             ${showPublishButton ? `<button type="button" class="btn btn-sm btn-success" data-jd-publish-mock="${esc(id)}">${publishLabel}</button>` : ''}
+            ${mockTest ? `<button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete-mock="${esc(mockTest.id)}" title="Remove published mock test from students">Remove mock</button>` : ''}
             ${mockTest ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(mockTest.id)}" title="Copy student share link"><i class="bi bi-link-45deg"></i></button>` : ''}
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
             <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
@@ -2501,6 +2522,9 @@
     }
     root.querySelectorAll('[data-jd-publish-mock]').forEach((btn) => {
       btn.addEventListener('click', () => openPublishMockModal(btn.getAttribute('data-jd-publish-mock')));
+    });
+    root.querySelectorAll('[data-jd-delete-mock]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteTest(btn.getAttribute('data-jd-delete-mock')));
     });
     root.querySelectorAll('[data-copy-test-link]').forEach((btn) => {
       btn.addEventListener('click', () => copyTestShareLink(btn.getAttribute('data-copy-test-link')));
@@ -3079,11 +3103,19 @@
 
   async function deleteJdSet(id) {
     if (!id) return;
-    if (!confirm('Delete this JD question set and all its questions?')) return;
+    const linkedMock = companyMockTestForLocalSet(jdSelectedCompanyId, id);
+    const confirmMsg = linkedMock
+      ? 'Delete this local bank manual? Its published mock test will also be removed from students.'
+      : 'Delete this JD question set and all its questions?';
+    if (!confirm(confirmMsg)) return;
+    const linkedIds = testIdsLinkedToJdSet(id);
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     if (!live) {
       saveDemoJdStore(loadDemoJdStore().filter((s) => String(s.id) !== String(id)));
+      purgeDemoTestsLinkedToJdSet(id);
+      linkedIds.forEach(removeTestFromClientState);
       toast('JD set deleted (demo).', 'success');
+      await refreshAfterJdLinkedTestsRemoved();
       await loadJdLibrary();
       return;
     }
@@ -3094,7 +3126,9 @@
     }
     delete jdSetDetailsCache[String(id)];
     manualJdSetSummaries = manualJdSetSummaries.filter((s) => String(s.id) !== String(id));
-    toast('JD set deleted.', 'success');
+    linkedIds.forEach(removeTestFromClientState);
+    toast(linkedMock ? 'Local bank manual and its mock test were deleted.' : 'JD set deleted.', 'success');
+    await refreshAfterJdLinkedTestsRemoved();
     await loadJdLibrary();
   }
 
@@ -3152,6 +3186,9 @@
     toast('Test deleted.', 'success');
     await loadTests({ force: true });
     refreshTakeUiAfterTestsChange();
+    if (jdSelectedCompanyId && adminJdBlockView === 'local') {
+      showJdCompanyDetail(jdSelectedCompanyId);
+    }
   }
 
   async function setContestResultsPublished(id, published) {
@@ -6344,12 +6381,19 @@
       toast('Select at least one JD set to delete.', 'error');
       return;
     }
-    if (!confirm(`Delete ${ids.length} selected JD set(s) and all their questions?`)) return;
+    const hasLinkedMocks = ids.some((id) => companyMockTestForLocalSet(jdSelectedCompanyId, id));
+    const bulkConfirm = hasLinkedMocks
+      ? `Delete ${ids.length} selected local bank manual(s)? Any published mock tests will also be removed from students.`
+      : `Delete ${ids.length} selected JD set(s) and all their questions?`;
+    if (!confirm(bulkConfirm)) return;
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     let deleted = 0;
     for (const id of ids) {
+      const linkedIds = testIdsLinkedToJdSet(id);
       if (!live) {
         saveDemoJdStore(loadDemoJdStore().filter((s) => String(s.id) !== String(id)));
+        purgeDemoTestsLinkedToJdSet(id);
+        linkedIds.forEach(removeTestFromClientState);
         deleted += 1;
         selectedJdSetIds.delete(String(id));
         continue;
@@ -6359,6 +6403,7 @@
         deleted += 1;
         delete jdSetDetailsCache[String(id)];
         manualJdSetSummaries = manualJdSetSummaries.filter((s) => String(s.id) !== String(id));
+        linkedIds.forEach(removeTestFromClientState);
         selectedJdSetIds.delete(String(id));
       }
     }
@@ -6367,6 +6412,7 @@
       return;
     }
     toast(`Deleted ${deleted} JD set(s).`, 'success');
+    await refreshAfterJdLinkedTestsRemoved();
     await loadJdLibrary();
   }
 
