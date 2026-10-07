@@ -583,7 +583,7 @@ class StudentDetailsModel extends BaseModel
                 continue;
             }
             $key = self::resolveAesAdmno($record);
-            if ($key === '' || isset($authoritativeStudentAdmnos[$key])) {
+            if ($key === '') {
                 continue;
             }
             if (AesApiService::normalizeStudRole($record) === 'student') {

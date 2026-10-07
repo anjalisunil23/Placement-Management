@@ -2254,9 +2254,13 @@ function formatCampusAesDirectorySyncStatus(meta) {
   const students = Number(meta.studentRecordCount ?? 0);
   const alumni = Number(meta.alumniRecordCount ?? 0);
   const total = Number(meta.recordCount ?? (students + alumni));
+  const fetchedAlumni = Number(meta.fetchedAlumni ?? 0);
   let summary = alumni > 0
     ? `${students} students · ${alumni} alumni`
     : `${students} students`;
+  if (fetchedAlumni > 0 && fetchedAlumni > alumni) {
+    summary += ' — run Sync from AES to load missing alumni';
+  }
   return when !== ''
     ? `${summary} · last sync ${when}`
     : summary;

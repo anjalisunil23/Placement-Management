@@ -2346,7 +2346,8 @@ final class OfficerDataService
             'syncSource' => 'admin_campus',
             'studRole'   => 'student',
         ]);
-        $alumniStats = $syncSvc->syncFromAesRecords($alumni, [
+        $alumniToSync = $this->alumniRecordsForUpsert($alumni, $studentAdmnos);
+        $alumniStats = $syncSvc->syncFromAesRecords($alumniToSync, [
             'syncSource' => 'admin_campus',
             'studRole'   => 'alumni',
         ]);
@@ -2394,6 +2395,7 @@ final class OfficerDataService
             'syncValidation'       => [
                 'aesStudentsReceived'  => count($students),
                 'aesAlumniReceived'    => count($alumni),
+                'aesAlumniUpserted'    => count($alumniToSync),
                 'aesCanonicalOverlap'  => $studentAlumniOverlap,
                 'storedStudents'       => $studentCount,
                 'storedAlumni'         => $alumniCount,
@@ -2500,6 +2502,8 @@ final class OfficerDataService
         };
 
         if ($syncStudRole === 'alumni') {
+            // Campus-wide stud_role=Alumni first (often capped ~6500; dept/class passes fill the rest).
+            $fetchParams([]);
             foreach ($this->campusParentDeptAesIds() as $aesId) {
                 $fetchParams(['stud_deptcode' => $aesId]);
                 $this->fetchAlumniScopedByProgramme($api, $aesId, $roleValues, $appendBatch, $directoryList);
@@ -2508,6 +2512,7 @@ final class OfficerDataService
             $this->supplementAlumniFromDeptPassOutRecords($api, $appendBatch);
             $this->supplementAlumniFromClassBatchFetches($api, $appendBatch, $authoritativeStudentAdmnos);
             $this->supplementAlumniResidualFromDeptDirectories($api, $appendBatch, $authoritativeStudentAdmnos);
+            $this->supplementAlumniFromUnfilteredDeptRosters($api, $appendBatch, $authoritativeStudentAdmnos);
 
             return $merged;
         }
@@ -2564,6 +2569,37 @@ final class OfficerDataService
         }
 
         return $count;
+    }
+
+    /**
+     * Alumni rows to upsert: full AES alumni fetch minus studying students (same canonical admno)
+     * unless AES explicitly marks the row Alumni.
+     *
+     * @param list<array<string, mixed>> $alumniRecords
+     * @param array<string, true> $studentAdmnos
+     * @return list<array<string, mixed>>
+     */
+    private function alumniRecordsForUpsert(array $alumniRecords, array $studentAdmnos): array
+    {
+        if ($studentAdmnos === []) {
+            return array_values($alumniRecords);
+        }
+
+        $out = [];
+        foreach ($alumniRecords as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            if ($key !== ''
+                && isset($studentAdmnos[$key])
+                && AesApiService::normalizeStudRole($record) !== 'alumni') {
+                continue;
+            }
+            $out[] = $record;
+        }
+
+        return $out;
     }
 
     /**
@@ -2642,6 +2678,46 @@ final class OfficerDataService
             }
             if ($records !== []) {
                 $appendBatch($records, true);
+            }
+        }
+    }
+
+    /**
+     * Last-resort alumni pass: every dept roster row with a canonical admno not in the studying set.
+     *
+     * @param array<string, true> $authoritativeStudentAdmnos
+     * @param callable(array<int, array<string, mixed>>, bool): void $appendBatch
+     */
+    private function supplementAlumniFromUnfilteredDeptRosters(
+        AesApiService $api,
+        callable $appendBatch,
+        array $authoritativeStudentAdmnos
+    ): void {
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            try {
+                $records = $api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId], true, false);
+            } catch (\Throwable) {
+                continue;
+            }
+            $supplement = [];
+            foreach ($records as $record) {
+                if (!is_array($record)) {
+                    continue;
+                }
+                $admno = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+                if ($admno === '' || isset($authoritativeStudentAdmnos[$admno])) {
+                    continue;
+                }
+                if (AesApiService::normalizeStudRole($record) === 'student') {
+                    continue;
+                }
+                if (AesApiService::looksLikeActiveStudyingClassBatch($record)) {
+                    continue;
+                }
+                $supplement[] = $record;
+            }
+            if ($supplement !== []) {
+                $appendBatch($supplement);
             }
         }
     }
@@ -2791,10 +2867,10 @@ final class OfficerDataService
     /** Extended-timeout AES client for campus directory sync (many dept calls). */
     private function aesApiForCampusDirectorySync(): AesApiService
     {
-        $syncTimeout = max(60, min(300, (int) (
+        $syncTimeout = max(120, min(600, (int) (
             $_ENV['AES_SYNC_TIMEOUT']
             ?? getenv('AES_SYNC_TIMEOUT')
-            ?: 120
+            ?: 300
         )));
         $_ENV['AES_API_TIMEOUT'] = (string) $syncTimeout;
         putenv('AES_API_TIMEOUT=' . $syncTimeout);
