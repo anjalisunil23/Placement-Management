@@ -2377,8 +2377,8 @@ final class OfficerDataService
         $merged = $syncSvc->mergeSyncStats([$studentStats, $alumniStats, $backfillStats]);
         if ($detailsModel->isAvailable()) {
             $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
-            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumniExclusive);
-            $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows($alumniExclusive);
+            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumni);
+            $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows($alumni);
         }
 
         $studentCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('student') : count($students);
