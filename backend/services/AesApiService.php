@@ -753,6 +753,25 @@ final class AesApiService
     }
 
     /**
+     * Row from getAllStudInfo4Placement with stud_role = Alumni query param.
+     * AES often omits stud_role on each row — trust the alumni query unless row says Student.
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function qualifiesAsAlumniDirectoryRecord(array $record): bool
+    {
+        $role = self::normalizeStudRole($record);
+        if ($role === 'alumni') {
+            return true;
+        }
+        if ($role === 'student') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Pass-out / graduated hints when AES omits stud_role (never treat bare class labels as alumni).
      *
      * @param array<string, mixed> $record
@@ -788,15 +807,28 @@ final class AesApiService
     }
 
     /**
-     * Persisted studRole for student_details — AES stud_role field only (never heuristics).
+     * Persisted studRole for student_details.
+     * Explicit AES stud_role wins; alumni sync pass trusts stud_role=Alumni query when field omitted.
      *
      * @param array<string, mixed> $record
      */
     public static function resolveStudRoleForStorage(array $record, string $syncHint = ''): string
     {
-        unset($syncHint);
+        $role = self::normalizeStudRole($record);
+        if ($role !== null) {
+            return $role;
+        }
 
-        return self::normalizeStudRole($record) ?? 'student';
+        $syncHint = strtolower(trim($syncHint));
+        if ($syncHint === 'alumni') {
+            return 'alumni';
+        }
+
+        if (self::qualifiesAsAlumniByHeuristics($record)) {
+            return 'alumni';
+        }
+
+        return 'student';
     }
 
     /**
