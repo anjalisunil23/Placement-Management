@@ -109,6 +109,82 @@
     return 'warning';
   }
 
+  function createAnswerState(q, overrides = {}) {
+    const language = overrides.language || 'Python';
+    const codes = overrides.codes && typeof overrides.codes === 'object'
+      ? { ...overrides.codes }
+      : {};
+    if (Object.keys(codes).length === 0 && overrides.code != null) {
+      codes[language] = String(overrides.code);
+    }
+    const code = Object.prototype.hasOwnProperty.call(codes, language)
+      ? codes[language]
+      : String(overrides.code ?? q?.starterCode?.[language] ?? '');
+    const lastRuns = overrides.lastRuns && typeof overrides.lastRuns === 'object'
+      ? { ...overrides.lastRuns }
+      : {};
+    const lastRun = overrides.lastRun ?? null;
+    if (lastRun && !lastRuns[language]) {
+      lastRuns[language] = lastRun;
+    }
+
+    return {
+      language,
+      codes,
+      code,
+      customInput: overrides.customInput ?? '',
+      lastRun,
+      lastRuns,
+    };
+  }
+
+  function normalizeAnswer(q, ans) {
+    if (!ans) return createAnswerState(q);
+    if (!ans.codes || typeof ans.codes !== 'object') {
+      ans.codes = {};
+      const lang = ans.language || 'Python';
+      if (ans.code != null) {
+        ans.codes[lang] = String(ans.code);
+      }
+    }
+    if (!ans.lastRuns || typeof ans.lastRuns !== 'object') {
+      ans.lastRuns = {};
+      if (ans.lastRun && ans.language) {
+        ans.lastRuns[ans.language] = ans.lastRun;
+      }
+    }
+    return ans;
+  }
+
+  function getLanguageCode(ans, q, language) {
+    if (Object.prototype.hasOwnProperty.call(ans.codes, language)) {
+      return ans.codes[language];
+    }
+    return q?.starterCode?.[language] ?? '';
+  }
+
+  function setLanguageCode(ans, language, code) {
+    ans.codes[language] = code;
+    if (ans.language === language) {
+      ans.code = code;
+    }
+  }
+
+  function draftFieldsForAnswer(ans, q, language, code, customInput) {
+    const normalized = normalizeAnswer(q, ans);
+    setLanguageCode(normalized, language, code);
+    normalized.language = language;
+    normalized.code = code;
+    normalized.customInput = customInput;
+    return {
+      language,
+      code,
+      customInput,
+      codes: normalized.codes,
+      lastRuns: normalized.lastRuns,
+    };
+  }
+
   function createExamController(opts) {
     const root = opts.root;
     const onExit = opts.onExit || (() => {});
@@ -124,6 +200,7 @@
     let remainingMs = 0;
     let timerDeadline = 0;
     let lockOverlay = null;
+    let editorInputBound = false;
 
     function el(id) {
       return root.querySelector(`[data-cod="${id}"]`);
@@ -341,11 +418,30 @@
     function answeredCount() {
       if (!state?.test) return 0;
       return state.test.items.filter((q) => {
-        const ans = state.answers[q.id];
+        const ans = normalizeAnswer(q, state.answers[q.id]);
         if (!ans) return false;
-        const starter = String(q.starterCode?.[ans.language] || '').trim();
-        return String(ans.code || '').trim() && String(ans.code).trim() !== starter;
+        const lang = ans.language || 'Python';
+        if (!Object.prototype.hasOwnProperty.call(ans.codes, lang)) return false;
+        const starter = String(q.starterCode?.[lang] || '').trim();
+        const code = String(ans.codes[lang] || '').trim();
+        return code !== '' && code !== starter;
       }).length;
+    }
+
+    function bindEditorInput() {
+      if (editorInputBound || !editor) return;
+      const input = el('editor')?.querySelector('[data-input]');
+      if (!input) return;
+      editorInputBound = true;
+      input.addEventListener('input', () => {
+        if (!state || state.submitted || state.status !== 'ACTIVE' || !editor) return;
+        const q = currentQ();
+        if (!q) return;
+        const language = el('language')?.value || 'Python';
+        const ans = normalizeAnswer(q, state.answers[q.id] || createAnswerState(q));
+        state.answers[q.id] = ans;
+        setLanguageCode(ans, language, editor.getValue());
+      });
     }
 
     function currentQ() {
@@ -358,15 +454,14 @@
       const language = el('language').value;
       const code = editor.getValue();
       const customInput = el('stdin') ? el('stdin').value : '';
-      state.answers[q.id] = state.answers[q.id] || {};
-      state.answers[q.id].language = language;
-      state.answers[q.id].code = code;
-      state.answers[q.id].customInput = customInput;
+      const ans = normalizeAnswer(q, state.answers[q.id] || createAnswerState(q));
+      state.answers[q.id] = ans;
+      const draft = draftFieldsForAnswer(ans, q, language, code, customInput);
       if (state.attemptId) {
         if (isPracticeMode()) {
-          CodingService.savePracticeDraft(state.attemptId, { language, code, customInput });
+          CodingService.savePracticeDraft(state.attemptId, draft);
         } else {
-          CodingService.saveDraft(state.attemptId, q.id, { language, code, customInput });
+          CodingService.saveDraft(state.attemptId, q.id, draft);
         }
       }
     }
@@ -644,16 +739,16 @@
       const q = currentQ();
       if (!q) return;
       const defaultIn = defaultCustomInput(q);
-      const ans = state.answers[q.id] || {
-        language: 'Python',
-        code: q.starterCode.Python,
-        customInput: defaultIn,
-        lastRun: null,
-      };
+      const ans = normalizeAnswer(q, state.answers[q.id] || createAnswerState(q, { customInput: defaultIn }));
       state.answers[q.id] = ans;
-      el('language').value = ans.language || 'Python';
-      editor.setLanguage(ans.language || 'Python');
-      editor.setValue(ans.code || q.starterCode[ans.language] || '');
+      const language = ans.language || 'Python';
+      const code = getLanguageCode(ans, q, language);
+      ans.language = language;
+      ans.code = code;
+      ans.lastRun = ans.lastRuns?.[language] ?? ans.lastRun ?? null;
+      el('language').value = language;
+      editor.setLanguage(language);
+      editor.setValue(code);
       if (el('stdin')) {
         const stored = ans.customInput;
         el('stdin').value = stored != null && String(stored).trim() !== '' ? stored : defaultIn;
@@ -703,17 +798,18 @@
         focusViolationHandled = false;
         examLockdown = true;
         remainingMs = Math.max(0, (started.endsAt || 0) - Date.now());
+        const serverAnswers = started.answers && typeof started.answers === 'object' ? started.answers : {};
         (started.test.items || []).forEach((item) => {
           const sample = (item.testCases || []).find((tc) => tc.sample);
-          state.answers[item.id] = {
-            language: 'Python',
-            code: item.starterCode.Python,
-            customInput: sample ? sample.input : '',
-            lastRun: null,
-          };
+          state.answers[item.id] = createAnswerState(item, {
+            ...(serverAnswers[item.id] || {}),
+            language: serverAnswers[item.id]?.language || 'Python',
+            customInput: serverAnswers[item.id]?.customInput ?? (sample ? sample.input : ''),
+          });
         });
         state.index = 0;
         if (!editor) editor = createCodeEditor(el('editor'));
+        bindEditorInput();
         showPanel('exam');
         el('exam-title').textContent = started.test.title || 'Coding Test';
         root.setAttribute('data-cod-locked', '1');
@@ -744,9 +840,12 @@
         }
       }
       if (ans) {
-        ans.language = language;
-        ans.code = source;
-        ans.customInput = stdin;
+        const normalized = normalizeAnswer(q, ans);
+        state.answers[q.id] = normalized;
+        setLanguageCode(normalized, language, source);
+        normalized.language = language;
+        normalized.code = source;
+        normalized.customInput = stdin;
       }
       running = true;
       setBusy(true);
@@ -767,7 +866,10 @@
             code: source,
             stdin,
           });
-        ans.lastRun = result;
+        const normalized = normalizeAnswer(q, state.answers[q.id] || createAnswerState(q));
+        normalized.lastRuns[language] = result;
+        normalized.lastRun = result;
+        state.answers[q.id] = normalized;
         el('run-state').textContent = '';
         renderRunPanel(result, false);
         renderNav();
@@ -878,13 +980,14 @@
         state.status = 'ACTIVE';
         state.index = 0;
         state.practiceMode = true;
-        state.answers = started.problem.id ? { [started.problem.id]: {
-          language: 'Python',
-          code: started.problem.starterCode?.Python || '',
-          customInput: (started.problem.testCases || []).find((t) => t.sample)?.input || '',
-          lastRun: null,
-        } } : {};
+        state.answers = started.problem.id ? {
+          [started.problem.id]: createAnswerState(started.problem, {
+            language: 'Python',
+            customInput: (started.problem.testCases || []).find((t) => t.sample)?.input || '',
+          }),
+        } : {};
         if (!editor) editor = createCodeEditor(el('editor'));
+        bindEditorInput();
         showPanel('exam');
         applyPracticeUi(true);
         el('exam-title').textContent = started.problem.title || 'Coding Problem';
@@ -1016,23 +1119,28 @@
     el('language')?.addEventListener('change', () => {
       const q = currentQ();
       if (!q || !editor) return;
-      const language = el('language').value;
-      const ans = state.answers[q.id] || { language: 'Python', code: editor.getValue(), lastRun: null };
+      const ans = normalizeAnswer(q, state.answers[q.id] || createAnswerState(q));
       state.answers[q.id] = ans;
-      const prevLang = ans.language;
-      const prevCode = editor.getValue();
-      const wasStarter = String(prevCode || '').trim() === String(q.starterCode[prevLang] || '').trim();
-      ans.language = language;
-      if (wasStarter || !String(prevCode || '').trim()) {
-        ans.code = q.starterCode[language] || '';
-        ans.lastRun = null;
-      } else {
-        ans.code = prevCode;
-      }
-      editor.setLanguage(language);
-      editor.setValue(ans.code);
+      const fromLang = ans.language || el('language').value;
+      const toLang = el('language').value;
+      const fromCode = editor.getValue();
+      setLanguageCode(ans, fromLang, fromCode);
+      ans.language = toLang;
+      const nextCode = getLanguageCode(ans, q, toLang);
+      ans.code = nextCode;
+      ans.lastRun = ans.lastRuns?.[toLang] ?? null;
+      editor.setLanguage(toLang);
+      editor.setValue(nextCode);
       renderRunPanel(ans.lastRun, false);
-      if (state.attemptId) CodingService.saveDraft(state.attemptId, q.id, { language, code: ans.code, customInput: ans.customInput });
+      updateSubmitVisibility(ans.lastRun);
+      if (state.attemptId) {
+        const draft = draftFieldsForAnswer(ans, q, toLang, nextCode, ans.customInput ?? '');
+        if (isPracticeMode()) {
+          CodingService.savePracticeDraft(state.attemptId, draft);
+        } else {
+          CodingService.saveDraft(state.attemptId, q.id, draft);
+        }
+      }
     });
 
     root.addEventListener('click', (e) => {

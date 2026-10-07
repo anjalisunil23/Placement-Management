@@ -771,8 +771,10 @@
       answers[item.id] = {
         language: 'Python',
         code: item.starterCode?.Python || '',
+        codes: {},
         customInput: defaultIn,
         lastRun: null,
+        lastRuns: {},
       };
       const attempt = {
         id: attemptId,
@@ -845,7 +847,11 @@
             console.info('[coding run] full response JSON', JSON.stringify({ success: res.success, message: res.message, data: lastRun }));
           }
         } catch { /* ignore */ }
-        if (attempt.answers[qid]) attempt.answers[qid].lastRun = lastRun;
+        if (attempt.answers[qid]) {
+          attempt.answers[qid].lastRun = lastRun;
+          attempt.answers[qid].lastRuns = attempt.answers[qid].lastRuns || {};
+          attempt.answers[qid].lastRuns[language] = lastRun;
+        }
         return lastRun;
       }
 
@@ -879,7 +885,11 @@
         visibleCount: cases.length,
         at: Date.now(),
       };
-      if (attempt.answers[qid]) attempt.answers[qid].lastRun = lastRun;
+      if (attempt.answers[qid]) {
+        attempt.answers[qid].lastRun = lastRun;
+        attempt.answers[qid].lastRuns = attempt.answers[qid].lastRuns || {};
+        attempt.answers[qid].lastRuns[language] = lastRun;
+      }
       return lastRun;
     },
 
@@ -998,8 +1008,10 @@
         answers[item.id] = {
           language: 'Python',
           code: item.starterCode.Python,
+          codes: {},
           customInput: sample ? sample.input : '',
           lastRun: null,
+          lastRuns: {},
           locked: false,
         };
       });
@@ -1078,7 +1090,11 @@
         visibleCount: cases.length,
         at: Date.now(),
       };
-      if (attempt.answers[questionId]) attempt.answers[questionId].lastRun = lastRun;
+      if (attempt.answers[questionId]) {
+        attempt.answers[questionId].lastRun = lastRun;
+        attempt.answers[questionId].lastRuns = attempt.answers[questionId].lastRuns || {};
+        attempt.answers[questionId].lastRuns[language] = lastRun;
+      }
       return lastRun;
     },
 

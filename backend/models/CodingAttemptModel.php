@@ -101,6 +101,12 @@ class CodingAttemptModel extends BaseModel
         if (array_key_exists('customInput', $draft)) {
             $current['customInput'] = (string) $draft['customInput'];
         }
+        if (array_key_exists('codes', $draft) && is_array($draft['codes'])) {
+            $current['codes'] = $draft['codes'];
+        }
+        if (array_key_exists('lastRuns', $draft) && is_array($draft['lastRuns'])) {
+            $current['lastRuns'] = $draft['lastRuns'];
+        }
         $current['lastSavedAt'] = DocumentHelper::now();
         $answers[$questionId] = $current;
 
