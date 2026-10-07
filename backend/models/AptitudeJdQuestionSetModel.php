@@ -285,7 +285,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             }
             $norm['id'] = 'jdq-' . ($i + 1) . '-' . bin2hex(random_bytes(4));
             $norm['source'] = 'MANUAL_UPLOAD';
-            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'directionsBlock', 'questionType'] as $metaKey) {
+            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'answerSource', 'aiAnalyzed', 'directionsBlock', 'questionType'] as $metaKey) {
                 if (array_key_exists($metaKey, $q)) {
                     $norm[$metaKey] = $q[$metaKey];
                 }
@@ -581,12 +581,10 @@ class AptitudeJdQuestionSetModel extends BaseModel
             if (!is_array($q)) {
                 continue;
             }
-            $questions[] = [
+            $row = [
                 'id' => (string) ($q['id'] ?? ''),
                 'prompt' => (string) ($q['prompt'] ?? ''),
                 'options' => array_values((array) ($q['options'] ?? [])),
-                'correctIndex' => (int) ($q['correctIndex'] ?? 0),
-                'explanation' => (string) ($q['explanation'] ?? ''),
                 'topic' => (string) ($q['topic'] ?? ''),
                 'difficulty' => (string) ($q['difficulty'] ?? 'Medium'),
                 'category' => (string) ($q['category'] ?? 'General Aptitude'),
@@ -597,10 +595,17 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 'section' => (string) ($q['section'] ?? ''),
                 'confidence' => isset($q['confidence']) ? (float) $q['confidence'] : null,
                 'containsImage' => !empty($q['containsImage']),
-                'answerKnown' => !empty($q['answerKnown']),
                 'directionsBlock' => (string) ($q['directionsBlock'] ?? ''),
                 'questionType' => (string) ($q['questionType'] ?? ''),
             ];
+            if (!$forStudent) {
+                $row['correctIndex'] = (int) ($q['correctIndex'] ?? 0);
+                $row['explanation'] = (string) ($q['explanation'] ?? '');
+                $row['answerKnown'] = !empty($q['answerKnown']);
+                $row['answerSource'] = (string) ($q['answerSource'] ?? '');
+                $row['aiAnalyzed'] = !empty($q['aiAnalyzed']);
+            }
+            $questions[] = $row;
         }
 
         $id = (string) ($row['_id'] ?? '');

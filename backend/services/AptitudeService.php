@@ -750,12 +750,18 @@ final class AptitudeService
         $parseResult = $this->parseManualUploadQuestions($extracted);
         $parsed = $parseResult['questions'];
         $parseMethod = (string) ($parseResult['parseMethod'] ?? 'none');
+        $answersAnalyzed = (int) ($parseResult['answersAnalyzed'] ?? 0);
+        $answersFromKey = (int) ($parseResult['answersFromKey'] ?? 0);
+        $answersKnown = (int) ($parseResult['answersKnown'] ?? 0);
         $importMeta = [
             'extractionMethod' => $extractionMethod,
             'pageCount' => $extractionPageCount,
             'ocrAttempted' => $ocrAttempted,
             'sectionsDetected' => $parseResult['sections'] ?? [],
             'extractedCharCount' => mb_strlen($extracted),
+            'answersAnalyzed' => $answersAnalyzed,
+            'answersFromKey' => $answersFromKey,
+            'answersKnown' => $answersKnown,
         ];
 
         $saveTarget = strtolower(trim($saveTarget));
@@ -808,6 +814,9 @@ final class AptitudeService
                 'testSkippedMessage' => $testSkippedMessage,
                 'parseMethod' => $parseMethod,
                 'extractedCharCount' => mb_strlen($extracted),
+                'answersAnalyzed' => $answersAnalyzed,
+                'answersFromKey' => $answersFromKey,
+                'answersKnown' => $answersKnown,
                 'importMeta' => $importMeta,
             ];
         } catch (\InvalidArgumentException $e) {
@@ -855,6 +864,18 @@ final class AptitudeService
             $parseMethod = 'local';
         }
 
+        $answersFromKey = 0;
+        if ($final !== []) {
+            $answerKey = AptitudeManualQuestionAiParser::parseAnswerKeyMap($extracted);
+            $beforeKey = $this->countKnownAnswers($final);
+            AptitudeManualQuestionAiParser::applyAnswerKeyToQuestions($final, $answerKey);
+            $answersFromKey = $this->countKnownAnswers($final) - $beforeKey;
+
+            $answersAnalyzed = (new AptitudeManualAnswerAnalyzer())->analyze($final);
+        } else {
+            $answersAnalyzed = 0;
+        }
+
         $sections = [];
         foreach ($final as $q) {
             $sec = trim((string) ($q['section'] ?? $q['topic'] ?? ''));
@@ -867,7 +888,25 @@ final class AptitudeService
             'questions' => $final,
             'parseMethod' => $parseMethod,
             'sections' => $sections,
+            'answersAnalyzed' => $answersAnalyzed,
+            'answersFromKey' => max(0, $answersFromKey),
+            'answersKnown' => $this->countKnownAnswers($final),
         ];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     */
+    private function countKnownAnswers(array $questions): int
+    {
+        $n = 0;
+        foreach ($questions as $q) {
+            if (!empty($q['answerKnown'])) {
+                $n++;
+            }
+        }
+
+        return $n;
     }
 
     private function estimateMcqCountInText(string $text): int

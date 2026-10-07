@@ -1818,14 +1818,23 @@
       const count = res.data?.questionCount ?? 0;
       const viaAi = res.data?.parseMethod === 'ai';
       const replaced = !!res.data?.replacedExisting;
+      const answersKnown = Number(res.data?.answersKnown ?? 0);
+      const answersAnalyzed = Number(res.data?.answersAnalyzed ?? 0);
+      const answersFromKey = Number(res.data?.answersFromKey ?? 0);
+      const answerHint = count > 0 && answersKnown > 0
+        ? ` Answers shown for ${answersKnown}/${count}`
+          + (answersAnalyzed > 0 ? ` (${answersAnalyzed} inferred by AI` : '')
+          + (answersFromKey > 0 ? `${answersAnalyzed > 0 ? ', ' : ' ('}${answersFromKey} from answer key` : '')
+          + (answersAnalyzed > 0 || answersFromKey > 0 ? ').' : '.')
+        : '';
       let msg;
       if (replaced) {
         msg = count > 0
-          ? `Updated local bank entry — ${count} question(s)${viaAi ? ' (AI-read from manual)' : ''}.`
+          ? `Updated local bank entry — ${count} question(s)${viaAi ? ' (AI-read from manual)' : ''}.${answerHint}`
           : 'Updated local bank entry (no MCQs detected in file).';
       } else {
         msg = count > 0
-          ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.`
+          ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.${answerHint}`
           : 'Saved manual to local bank (no MCQs detected in file).';
       }
       toast(msg.trim(), 'success');
@@ -2011,6 +2020,9 @@
       conf != null && !Number.isNaN(conf) ? `<div class="small text-muted-2">Confidence: ${conf}%</div>` : '',
     ].filter(Boolean).join('') : '';
     const answerLabel = letters[correct] || (isDs ? String(correct + 1) : String.fromCharCode(65 + correct));
+    const aiAnswerNote = manualPreview && answerKnown && q.answerSource === 'ai'
+      ? '<div class="small text-info mb-1">Answer inferred by AI — verify before publishing.</div>'
+      : '';
     const answerLine = manualPreview && !answerKnown
       ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>')
       : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : (isSc ? `${esc(answerLabel)})` : `${esc(answerLabel)}.`)} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
@@ -2023,6 +2035,7 @@
       <div class="fw-semibold mb-2">${esc(qLabel)}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
       ${promptBlock}
       ${dupWarn}
+      ${aiAnswerNote}
       <div class="small mb-2">${displayOpts.length
         ? displayOpts.map((o, oi) => {
           const label = esc(stripHtml(String(o || '')) || String(o || ''));
