@@ -192,17 +192,17 @@ final class CodingPracticeRunService
     ): array {
         $stdin = str_replace("\r\n", "\n", str_replace("\r", "\n", $stdin));
         $exec = $this->executor->run($language, $source, $stdin, $timeLimitMs);
-        $expected = $this->resolveExpected($problem, $stdin, $testCase);
+        $expectedRaw = $this->resolveExpected($problem, $stdin, $testCase);
         $stdout = CodingTestCaseChecker::normalize((string) ($exec['stdout'] ?? ''));
-        $expectedNorm = CodingTestCaseChecker::normalize($expected);
+        $expectedNorm = $expectedRaw === null ? '' : CodingTestCaseChecker::normalize($expectedRaw);
         $succeeded = CodingTestCaseChecker::executionSucceeded($exec);
-        $passed = $succeeded && $stdout === $expectedNorm;
-        $displayStatus = $this->statusFromExec($exec, $passed, $stdout, $expectedNorm);
+        $passed = CodingTestCaseChecker::passed($exec, $stdout, $expectedRaw);
+        $displayStatus = CodingTestCaseChecker::displayStatus($exec, $passed, $expectedRaw);
         $stderr = $succeeded ? '' : (string) ($exec['stderrTrace'] ?? $exec['stderr'] ?? '');
 
         return [
             'stdout' => $stdout,
-            'expected' => $expected,
+            'expected' => $expectedRaw === null ? '' : $expectedNorm,
             'stderr' => $stderr,
             'stderrTrace' => $stderr,
             'errorSummary' => $succeeded ? '' : (string) ($exec['errorSummary'] ?? ''),
@@ -229,15 +229,12 @@ final class CodingPracticeRunService
      * @param array<string, mixed> $problem
      * @param array<string, mixed>|null $testCase
      */
-    private function resolveExpected(array $problem, string $stdin, ?array $testCase = null): string
+    private function resolveExpected(array $problem, string $stdin, ?array $testCase = null): ?string
     {
         if ($testCase !== null) {
-            $raw = $testCase['expected'] ?? $testCase['output'] ?? null;
-            if ($raw !== null && $raw !== '') {
-                return CodingTestCaseChecker::normalize((string) $raw);
-            }
-            if ($raw === 0 || $raw === '0') {
-                return '0';
+            $raw = CodingTestCaseChecker::expectedFromTestCase($testCase);
+            if ($raw !== null) {
+                return $raw;
             }
         }
 
@@ -247,43 +244,32 @@ final class CodingPracticeRunService
     /**
      * @param array<string, mixed> $problem
      */
-    private function expectedFor(array $problem, string $stdin): string
+    private function expectedFor(array $problem, string $stdin): ?string
     {
         $want = CodingTestCaseChecker::normalize($stdin);
         foreach ((array) ($problem['testCases'] ?? []) as $tc) {
             if (!is_array($tc)) {
                 continue;
             }
-            if (CodingTestCaseChecker::normalize((string) ($tc['input'] ?? '')) === $want) {
-                return CodingTestCaseChecker::normalize((string) ($tc['expected'] ?? ''));
+            if (CodingTestCaseChecker::normalize((string) ($tc['input'] ?? '')) !== $want) {
+                continue;
+            }
+            $raw = CodingTestCaseChecker::expectedFromTestCase($tc);
+            if ($raw !== null) {
+                return $raw;
             }
         }
+        foreach ((array) ($problem['examples'] ?? []) as $ex) {
+            if (!is_array($ex)) {
+                continue;
+            }
+            if (CodingTestCaseChecker::normalize((string) ($ex['input'] ?? '')) !== $want) {
+                continue;
+            }
 
-        return '';
-    }
-
-    /**
-     * @param array<string, mixed> $exec
-     */
-    private function statusFromExec(array $exec, bool $passed, string $stdout, string $expectedNorm): string
-    {
-        $status = (string) ($exec['status'] ?? '');
-        if (!empty($exec['timedOut']) || $status === 'Time Limit Exceeded') {
-            return 'Time Limit Exceeded';
-        }
-        if ($status === 'Compilation Error' || $status === 'Syntax Error') {
-            return 'Compilation Error';
-        }
-        if (!CodingTestCaseChecker::executionSucceeded($exec)) {
-            return 'Runtime Error';
-        }
-        if ($passed) {
-            return 'Passed';
-        }
-        if ($stdout === '' && $expectedNorm !== '') {
-            return 'Execution Successful';
+            return (string) ($ex['output'] ?? $ex['expected'] ?? '');
         }
 
-        return 'Wrong Answer';
+        return null;
     }
 }

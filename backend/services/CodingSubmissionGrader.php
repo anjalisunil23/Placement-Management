@@ -178,7 +178,7 @@ final class CodingSubmissionGrader
 
         $cases = array_values(array_filter(
             (array) ($problem['testCases'] ?? []),
-            static fn ($tc): bool => is_array($tc) && trim((string) ($tc['expected'] ?? '')) !== ''
+            static fn ($tc): bool => is_array($tc) && CodingTestCaseChecker::expectedFromTestCase($tc) !== null
         ));
         $total = count($cases);
         if ($total === 0) {
@@ -193,7 +193,7 @@ final class CodingSubmissionGrader
 
         foreach ($cases as $index => $tc) {
             $input = (string) ($tc['input'] ?? '');
-            $expected = (string) ($tc['expected'] ?? '');
+            $expected = (string) (CodingTestCaseChecker::expectedFromTestCase($tc) ?? '');
             $exec = $this->executor->run($language, $sourceCode, $input, $timeLimitMs ?? 3000);
             $maxDurationMs = max($maxDurationMs, (int) ($exec['durationMs'] ?? 0));
             $verdict = CodingTestCaseChecker::verdictFromExecution($exec, $expected);

@@ -132,7 +132,16 @@
   }
 
   function normalizeOut(value) {
-    return String(value ?? '').replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\s+$/g, '').trim();
+    const text = String(value ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n+$/g, '');
+    return text.split('\n').map((line) => line.replace(/[ \t]+$/g, '')).join('\n');
+  }
+
+  function expectedFromCase(tc) {
+    if (!tc || typeof tc !== 'object') return null;
+    if (tc.expected != null) return String(tc.expected);
+    if (tc.output != null) return String(tc.output);
+    if (tc.expectedOutput != null) return String(tc.expectedOutput);
+    return null;
   }
 
   function isStarter(question, language, code) {
@@ -140,17 +149,25 @@
     return !String(code || '').trim() || String(code).trim() === starter;
   }
 
-  function expectedFor(question, stdin) {
+  function expectedLookup(question, stdin) {
     if (typeof question.solver === 'function') {
       try {
-        return normalizeOut(question.solver(stdin));
+        return { expected: normalizeOut(question.solver(stdin)), defined: true };
       } catch {
-        return '';
+        return { expected: '', defined: false };
       }
     }
     const want = normalizeOut(stdin);
     const hit = (question.testCases || []).find((tc) => normalizeOut(tc.input) === want);
-    return hit ? normalizeOut(hit.expected) : '';
+    const fromCase = expectedFromCase(hit);
+    if (fromCase != null) return { expected: normalizeOut(fromCase), defined: true };
+    const example = (question.examples || []).find((ex) => normalizeOut(ex.input) === want);
+    if (example) return { expected: normalizeOut(example.output ?? example.expected ?? ''), defined: true };
+    return { expected: '', defined: false };
+  }
+
+  function expectedFor(question, stdin) {
+    return expectedLookup(question, stdin).expected;
   }
 
   function mockHints(question, language, stdin) {
@@ -175,14 +192,11 @@
     return exec?.ok !== false;
   }
 
-  function statusFromExec(exec, passed, stdout, expectedNorm) {
+  function statusFromExec(exec, passed) {
     if (exec.timedOut || exec.status === 'Time Limit Exceeded') return 'Time Limit Exceeded';
     if (exec.status === 'Syntax Error' || exec.status === 'Compilation Error') return 'Compilation Error';
     if (!executionSucceeded(exec)) return 'Runtime Error';
     if (passed) return 'Passed';
-    const out = stdout != null ? stdout : normalizeOut(exec.stdout);
-    const exp = expectedNorm != null ? expectedNorm : '';
-    if (out === '' && exp !== '') return 'Execution Successful';
     return 'Wrong Answer';
   }
 
@@ -212,20 +226,20 @@
     const enriched = (global.CodingErrorFormat && typeof global.CodingErrorFormat.enrichExec === 'function')
       ? global.CodingErrorFormat.enrichExec(exec, language, stdin, code)
       : exec;
-    const expected = expectedFor(question, stdin);
-    const expectedNorm = normalizeOut(expected);
+    const lookup = expectedLookup(question, stdin);
+    const expectedNorm = lookup.defined ? normalizeOut(lookup.expected) : '';
     const stdout = normalizeOut(enriched.stdout);
     const succeeded = executionSucceeded(enriched);
-    const passed = succeeded && stdout === expectedNorm;
+    const passed = succeeded && lookup.defined && stdout === expectedNorm;
     return {
       exec: enriched,
-      expected,
+      expected: lookup.defined ? expectedNorm : '',
       stdout,
       stderr: enriched.stderrTrace || enriched.stderr || '',
       stderrTrace: enriched.stderrTrace || enriched.stderr || '',
       errorSummary: enriched.errorSummary || '',
       errorDetail: enriched.errorDetail || '',
-      status: statusFromExec(enriched, passed, stdout, expectedNorm),
+      status: statusFromExec(enriched, passed),
       passed,
     };
   }

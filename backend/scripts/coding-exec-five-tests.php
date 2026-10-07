@@ -28,7 +28,7 @@ $r1 = $exec->run('Python', $t1, $in, 15000);
 $pr1 = (new CodingPracticeRunService($exec))->run($problem, 'Python', $t1, $in, 15000);
 $check('TEST1 status OK', ($r1['status'] ?? '') === 'OK' && ($r1['ok'] ?? false) === true, json_encode($r1));
 $check('TEST1 verdict not Runtime', CodingTestCaseChecker::verdictFromExecution($r1, '4') !== 'Runtime Error', CodingTestCaseChecker::verdictFromExecution($r1, '4'));
-$check('TEST1 practice Execution Successful', ($pr1['custom']['status'] ?? '') === 'Execution Successful', 'status=' . ($pr1['custom']['status'] ?? ''));
+$check('TEST1 practice Wrong Answer', ($pr1['custom']['status'] ?? '') === 'Wrong Answer' && empty($pr1['custom']['passed']), 'status=' . ($pr1['custom']['status'] ?? ''));
 
 $t2 = "n = int(input())\narr = list(map(int, input().split()))\narr.sort()\nanswer = sum(arr[::2])\nprint(answer)\n";
 $r2 = $exec->run('Python', $t2, $in, 15000);

@@ -22,6 +22,66 @@ final class CodingTestCaseChecker
     }
 
     /**
+     * Expected stdout from a stored test-case row, or null when the row has none.
+     *
+     * @param array<string, mixed> $testCase
+     */
+    public static function expectedFromTestCase(array $testCase): ?string
+    {
+        foreach (['expected', 'output', 'expectedOutput'] as $key) {
+            if (!array_key_exists($key, $testCase) || $testCase[$key] === null) {
+                continue;
+            }
+
+            return (string) $testCase[$key];
+        }
+
+        return null;
+    }
+
+    /**
+     * PASS only when the process finished normally and stdout matches a defined expected value.
+     * Empty expected is allowed (problem prints nothing). Missing expected is not a pass.
+     *
+     * @param array<string, mixed> $execResult
+     */
+    public static function passed(array $execResult, string $actualStdout, ?string $expected): bool
+    {
+        if ($expected === null) {
+            return false;
+        }
+
+        return self::executionSucceeded($execResult) && self::matches($actualStdout, $expected);
+    }
+
+    /**
+     * Judge label for the UI. Successful execution is never "Passed" by itself.
+     *
+     * @param array<string, mixed> $execResult
+     */
+    public static function displayStatus(array $execResult, bool $passed, ?string $expected = null): string
+    {
+        $status = (string) ($execResult['status'] ?? '');
+        if (!empty($execResult['timedOut']) || $status === 'Time Limit Exceeded') {
+            return 'Time Limit Exceeded';
+        }
+        if ($status === 'Compilation Error' || $status === 'Syntax Error') {
+            return 'Compilation Error';
+        }
+        if ($status === 'Memory Limit Exceeded') {
+            return 'Memory Limit Exceeded';
+        }
+        if (!self::executionSucceeded($execResult)) {
+            return 'Runtime Error';
+        }
+        if ($passed) {
+            return 'Passed';
+        }
+
+        return 'Wrong Answer';
+    }
+
+    /**
      * Whether the process finished normally (exit 0 / status OK). Never infer failure from empty stdout.
      *
      * @param array<string, mixed> $execResult

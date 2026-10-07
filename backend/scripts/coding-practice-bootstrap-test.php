@@ -31,7 +31,7 @@ try {
     $run = (new PMS\Services\CodingPracticeRunService())->run($problem, 'Python', $code, "4\n1 4 3 2", 8000);
     $check('practice run completes', true, '');
     $check('not Runtime Error', ($run['custom']['status'] ?? '') !== 'Runtime Error', 'status=' . ($run['custom']['status'] ?? ''));
-    $check('Execution Successful', ($run['custom']['status'] ?? '') === 'Execution Successful', '');
+    $check('Wrong Answer for empty stdout', ($run['custom']['status'] ?? '') === 'Wrong Answer' && empty($run['custom']['passed']), 'status=' . ($run['custom']['status'] ?? ''));
     $check('execution.succeeded', !empty($run['custom']['execution']['succeeded']), '');
     $emptyIn = (new PMS\Services\CodingPracticeRunService())->run($problem, 'Python', $code, '', 8000);
     $check('empty custom stdin uses sample', ($emptyIn['custom']['input'] ?? '') === "4\n1 4 3 2", 'input=' . json_encode($emptyIn['custom']['input'] ?? ''));

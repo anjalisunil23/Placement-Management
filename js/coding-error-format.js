@@ -188,9 +188,7 @@
     if (!procOk || !failStatuses.has(String(r.status || ''))) {
       return r;
     }
-    const emptyOut = String(r.output ?? r.stdout ?? ex?.stdout ?? '').trim() === '';
-    const expected = String(r.expected ?? '').trim();
-    const status = emptyOut && expected !== '' ? 'Execution Successful' : (r.passed ? 'Passed' : 'Wrong Answer');
+    const status = r.passed ? 'Passed' : 'Wrong Answer';
     return {
       ...r,
       status,
@@ -218,11 +216,13 @@
   function resolveRunStatus(custom) {
     const explicit = String(custom?.status || '');
     if (ERROR_STATUSES.has(explicit)) return explicit;
-    if (explicit === 'Execution Successful') return 'Execution Successful';
-    if (custom?.passed === true) return 'Passed';
+    if (custom?.passed === true && explicit !== 'Execution Successful') {
+      return explicit === 'Accepted' ? 'Passed' : (explicit || 'Passed');
+    }
+    if (explicit === 'Execution Successful' || explicit === 'Passed') return 'Wrong Answer';
     if (custom?.passed === false && explicit && explicit !== 'Passed') return explicit;
     if (custom?.passed === false) return 'Wrong Answer';
-    return explicit || '—';
+    return explicit || 'Wrong Answer';
   }
 
   function errorBlockHtml(custom, esc) {

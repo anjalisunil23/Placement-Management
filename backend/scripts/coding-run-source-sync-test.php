@@ -55,6 +55,6 @@ $check('CASE 3 Runtime Error', ($r3['status'] ?? '') === 'Runtime Error', 'statu
 // CASE 4 — empty custom stdin uses sample input (no false Runtime Error on output)
 $run4 = $svc->run($problem, 'Python', $code1, '', 8000);
 $check('CASE 4 overall not Runtime Error', ($run4['overall'] ?? '') !== 'Runtime Error', 'overall=' . ($run4['overall'] ?? ''));
-$check('CASE 4 custom Execution Successful', ($run4['custom']['status'] ?? '') === 'Execution Successful', 'status=' . ($run4['custom']['status'] ?? ''));
+$check('CASE 4 custom Wrong Answer', ($run4['custom']['status'] ?? '') === 'Wrong Answer' && empty($run4['custom']['passed']), 'status=' . ($run4['custom']['status'] ?? ''));
 
 exit($fail === 0 ? 0 : 1);
