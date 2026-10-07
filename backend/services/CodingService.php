@@ -2485,7 +2485,7 @@ final class CodingService
         if (trim($source) === '') {
             Response::error('Source code is required.', 422);
         }
-        $language = \PMS\Utils\CodingLanguage::canonicalLabel((string) ($body['language'] ?? 'Python'));
+        $language = $this->requireSupportedCodingLanguage((string) ($body['language'] ?? 'Python'));
         $stdin = (string) ($body['stdin'] ?? '');
         $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 8000)));
 
@@ -2559,7 +2559,7 @@ final class CodingService
             Response::notFound('Problem not found.');
         }
         $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
-        $language = trim((string) ($body['language'] ?? 'Python'));
+        $language = $this->requireSupportedCodingLanguage((string) ($body['language'] ?? 'Python'));
         $sourceCode = (string) ($body['sourceCode'] ?? $body['source_code'] ?? $body['code'] ?? '');
         if (trim($sourceCode) === '') {
             Response::error('Source code is required for submit.', 422);
@@ -2612,6 +2612,19 @@ final class CodingService
             'practiceStatus' => $stat ? (string) ($stat['status'] ?? 'attempted') : ($accepted ? 'solved' : 'attempted'),
             'attemptCount' => $stat ? (int) ($stat['attemptCount'] ?? 0) : 1,
         ];
+    }
+
+    private function requireSupportedCodingLanguage(string $language): string
+    {
+        $label = \PMS\Utils\CodingLanguage::supportedLabel($language);
+        if ($label === null) {
+            Response::error(
+                'Unsupported language. Allowed: C, C++, Java, Python, JavaScript.',
+                422
+            );
+        }
+
+        return $label;
     }
 
     /**

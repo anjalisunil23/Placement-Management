@@ -499,9 +499,7 @@
     }
 
     function starterForLanguage(q, language) {
-      const lang = (typeof CodingData !== 'undefined' && CodingData.normalizeLanguage)
-        ? CodingData.normalizeLanguage(language)
-        : String(language || 'Python');
+      const lang = ansLanguage(language);
       const fromProblem = String(q?.starterCode?.[lang] || '').trim();
       if (fromProblem) return String(q.starterCode[lang]);
       if (typeof CodingData !== 'undefined' && CodingData.defaultStarters) {
@@ -510,6 +508,68 @@
         return String(CodingData.defaultStarters(py)[lang] || '');
       }
       return '';
+    }
+
+    function isStarterCode(q, language, code) {
+      const starter = starterForLanguage(q, language);
+      return String(code || '').trim() === String(starter || '').trim();
+    }
+
+    function hasMeaningfulCode(q, language, code) {
+      const t = String(code || '').trim();
+      return !!t && !isStarterCode(q, language, code);
+    }
+
+    function inferSourceLanguage(code) {
+      const t = String(code || '').trim();
+      if (!t) return null;
+      if (/\bpublic\s+class\b|\bSystem\.out\b|\bScanner\b/.test(t)) return 'Java';
+      if (/#include\s*<stdio\.h>|^\s*int\s+main\s*\(/m.test(t) && !/\bcin\b|\bcout\b|using\s+namespace\s+std/.test(t)) return 'C';
+      if (/#include\s*[<"]|using\s+namespace\s+std|\bcin\s*>>|\bcout\s<</.test(t)) return 'C++';
+      if (/require\s*\(\s*['"]fs['"]|readFileSync\s*\(/.test(t)) return 'JavaScript';
+      if (/\binput\s*\(|\bprint\s*\(|int\s*\(\s*input\s*\)/.test(t)) return 'Python';
+      return null;
+    }
+
+    function migrateOrphanCode(q, ans) {
+      ans.codeByLang = ans.codeByLang || {};
+      const orphan = String(ans.code || '').trim();
+      if (!orphan) return;
+      const alreadyStored = Object.values(ans.codeByLang).some((v) => String(v || '').trim() === orphan);
+      if (alreadyStored) return;
+      const bucket = inferSourceLanguage(orphan) || ansLanguage(ans.language || 'Python');
+      if (!String(ans.codeByLang[bucket] || '').trim()) {
+        ans.codeByLang[bucket] = ans.code;
+      }
+    }
+
+    function resolveEditorCode(q, ans, langKey) {
+      ans.codeByLang = ans.codeByLang || {};
+      migrateOrphanCode(q, ans);
+      let code = String(ans.codeByLang[langKey] || '').trim();
+      if (!code) {
+        code = starterForLanguage(q, langKey);
+        ans.codeByLang[langKey] = code;
+      }
+      ans.code = code;
+      ans.language = langKey;
+      return code;
+    }
+
+    function applyLanguageSwitch(q, ans, prevLang, language, nextCode) {
+      ans.language = language;
+      ans.code = nextCode;
+      ans.codeByLang[language] = nextCode;
+      ans.lastRun = null;
+      editor.setLanguage(language);
+      editor.setValue(nextCode);
+      renderRunPanel(null, false);
+      el('run-state').textContent = '';
+      if (state.attemptId) {
+        const draft = { language, code: ans.code, customInput: ans.customInput };
+        if (isPracticeMode()) CodingService.savePracticeDraft(state.attemptId, draft);
+        else CodingService.saveDraft(state.attemptId, q.id, draft);
+      }
     }
 
     function renderRunPanel(run, runningNow) {
@@ -673,15 +733,11 @@
       };
       ans.codeByLang = ans.codeByLang || {};
       const langKey = ansLanguage(ans.language || lang);
-      ans.language = langKey;
-      if (!String(ans.code || '').trim()) {
-        ans.code = ans.codeByLang[langKey] || starterForLanguage(q, langKey);
-      }
-      if (!ans.codeByLang[langKey]) ans.codeByLang[langKey] = ans.code;
+      const editorCode = resolveEditorCode(q, ans, langKey);
       state.answers[q.id] = ans;
       el('language').value = langKey;
       editor.setLanguage(langKey);
-      editor.setValue(ans.code || starterForLanguage(q, langKey));
+      editor.setValue(editorCode);
       if (el('stdin')) {
         const stored = ans.customInput;
         el('stdin').value = stored != null && String(stored).trim() !== '' ? stored : defaultIn;
@@ -1058,7 +1114,7 @@
       }).join('') || '<p class="text-muted-2 mb-0">No question analysis available.</p>';
     }
 
-    el('language')?.addEventListener('change', () => {
+    el('language')?.addEventListener('change', async () => {
       const q = currentQ();
       if (!q || !editor) return;
       const language = ansLanguage(el('language').value);
@@ -1067,24 +1123,30 @@
       ans.codeByLang = ans.codeByLang || {};
       const prevLang = ansLanguage(ans.language || 'Python');
       const prevCode = editor.getValue();
-      // Remember prior language buffer, then switch UI to the new language template/buffer.
+      if (language === prevLang) return;
+
       ans.codeByLang[prevLang] = prevCode;
-      ans.language = language;
-      const nextCode = String(ans.codeByLang[language] || '').trim()
-        ? ans.codeByLang[language]
-        : starterForLanguage(q, language);
-      ans.codeByLang[language] = nextCode;
-      ans.code = nextCode;
-      ans.lastRun = null;
-      editor.setLanguage(language);
-      editor.setValue(nextCode);
-      renderRunPanel(null, false);
-      el('run-state').textContent = '';
-      if (state.attemptId) {
-        const draft = { language, code: ans.code, customInput: ans.customInput };
-        if (isPracticeMode()) CodingService.savePracticeDraft(state.attemptId, draft);
-        else CodingService.saveDraft(state.attemptId, q.id, draft);
+      const hasSavedTarget = String(ans.codeByLang[language] || '').trim() !== '';
+      const nextCode = hasSavedTarget ? ans.codeByLang[language] : starterForLanguage(q, language);
+
+      if (hasMeaningfulCode(q, prevLang, prevCode) && !hasSavedTarget) {
+        const msg = `Changing language will replace your current ${prevLang} code with the ${language} starter code. Continue?`;
+        const ok = typeof confirmAction === 'function'
+          ? await confirmAction({
+            title: 'Change language?',
+            message: msg,
+            confirmText: 'Continue',
+            cancelText: 'Cancel',
+            variant: 'primary',
+          })
+          : window.confirm(msg);
+        if (!ok) {
+          el('language').value = prevLang;
+          return;
+        }
       }
+
+      applyLanguageSwitch(q, ans, prevLang, language, nextCode);
     });
 
     el('stdin')?.addEventListener('input', () => {

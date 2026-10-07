@@ -2,6 +2,23 @@
 (function (global) {
   const LANGUAGES = ['Python', 'Java', 'C', 'C++', 'JavaScript'];
 
+  /**
+   * Single frontend language map (Wandbox compiler IDs live in backend WandboxExecutionClient.php).
+   */
+  const LANGUAGE_CONFIG = {
+    python: { label: 'Python', editorLanguage: 'Python', wandboxKey: 'python' },
+    java: { label: 'Java', editorLanguage: 'Java', wandboxKey: 'java' },
+    c: { label: 'C', editorLanguage: 'C', wandboxKey: 'c' },
+    cpp: { label: 'C++', editorLanguage: 'C++', wandboxKey: 'cpp' },
+    javascript: { label: 'JavaScript', editorLanguage: 'JavaScript', wandboxKey: 'javascript' },
+  };
+
+  function languageKeyFromLabel(language) {
+    const norm = normalizeLanguage(language);
+    const hit = Object.entries(LANGUAGE_CONFIG).find(([, cfg]) => cfg.label === norm);
+    return hit ? hit[0] : 'python';
+  }
+
   function normalizeLanguage(language) {
     const raw = String(language || 'Python').trim().replace(/\uFF0B/g, '+').replace(/\s+/g, '');
     const lower = raw.toLowerCase();
@@ -10,7 +27,16 @@
     if (lower === 'java') return 'Java';
     if (lower === 'c') return 'C';
     if (lower === 'c++' || lower === 'cpp' || lower === 'cxx' || lower === 'cplusplus') return 'C++';
-    return LANGUAGES.includes(String(language || '').trim()) ? String(language).trim() : 'Python';
+    if (LANGUAGES.includes(String(language || '').trim())) return String(language).trim();
+    return 'Python';
+  }
+
+  function assertSupportedLanguage(language) {
+    const label = normalizeLanguage(language);
+    if (!LANGUAGES.includes(label)) {
+      throw new Error('Unsupported language. Allowed: C, C++, Java, Python, JavaScript.');
+    }
+    return label;
   }
 
   function defaultStarters(pythonBody) {
@@ -314,6 +340,9 @@
 
   global.CodingData = {
     LANGUAGES,
+    LANGUAGE_CONFIG,
+    languageKeyFromLabel,
+    assertSupportedLanguage,
     CATEGORIES: CODING_TOPICS,
     TOPIC_HIERARCHY,
     TOPIC_FILTERS: [
