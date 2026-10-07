@@ -1,0 +1,5 @@
+{
+  "version": "bundled-v1-20260922",
+  "note": "Run php backend/scripts/export-coding-problem-bank.php --write-bundled-snapshot on server to refresh",
+  "problems": []
+}
