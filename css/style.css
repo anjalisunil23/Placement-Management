@@ -279,10 +279,10 @@ a{color:inherit;text-decoration:none}
   font-weight:600;
 }
 
-/* Practice tabs — Problems / Challenges / Company-Wise and company sub-nav */
+/* Practice tabs — tab layout, original blue palette */
 #takeListNav.jd-block-tabs,
 #studentJdBlockViewNav.jd-block-tabs{
-  border-bottom:1px solid #111827;
+  border-bottom:1px solid #BFDBFE;
   gap:0;
 }
 #takeListNav.jd-block-tabs .nav-item,
@@ -291,12 +291,12 @@ a{color:inherit;text-decoration:none}
 }
 #takeListNav.jd-block-tabs .nav-link,
 #studentJdBlockViewNav.jd-block-tabs .nav-link{
-  color:#111827;
-  background:#fff;
-  border:1px solid #111827;
+  color:var(--primary);
+  background:#EFF6FF;
+  border:1px solid #BFDBFE;
   border-bottom:0;
   border-radius:0;
-  font-weight:600;
+  font-weight:500;
   box-shadow:none;
   margin-right:-1px;
   padding:.4rem .85rem;
@@ -314,18 +314,18 @@ a{color:inherit;text-decoration:none}
 #takeListNav.jd-block-tabs .nav-link:focus,
 #studentJdBlockViewNav.jd-block-tabs .nav-link:hover,
 #studentJdBlockViewNav.jd-block-tabs .nav-link:focus{
-  color:#111827;
-  background:#fff;
-  border-color:#111827;
+  color:var(--primary);
+  background:#DBEAFE;
+  border-color:#BFDBFE;
   border-bottom:0;
 }
 #takeListNav.jd-block-tabs .nav-link.active,
 #studentJdBlockViewNav.jd-block-tabs .nav-link.active{
-  color:#111827;
-  background:#fff;
-  border:1px solid #111827;
-  border-bottom:1px solid #fff;
-  font-weight:700;
+  color:#fff;
+  background:var(--primary);
+  border-color:var(--primary);
+  border-bottom:1px solid var(--surface,#fff);
+  font-weight:600;
   position:relative;
   z-index:1;
 }
