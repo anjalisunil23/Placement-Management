@@ -21,6 +21,7 @@
         <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
+            <p class="text-muted-2 small mb-0 mt-1">The grid reads <code>student_placements</code> for your filters (fast). Use <strong>Sync from AES</strong> to pull the full class roster and placement fields from live AES into that table, then the grid refreshes. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
           <button type="button" class="btn btn-outline-primary btn-sm flex-shrink-0" id="btnSyncPlacementsFromAes" title="Fetch placement and higher-education data from AES into student_placements">
             <i class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></i>Sync from AES
@@ -483,7 +484,6 @@
     let filterBatch = '';
     let scopeDepartmentId = '';
     let scopeDepartmentName = '';
-    let canViewAllDepartments = false;
     let lastFilterBatches = [];
     let lastFilterPrograms = [];
     let sortKey = '';
@@ -658,6 +658,7 @@
     }
 
     function currentFilters() {
+      alignProgramWithBatchSelection();
       return {
         departmentId: effectiveDepartmentId(),
         program: filterProgram,
@@ -685,9 +686,8 @@
       if (!scope || typeof scope !== 'object') return;
       scopeDepartmentId = String(scope.departmentId || '').trim();
       scopeDepartmentName = String(scope.departmentName || scope.departmentCode || '').trim();
-      canViewAllDepartments = scope.canViewAllDepartments === true;
       const deptEl = document.getElementById('filterDepartment');
-      if (deptEl && scopeDepartmentId && (!canViewAllDepartments || !filterDepartmentId)) {
+      if (deptEl && !filterDepartmentId && scopeDepartmentId) {
         if ([...deptEl.options].some(o => o.value === scopeDepartmentId)) {
           deptEl.value = scopeDepartmentId;
           syncDepartmentFilter();
@@ -838,6 +838,18 @@
       return b.includes(p) || b.startsWith(p);
     }
 
+    function alignProgramWithBatchSelection() {
+      if (!filterBatch) return;
+      const inferred = programFromBatch(filterBatch);
+      if (!inferred) return;
+      if (filterProgram && batchLooksLikeProgramme(filterBatch, filterProgram)) return;
+      filterProgram = inferred;
+      const programEl = document.getElementById('filterProgram');
+      if (programEl && [...programEl.options].some(o => o.value === inferred)) {
+        programEl.value = inferred;
+      }
+    }
+
     function pickPreferredBatch(batches, program) {
       const list = (batches || []).map(v => String(v || '').trim()).filter(Boolean);
       const assigned = assignedBatches();
@@ -849,6 +861,10 @@
         : pool;
       if (assignedForProgram.length) return assignedForProgram[0];
       if (pool.length) return pool[0];
+      const listForProgram = program
+        ? list.filter(b => batchLooksLikeProgramme(b, program))
+        : list;
+      if (listForProgram.length) return listForProgram[0];
       if (list.length === 1) return list[0];
       return '';
     }
@@ -865,6 +881,12 @@
     function pickPreferredProgram(programs) {
       const list = (programs || []).map(v => String(v || '').trim()).filter(Boolean);
       const assigned = assignedBatches();
+      for (const batch of assigned) {
+        const inferred = programFromBatch(batch);
+        if (inferred && (list.length === 0 || list.some(p => p === inferred))) {
+          return inferred;
+        }
+      }
       if (list.length) {
         for (const batch of assigned) {
           for (const program of list) {
@@ -872,10 +894,6 @@
           }
         }
         if (list.length === 1) return list[0];
-      }
-      for (const batch of assigned) {
-        const inferred = programFromBatch(batch);
-        if (inferred) return inferred;
       }
       return '';
     }
@@ -887,27 +905,15 @@
     function fillDepartmentSelect(departments, selected = '') {
       const el = document.getElementById('filterDepartment');
       if (!el) return;
-      const list = Array.isArray(departments) ? departments : [];
-      const allowAll = canViewAllDepartments === true;
-      const preferred = selected || scopeDepartmentId || el.value || '';
-      const allOpt = allowAll ? '<option value="">All departments</option>' : '';
-      el.innerHTML = allOpt + list.map(d => {
+      const current = selected || el.value || '';
+      el.innerHTML = '<option value="">All departments</option>' + (departments || []).map(d => {
         const id = String(d.id || '').trim();
         const label = String(d.name || d.code || id).trim();
         if (!id) return '';
         return `<option value="${esc(id)}">${esc(label)}</option>`;
       }).join('');
-      if (preferred && [...el.options].some(o => o.value === preferred)) {
-        el.value = preferred;
-      } else if (!allowAll && list.length === 1) {
-        el.value = String(list[0].id || '').trim();
-      } else if (allowAll) {
-        el.value = '';
-      } else if (el.options.length) {
-        el.selectedIndex = 0;
-      }
-      // Staff / DPO: lock to home department (no campus-wide picker).
-      el.disabled = !allowAll && list.length <= 1;
+      if (current && [...el.options].some(o => o.value === current)) el.value = current;
+      else el.value = '';
       syncDepartmentFilter();
     }
 
@@ -928,10 +934,14 @@
       }
 
       applyScopeFromFiltersApi(data);
-      if (data.scope && typeof data.scope === 'object') {
-        canViewAllDepartments = data.scope.canViewAllDepartments === true;
-      }
       fillDepartmentSelect(data.departments || [], filterDepartmentId || scopeDepartmentId);
+      if (!filterDepartmentId && scopeDepartmentId) {
+        const deptEl = document.getElementById('filterDepartment');
+        if (deptEl && [...deptEl.options].some(o => o.value === scopeDepartmentId)) {
+          deptEl.value = scopeDepartmentId;
+          syncDepartmentFilter();
+        }
+      }
 
       let programs = data.programs || [];
       let batches = data.batches || [];
@@ -955,6 +965,7 @@
 
       fillSelect('filterBatch', batches, 'All batches', filterBatch, false);
       filterBatch = document.getElementById('filterBatch')?.value || '';
+      alignProgramWithBatchSelection();
       // Do not clear canEditSelectedBatch here — loadRegistry() sets it from the
       // server (CT/CoCT). Resetting it made co-class teachers look "view only".
       if (!canEditSelectedBatch && filterBatch) {
@@ -1399,15 +1410,8 @@
           }
         } catch (_) { /* ignore */ }
       }
-      if (data.filters && typeof data.filters === 'object') {
-        if (data.scope && typeof data.scope === 'object') {
-          canViewAllDepartments = data.scope.canViewAllDepartments === true;
-        } else if (typeof data.filters.canViewAllDepartments === 'boolean') {
-          canViewAllDepartments = data.filters.canViewAllDepartments;
-        }
-        if (Array.isArray(data.filters.departments)) {
-          fillDepartmentSelect(data.filters.departments, filterDepartmentId || scopeDepartmentId);
-        }
+      if (data.filters && typeof data.filters === 'object' && Array.isArray(data.filters.departments)) {
+        fillDepartmentSelect(data.filters.departments, filterDepartmentId);
       }
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
@@ -1453,6 +1457,7 @@
         await loadPlacementFilters();
       } else if (changed === 'filterBatch') {
         filterBatch = document.getElementById('filterBatch')?.value || '';
+        alignProgramWithBatchSelection();
       }
 
       await loadRegistry();
@@ -1547,8 +1552,10 @@
         const u = Auth.user() || {};
         apiAssignedBatches = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
       }
-      await loadPlacementFilters();
-      await loadRegistry();
+      await Promise.all([
+        loadPlacementFilters(),
+        loadRegistry(),
+      ]);
     });
   </script>
 </body>

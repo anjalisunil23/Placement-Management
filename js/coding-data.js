@@ -2,23 +2,6 @@
 (function (global) {
   const LANGUAGES = ['Python', 'Java', 'C', 'C++', 'JavaScript'];
 
-  /**
-   * Single frontend language map (Wandbox compiler IDs live in backend WandboxExecutionClient.php).
-   */
-  const LANGUAGE_CONFIG = {
-    python: { label: 'Python', editorLanguage: 'Python', wandboxKey: 'python' },
-    java: { label: 'Java', editorLanguage: 'Java', wandboxKey: 'java' },
-    c: { label: 'C', editorLanguage: 'C', wandboxKey: 'c' },
-    cpp: { label: 'C++', editorLanguage: 'C++', wandboxKey: 'cpp' },
-    javascript: { label: 'JavaScript', editorLanguage: 'JavaScript', wandboxKey: 'javascript' },
-  };
-
-  function languageKeyFromLabel(language) {
-    const norm = normalizeLanguage(language);
-    const hit = Object.entries(LANGUAGE_CONFIG).find(([, cfg]) => cfg.label === norm);
-    return hit ? hit[0] : 'python';
-  }
-
   function normalizeLanguage(language) {
     const raw = String(language || 'Python').trim().replace(/\uFF0B/g, '+').replace(/\s+/g, '');
     const lower = raw.toLowerCase();
@@ -27,16 +10,7 @@
     if (lower === 'java') return 'Java';
     if (lower === 'c') return 'C';
     if (lower === 'c++' || lower === 'cpp' || lower === 'cxx' || lower === 'cplusplus') return 'C++';
-    if (LANGUAGES.includes(String(language || '').trim())) return String(language).trim();
-    return 'Python';
-  }
-
-  function assertSupportedLanguage(language) {
-    const label = normalizeLanguage(language);
-    if (!LANGUAGES.includes(label)) {
-      throw new Error('Unsupported language. Allowed: C, C++, Java, Python, JavaScript.');
-    }
-    return label;
+    return LANGUAGES.includes(String(language || '').trim()) ? String(language).trim() : 'Python';
   }
 
   function defaultStarters(pythonBody) {
@@ -224,12 +198,6 @@
     if (replace) {
       const python = pythonStarterFromProblem(problem);
       Object.assign(starter, defaultStarters(python));
-    } else {
-      // Keep a custom Python body, but always fill missing language templates.
-      const defaults = defaultStarters(starter.Python || pythonStarterFromProblem(problem));
-      LANGUAGES.forEach((lang) => {
-        if (!String(starter[lang] || '').trim()) starter[lang] = defaults[lang];
-      });
     }
     return { ...problem, starterCode: starter };
   }
@@ -253,10 +221,10 @@
       category: item.category,
       testCases: (() => {
         const cases = (item.testCases || []).map((tc) => {
-          if (tc.sample) return clone(tc);
-          const hidden = { id: tc.id, sample: false, label: tc.label || 'Hidden Test Case' };
-          if (includeHiddenExpected) hidden.expected = tc.expected;
-          return hidden;
+        if (tc.sample) return clone(tc);
+        const hidden = { id: tc.id, sample: false, label: tc.label || 'Hidden Test Case' };
+        if (includeHiddenExpected) hidden.expected = tc.expected;
+        return hidden;
         });
         const sampleHasInput = cases.some((tc) => tc.sample && String(tc.input || '').trim());
         if (!sampleHasInput) {
@@ -340,9 +308,6 @@
 
   global.CodingData = {
     LANGUAGES,
-    LANGUAGE_CONFIG,
-    languageKeyFromLabel,
-    assertSupportedLanguage,
     CATEGORIES: CODING_TOPICS,
     TOPIC_HIERARCHY,
     TOPIC_FILTERS: [

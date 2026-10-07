@@ -328,7 +328,7 @@ final class AptitudeController
         Response::success(null, 'JD question set deleted.');
     }
 
-    /** POST /api/aptitude/jd-sets/{id}/publish-mock — body: questionCount, durationMinutes */
+    /** POST /api/aptitude/jd-sets/{id}/publish-mock — body: questionCount, durationMinutes, negativeMarking?, negativeMarks? */
     public function publishLocalBankMock(string $id): void
     {
         $user = AuthMiddleware::authenticate();

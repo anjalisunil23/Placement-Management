@@ -788,9 +788,7 @@
       const qid = question.id;
       const source = String(code ?? attempt.answers[qid]?.code ?? '');
       if (!source.trim()) throw new Error('Source code is required.');
-      if (typeof CodingData !== 'undefined' && typeof CodingData.assertSupportedLanguage === 'function') {
-        language = CodingData.assertSupportedLanguage(language);
-      } else if (typeof CodingData !== 'undefined' && typeof CodingData.normalizeLanguage === 'function') {
+      if (typeof CodingData !== 'undefined' && typeof CodingData.normalizeLanguage === 'function') {
         language = CodingData.normalizeLanguage(language);
       }
       this.savePracticeDraft(attemptId, { language, code: source, customInput: stdin });

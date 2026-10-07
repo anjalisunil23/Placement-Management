@@ -404,14 +404,7 @@ final class CodingController
             Response::forbidden('You cannot run code on this account.');
         }
         $body = $this->body();
-        $rawLang = (string) ($body['language'] ?? 'Python');
-        $language = \PMS\Utils\CodingLanguage::supportedLabel($rawLang);
-        if ($language === null) {
-            Response::error(
-                'Unsupported language. Allowed: C, C++, Java, Python, JavaScript.',
-                422
-            );
-        }
+        $language = \PMS\Utils\CodingLanguage::canonicalLabel((string) ($body['language'] ?? 'Python'));
         $source = (string) ($body['source'] ?? '');
         $stdin = (string) ($body['stdin'] ?? '');
         $timeLimitMs = max(500, min(15000, (int) ($body['timeLimitMs'] ?? 3000)));

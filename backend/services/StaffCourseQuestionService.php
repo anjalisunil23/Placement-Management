@@ -208,7 +208,7 @@ final class StaffCourseQuestionService
             || empty($_SESSION['staff_course_draft']['generating'])));
 
         if ($startingNewSession) {
-            $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? 'staff'));
+        $this->assertCooldown((string) ($user['_id'] ?? $user['id'] ?? 'staff'));
             $course = $this->resolveLoadedSyllabus($body, $deptCode, $deptName, $deptShort, $allCourses);
             $syllabus = $this->syllabusText($course);
             if (!AesSyllabusCipher::isUsableSyllabusText($syllabus)) {
@@ -532,7 +532,7 @@ final class StaffCourseQuestionService
                 (string) ($dept['shortName'] ?? ''),
                 $this->seesAllCourses($user)
             );
-            $syllabus = $this->syllabusText($course);
+        $syllabus = $this->syllabusText($course);
             if (!AesSyllabusCipher::isUsableSyllabusText($syllabus)) {
                 throw new \RuntimeException(
                     'Could not read enough text from that syllabus PDF for AI generation. '

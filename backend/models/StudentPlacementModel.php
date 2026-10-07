@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace PMS\Models;
 
-use PMS\Database\QueryHelper;
 use PMS\Schemas\Collections;
-use PMS\Services\AesApiService;
 use PMS\Services\ClassInchargeRegistry;
 use PMS\Services\DepartmentProgrammeCatalog;
 use PMS\Utils\DocumentHelper;
@@ -26,106 +24,6 @@ class StudentPlacementModel extends BaseModel
     private static bool $tableReady = false;
 
     private static bool $tableUnavailable = false;
-
-    /**
-     * Production student_placements flat columns (phpMyAdmin / AES export layout).
-     * payload is often {}; grid fields are read from these SQL columns.
-     */
-    private const LEGACY_FLAT_COLUMN_CANDIDATES = [
-        'studentId', 'student', 'cno', 'email', 'year', 'courseId', 'branchId',
-        'employer', 'empcno', 'empadr', 'payscale', 'status',
-        'createdBy', 'crteatedDate', 'updatedBy', 'updatedDate',
-        's3file', 'filename', 'fordvv', 'type', 'includedvv',
-        'stud_class',
-    ];
-
-    /** Placement-owned payload keys — never erased by empty AES values on sync/list. */
-    public const PLACEMENT_OWNED_FIELDS = [
-        'company', 'companyName', 'employer', 'role', 'address', 'package', 'payscale',
-        'employerContact', 'contact', 'joinDate', 'endDate', 'academicDuration',
-        'internshipDetails', 'natureOfJob', 'monthlySalary', 'placementStatus', 'status',
-        'recordType', 'type', 'offerLetterVerified', 'verificationDate',
-        'fordvv', 'includedvv', 'offerLetter', 'joiningLetter', 'companyIdDoc',
-        's3file', 'filename',
-        'phone', 'email', 'collegeEmail', 'personalEmail', 'cno',
-    ];
-
-    /**
-     * Blank for merge purposes: null or "" only. Keeps 0, false, and "0".
-     */
-    public static function isBlankMergeValue(mixed $value): bool
-    {
-        return $value === null || $value === '';
-    }
-
-    /**
-     * Non-destructive merge: keep $base values; fill only from non-blank $incoming.
-     * Nested arrays are merged recursively with the same rule.
-     *
-     * @param array<string, mixed> $base
-     * @param array<string, mixed> $incoming
-     * @return array<string, mixed>
-     */
-    public static function mergePreserveFilled(array $base, array $incoming): array
-    {
-        foreach ($incoming as $key => $value) {
-            if (!is_string($key) && !is_int($key)) {
-                continue;
-            }
-            $key = (string) $key;
-            if (is_array($value)) {
-                $childBase = is_array($base[$key] ?? null) ? $base[$key] : [];
-                $base[$key] = self::mergePreserveFilled($childBase, $value);
-                continue;
-            }
-            if (self::isBlankMergeValue($value)) {
-                continue;
-            }
-            if (!self::isBlankMergeValue($base[$key] ?? null)) {
-                continue;
-            }
-            $base[$key] = $value;
-        }
-
-        return $base;
-    }
-
-    /**
-     * Like mergePreserveFilled, but non-blank incoming always wins (except blank incoming
-     * never erases base). Use for profile enrichment when AES is authoritative for empties.
-     *
-     * @param array<string, mixed> $base
-     * @param array<string, mixed> $incoming
-     * @return array<string, mixed>
-     */
-    public static function mergeNonEmptyValues(array $base, array $incoming): array
-    {
-        foreach ($incoming as $key => $value) {
-            if (!is_string($key) && !is_int($key)) {
-                continue;
-            }
-            $key = (string) $key;
-            if (is_array($value)) {
-                $childBase = is_array($base[$key] ?? null) ? $base[$key] : [];
-                $base[$key] = self::mergeNonEmptyValues($childBase, $value);
-                continue;
-            }
-            if (self::isBlankMergeValue($value)) {
-                continue;
-            }
-            $base[$key] = $value;
-        }
-
-        return $base;
-    }
-
-    public static function normalizePersonName(string $name): string
-    {
-        $name = strtolower(trim($name));
-        $name = preg_replace('/\s+/', ' ', $name) ?? '';
-
-        return $name;
-    }
 
     protected function collectionName(): string
     {
@@ -219,469 +117,6 @@ class StudentPlacementModel extends BaseModel
         } catch (\Throwable) {
             return false;
         }
-    }
-
-    public function hasLegacyFlatPlacementColumns(): bool
-    {
-        if (!$this->tableExists()) {
-            return false;
-        }
-
-        return $this->hasColumn('employer') && $this->hasColumn('student');
-    }
-
-    private function selectRowColumns(): string
-    {
-        $parts = ['`id`', '`payload`'];
-        if ($this->hasColumn('created_at')) {
-            $parts[] = '`created_at`';
-        }
-        if ($this->hasColumn('updated_at')) {
-            $parts[] = '`updated_at`';
-        }
-        if (!$this->hasLegacyFlatPlacementColumns()) {
-            return implode(', ', $parts);
-        }
-        foreach (self::LEGACY_FLAT_COLUMN_CANDIDATES as $column) {
-            if ($this->hasColumn($column)) {
-                $parts[] = '`' . $column . '`';
-            }
-        }
-
-        return implode(', ', $parts);
-    }
-
-    public function findById(string $id): ?array
-    {
-        $id = trim($id);
-        if ($id === '') {
-            return null;
-        }
-        if (!Security::isValidId($id) && !ctype_digit($id)) {
-            return null;
-        }
-        $stmt = $this->db->prepare(
-            'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE id = ? LIMIT 1'
-        );
-        $stmt->execute([$id]);
-        $row = $stmt->fetch();
-
-        return $row ? $this->rowToDoc($row) : null;
-    }
-
-    /**
-     * @param array<int, string> $ids
-     * @return array<string, array<string, mixed>>
-     */
-    public function findByIds(array $ids): array
-    {
-        $clean = [];
-        foreach ($ids as $id) {
-            $id = trim((string) $id);
-            if ($id === '') {
-                continue;
-            }
-            if (Security::isValidId($id) || ctype_digit($id)) {
-                $clean[$id] = true;
-            }
-        }
-        $ids = array_keys($clean);
-        if ($ids === []) {
-            return [];
-        }
-
-        $map = [];
-        foreach (array_chunk($ids, 400) as $chunk) {
-            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
-            $stmt = $this->db->prepare(
-                'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE id IN (' . $placeholders . ')'
-            );
-            $stmt->execute($chunk);
-            while ($row = $stmt->fetch()) {
-                $doc = $this->rowToDoc($row);
-                $map[(string) ($doc['_id'] ?? $row['id'])] = $doc;
-            }
-        }
-
-        return $map;
-    }
-
-    /**
-     * @param array<string, mixed> $filter
-     */
-    public function findOne(array $filter, array $options = []): ?array
-    {
-        [$where, $params] = QueryHelper::buildWhere($filter);
-        $sort = $options['sort'] ?? ['createdAt' => -1];
-        $orderBy = QueryHelper::buildOrderBy(is_array($sort) ? $sort : ['createdAt' => -1]);
-        $sql = 'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE ' . $where
-            . ' ORDER BY ' . $orderBy . ' LIMIT 1';
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        $row = $stmt->fetch();
-
-        return $row ? $this->rowToDoc($row) : null;
-    }
-
-    /**
-     * @param array<string, mixed> $filter
-     * @return array<int, array<string, mixed>>
-     */
-    public function findAll(array $filter = [], int $limit = 100, int $skip = 0, array $sort = ['createdAt' => -1]): array
-    {
-        [$where, $params] = QueryHelper::buildWhere($filter);
-        $orderBy = QueryHelper::buildOrderBy($sort);
-        $sql = 'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE ' . $where
-            . ' ORDER BY ' . $orderBy . ' LIMIT ' . (int) $limit . ' OFFSET ' . (int) $skip;
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        $results = [];
-        while ($row = $stmt->fetch()) {
-            $results[] = $this->rowToDoc($row);
-        }
-
-        return $results;
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     * @return array<string, mixed>
-     */
-    protected function rowToDoc(array $row): array
-    {
-        $doc = parent::rowToDoc($row);
-
-        return self::mergeLegacyFlatRowIntoDoc($row, $doc);
-    }
-
-    /**
-     * @param array<string, mixed> $row SQL row (may include legacy flat columns)
-     * @param array<string, mixed> $doc Decoded payload document
-     * @return array<string, mixed>
-     */
-    public static function mergeLegacyFlatRowIntoDoc(array $row, array $doc): array
-    {
-        $name = trim((string) ($row['student'] ?? ''));
-        $legacyStudentId = trim((string) ($row['studentId'] ?? ''));
-        $phone = trim((string) ($row['cno'] ?? ''));
-        $email = trim((string) ($row['email'] ?? ''));
-        $employer = trim((string) ($row['employer'] ?? ''));
-        $employerContact = trim((string) ($row['empcno'] ?? ''));
-        $address = trim((string) ($row['empadr'] ?? ''));
-        $package = trim((string) ($row['payscale'] ?? ''));
-        $year = trim((string) ($row['year'] ?? ''));
-        $studClass = trim((string) ($row['stud_class'] ?? ''));
-        $courseId = trim((string) ($row['courseId'] ?? ''));
-        $branchId = trim((string) ($row['branchId'] ?? ''));
-        $status = trim((string) ($row['status'] ?? ''));
-        $type = trim((string) ($row['type'] ?? ''));
-        $fordvv = trim((string) ($row['fordvv'] ?? ''));
-        $includedvv = trim((string) ($row['includedvv'] ?? ''));
-        $s3file = trim((string) ($row['s3file'] ?? ''));
-        $filename = trim((string) ($row['filename'] ?? ''));
-
-        if ($name === '' && $legacyStudentId === '' && $employer === '' && $phone === '' && $email === '') {
-            return $doc;
-        }
-
-        if ($legacyStudentId !== '') {
-            $doc['studentId'] = $legacyStudentId;
-            $doc['pairKey'] = self::pairKey($legacyStudentId);
-        }
-        if ($name !== '') {
-            $doc['studentName'] = $name;
-            $doc['displayName'] = $name;
-        }
-        if ($phone !== '') {
-            $doc['phone'] = $phone;
-        }
-        if ($email !== '') {
-            $doc['email'] = $email;
-            $doc['collegeEmail'] = $email;
-        }
-        if ($studClass !== '') {
-            $doc['classBatch'] = $studClass;
-            $doc['stud_class'] = $studClass;
-        } elseif ($year !== '') {
-            $doc['classBatch'] = $year;
-            $doc['stud_class'] = $year;
-            $doc['placementYear'] = $year;
-        }
-        if ($courseId !== '') {
-            $doc['courseId'] = $courseId;
-        }
-        if ($branchId !== '') {
-            $doc['branchId'] = $branchId;
-        }
-
-        $createdBy = trim((string) ($row['createdBy'] ?? ''));
-        $updatedBy = trim((string) ($row['updatedBy'] ?? ''));
-        $createdDate = trim((string) ($row['crteatedDate'] ?? $row['createdDate'] ?? ''));
-        $updatedDate = trim((string) ($row['updatedDate'] ?? ''));
-        if ($createdBy !== '') {
-            $doc['createdBy'] = $createdBy;
-        }
-        if ($updatedBy !== '') {
-            $doc['updatedBy'] = $updatedBy;
-        }
-        if ($createdDate !== '') {
-            $doc['createdDate'] = $createdDate;
-        }
-        if ($updatedDate !== '') {
-            $doc['updatedDate'] = $updatedDate;
-        }
-
-        $placement = is_array($doc['placement'] ?? null) ? $doc['placement'] : [];
-        if ($employer !== '') {
-            $placement['company'] = $employer;
-            $doc['employer'] = $employer;
-            $doc['company'] = $employer;
-        }
-        if ($employerContact !== '') {
-            $placement['employerContact'] = $employerContact;
-        }
-        if ($address !== '') {
-            $placement['address'] = $address;
-        }
-        if ($package !== '') {
-            $placement['package'] = $package;
-            $doc['payscale'] = $package;
-        }
-
-        $recordType = self::normalizeLegacyRecordType($type);
-        if ($recordType !== '') {
-            $placement['recordType'] = $recordType;
-            $placement['type'] = $recordType;
-            $doc['recordType'] = $recordType;
-            $doc['type'] = $recordType;
-        } elseif ($employer !== '' && trim((string) ($placement['recordType'] ?? '')) === '') {
-            $placement['recordType'] = 'Placement';
-            $placement['type'] = 'Placement';
-        }
-
-        $placementStatus = self::normalizeLegacyPlacementStatus($status, $employer !== '');
-        if ($placementStatus !== '') {
-            $placement['placementStatus'] = $placementStatus;
-            $doc['placementStatus'] = $placementStatus;
-            $doc['status'] = $status !== '' ? $status : $placementStatus;
-        }
-
-        if ($fordvv !== '') {
-            $placement['fordvv'] = $fordvv;
-            $doc['fordvv'] = $fordvv;
-        }
-        if ($includedvv !== '') {
-            $placement['includedvv'] = $includedvv;
-            $doc['includedvv'] = $includedvv;
-        }
-        if ($s3file !== '') {
-            $placement['offerLetter'] = $s3file;
-            $doc['s3file'] = $s3file;
-        }
-        if ($filename !== '') {
-            $doc['filename'] = $filename;
-            if (trim((string) ($placement['offerLetter'] ?? '')) === '') {
-                $placement['offerLetter'] = $filename;
-            }
-        }
-
-        $doc['placement'] = $placement;
-        $doc['studRole'] = $doc['studRole'] ?? 'alumni';
-        $doc['stud_role'] = $doc['stud_role'] ?? 'Alumni';
-        $doc['legacyFlatRow'] = true;
-
-        return $doc;
-    }
-
-    private static function normalizeLegacyRecordType(string $type): string
-    {
-        $raw = strtolower(trim($type));
-        if ($raw === '') {
-            return '';
-        }
-        if (str_contains($raw, 'higher') || str_contains($raw, 'education') || $raw === 'he') {
-            return 'Higher Education';
-        }
-        if (str_contains($raw, 'research')) {
-            return 'Research';
-        }
-        if (str_contains($raw, 'place') || $raw === 'job' || $raw === '1') {
-            return 'Placement';
-        }
-
-        return trim($type);
-    }
-
-    private static function normalizeLegacyPlacementStatus(string $status, bool $hasEmployer): string
-    {
-        $raw = trim($status);
-        if ($raw === '') {
-            return $hasEmployer ? 'Placed' : '';
-        }
-        $lower = strtolower($raw);
-        if (in_array($lower, ['1', 'placed', 'joined', 'yes', 'true'], true)) {
-            return 'Placed';
-        }
-        if (in_array($lower, ['offered', 'offer'], true)) {
-            return 'Offered';
-        }
-        if (str_contains($lower, 'not') && str_contains($lower, 'join')) {
-            return 'Not Joined';
-        }
-        if (str_contains($lower, 'higher')) {
-            return 'Higher Education';
-        }
-        if (str_contains($lower, 'research')) {
-            return 'Research';
-        }
-
-        return $raw;
-    }
-
-    /**
-     * Resolve AES/export courseId values used on legacy student_placements.courseId.
-     * Production Computer Applications rows use courseId=1001 even when departments.aesId differs.
-     *
-     * @return list<string>
-     */
-    private function legacyCourseIdCandidates(string $departmentId): array
-    {
-        $departmentId = trim($departmentId);
-        $ids = [];
-        $dept = null;
-        if ($departmentId !== '') {
-            $dept = (new DepartmentModel())->findById($departmentId);
-        }
-        if (is_array($dept)) {
-            foreach (['aesId', 'aes_id', 'code', 'parentAesId', 'parent_aes_id', 'courseId', 'course_id'] as $key) {
-                $v = trim((string) ($dept[$key] ?? ''));
-                if ($v !== '' && ctype_digit($v)) {
-                    $ids[$v] = true;
-                }
-            }
-            $name = strtolower(trim((string) ($dept['name'] ?? '')));
-            $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', (string) ($dept['code'] ?? '')) ?? '');
-            // Observed on production appsamaljyothi_placements_db.student_placements
-            if (
-                str_contains($name, 'computer application')
-                || str_contains($name, 'mca')
-                || $code === 'CA'
-                || $code === 'MCA'
-                || $code === 'COMPUTERAPPLICATIONS'
-            ) {
-                $ids['1001'] = true;
-            }
-        }
-
-        $env = trim((string) ($_ENV['STAFF_PLACEMENT_LEGACY_COURSE_IDS'] ?? ''));
-        if ($env !== '') {
-            foreach (preg_split('/[\s,;]+/', $env) ?: [] as $part) {
-                $part = trim((string) $part);
-                if ($part !== '' && ctype_digit($part)) {
-                    $ids[$part] = true;
-                }
-            }
-        }
-
-        return array_keys($ids);
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function fetchLegacyFlatRows(string $departmentId, string $program, string $batch, int $limit): array
-    {
-        if (!$this->hasLegacyFlatPlacementColumns()) {
-            return [];
-        }
-
-        $departmentId = trim($departmentId);
-        $program = trim($program);
-        $batch = trim($batch);
-        $limit = max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX));
-        $courseIds = $this->legacyCourseIdCandidates($departmentId);
-
-        $rows = $this->executeLegacyFlatSelect($courseIds, $program, $batch, $limit, $courseIds !== []);
-        // departments.aesId often ≠ student_placements.courseId (e.g. CA → 1001).
-        if ($rows === [] && $departmentId !== '' && $courseIds !== []) {
-            $rows = $this->executeLegacyFlatSelect($courseIds, $program, $batch, $limit, false);
-            // Keep only rows whose courseId is in candidates when we had to drop SQL filter
-            // (executeLegacyFlatSelect without filter); if still empty, return unfiltered
-            // program/batch-scoped rows so overlay can match by email/name.
-        }
-        if ($rows === [] && $departmentId !== '') {
-            $rows = $this->executeLegacyFlatSelect([], $program, $batch, $limit, false);
-        }
-
-        return $rows;
-    }
-
-    /**
-     * @param list<string> $courseIds
-     * @return array<int, array<string, mixed>>
-     */
-    private function executeLegacyFlatSelect(
-        array $courseIds,
-        string $program,
-        string $batch,
-        int $limit,
-        bool $applyCourseFilter
-    ): array {
-        $sql = 'SELECT ' . $this->selectRowColumns() . ' FROM `' . $this->table . '` WHERE 1=1';
-        $params = [];
-        if ($applyCourseFilter && $courseIds !== [] && $this->hasColumn('courseId')) {
-            $placeholders = implode(',', array_fill(0, count($courseIds), '?'));
-            $sql .= ' AND CAST(`courseId` AS CHAR) IN (' . $placeholders . ')';
-            foreach ($courseIds as $cid) {
-                $params[] = $cid;
-            }
-        }
-        $orderCol = $this->hasColumn('student') ? '`student`' : '`id`';
-        $sql .= ' ORDER BY ' . $orderCol . ' ASC LIMIT ' . $limit;
-
-        try {
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute($params);
-        } catch (\Throwable) {
-            return [];
-        }
-
-        $courseIdSet = [];
-        foreach ($courseIds as $cid) {
-            $courseIdSet[(string) $cid] = true;
-        }
-
-        $rows = [];
-        while ($row = $stmt->fetch()) {
-            $doc = $this->rowToDoc($row);
-            if (
-                !$applyCourseFilter
-                && $courseIdSet !== []
-                && $this->hasColumn('courseId')
-            ) {
-                $rowCourse = trim((string) ($doc['courseId'] ?? ''));
-                // When SQL IN-filter was skipped after a miss, prefer candidate courseIds
-                // but do not drop everything if courseId column is blank on a row.
-                if ($rowCourse !== '' && !isset($courseIdSet[$rowCourse])) {
-                    continue;
-                }
-            }
-            $rowBatch = trim((string) ($doc['classBatch'] ?? ''));
-            $rowProgramme = trim((string) ($doc['programme'] ?? ''));
-            if ($program !== '') {
-                $want = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
-                $fromRow = DepartmentProgrammeCatalog::resolveProgrammeCode($rowProgramme);
-                if ($fromRow !== '' && $want !== '' && strcasecmp($fromRow, $want) !== 0) {
-                    continue;
-                }
-            }
-            if ($batch !== '' && $rowBatch !== '' && !self::matchesClassBatchSelection($rowBatch, $batch)) {
-                continue;
-            }
-            $rows[] = $doc;
-        }
-
-        return $rows;
     }
 
     /**
@@ -897,6 +332,71 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
+     * Full roster-shaped rows keyed for registry overlay (student_placements payload).
+     *
+     * @param list<string> $studentIds
+     * @param list<string> $registerNumbers
+     * @return array{byId: array<string, array<string, mixed>>, byReg: array<string, array<string, mixed>>}
+     */
+    public function findRosterMapsByKeys(array $studentIds, array $registerNumbers): array
+    {
+        $byId = [];
+        $byReg = [];
+        if (!$this->bootstrapTable()) {
+            return ['byId' => $byId, 'byReg' => $byReg];
+        }
+
+        $idClean = [];
+        foreach ($studentIds as $id) {
+            $id = trim((string) $id);
+            if ($id !== '') {
+                $idClean[$id] = true;
+            }
+        }
+        $regClean = [];
+        foreach ($registerNumbers as $reg) {
+            $reg = strtoupper(trim((string) $reg));
+            if ($reg !== '') {
+                $regClean[$reg] = true;
+            }
+        }
+
+        if ($idClean !== []) {
+            foreach (array_chunk(array_keys($idClean), 300) as $chunk) {
+                foreach ($this->findAll(['studentId' => ['$in' => $chunk]], count($chunk)) as $doc) {
+                    $row = self::rosterRowFromDocument($doc);
+                    $sid = trim((string) ($row['studentId'] ?? ''));
+                    if ($sid !== '') {
+                        $byId[$sid] = $row;
+                    }
+                    $reg = strtoupper(trim((string) ($row['registerNumber'] ?? '')));
+                    if ($reg !== '') {
+                        $byReg[$reg] = $row;
+                    }
+                }
+            }
+        }
+
+        if ($regClean !== []) {
+            foreach (array_chunk(array_keys($regClean), 300) as $chunk) {
+                foreach ($this->findAll(['registerNumber' => ['$in' => $chunk]], count($chunk)) as $doc) {
+                    $row = self::rosterRowFromDocument($doc);
+                    $reg = strtoupper(trim((string) ($row['registerNumber'] ?? '')));
+                    if ($reg !== '') {
+                        $byReg[$reg] = $row;
+                    }
+                    $sid = trim((string) ($row['studentId'] ?? ''));
+                    if ($sid !== '') {
+                        $byId[$sid] = $row;
+                    }
+                }
+            }
+        }
+
+        return ['byId' => $byId, 'byReg' => $byReg];
+    }
+
+    /**
      * @param array<string, mixed> $placement Same shape as students.placement
      * @param array<string, mixed> $rosterMeta classBatch, programme, branch, studentName, …
      */
@@ -913,25 +413,6 @@ class StudentPlacementModel extends BaseModel
 
         $register = strtoupper(trim($registerNumber));
         $now = DocumentHelper::now();
-
-        $existing = $this->findOne(['pairKey' => self::pairKey($studentId)]);
-        if (!$existing && $register !== '') {
-            $byReg = $this->findOne(['registerNumber' => $register]);
-            if (is_array($byReg)) {
-                $existing = $byReg;
-            }
-        }
-
-        if (is_array($existing)) {
-            $existingPlacement = self::placementFieldsFromDoc($existing);
-            // SQL placement fields win; AES/incoming only fills blanks.
-            $placement = self::mergePreserveFilled($existingPlacement, $placement);
-            $rosterMeta = self::mergePreserveFilled(
-                self::normalizeRosterMeta($existing),
-                $rosterMeta
-            );
-        }
-
         $set = array_merge($placement, self::normalizeRosterMeta($rosterMeta), [
             'pairKey'        => self::pairKey($studentId),
             'studentId'      => $studentId,
@@ -940,14 +421,6 @@ class StudentPlacementModel extends BaseModel
         ]);
         if ($departmentId !== null && trim($departmentId) !== '') {
             $set['departmentId'] = trim($departmentId);
-        }
-
-        // Drop blank scalars so BaseModel::update array_merge cannot erase stored values.
-        foreach ($set as $key => $value) {
-            if (is_scalar($value) && self::isBlankMergeValue($value)
-                && in_array((string) $key, self::PLACEMENT_OWNED_FIELDS, true)) {
-                unset($set[$key]);
-            }
         }
 
         return $this->upsert(
@@ -966,20 +439,6 @@ class StudentPlacementModel extends BaseModel
     {
         if (!$this->bootstrapTable()) {
             return [];
-        }
-
-        if ($this->hasLegacyFlatPlacementColumns()) {
-            $batches = [];
-            foreach ($this->fetchLegacyFlatRows($departmentId, $program, '', max(1, min($limit, 5000))) as $doc) {
-                $batch = trim((string) ($doc['classBatch'] ?? ''));
-                if ($batch !== '') {
-                    $batches[] = $batch;
-                }
-            }
-            $batches = array_values(array_unique($batches));
-            sort($batches, SORT_STRING);
-
-            return $batches;
         }
 
         $filter = $this->registryDepartmentFilter($departmentId);
@@ -1062,22 +521,20 @@ class StudentPlacementModel extends BaseModel
         $batch = trim($batch);
         $limit = max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX));
 
-        if ($this->hasLegacyFlatPlacementColumns()) {
-            $rows = [];
-            foreach ($this->fetchLegacyFlatRows($departmentId, $program, $batch, $limit) as $doc) {
-                if ($departmentId !== '' && trim((string) ($doc['departmentId'] ?? '')) === '') {
-                    $doc['departmentId'] = $departmentId;
-                }
-                $rows[] = self::rosterRowFromDocument($doc);
-            }
-
-            return $rows;
-        }
-
         $filter = $this->registryScopeFilter($departmentId, $batch, $includeLegacyBlankDept);
         $batchFilter = $batch !== '' ? $this->registryClassBatchFilter($batch) : [];
         if ($batchFilter !== []) {
             $filter = $filter === [] ? $batchFilter : ['$and' => [$filter, $batchFilter]];
+        }
+        if ($program !== '' && $batch === '') {
+            $programFilter = self::registryProgrammeFilter($program);
+            if ($programFilter !== []) {
+                $filter = $filter === [] ? $programFilter : ['$and' => [$filter, $programFilter]];
+            }
+        }
+
+        if ($filter === [] && $departmentId === '') {
+            return [];
         }
 
         $rows = [];
@@ -1095,6 +552,43 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
+     * SQL pre-filter for programme when batch is not selected (narrows student_placements scan).
+     *
+     * @return array<string, mixed>
+     */
+    public static function registryProgrammeFilter(string $program): array
+    {
+        $want = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($program));
+        if ($want === '') {
+            return [];
+        }
+
+        $branches = [
+            ['programme' => $want],
+        ];
+        foreach (DepartmentProgrammeCatalog::aesCourseParamTokens($want) as $token) {
+            $token = trim($token);
+            if ($token !== '' && strcasecmp($token, $want) !== 0) {
+                $branches[] = ['programme' => $token];
+            }
+        }
+
+        if ($want === 'INMCA') {
+            foreach (['%MCAINT%', '%INMCA%', '%INTMCA%', '%IMCA%'] as $pattern) {
+                $branches[] = ['classBatch' => ['$regex' => $pattern]];
+            }
+        } elseif ($want === 'MCA') {
+            foreach (['%MCAR%', '%MCALE%', '%MCA%'] as $pattern) {
+                $branches[] = ['classBatch' => ['$regex' => $pattern]];
+            }
+        } elseif ($want === 'BCA') {
+            $branches[] = ['classBatch' => ['$regex' => '%BCA%']];
+        }
+
+        return ['$or' => $branches];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function rosterRowFromDocument(array $doc): array
@@ -1103,7 +597,6 @@ class StudentPlacementModel extends BaseModel
         $studentId = trim((string) ($doc['studentId'] ?? $doc['_id'] ?? ''));
         $placement = self::placementFieldsFromDoc($doc);
         $snapshot = self::rosterSnapshotFromPayload($doc, $placement);
-        $company = trim((string) ($placement['company'] ?? $doc['employer'] ?? $doc['company'] ?? ''));
 
         return [
             '_id'            => $studentId,
@@ -1129,19 +622,11 @@ class StudentPlacementModel extends BaseModel
             'courseId'       => $snapshot['courseId'],
             'branchId'       => $snapshot['branchId'],
             'departmentId'   => $snapshot['departmentId'],
-            'company'        => $company,
-            'employer'       => $company,
-            'role'           => trim((string) ($placement['role'] ?? '')),
-            'package'        => trim((string) ($placement['package'] ?? '')),
-            'address'        => trim((string) ($placement['address'] ?? '')),
-            'employerContact'=> trim((string) ($placement['employerContact'] ?? '')),
-            'placementStatus'=> trim((string) ($placement['placementStatus'] ?? '')),
             'placement'      => $placement,
-            'placed'         => $company !== '',
+            'placed'         => trim((string) ($placement['company'] ?? '')) !== '',
             'source'         => 'student_placements',
             'studRole'       => self::studRoleFromDocument($doc),
             'stud_role'      => trim((string) ($doc['stud_role'] ?? '')),
-            'legacyFlatRow'  => !empty($doc['legacyFlatRow']),
         ];
     }
 
@@ -1392,52 +877,6 @@ class StudentPlacementModel extends BaseModel
         return self::batchMatchesSelection($rowBatch, $wantBatch);
     }
 
-    /**
-     * Legacy SQL rows store placement year (2020-2021) in `year`, not AES stud_class labels
-     * (e.g. MCALE2016-18). Treat year rows as in-scope for AES class-batch filters so the
-     * grid is not emptied when department/programme already scoped the query.
-     */
-    public static function legacyBatchFilterMatches(string $wantBatch, string $rowBatch): bool
-    {
-        $wantBatch = trim($wantBatch);
-        $rowBatch = trim($rowBatch);
-        if ($wantBatch === '' || $rowBatch === '') {
-            return true;
-        }
-        if (strcasecmp($rowBatch, $wantBatch) === 0) {
-            return true;
-        }
-        if (self::matchesClassBatchSelection($rowBatch, $wantBatch)) {
-            return true;
-        }
-        // Placement-year rows vs AES admission / LE batch labels.
-        if (preg_match('/^\d{4}\s*[-–]\s*\d{2,4}$/', $rowBatch) === 1
-            && preg_match('/\b(LE|INT|MCA|BCA|MBA|B\.?\s*TECH|M\.?\s*TECH)/i', $wantBatch) === 1) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * All legacy flat rows for a department (ignores batch — used to overlay placement onto AES roster).
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    public function listLegacyFlatRosterRows(string $departmentId, string $program = '', int $limit = self::REGISTRY_TABLE_LIST_MAX): array
-    {
-        if (!$this->bootstrapTable() || !$this->hasLegacyFlatPlacementColumns()) {
-            return [];
-        }
-
-        $rows = [];
-        foreach ($this->fetchLegacyFlatRows($departmentId, $program, '', max(1, min($limit, self::REGISTRY_TABLE_LIST_MAX))) as $doc) {
-            $rows[] = self::rosterRowFromDocument($doc);
-        }
-
-        return $rows;
-    }
-
     private static function batchSelectionKey(string $batch): string
     {
         $batch = ClassInchargeRegistry::batchLabelWithoutSemester(trim($batch));
@@ -1504,11 +943,27 @@ class StudentPlacementModel extends BaseModel
      */
     public static function placementFieldsFromDoc(array $doc): array
     {
-        $placement = is_array($doc['placement'] ?? null) ? $doc['placement'] : [];
-        $fromAes = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(
-            array_merge($doc, $placement)
+        unset(
+            $doc['_id'],
+            $doc['pairKey'],
+            $doc['studentId'],
+            $doc['registerNumber'],
+            $doc['departmentId'],
+            $doc['classBatch'],
+            $doc['programme'],
+            $doc['branch'],
+            $doc['studentName'],
+            $doc['courseId'],
+            $doc['branchId'],
+            $doc['phone'],
+            $doc['email'],
+            $doc['admissionNo'],
+            $doc['studRole'],
+            $doc['stud_role'],
+            $doc['createdAt'],
+            $doc['updatedAt']
         );
 
-        return array_merge($placement, $fromAes);
+        return $doc;
     }
 }

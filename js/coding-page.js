@@ -3011,14 +3011,14 @@
       const isContestPreset = preset?.contestType === 'weekly' || preset?.contestType === 'monthly';
       const isCompanyPreset = preset?.testKind === 'company' || isCompanyTest(test);
       const isContest = isContestTest(test) || isContestPreset;
-      document.getElementById('testFormTitle').textContent = test
+    document.getElementById('testFormTitle').textContent = test
         ? (isContest ? 'Edit challenge' : (isCompanyPreset ? 'Edit company test' : 'Edit coding test'))
         : (isContestPreset ? `New ${preset.contestType} challenge` : (isCompanyPreset ? 'New company test' : 'New coding test'));
       document.getElementById('tfTestKind').value = isCompanyPreset ? 'company' : 'regular';
-      document.getElementById('tfId').value = test?.id || '';
-      document.getElementById('tfTitle').value = test?.title || preset?.title || '';
-      document.getElementById('tfDescription').value = test?.description || '';
-      document.getElementById('tfDuration').value = test?.duration || test?.durationMinutes || 20;
+    document.getElementById('tfId').value = test?.id || '';
+    document.getElementById('tfTitle').value = test?.title || preset?.title || '';
+    document.getElementById('tfDescription').value = test?.description || '';
+    document.getElementById('tfDuration').value = test?.duration || test?.durationMinutes || 20;
       document.getElementById('tfStatus').value = test
         ? (test.status === 'unpublished' ? 'unpublished' : 'published')
         : 'published';
@@ -3074,9 +3074,9 @@
         }).catch(() => bankRules.forEach((r) => addManualBankRuleRow(r, { loading: true })));
       }
 
-      initContestMonthDaySelect();
+    initContestMonthDaySelect();
       const contestType = isCompanyPreset ? 'none' : (test?.contestType || preset?.contestType || 'none');
-      document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
+    document.getElementById('tfContestType').value = ['weekly', 'monthly'].includes(contestType) ? contestType : 'none';
       document.getElementById('tfContestWeekday').value = String(test?.contestWeekday || preset?.contestWeekday || 1);
       document.getElementById('tfContestMonthDay').value = String(test?.contestMonthDay || preset?.contestMonthDay || 1);
       document.getElementById('tfContestStartTime').value = test?.contestStartTime || preset?.contestStartTime || DEFAULT_CONTEST_START_TIME;
@@ -3101,7 +3101,7 @@
         });
       }
 
-      const list = document.getElementById('problemList');
+    const list = document.getElementById('problemList');
       if (list) list.innerHTML = '';
       const inlineItems = source === 'manual' && !isCompanyPreset
         ? (test?.items || []).filter((q) => !q.bankId && !q.jdSetId)
@@ -3221,16 +3221,16 @@
       return `<div class="border rounded-3 p-3 d-flex flex-wrap justify-content-between align-items-start gap-2">
         <div class="d-flex align-items-start gap-2 min-w-0">
           <input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-bank-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select problem"/>
-          <div class="min-w-0">
-            <div class="fw-semibold">${esc(q.title || 'Untitled problem')}</div>
+            <div class="min-w-0">
+              <div class="fw-semibold">${esc(q.title || 'Untitled problem')}</div>
             <div class="small text-muted-2">${esc(normalizeCodingTopic(q.category))} · ${esc((q.testCases || []).length)} test case(s) · ${esc(q.marks || 2)} mark(s)</div>
           </div>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-          <span class="badge-soft ${difficultyClass(q.difficulty)}">${esc(q.difficulty || 'Medium')}</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge-soft ${difficultyClass(q.difficulty)}">${esc(q.difficulty || 'Medium')}</span>
           <button type="button" class="btn btn-sm btn-outline-primary" data-bank-edit="${esc(id)}">Edit</button>
           <button type="button" class="btn btn-sm btn-outline-danger" data-bank-del="${esc(id)}"><i class="bi bi-trash"></i></button>
-        </div>
+            </div>
       </div>`;
     }).join('');
     updateBankSelectionToolbar();
@@ -3871,7 +3871,7 @@
     try {
       const data = await CodingService.contestBoard();
       const contests = (data?.contests || []).filter((c) => String(c.contestType || '') === takeContestType);
-      const u = Auth.user() || {};
+    const u = Auth.user() || {};
       const myDepartmentId = String(u.departmentId || access.scope?.departmentId || '');
       root.innerHTML = contests.length
         ? `<h6 class="fw-bold mb-2">Contest leaderboards</h6>
@@ -4103,7 +4103,7 @@
       return;
     }
     hint.textContent = '';
-    hint.classList.add('d-none');
+      hint.classList.add('d-none');
   }
 
   async function loadDirectory() {
@@ -4114,10 +4114,10 @@
       const batches = staffAssignedBatches();
       if (!batches.length) {
         const scope = { ...(access.scope || {}), assignedClassBatches: batches };
-        updateDirScopeHint(scope);
+    updateDirScopeHint(scope);
         renderDirectoryTable([], {}, scope);
-        return;
-      }
+      return;
+    }
       if (!hasStaffDirectoryLookup()) {
         const scope = { ...(access.scope || {}), assignedClassBatches: batches };
         updateDirScopeHint(scope);
@@ -4127,14 +4127,14 @@
     }
     if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
       renderDirectoryTable([], {}, access.scope || {});
-      return;
-    }
+        return;
+      }
     const qs = buildDirectoryQuery();
     const cacheKey = qs.toString();
     let data = null;
     if (cacheKey === dirResultsCacheKey && dirResultsCache) {
       data = dirResultsCache;
-    } else {
+      } else {
       const res = await api('/coding/progress?' + qs.toString()).catch(() => null);
       if (seq !== dirLoadSeq) return;
       data = res?.success ? res.data : null;
@@ -4618,7 +4618,7 @@
         toastMsg('Select a category.', 'error');
         return;
       }
-      if (!params.topic) {
+    if (!params.topic) {
         toastMsg('Select a topic.', 'error');
         return;
       }
@@ -4706,11 +4706,11 @@
         await loadJdLibrary();
         applyManagePanel('jd');
       } else {
-        const data = await CodingService.saveAiProblems(selected);
-        toastMsg(`Saved ${data?.added ?? selected.length} problem(s) to the bank.`, 'success');
-        bank = await CodingService.listBank();
-        applyManagePanel('bank');
-        renderBank();
+      const data = await CodingService.saveAiProblems(selected);
+      toastMsg(`Saved ${data?.added ?? selected.length} problem(s) to the bank.`, 'success');
+      bank = await CodingService.listBank();
+      applyManagePanel('bank');
+      renderBank();
       }
       codAiModal?.hide();
     } catch (err) {

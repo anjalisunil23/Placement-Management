@@ -539,9 +539,6 @@ final class AesApiService
             'stud_semester' => trim((string) ($record['stud_semester'] ?? $record['semester'] ?? '')),
             'stud_photo' => trim((string) ($record['stud_photo'] ?? $record['photoUrl'] ?? '')),
             'photoUrl' => trim((string) ($record['stud_photo'] ?? $record['photoUrl'] ?? '')),
-            'stud_mobiles' => trim((string) ($record['stud_mobiles'] ?? $record['phone'] ?? '')),
-            'stud_ajce_mails' => trim((string) ($record['stud_ajce_mails'] ?? $record['collegeEmail'] ?? '')),
-            'stud_personal_mails' => trim((string) ($record['stud_personal_mails'] ?? $record['personalEmail'] ?? '')),
         ];
         foreach (['stud_status', 'status', 'studying', 'is_studying', 'stud_role', 'role'] as $flag) {
             if (array_key_exists($flag, $record)) {
@@ -553,7 +550,7 @@ final class AesApiService
             $out[$key] = $value;
         }
 
-        return $this->applyStudInfoContactAliases($out);
+        return $out;
     }
 
     /**
@@ -602,8 +599,6 @@ final class AesApiService
      */
     public function placementFieldsFromStudInfoDirectoryRecord(array $record): array
     {
-        $record = array_merge($record, $this->passthroughPlacementDirectoryFields($record));
-
         $company = $this->firstNonEmptyString($record, [
             'stud_company', 'company', 'company_name', 'companyName', 'employer', 'employer_name',
             'organization', 'organisation', 'org_name', 'placed_company', 'placement_company',
@@ -617,15 +612,13 @@ final class AesApiService
         ]);
         $package = $this->firstNonEmptyString($record, [
             'package', 'salary', 'ctc', 'monthly_salary', 'monthlySalary', 'pay', 'compensation',
-            'stud_salary', 'placed_package', 'payscale', 'pay_scale',
+            'stud_salary', 'placed_package',
         ]);
         $address = $this->firstNonEmptyString($record, [
             'company_address', 'employer_address', 'address', 'org_address', 'office_address',
-            'empadr', 'emp_adr',
         ]);
         $contact = $this->firstNonEmptyString($record, [
             'employer_contact', 'company_contact', 'contact', 'hr_contact', 'phone_office',
-            'empcno', 'emp_cno',
         ]);
         $joinDate = $this->firstNonEmptyString($record, [
             'join_date', 'joinDate', 'date_of_joining', 'placed_date', 'placement_date',
@@ -643,11 +636,17 @@ final class AesApiService
             }
         }
 
-        $status = $this->firstNonEmptyString($record, [
-            'placement_status', 'placementStatus', 'placed_status', 'status', 'placement_state',
+        $phone = $this->firstNonEmptyString($record, [
+            'stud_mobiles', 'phone', 'mobile', 'stud_mobile', 'contact_phone', 'student_phone',
         ]);
-        $fordvv = $this->firstNonEmptyString($record, ['fordvv', 'for_dvv', 'forDvv', 'dvv']);
-        $includedvv = $this->firstNonEmptyString($record, ['includedvv', 'included_dvv', 'includedDvv']);
+        $email = $this->firstNonEmptyString($record, [
+            'stud_ajce_mails', 'collegeEmail', 'email', 'stud_email', 'personalEmail', 'stud_personal_mails',
+        ]);
+        $fordvv = $this->firstNonEmptyString($record, ['fordvv', 'for_dvv', 'stud_fordvv']);
+        $includedvv = $this->firstNonEmptyString($record, ['includedvv', 'included_dvv', 'stud_includedvv']);
+        $placementStatus = $this->firstNonEmptyString($record, [
+            'placement_status', 'placementStatus', 'placed_status', 'stud_placement_status',
+        ]);
 
         $out = array_filter([
             'company'         => $company,
@@ -656,54 +655,16 @@ final class AesApiService
             'address'         => $address,
             'employerContact' => $contact,
             'joinDate'        => $joinDate,
-            'placementStatus' => $status,
             'recordType'      => $recordType,
+            'phone'           => $phone,
+            'email'           => $email,
             'fordvv'          => $fordvv,
             'includedvv'      => $includedvv,
-            'source'          => 'aes_getStudInfo4Placement',
+            'placementStatus' => $placementStatus,
+            'source'          => 'aes_getAllStudInfo4Placement',
         ], static fn (string $v): bool => trim($v) !== '');
 
         return $out;
-    }
-
-    /**
-     * Map AES stud_* contact keys onto generic roster fields (class list + directory).
-     *
-     * @param array<string, mixed> $record
-     * @return array<string, mixed>
-     */
-    public function applyStudInfoContactAliases(array $record): array
-    {
-        if (!empty($record['stud_admno']) && trim((string) ($record['admno'] ?? '')) === '') {
-            $admno = trim((string) $record['stud_admno']);
-            $record['admno'] = $admno;
-            $record['registerNumber'] = $record['registerNumber'] ?? $admno;
-        }
-        if (!empty($record['stud_name']) && trim((string) ($record['name'] ?? '')) === '') {
-            $record['name'] = trim((string) $record['stud_name']);
-        }
-        if (!empty($record['stud_mobiles']) && trim((string) ($record['phone'] ?? '')) === '') {
-            $record['phone'] = trim((string) $record['stud_mobiles']);
-        }
-        if (!empty($record['stud_ajce_mails']) && trim((string) ($record['collegeEmail'] ?? '')) === '') {
-            $record['collegeEmail'] = strtolower(trim((string) $record['stud_ajce_mails']));
-        }
-        if (!empty($record['stud_personal_mails']) && trim((string) ($record['personalEmail'] ?? '')) === '') {
-            $record['personalEmail'] = strtolower(trim((string) $record['stud_personal_mails']));
-        }
-        if (trim((string) ($record['email'] ?? '')) === '') {
-            $record['email'] = trim((string) ($record['collegeEmail'] ?? $record['personalEmail'] ?? ''));
-        }
-        if (trim((string) ($record['studentName'] ?? '')) === '') {
-            $record['studentName'] = trim((string) (
-                $record['displayName'] ?? $record['stud_name'] ?? $record['name'] ?? ''
-            ));
-        }
-        if (!empty($record['stud_class']) && trim((string) ($record['classBatch'] ?? '')) === '') {
-            $record['classBatch'] = trim((string) $record['stud_class']);
-        }
-
-        return $record;
     }
 
     /**
@@ -3160,6 +3121,34 @@ final class AesApiService
             $variants[] = $candidate;
         }
 
+        $span = ClassInchargeRegistry::admissionYearSpanKey($studClass);
+        if ($span !== null && preg_match('/^(\d{4})-(\d{4})$/', $span, $sm) === 1) {
+            $y0 = $sm[1];
+            $y1 = $sm[2];
+            $y1short = substr($y1, 2);
+            $prefixes = ['MCAR', 'MCA', 'MCALE'];
+            if ($programmeCode !== '') {
+                foreach (DepartmentProgrammeCatalog::aesCourseParamTokens($programmeCode) as $token) {
+                    $token = DepartmentProgrammeCatalog::normalizeCode($token);
+                    if ($token !== '' && str_starts_with($token, 'MCA')) {
+                        $prefixes[] = strtoupper($token);
+                    }
+                }
+            }
+            $prefixes = array_values(array_unique($prefixes));
+            foreach ($prefixes as $pfx) {
+                foreach ([
+                    $pfx . $y0 . '-' . $y1short,
+                    $pfx . $y0 . '-' . $y1,
+                    $pfx . $y0 . $y1,
+                    $pfx . $y0 . '-' . $y1short . '-S8',
+                    $pfx . $y0 . '-' . $y1 . '-S8',
+                ] as $syn) {
+                    $variants[] = $syn;
+                }
+            }
+        }
+
         return array_values(array_unique($variants));
     }
 
@@ -3172,6 +3161,7 @@ final class AesApiService
         $deptAesId = trim($deptAesId);
         $studClass = trim($studClass);
         $programmeCode = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($programmeCode));
+        $programmeCode = DepartmentProgrammeCatalog::reconcileProgramWithBatch($programmeCode, $studClass);
         if ($deptAesId === '' || $studClass === '') {
             return [];
         }
@@ -3213,7 +3203,7 @@ final class AesApiService
                     continue;
                 }
                 $seen[$key] = true;
-                $merged[] = $this->applyStudInfoContactAliases($record);
+                $merged[] = $record;
             }
         };
 

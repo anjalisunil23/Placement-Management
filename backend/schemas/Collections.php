@@ -32,7 +32,6 @@ final class Collections
     public const CERTIFICATIONS = 'certifications';
     public const STUDENT_CERTIFICATIONS = 'student_certifications';
     public const STUDENT_PLACEMENTS = 'student_placements';
-    public const STUDENT_DETAILS = 'student_details';
     public const PLACEMENT_OFFICERS = 'placement_officers';
     public const STUDENT_VOLUNTEERS = 'student_volunteers';
     public const RESUMES = 'resumes';
