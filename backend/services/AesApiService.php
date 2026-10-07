@@ -772,6 +772,55 @@ final class AesApiService
     }
 
     /**
+     * Alumni hints on unfiltered dept directory rows (old batches without stud_role=Alumni).
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function qualifiesAsAlumniFromDeptScan(array $record): bool
+    {
+        $role = self::normalizeStudRole($record);
+        if ($role === 'alumni') {
+            return true;
+        }
+        if ($role === 'student') {
+            return false;
+        }
+        if (self::qualifiesAsAlumniByHeuristics($record)) {
+            return true;
+        }
+        if (self::looksLikeActiveStudyingClassBatch($record)) {
+            return false;
+        }
+
+        $batch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+
+        return $batch !== '';
+    }
+
+    /**
+     * Current-cohort class labels (e.g. MCA2025-27-S3) — not alumni pass-outs.
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function looksLikeActiveStudyingClassBatch(array $record): bool
+    {
+        $batch = strtoupper(trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')));
+        if ($batch === '') {
+            return false;
+        }
+        if (preg_match('/-S[1-8]$/', $batch) !== 1) {
+            return false;
+        }
+        if (preg_match('/(\d{4})-(\d{2})-S\d+$/', $batch, $matches) === 1) {
+            $endYear = 2000 + (int) ($matches[2] ?? 0);
+
+            return $endYear >= ((int) date('Y')) - 1;
+        }
+
+        return true;
+    }
+
+    /**
      * Pass-out / graduated hints when AES omits stud_role (never treat bare class labels as alumni).
      *
      * @param array<string, mixed> $record

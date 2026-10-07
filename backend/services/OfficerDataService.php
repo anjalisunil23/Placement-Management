@@ -2274,6 +2274,10 @@ final class OfficerDataService
     public function getCampusStudyingDirectorySyncMeta(): array
     {
         $detailsModel = new \PMS\Models\StudentDetailsModel();
+        $payload = $this->readCampusDirectorySnapshotPayload();
+        $fetchedStudents = (int) ($payload['fetchedStudents'] ?? $payload['studentRecordCount'] ?? 0);
+        $fetchedAlumni = (int) ($payload['fetchedAlumni'] ?? $payload['alumniRecordCount'] ?? 0);
+
         if ($detailsModel->isAvailable()) {
             $meta = $detailsModel->latestSyncMeta();
             if (is_array($meta)) {
@@ -2281,6 +2285,12 @@ final class OfficerDataService
                     'syncedAt'            => $meta['syncedAt'] ?? null,
                     'studentRecordCount'  => (int) ($meta['studentRecordCount'] ?? 0),
                     'alumniRecordCount'   => (int) ($meta['alumniRecordCount'] ?? 0),
+                    'fetchedStudents'     => $fetchedStudents > 0
+                        ? $fetchedStudents
+                        : (int) ($meta['studentRecordCount'] ?? 0),
+                    'fetchedAlumni'       => $fetchedAlumni > 0
+                        ? $fetchedAlumni
+                        : (int) ($meta['alumniRecordCount'] ?? 0),
                     'recordCount'         => (int) ($meta['recordCount'] ?? 0),
                     'hasStudentSnapshot'  => ((int) ($meta['studentRecordCount'] ?? 0)) > 0,
                     'hasAlumniSnapshot'   => ((int) ($meta['alumniRecordCount'] ?? 0)) > 0,
@@ -2290,7 +2300,6 @@ final class OfficerDataService
             }
         }
 
-        $payload = $this->readCampusDirectorySnapshotPayload();
         $students = $this->studyingRecordsFromCampusDirectoryPayload($payload);
         $alumni = $this->alumniRecordsFromCampusDirectoryPayload($payload);
 
@@ -2298,6 +2307,8 @@ final class OfficerDataService
             'syncedAt'            => isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : null,
             'studentRecordCount'  => count($students),
             'alumniRecordCount'   => count($alumni),
+            'fetchedStudents'     => $fetchedStudents > 0 ? $fetchedStudents : count($students),
+            'fetchedAlumni'       => $fetchedAlumni > 0 ? $fetchedAlumni : count($alumni),
             'recordCount'         => count($students) + count($alumni),
             'hasStudentSnapshot'  => $students !== [],
             'hasAlumniSnapshot'   => $alumni !== [],
@@ -2437,16 +2448,70 @@ final class OfficerDataService
             }
         };
 
+        if ($syncStudRole === 'alumni') {
+            foreach ($this->campusParentDeptAesIds() as $aesId) {
+                $fetchParams(['stud_deptcode' => $aesId]);
+                $this->fetchAlumniScopedByProgramme($api, $aesId, $roleValues, $appendBatch, $directoryList);
+            }
+            $fetchParams([]);
+            $this->supplementAlumniFromDeptPassOutRecords($api, $appendBatch);
+            $this->supplementAlumniFromClassBatchFetches($api, $appendBatch);
+
+            return $merged;
+        }
+
         $fetchParams([]);
         foreach ($this->campusParentDeptAesIds() as $aesId) {
             $fetchParams(['stud_deptcode' => $aesId]);
         }
 
-        if ($syncStudRole === 'alumni') {
-            $this->supplementAlumniFromDeptPassOutRecords($api, $appendBatch);
+        return $merged;
+    }
+
+    /**
+     * Per-programme alumni fetch — AES campus-wide stud_role=Alumni responses are often capped (~6500).
+     *
+     * @param list<string> $roleValues
+     * @param callable(list<array<string, mixed>>): void $appendBatch
+     */
+    private function fetchAlumniScopedByProgramme(
+        AesApiService $api,
+        string $deptAesId,
+        array $roleValues,
+        callable $appendBatch,
+        bool $directoryList
+    ): void {
+        $deptAesId = trim($deptAesId);
+        if ($deptAesId === '') {
+            return;
         }
 
-        return $merged;
+        $programmes = [];
+        foreach (DepartmentProgrammeCatalog::groups() as $group) {
+            foreach ($group['programmes'] ?? [] as $programme) {
+                $code = trim((string) ($programme['code'] ?? ''));
+                if ($code !== '') {
+                    $programmes[$code] = true;
+                }
+            }
+        }
+
+        foreach (array_keys($programmes) as $programme) {
+            foreach ($roleValues as $role) {
+                try {
+                    $batch = $api->fetchAllStudInfo4Placement([
+                        'stud_deptcode' => $deptAesId,
+                        'stud_role'      => $role,
+                        'stud_course'    => $programme,
+                    ], $directoryList, false);
+                    if ($batch !== []) {
+                        $appendBatch($batch);
+                    }
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+        }
     }
 
     /**
@@ -2462,7 +2527,7 @@ final class OfficerDataService
             }
             $supplement = [];
             foreach ($records as $record) {
-                if (!is_array($record) || !AesApiService::qualifiesAsAlumniRecord($record)) {
+                if (!is_array($record) || !AesApiService::qualifiesAsAlumniFromDeptScan($record)) {
                     continue;
                 }
                 $supplement[] = $record;
@@ -2470,6 +2535,57 @@ final class OfficerDataService
             if ($supplement !== []) {
                 $appendBatch($supplement);
             }
+        }
+    }
+
+    /**
+     * Class-scoped getStudInfo4Placement for discovered alumni batches (fills gaps in getAllStudInfo4Placement).
+     */
+    private function supplementAlumniFromClassBatchFetches(AesApiService $api, callable $appendBatch): void
+    {
+        $batchKeys = [];
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            try {
+                $records = $api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId], true, false);
+            } catch (\Throwable) {
+                continue;
+            }
+            foreach ($records as $record) {
+                if (!is_array($record) || !AesApiService::qualifiesAsAlumniFromDeptScan($record)) {
+                    continue;
+                }
+                $batch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+                if ($batch === '') {
+                    continue;
+                }
+                $programme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
+                    $record['stud_course']
+                    ?? $record['stud_cource_short']
+                    ?? $record['programme']
+                    ?? ''
+                ));
+                $sig = strtoupper($aesId . '|' . $programme . '|' . $batch);
+                $batchKeys[$sig] = ['dept' => $aesId, 'programme' => $programme, 'batch' => $batch];
+            }
+        }
+
+        $maxFetches = max(50, min(500, (int) ($_ENV['AES_ALUMNI_CLASS_FETCH_MAX'] ?? 250)));
+        $fetched = 0;
+        foreach ($batchKeys as $entry) {
+            if ($fetched >= $maxFetches) {
+                break;
+            }
+            $records = $api->fetchClassStudInfo4Placement(
+                (string) $entry['dept'],
+                (string) $entry['programme'],
+                (string) $entry['batch'],
+                true
+            );
+            if ($records === []) {
+                continue;
+            }
+            $appendBatch($records);
+            $fetched++;
         }
     }
 
@@ -2499,7 +2615,8 @@ final class OfficerDataService
             }
 
             return AesApiService::qualifiesAsAlumniDirectoryRecord($record)
-                || AesApiService::qualifiesAsAlumniByHeuristics($record);
+                || AesApiService::qualifiesAsAlumniByHeuristics($record)
+                || AesApiService::qualifiesAsAlumniFromDeptScan($record);
         }
 
         $role = AesApiService::normalizeStudRole($record);
@@ -3453,12 +3570,14 @@ final class OfficerDataService
     ): void {
         $path = $this->campusDirectorySnapshotPath();
         $payload = [
-            'syncedAt'         => $syncedAt,
-            'syncedBy'         => $adminUserId,
-            'studyingRecords'  => array_values($studyingRecords),
-            'alumniRecords'    => array_values($alumniRecords),
+            'syncedAt'           => $syncedAt,
+            'syncedBy'           => $adminUserId,
+            'studyingRecords'    => array_values($studyingRecords),
+            'alumniRecords'      => array_values($alumniRecords),
             'studentRecordCount' => count($studyingRecords),
             'alumniRecordCount'  => count($alumniRecords),
+            'fetchedStudents'    => count($studyingRecords),
+            'fetchedAlumni'      => count($alumniRecords),
         ];
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($json)) {
