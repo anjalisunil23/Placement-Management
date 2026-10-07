@@ -649,7 +649,10 @@ const API_BASE = normalizeApiBase(
 
 /** Ensure a live server session before admin writes; redirects to login when needed. */
 async function requireWriteSession() {
-  Auth._sessionReady = false;
+  if (Auth.hasCachedSession()) {
+    Auth._sessionReady = true;
+    return true;
+  }
   if (await Auth.ensureSession()) return true;
   const page = document.body?.dataset?.page || 'dashboard.html';
   window.location.href = `public-stats.html?next=${encodeURIComponent(page)}`;
@@ -928,6 +931,7 @@ const Auth = {
       Object.keys(sessionStorage)
         .filter((k) => k.startsWith('ph-unread-')
           || k === 'ph_auth_boot_at'
+          || k === 'ph_profile_enriched'
           || k === 'ph_missing_fields_reminded'
           || k === 'ph_incomplete_profile_nudged')
         .forEach((k) => sessionStorage.removeItem(k));
@@ -943,6 +947,11 @@ const Auth = {
     return !!t && t.startsWith('demo-token');
   },
   hasSession() { return this.token() === 'session'; },
+  /** Local session from login — trusted until Auth.logout() / Auth.clear(). */
+  hasCachedSession() {
+    const u = this.user();
+    return this.token() === 'session' && !!u?.role;
+  },
   needsApiSession(page) {
     return [
       'reports.html', 'applications.html', 'resumes.html', 'results.html',
@@ -954,31 +963,22 @@ const Auth = {
   async bootstrap(opts = {}) {
     if (this._sessionReady === true) return true;
 
-    // After AES login, aes-complete already called /auth/me. Trust that cached
-    // session for a short window so dashboard does not block on another round-trip.
     const soft = opts.soft !== false;
-    try {
-      const bootAt = Number(sessionStorage.getItem('ph_auth_boot_at') || 0);
-      const cached = this.user();
-      // Trust a recently verified session across tabs so navigation does not
-      // re-block on /auth/me (or silently re-fetch AES-heavy userResponse).
-      // Never soft-skip staff: HOD elevation depends on a fresh /auth/me
-      // (AES often omits designation; stale cache would keep showing Faculty/Staff).
-      if (soft && cached?.role && cached.role !== 'staff' && this.token() && bootAt > 0 && (Date.now() - bootAt) < 1800000) {
-        const badStudentName = cached.role === 'student' && (
-          !isUsableDisplayName(cached.name, cached)
-        );
-        const alumniPhoto = String(cached.photoUrl || cached.photo?.url || '').trim();
-        const alumniNeedsPhoto = cached.role === 'alumni' && !(
-          alumniPhoto.includes('/api/media/')
-          || String(cached.photoProxyUrl || '').trim()
-        );
-        if (!badStudentName && !alumniNeedsPhoto) {
-          this._sessionReady = true;
-          return true;
-        }
+    const cached = this.user();
+
+    // After login, trust the cached profile until logout — no /auth/me on every page.
+    if (soft && this.hasCachedSession()) {
+      const badStudentName = cached.role === 'student' && !isUsableDisplayName(cached.name, cached);
+      const alumniPhoto = String(cached.photoUrl || cached.photo?.url || '').trim();
+      const alumniNeedsPhoto = cached.role === 'alumni' && !(
+        alumniPhoto.includes('/api/media/')
+        || String(cached.photoProxyUrl || '').trim()
+      );
+      if (!badStudentName && !alumniNeedsPhoto) {
+        this._sessionReady = true;
+        return true;
       }
-    } catch (_) { /* sessionStorage may be blocked */ }
+    }
 
     const qs = opts.fast ? '?fast=1' : '';
     let signal = opts.signal;
@@ -990,7 +990,11 @@ const Auth = {
     const res = await apiFetch('/auth/me' + qs, { skipAuthRedirect: true, skipAuthRetry: true, signal });
     const cachedUser = this.user();
     if (!res.success || !res.data || !res.data.role) {
-      if (opts.fast && cachedUser?.role && cachedUser.role !== 'staff'
+      if (soft && this.hasCachedSession()) {
+        this._sessionReady = true;
+        return true;
+      }
+      if (opts.fast && cachedUser?.role
         && (res.aborted || res._offline || res.status >= 500)) {
         this._sessionReady = true;
         return true;
@@ -1005,7 +1009,10 @@ const Auth = {
   },
   async refreshSession() {
     this._sessionReady = false;
-    try { sessionStorage.removeItem('ph_auth_boot_at'); } catch (_) {}
+    try {
+      sessionStorage.removeItem('ph_auth_boot_at');
+      sessionStorage.removeItem('ph_profile_enriched');
+    } catch (_) {}
     let ok = await this.bootstrap({ soft: false });
     if (!ok) {
       await new Promise((r) => setTimeout(r, 300));
@@ -1069,6 +1076,11 @@ const Auth = {
   },
   async enrichFromProfile(opts = {}) {
     if (!this.hasRealAuth() || this.isDemo()) return false;
+    if (!opts.refresh && !opts.nameRefresh) {
+      try {
+        if (sessionStorage.getItem('ph_profile_enriched') === '1') return true;
+      } catch (_) { /* ignore */ }
+    }
     if (this._profileEnrichPromise && !opts.refresh) {
       return this._profileEnrichPromise;
     }
@@ -1227,6 +1239,7 @@ const Auth = {
       if (role === 'student') {
         this._profileIncomplete = false;
       }
+      try { sessionStorage.setItem('ph_profile_enriched', '1'); } catch (_) { /* ignore */ }
       return true;
     } catch {
       return false;
@@ -5792,8 +5805,13 @@ async function apiFetch(path, opts = {}) {
       const timedOut = /request timeout|timed out|gateway timeout|504|522/i.test(plain);
       let message;
       if (timedOut) {
-        message = `Request timed out (${res.status}). The server stopped a long step (reading the syllabus for AI or generating a batch). `
-          + 'Click Get and wait for the PDF, then try Generate again with fewer questions. If it keeps failing, ask the host to raise PHP/LiteSpeed timeouts (often 60–120s).';
+        const pathLower = String(path || '').toLowerCase();
+        if (pathLower.includes('placements-higher-education') || pathLower.includes('placement-filters')) {
+          message = `Request timed out (${res.status}). The placement grid should load from student_placements without live AES — deploy latest code and set STAFF_PLACEMENT_LIST_LITE_FILTERS=1 and STAFF_PLACEMENT_FILTERS_SKIP_AES=1 in .env. Use Sync from AES only when importing a class roster.`;
+        } else {
+          message = `Request timed out (${res.status}). The server stopped a long step (reading the syllabus for AI or generating a batch). `
+            + 'Click Get and wait for the PDF, then try Generate again with fewer questions. If it keeps failing, ask the host to raise PHP/LiteSpeed timeouts (often 60–120s).';
+        }
       } else if (res.status >= 500) {
         message = `Server error (${res.status}). If this persists, redeploy on cPanel and confirm PHP 8.2+ and composer install. ${detail}`;
       } else if (

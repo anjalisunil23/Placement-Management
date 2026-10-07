@@ -97,41 +97,34 @@
                 <p class="text-muted-2 mb-0" id="studentModuleSubtitle"></p>
               </div>
             </div>
-            <div id="studentLessonView">
-              <h3 class="student-lesson-title" id="studentLessonHeading"></h3>
-              <div id="studentModuleContent" class="tutorial-lesson"></div>
-              <div id="studentActivitySection" class="student-activity-section d-none">
-                <h3 class="student-lesson-title mb-1">Practical activities</h3>
-                <p class="small text-muted-2 mb-2">Responses are stored as text only — nothing is executed.</p>
-                <div id="studentActivityList" class="d-flex flex-column gap-2"></div>
-                <div id="studentActivityPanel" class="student-activity-panel d-none">
-                  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-                    <div>
-                      <h3 class="h6 fw-bold mb-1" id="studentActivityTitle"></h3>
-                      <div class="small text-muted-2" id="studentActivityMeta"></div>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="studentActivityCloseBtn">Close</button>
+            <h3 class="student-lesson-title" id="studentLessonHeading"></h3>
+            <div id="studentModuleContent" class="tutorial-lesson"></div>
+            <div id="studentActivitySection" class="student-activity-section d-none">
+              <h3 class="student-lesson-title mb-1">Practical activities</h3>
+              <p class="small text-muted-2 mb-2">Responses are stored as text only — nothing is executed.</p>
+              <div id="studentActivityList" class="d-flex flex-column gap-2"></div>
+              <div id="studentActivityPanel" class="student-activity-panel d-none">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                  <div>
+                    <h3 class="h6 fw-bold mb-1" id="studentActivityTitle"></h3>
+                    <div class="small text-muted-2" id="studentActivityMeta"></div>
                   </div>
-                  <div id="studentActivityInstructions" class="tutorial-lesson small mb-3"></div>
-                  <div id="studentActivityConfig" class="small mb-3"></div>
-                  <div id="studentActivityStatus" class="mb-3"></div>
-                  <div id="studentActivityEditor" class="mb-3"></div>
-                  <div id="studentActivityResult" class="mb-3 d-none"></div>
-                  <div class="d-flex flex-wrap gap-2" id="studentActivityActions">
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="studentActivityStartBtn">Start attempt</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="studentActivitySaveBtn">Save</button>
-                    <button type="button" class="btn btn-sm btn-primary d-none" id="studentActivitySubmitBtn">Submit</button>
-                  </div>
-                  <p class="small text-muted-2 mt-2 mb-0" id="studentActivitySaveNote"></p>
-                  <div class="fw-semibold mt-3 mb-2">Your attempts</div>
-                  <div id="studentActivityHistory" class="d-flex flex-column gap-2"></div>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="studentActivityCloseBtn">Close</button>
                 </div>
+                <div id="studentActivityInstructions" class="tutorial-lesson small mb-3"></div>
+                <div id="studentActivityConfig" class="small mb-3"></div>
+                <div id="studentActivityStatus" class="mb-3"></div>
+                <div id="studentActivityEditor" class="mb-3"></div>
+                <div id="studentActivityResult" class="mb-3 d-none"></div>
+                <div class="d-flex flex-wrap gap-2" id="studentActivityActions">
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="studentActivityStartBtn">Start attempt</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="studentActivitySaveBtn">Save</button>
+                  <button type="button" class="btn btn-sm btn-primary d-none" id="studentActivitySubmitBtn">Submit</button>
+                </div>
+                <p class="small text-muted-2 mt-2 mb-0" id="studentActivitySaveNote"></p>
+                <div class="fw-semibold mt-3 mb-2">Your attempts</div>
+                <div id="studentActivityHistory" class="d-flex flex-column gap-2"></div>
               </div>
-            </div>
-            <div id="studentAssessmentPage" class="student-assessment-page d-none">
-              <div id="studentAssessmentIntro" class="student-assessment-card mb-3"></div>
-              <div id="studentAssessmentAttempt" class="student-assessment-card mb-3 d-none"></div>
-              <div id="studentAssessmentResults" class="student-assessment-card d-none"></div>
             </div>
           </div>
           <div class="student-learn-actions">
@@ -144,7 +137,7 @@
           </div>
         </div>
       </div>
-      <div class="student-practice-column" id="studentPracticeColumn">
+      <div class="student-practice-column">
         <div class="card-surface student-practice-panel h-100">
           <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <div class="fw-semibold mb-0">Practice</div>
@@ -152,6 +145,12 @@
           </div>
           <p class="small text-muted-2" id="studentPracticeHint">Questions for the selected lesson.</p>
           <div id="studentPracticeQuestions" class="d-flex flex-column gap-2 mb-3"></div>
+          <div id="studentAssessmentSection" class="mt-3 d-none">
+            <div class="fw-semibold small mb-2">Module assessment</div>
+            <div id="studentAssessmentIntro" class="border rounded p-3"></div>
+            <div id="studentAssessmentAttempt" class="border rounded p-3 mt-3 d-none"></div>
+            <div id="studentAssessmentResults" class="border rounded p-3 mt-3 d-none"></div>
+          </div>
           <div id="studentPracticeEmpty" class="text-muted-2 small d-none">No practice items for this lesson yet.</div>
         </div>
       </div>
@@ -169,15 +168,6 @@
   .student-course-nav{width:15rem;flex:0 0 15rem;padding:.75rem .8rem;overflow-x:hidden;overflow-y:auto;min-width:0}
   .student-learn-column{flex:1 1 0;min-width:0;display:flex;flex-direction:column}
   .student-practice-column{flex:0 0 20.5rem;width:20.5rem;max-width:20.5rem;min-width:0;display:flex;flex-direction:column}
-  .student-workspace.is-assessment-view .student-practice-column{display:none}
-  .student-workspace.is-assessment-view .student-learn-column{flex:1 1 auto;max-width:none}
-  .student-assessment-page{max-width:42rem}
-  .student-assessment-card{border:1px solid var(--border,#E2E8F0);border-radius:.65rem;padding:1rem 1.1rem;background:#fff}
-  .student-course-tree .student-assessment-nav{margin-top:.15rem;font-weight:650}
-  .student-course-tree .student-assessment-nav:not(.is-active){
-    border-color:color-mix(in srgb,var(--primary,#2563EB) 35%,#e2e8f0);
-    background:color-mix(in srgb,var(--primary,#2563EB) 6%,#fff);
-  }
   .student-learn-panel,.student-practice-panel{min-height:0;overflow-x:hidden;width:100%}
   .student-learn-panel{display:flex;flex-direction:column;padding:0}
   .student-learn-body{padding:.9rem 1rem .65rem;overflow-x:hidden;overflow-y:auto;min-width:0}
@@ -290,16 +280,6 @@
     .student-course-nav.is-open + .student-learn-column .student-nav-backdrop,
     .student-nav-backdrop.is-open{display:block}
     .student-workspace.is-nav-collapsed .student-course-nav{display:block}
-  }
-  #previewNav{align-items:stretch!important}
-  #previewNav .btn{
-    width:100%;
-    max-width:100%;
-    display:block;
-    text-align:left!important;
-    white-space:normal;
-    overflow-wrap:anywhere;
-    line-height:1.35;
   }
   #moduleNav .btn{white-space:normal;text-align:left}
   #moduleNav.module-nav-list{display:flex;flex-direction:column;gap:.5rem}
@@ -446,11 +426,6 @@
   }
   .article-insert button:hover{border-color:color-mix(in srgb,var(--article-accent) 40%,var(--article-line));color:var(--article-accent);background:#fff}
   #lessonBlocks{min-height:42vh;padding:.15rem 0 1.25rem;font-size:1rem;line-height:1.65}
-  #articleView.is-view-only .article-insert,
-  #articleView.is-view-only .row-plus{display:none!important}
-  #articleView.is-view-only [contenteditable="true"]{pointer-events:none}
-  #moduleAssessmentPane .form-control:disabled,
-  #moduleAssessmentPane .form-select:disabled{background:#f8fafc;opacity:1}
   #moduleExercisePane,#moduleAssessmentPane,#moduleActivityPane{
     max-width:860px;margin:0 auto 1rem;padding:1rem 1.15rem;
     background:#fff;border:1px solid var(--article-line);border-radius:14px;
@@ -469,7 +444,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">Course Management</h1>
-        <p class="page-sub mb-0">My Drafts are private to you. Published Tutorials are visible to all Tutorials staff, but only the creator can manage or edit them.</p>
+        <p class="page-sub mb-0">My Drafts are private to you. Published Tutorials are visible to all Tutorials staff.</p>
       </div>
       <div class="d-flex flex-wrap gap-2">
         <button type="button" class="btn btn-outline-primary" id="generateCourseAiBtn"><i class="bi bi-stars me-1"></i>Generate with AI</button>
@@ -743,7 +718,7 @@
       </div>
       <div class="row g-2 mb-3">
         <div class="col-md-5"><label class="form-label" for="assessmentTitle">Title</label><input class="form-control form-control-sm" id="assessmentTitle" maxlength="160" value="Module quiz"/></div>
-        <div class="col-md-2"><label class="form-label" for="assessmentPass">Min. to pass %</label><input class="form-control form-control-sm" id="assessmentPass" type="number" min="0" max="100" value="60" title="Minimum score percentage required to pass"/></div>
+        <div class="col-md-2"><label class="form-label" for="assessmentPass">Pass %</label><input class="form-control form-control-sm" id="assessmentPass" type="number" min="0" max="100" value="60"/></div>
         <div class="col-md-2"><label class="form-label" for="assessmentMaxAttempts">Max attempts</label><input class="form-control form-control-sm" id="assessmentMaxAttempts" type="number" min="1" max="20" value="3"/></div>
         <div class="col-md-3"><label class="form-label" for="assessmentStatus">Status</label>
           <select class="form-select form-select-sm" id="assessmentStatus">
@@ -973,7 +948,7 @@
     <div class="alert alert-warning py-2">Preview. Students see this layout only after the course is published and they match its visibility.</div>
     <button type="button" class="btn btn-sm btn-outline-secondary mb-3" id="backFromPreview"><i class="bi bi-arrow-left me-1"></i>Courses</button>
     <div class="row g-3">
-      <div class="col-lg-3"><div class="card-surface p-3"><div class="fw-semibold mb-2" id="previewTitle"></div><div id="previewNav" class="d-flex flex-column gap-2 align-items-stretch"></div></div></div>
+      <div class="col-lg-3"><div class="card-surface p-3"><div class="fw-semibold mb-2" id="previewTitle"></div><div id="previewNav" class="d-flex flex-column gap-1"></div></div></div>
       <div class="col-lg-9"><div class="card-surface p-3"><h2 class="h5 fw-bold" id="previewModuleTitle"></h2><div id="previewContent" class="tutorial-lesson"></div><div id="previewExercises" class="mt-3"></div></div></div>
     </div>
   </div>
@@ -1051,5 +1026,9 @@
 <script src="js/api.js?v=20260930tutorials"></script>
 <script src="js/app.js?v=20261001stumcq"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<<<<<<< HEAD
 <script src="js/tutorials-page.js?v=20261007deptselect2"></script>
+=======
+<script src="js/tutorials-page.js?v=20261006publishmcq"></script>
+>>>>>>> ad210b8e57965066c37015fdbd27511e58e0106e
 </body></html>

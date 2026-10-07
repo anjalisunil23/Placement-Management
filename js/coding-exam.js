@@ -355,14 +355,12 @@
     function persistCurrent() {
       const q = currentQ();
       if (!q || !editor) return;
-      const language = ansLanguage(el('language').value);
+      const language = el('language').value;
       const code = editor.getValue();
       const customInput = el('stdin') ? el('stdin').value : '';
       state.answers[q.id] = state.answers[q.id] || {};
       state.answers[q.id].language = language;
       state.answers[q.id].code = code;
-      state.answers[q.id].codeByLang = state.answers[q.id].codeByLang || {};
-      state.answers[q.id].codeByLang[language] = code;
       state.answers[q.id].customInput = customInput;
       if (state.attemptId) {
         if (isPracticeMode()) {
@@ -494,22 +492,33 @@
     }
 
     function resolveOutputCustom(run) {
-      // Always show the custom-stdin run in Output (test cases have their own table).
-      return reconcileRunCustom(run?.custom || {});
-    }
-
-    function starterForLanguage(q, language) {
-      const lang = (typeof CodingData !== 'undefined' && CodingData.normalizeLanguage)
-        ? CodingData.normalizeLanguage(language)
-        : String(language || 'Python');
-      const fromProblem = String(q?.starterCode?.[lang] || '').trim();
-      if (fromProblem) return String(q.starterCode[lang]);
-      if (typeof CodingData !== 'undefined' && CodingData.defaultStarters) {
-        const py = String(q?.starterCode?.Python || '').trim()
-          || (CodingData.pythonStarterFromProblem ? CodingData.pythonStarterFromProblem(q) : '# Write your logic below\n');
-        return String(CodingData.defaultStarters(py)[lang] || '');
+      const custom = reconcileRunCustom(run?.custom || {});
+      const sampleRow = (run?.results || []).find((r) => r.sample) || (run?.results || [])[0];
+      if (!sampleRow) return custom;
+      const failStatuses = new Set(['Runtime Error', 'Compilation Error', 'Syntax Error', 'Time Limit Exceeded']);
+      const customFailed = failStatuses.has(String(custom.status || ''));
+      const sampleView = reconcileRunCustom({
+        ...sampleRow,
+        output: sampleRow.output,
+        expected: sampleRow.expected,
+      });
+      const sampleRan = !failStatuses.has(String(sampleView.status || ''));
+      if (customFailed && sampleRan) {
+        return {
+          ...custom,
+          input: sampleRow.input || custom.input,
+          output: sampleRow.output ?? custom.output,
+          expected: sampleRow.expected ?? custom.expected,
+          status: sampleView.status,
+          passed: sampleRow.passed,
+          stderr: '',
+          stderrTrace: '',
+          errorSummary: '',
+          errorDetail: '',
+          execution: sampleRow.execution || custom.execution,
+        };
       }
-      return '';
+      return custom;
     }
 
     function renderRunPanel(run, runningNow) {
@@ -557,8 +566,7 @@
       if (expected) expected.textContent = custom.expected || '';
       const detail = formatRunError(custom);
       if (stderr) {
-        const outText = String(custom.output ?? '');
-        if (runStatus === 'Execution Successful' && outText === '') {
+        if (runStatus === 'Execution Successful') {
           stderr.innerHTML = '<div class="small text-muted-2">The program executed successfully but produced no output.</div>';
           stderr.classList.remove('d-none');
         } else if (detail) {
@@ -663,31 +671,22 @@
       const q = currentQ();
       if (!q) return;
       const defaultIn = defaultCustomInput(q);
-      const lang = ansLanguage(state.answers[q.id]?.language || 'Python');
       const ans = state.answers[q.id] || {
-        language: lang,
-        code: starterForLanguage(q, lang),
-        codeByLang: {},
+        language: 'Python',
+        code: q.starterCode.Python,
         customInput: defaultIn,
         lastRun: null,
       };
-      ans.codeByLang = ans.codeByLang || {};
-      const langKey = ansLanguage(ans.language || lang);
-      ans.language = langKey;
-      if (!String(ans.code || '').trim()) {
-        ans.code = ans.codeByLang[langKey] || starterForLanguage(q, langKey);
-      }
-      if (!ans.codeByLang[langKey]) ans.codeByLang[langKey] = ans.code;
       state.answers[q.id] = ans;
-      el('language').value = langKey;
-      editor.setLanguage(langKey);
-      editor.setValue(ans.code || starterForLanguage(q, langKey));
+      el('language').value = ans.language || 'Python';
+      editor.setLanguage(ans.language || 'Python');
+      editor.setValue(ans.code || q.starterCode[ans.language] || '');
       if (el('stdin')) {
         const stored = ans.customInput;
         el('stdin').value = stored != null && String(stored).trim() !== '' ? stored : defaultIn;
         el('stdin').placeholder = defaultIn
-          ? 'Edit and Run Code — uses this input (sample filled by default)'
-          : 'Optional custom stdin for Run Code';
+          ? 'Leave empty to run with the sample input above'
+          : 'Optional — leave empty to use sample input when available';
       }
       renderProblem(q);
       renderRunPanel(ans.lastRun, false);
@@ -695,12 +694,6 @@
       el('run-state').textContent = '';
       renderNav();
       setBusy(false);
-    }
-
-    function ansLanguage(language) {
-      return (typeof CodingData !== 'undefined' && CodingData.normalizeLanguage)
-        ? CodingData.normalizeLanguage(language)
-        : String(language || 'Python');
     }
 
     function startTimer(initialMs) {
@@ -739,11 +732,9 @@
         remainingMs = Math.max(0, (started.endsAt || 0) - Date.now());
         (started.test.items || []).forEach((item) => {
           const sample = (item.testCases || []).find((tc) => tc.sample);
-          const py = starterForLanguage(item, 'Python');
           state.answers[item.id] = {
             language: 'Python',
-            code: py,
-            codeByLang: { Python: py },
+            code: item.starterCode.Python,
             customInput: sample ? sample.input : '',
             lastRun: null,
           };
@@ -769,25 +760,20 @@
       persistCurrent();
       const q = currentQ();
       const ans = state.answers[q.id];
-      const language = ansLanguage(el('language')?.value || ans?.language || 'Python');
+      const language = el('language')?.value || ans?.language || 'Python';
       const source = editor ? editor.getValue() : String(ans?.code || '');
       let stdin = el('stdin') ? el('stdin').value : String(ans?.customInput ?? '');
-      // Use whatever is in Custom Input; if empty, fall back to sample stdin.
-      if (typeof CodingData !== 'undefined' && CodingData.effectiveRunStdin) {
+      if (isPracticeMode() && typeof CodingData !== 'undefined' && CodingData.effectiveRunStdin) {
         const effective = CodingData.effectiveRunStdin(q, stdin);
         if (effective !== stdin) {
           stdin = effective;
-          if (el('stdin') && !String(el('stdin').value || '').trim()) {
-            el('stdin').value = effective;
-          }
+          if (el('stdin')) el('stdin').value = effective;
         }
       }
       if (ans) {
         ans.language = language;
         ans.code = source;
-        ans.codeByLang = ans.codeByLang || {};
-        ans.codeByLang[language] = source;
-        ans.customInput = el('stdin') ? el('stdin').value : stdin;
+        ans.customInput = stdin;
       }
       running = true;
       setBusy(true);
@@ -919,14 +905,10 @@
         state.status = 'ACTIVE';
         state.index = 0;
         state.practiceMode = true;
-        const py = starterForLanguage(started.problem, 'Python');
         state.answers = started.problem.id ? { [started.problem.id]: {
           language: 'Python',
-          code: py,
-          codeByLang: { Python: py },
-          customInput: (started.problem.testCases || []).find((t) => t.sample)?.input
-            || (typeof CodingData !== 'undefined' && CodingData.resolveSampleInput
-              ? CodingData.resolveSampleInput(started.problem) : ''),
+          code: started.problem.starterCode?.Python || '',
+          customInput: (started.problem.testCases || []).find((t) => t.sample)?.input || '',
           lastRun: null,
         } } : {};
         if (!editor) editor = createCodeEditor(el('editor'));
@@ -1061,36 +1043,23 @@
     el('language')?.addEventListener('change', () => {
       const q = currentQ();
       if (!q || !editor) return;
-      const language = ansLanguage(el('language').value);
-      const ans = state.answers[q.id] || { language: 'Python', code: editor.getValue(), codeByLang: {}, lastRun: null };
+      const language = el('language').value;
+      const ans = state.answers[q.id] || { language: 'Python', code: editor.getValue(), lastRun: null };
       state.answers[q.id] = ans;
-      ans.codeByLang = ans.codeByLang || {};
-      const prevLang = ansLanguage(ans.language || 'Python');
+      const prevLang = ans.language;
       const prevCode = editor.getValue();
-      // Remember prior language buffer, then switch UI to the new language template/buffer.
-      ans.codeByLang[prevLang] = prevCode;
+      const wasStarter = String(prevCode || '').trim() === String(q.starterCode[prevLang] || '').trim();
       ans.language = language;
-      const nextCode = String(ans.codeByLang[language] || '').trim()
-        ? ans.codeByLang[language]
-        : starterForLanguage(q, language);
-      ans.codeByLang[language] = nextCode;
-      ans.code = nextCode;
-      ans.lastRun = null;
-      editor.setLanguage(language);
-      editor.setValue(nextCode);
-      renderRunPanel(null, false);
-      el('run-state').textContent = '';
-      if (state.attemptId) {
-        const draft = { language, code: ans.code, customInput: ans.customInput };
-        if (isPracticeMode()) CodingService.savePracticeDraft(state.attemptId, draft);
-        else CodingService.saveDraft(state.attemptId, q.id, draft);
+      if (wasStarter || !String(prevCode || '').trim()) {
+        ans.code = q.starterCode[language] || '';
+        ans.lastRun = null;
+      } else {
+        ans.code = prevCode;
       }
-    });
-
-    el('stdin')?.addEventListener('input', () => {
-      const q = currentQ();
-      if (!q || !state?.answers?.[q.id]) return;
-      state.answers[q.id].customInput = el('stdin').value;
+      editor.setLanguage(language);
+      editor.setValue(ans.code);
+      renderRunPanel(ans.lastRun, false);
+      if (state.attemptId) CodingService.saveDraft(state.attemptId, q.id, { language, code: ans.code, customInput: ans.customInput });
     });
 
     root.addEventListener('click', (e) => {

@@ -62,6 +62,9 @@ const StaffApi = {
       policyAccepted: !!row.policyAccepted,
       policyAcceptedAt: row.policyAcceptedAt || '',
       policyVersion: row.policyVersion || '',
+      studRole: row.studRole || row.stud_role || '',
+      stud_role: row.stud_role || row.studRole || '',
+      registrationStatus: row.registrationStatus || '',
     };
   },
 
@@ -261,7 +264,7 @@ const StaffApi = {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed._at && (Date.now() - parsed._at) < 120000 && parsed.data) {
+        if (parsed && parsed._at && (Date.now() - parsed._at) < 300000 && parsed.data) {
           return parsed.data;
         }
       }
@@ -298,13 +301,14 @@ const StaffApi = {
       if (params[k]) qs.set(k, params[k]);
     });
     qs.set('studRole', params.studRole || 'all');
+    qs.set('omitFilters', params.omitFilters !== false ? '1' : '0');
     const q = qs.toString();
-    const cacheKey = 'ph_staff_placements_v4_' + q;
+    const cacheKey = 'ph_staff_placements_v9_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed._at && (Date.now() - parsed._at) < 90000 && parsed.data) {
+        if (parsed && parsed._at && (Date.now() - parsed._at) < 180000 && parsed.data) {
           return parsed.data;
         }
       }

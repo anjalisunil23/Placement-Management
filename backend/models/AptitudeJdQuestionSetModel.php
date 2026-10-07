@@ -285,7 +285,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             }
             $norm['id'] = 'jdq-' . ($i + 1) . '-' . bin2hex(random_bytes(4));
             $norm['source'] = 'MANUAL_UPLOAD';
-            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'directionsBlock', 'questionType'] as $metaKey) {
+            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'answerSource', 'aiAnalyzed', 'directionsBlock', 'questionType'] as $metaKey) {
                 if (array_key_exists($metaKey, $q)) {
                     $norm[$metaKey] = $q[$metaKey];
                 }
@@ -523,84 +523,6 @@ class AptitudeJdQuestionSetModel extends BaseModel
     }
 
     /**
-     * @param array<string, mixed> $patch
-     * @return array<string, mixed>|null Updated set detail
-     */
-    public function updateQuestion(string $setId, string $questionId, array $patch): ?array
-    {
-        if (!Security::isValidId($setId)) {
-            return null;
-        }
-        $questionId = trim($questionId);
-        if ($questionId === '') {
-            return null;
-        }
-
-        $set = $this->findById($setId);
-        if ($set === null) {
-            return null;
-        }
-
-        $questions = array_values((array) ($set['questions'] ?? []));
-        $updated = false;
-        foreach ($questions as $i => $q) {
-            if (!is_array($q) || (string) ($q['id'] ?? '') !== $questionId) {
-                continue;
-            }
-            $merged = $q;
-            if (array_key_exists('prompt', $patch)) {
-                $merged['prompt'] = trim((string) $patch['prompt']);
-            }
-            if (array_key_exists('options', $patch) && is_array($patch['options'])) {
-                $merged['options'] = array_values($patch['options']);
-            }
-            if (array_key_exists('correctIndex', $patch)) {
-                $merged['correctIndex'] = (int) $patch['correctIndex'];
-            }
-            if (array_key_exists('explanation', $patch)) {
-                $merged['explanation'] = trim((string) $patch['explanation']);
-            }
-            if (array_key_exists('answerKnown', $patch)) {
-                $merged['answerKnown'] = !empty($patch['answerKnown']);
-            }
-            if (array_key_exists('directionsBlock', $patch)) {
-                $merged['directionsBlock'] = trim((string) $patch['directionsBlock']);
-            }
-
-            $norm = AptitudeTestModel::normalizeMcq($merged, (string) ($merged['category'] ?? 'General Aptitude'), $i);
-            if ($norm === null) {
-                throw new \InvalidArgumentException('Question text and at least two options are required.');
-            }
-            $norm['id'] = $questionId;
-            $norm['source'] = (string) ($q['source'] ?? 'MANUAL_UPLOAD');
-            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'directionsBlock', 'questionType', 'topic'] as $metaKey) {
-                if (array_key_exists($metaKey, $merged)) {
-                    $norm[$metaKey] = $merged[$metaKey];
-                }
-            }
-            if (array_key_exists('answerKnown', $patch)) {
-                $norm['answerKnown'] = !empty($patch['answerKnown']);
-            }
-            $questions[$i] = $norm;
-            $updated = true;
-            break;
-        }
-
-        if (!$updated) {
-            return null;
-        }
-
-        $set['questions'] = $questions;
-        $set['questionCount'] = count($questions);
-        if (!$this->update($setId, $set)) {
-            return null;
-        }
-        $saved = $this->findById($setId);
-
-        return $saved !== null ? $this->detailView($saved) : null;
-    }
-
-    /**
      * @param array<string, mixed> $set
      * @return array<string, array<string, mixed>>
      */
@@ -659,12 +581,10 @@ class AptitudeJdQuestionSetModel extends BaseModel
             if (!is_array($q)) {
                 continue;
             }
-            $questions[] = [
+            $row = [
                 'id' => (string) ($q['id'] ?? ''),
                 'prompt' => (string) ($q['prompt'] ?? ''),
                 'options' => array_values((array) ($q['options'] ?? [])),
-                'correctIndex' => (int) ($q['correctIndex'] ?? 0),
-                'explanation' => (string) ($q['explanation'] ?? ''),
                 'topic' => (string) ($q['topic'] ?? ''),
                 'difficulty' => (string) ($q['difficulty'] ?? 'Medium'),
                 'category' => (string) ($q['category'] ?? 'General Aptitude'),
@@ -675,10 +595,17 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 'section' => (string) ($q['section'] ?? ''),
                 'confidence' => isset($q['confidence']) ? (float) $q['confidence'] : null,
                 'containsImage' => !empty($q['containsImage']),
-                'answerKnown' => !empty($q['answerKnown']),
                 'directionsBlock' => (string) ($q['directionsBlock'] ?? ''),
                 'questionType' => (string) ($q['questionType'] ?? ''),
             ];
+            if (!$forStudent) {
+                $row['correctIndex'] = (int) ($q['correctIndex'] ?? 0);
+                $row['explanation'] = (string) ($q['explanation'] ?? '');
+                $row['answerKnown'] = !empty($q['answerKnown']);
+                $row['answerSource'] = (string) ($q['answerSource'] ?? '');
+                $row['aiAnalyzed'] = !empty($q['aiAnalyzed']);
+            }
+            $questions[] = $row;
         }
 
         $id = (string) ($row['_id'] ?? '');

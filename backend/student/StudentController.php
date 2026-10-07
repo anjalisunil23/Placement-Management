@@ -16,6 +16,7 @@ use PMS\Models\PlacementPolicySettingsModel;
 use PMS\Models\PolicyAcceptanceLogModel;
 use PMS\Models\ResumeModel;
 use PMS\Models\RecruitmentResultModel;
+use PMS\Models\StudentDetailsModel;
 use PMS\Models\StudentModel;
 use PMS\Services\OfficerDataService;
 use PMS\Services\PcaOfferLetterService;
@@ -44,6 +45,22 @@ final class StudentController
   public function __construct()
   {
     $this->studentModel = new StudentModel();
+  }
+
+  /**
+   * @param array<string, mixed> $profile
+   */
+  private function syncStudentDetailsRegistrationStatus(array $profile): void
+  {
+    try {
+      $admno = strtoupper(trim((string) ($profile['registerNumber'] ?? '')));
+      if ($admno === '') {
+        return;
+      }
+      (new StudentDetailsModel())->updateRegistrationStatusForAdmno($admno);
+    } catch (\Throwable) {
+      // Non-fatal: students table remains source for live policy checks.
+    }
   }
 
   private function getStudentProfile(array $user): array
@@ -664,6 +681,13 @@ final class StudentController
       error_log('policy_acceptance_logs insert failed: ' . $e->getMessage());
     }
 
+    $this->syncStudentDetailsRegistrationStatus(array_merge($profile, [
+      'placementPolicyAccepted'   => true,
+      'placementPolicyAcceptedAt' => $now,
+      'placementPolicyVersion'    => $version,
+      'placementRegistration'     => $registration,
+    ]));
+
     Response::success([
       'placementPolicyAccepted' => true,
       'placementPolicyVersion'  => $version,
@@ -731,6 +755,15 @@ final class StudentController
     } catch (\Throwable $e) {
       error_log('policy_acceptance_logs insert failed: ' . $e->getMessage());
     }
+
+    $this->syncStudentDetailsRegistrationStatus(array_merge($profile, [
+      'internshipPolicyAccepted'   => true,
+      'internshipPolicyAcceptedAt' => $now,
+      'internshipPolicyVersion'    => $version,
+      'policyAccepted'             => true,
+      'policyAcceptedAt'           => $now,
+      'policyVersion'              => $version,
+    ]));
 
     Response::success([
       'policyAccepted' => true,

@@ -1188,6 +1188,172 @@ final class OfficerDataService
     }
 
     /**
+     * Class-scoped AES roster via getStudInfo4Placement (batch label variants included).
+     *
+     * @param array<string, mixed> $ctx
+     * @param array<string, mixed>|null $dept
+     * @param array<string, array<string, mixed>> $localByKey
+     * @param 'studying'|'alumni'|'any' $roleMode
+     * @return list<array<string, mixed>>
+     */
+    private function listAesClassPlacementRoster(
+        array $ctx,
+        string $programme,
+        string $batch,
+        ?array $dept,
+        string $deptCode,
+        string $deptName,
+        string $deptAesId,
+        array $localByKey,
+        bool $matchCohort,
+        string $roleMode = 'studying'
+    ): array {
+        $deptAesId = trim($deptAesId);
+        $batch = trim($batch);
+        if ($deptAesId === '' || $batch === '') {
+            return [];
+        }
+
+        $records = (new AesApiService())->fetchClassStudInfo4Placement(
+            $deptAesId,
+            $programme,
+            $batch,
+            !empty($ctx['placementForceLiveAes'])
+        );
+        if ($records === []) {
+            return [];
+        }
+
+        $wantCohort = ClassInchargeRegistry::cohortKey($batch);
+        $rows = [];
+        $seen = [];
+
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $recordDept = strtoupper(trim((string) (
+                $record['stud_deptcode']
+                ?? $record['parentDepartmentCode']
+                ?? ''
+            )));
+            if ($recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
+                continue;
+            }
+
+            if ($roleMode === 'studying') {
+                if (!$this->isAesStudyingStudent($record)) {
+                    continue;
+                }
+            } elseif ($roleMode === 'alumni') {
+                $alumniRow = $this->recordQualifiesForAlumniTab($record)
+                    || $this->isAesAlumniDirectoryRecord($record);
+                if (!$alumniRow && $this->isAesStudyingStudent($record)) {
+                    continue;
+                }
+            }
+
+            $admno = strtoupper(trim((string) (
+                $record['admno']
+                ?? $record['stud_admno']
+                ?? ''
+            )));
+            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+            $local = null;
+            foreach ([$admno, $regNo] as $key) {
+                if ($key !== '' && isset($localByKey[$key])) {
+                    $local = $localByKey[$key];
+                    break;
+                }
+                $normKey = $this->normalizeStudentAdmnoKey($key);
+                if ($normKey !== '' && isset($localByKey[$normKey])) {
+                    $local = $localByKey[$normKey];
+                    break;
+                }
+            }
+
+            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
+            if ($row === null) {
+                continue;
+            }
+            $rowBatch = trim((string) ($row['classBatch'] ?? $record['stud_class'] ?? $record['classBatch'] ?? ''));
+            if (!$this->classBatchMatchesSelection($rowBatch, $batch, $matchCohort, $wantCohort)) {
+                continue;
+            }
+
+            $key = $this->normalizeStudentAdmnoKey((string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $rows[] = $row;
+        }
+
+        return $this->supplementAesClassRosterGaps(
+            $rows,
+            $seen,
+            $programme,
+            $batch,
+            $dept,
+            $deptCode,
+            $deptName,
+            $localByKey,
+            $matchCohort
+        );
+    }
+
+    /**
+     * Last-resort sync roster when role-specific filters drop every class API row.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<array<string, mixed>>
+     */
+    public function listAesClassStudentsFromClassApi(
+        array $ctx,
+        string $programme,
+        string $batch,
+        bool $matchCohort = false,
+        string $roleMode = 'any'
+    ): array {
+        $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
+        $batch = trim($batch);
+        if ($programme === '' || $batch === '') {
+            return [];
+        }
+
+        $campusWide = !empty($ctx['campusWide']) || (
+            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
+        );
+        if ($campusWide) {
+            return [];
+        }
+
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($ctx);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
+        $mode = in_array($roleMode, ['studying', 'alumni', 'any'], true) ? $roleMode : 'any';
+
+        return $this->listAesClassPlacementRoster(
+            $ctx,
+            $programme,
+            $batch,
+            $dept,
+            $deptCode,
+            $deptName,
+            $deptAesId,
+            $localByKey,
+            $matchCohort,
+            $mode
+        );
+    }
+
+    /**
      * Alumni class roster for Placements &amp; Higher Ed (passed-out AES rows).
      *
      * @param array<string, mixed> $ctx
@@ -1208,120 +1374,6 @@ final class OfficerDataService
         $campusWide = !empty($ctx['campusWide']) || (
             !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
         );
-        $deptAesId = $campusWide ? '' : (new PlacementFilterService())->resolveParentDeptAesId($ctx);
-        $records = $this->resolveAesRecordsForClassList(
-            $ctx,
-            $programme,
-            $batch,
-            $matchCohort,
-            $campusWide,
-            $deptAesId
-        );
-        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
-        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
-        $deptName = trim((string) ($dept['name'] ?? ''));
-        $localByKey = $this->indexLocalStudentsForClassRoster($ctx);
-        $wantCohort = ClassInchargeRegistry::cohortKey($batch);
-        $rows = [];
-        $seen = [];
-
-        foreach ($records as $record) {
-            $recordDept = strtoupper(trim((string) (
-                $record['stud_deptcode']
-                ?? $record['parentDepartmentCode']
-                ?? ''
-            )));
-            if ($deptAesId !== '' && $recordDept !== '' && $recordDept !== strtoupper($deptAesId)) {
-                continue;
-            }
-
-            $rowBatch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
-            $isAlumni = $this->recordQualifiesForAlumniTab($record);
-            if (!$isAlumni) {
-                if (!$matchCohort || !$this->classBatchMatchesSelection($rowBatch, $batch, true, $wantCohort)) {
-                    continue;
-                }
-            }
-
-            $admno = strtoupper(trim((string) (
-                $record['admno']
-                ?? $record['stud_admno']
-                ?? ''
-            )));
-            $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
-            if ($admno === '' && $regNo === '') {
-                continue;
-            }
-
-            $local = null;
-            foreach ([$admno, $regNo] as $key) {
-                if ($key !== '' && isset($localByKey[$key])) {
-                    $local = $localByKey[$key];
-                    break;
-                }
-                $normKey = $this->normalizeStudentAdmnoKey($key);
-                if ($normKey !== '' && isset($localByKey[$normKey])) {
-                    $local = $localByKey[$normKey];
-                    break;
-                }
-            }
-
-            $row = $this->mapAesDirectoryRecordToListRow($record, $local, $dept, $deptCode, $deptName);
-            if ($row === null) {
-                continue;
-            }
-            $rowBatch = trim((string) ($row['classBatch'] ?? $record['stud_class'] ?? ''));
-            if (!$this->classBatchMatchesSelection($rowBatch, $batch, $matchCohort, $wantCohort)) {
-                continue;
-            }
-            if (!$matchCohort) {
-                $rowProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode((string) (
-                    $row['stud_course'] ?? $row['programme'] ?? ''
-                ));
-                $wantProgramme = DepartmentProgrammeCatalog::resolveProgrammeCode($programme);
-                if ($wantProgramme !== '' && $rowProgramme !== '' && strcasecmp($rowProgramme, $wantProgramme) !== 0) {
-                    continue;
-                }
-            }
-
-            $key = $this->normalizeStudentAdmnoKey((string) ($row['admno'] ?? $row['registerNumber'] ?? ''));
-            if ($key === '' || isset($seen[$key])) {
-                continue;
-            }
-            $seen[$key] = true;
-            $rows[] = $row;
-        }
-
-        if ($rows === []) {
-            return $this->listAesAlumniClassStudentsFromDirectory($ctx, $programme, $batch, $matchCohort);
-        }
-
-        usort(
-            $rows,
-            static fn (array $a, array $b): int => strcasecmp(
-                (string) ($a['displayName'] ?? $a['registerNumber'] ?? ''),
-                (string) ($b['displayName'] ?? $b['registerNumber'] ?? '')
-            )
-        );
-
-        return $rows;
-    }
-
-    /**
-     * Fallback when class-scoped AES returns no rows (legacy path).
-     *
-     * @param array<string, mixed> $ctx
-     * @return array<int, array<string, mixed>>
-     */
-    private function listAesAlumniClassStudentsFromDirectory(
-        array $ctx,
-        string $programme,
-        string $batch,
-        bool $matchCohort
-    ): array {
-        $campusWide = !empty($ctx['campusWide']) || (
-            !empty($ctx['isAdmin']) && empty($ctx['staffScope']) && empty($ctx['departmentId'])
-        );
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : null;
         $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
         $deptName = trim((string) ($dept['name'] ?? ''));
@@ -1330,6 +1382,24 @@ final class OfficerDataService
         $wantCohort = ClassInchargeRegistry::cohortKey($batch);
         $rows = [];
         $seen = [];
+
+        if (!$campusWide && $deptAesId !== '' && $batch !== '') {
+            $fromClass = $this->listAesClassPlacementRoster(
+                $ctx,
+                $programme,
+                $batch,
+                $dept,
+                $deptCode,
+                $deptName,
+                $deptAesId,
+                $localByKey,
+                true,
+                'alumni'
+            );
+            if ($fromClass !== []) {
+                return $fromClass;
+            }
+        }
 
         foreach ($this->listAlumniDirectoryRecordsForScope($ctx) as $record) {
             if (!$this->recordQualifiesForAlumniTab($record)) {
@@ -2203,6 +2273,23 @@ final class OfficerDataService
      */
     public function getCampusStudyingDirectorySyncMeta(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $meta = $detailsModel->latestSyncMeta();
+            if (is_array($meta)) {
+                return [
+                    'syncedAt'            => $meta['syncedAt'] ?? null,
+                    'studentRecordCount'  => (int) ($meta['studentRecordCount'] ?? 0),
+                    'alumniRecordCount'   => (int) ($meta['alumniRecordCount'] ?? 0),
+                    'recordCount'         => (int) ($meta['recordCount'] ?? 0),
+                    'hasStudentSnapshot'  => ((int) ($meta['studentRecordCount'] ?? 0)) > 0,
+                    'hasAlumniSnapshot'   => ((int) ($meta['alumniRecordCount'] ?? 0)) > 0,
+                    'hasSnapshot'         => ((int) ($meta['recordCount'] ?? 0)) > 0,
+                    'source'              => 'student_details',
+                ];
+            }
+        }
+
         $payload = $this->readCampusDirectorySnapshotPayload();
         $students = $this->studyingRecordsFromCampusDirectoryPayload($payload);
         $alumni = $this->alumniRecordsFromCampusDirectoryPayload($payload);
@@ -2215,6 +2302,7 @@ final class OfficerDataService
             'hasStudentSnapshot'  => $students !== [],
             'hasAlumniSnapshot'   => $alumni !== [],
             'hasSnapshot'         => $students !== [] || $alumni !== [],
+            'source'              => 'legacy_snapshot',
         ];
     }
 
@@ -2226,19 +2314,139 @@ final class OfficerDataService
     public function syncCampusStudyingDirectoryFromAes(string $adminUserId): array
     {
         $this->boostMemoryForAesDirectoryLoad();
-        $students = $this->fetchLiveCampusStudyingDirectoryRecords();
-        $alumni = $this->fetchLiveCampusAlumniDirectoryRecords();
+        unset(self::$aesDirectoryCache['campus:studRoleStudent']);
+        self::$aesAlumniDirectoryCache = [];
+
+        $students = $this->fetchCompleteCampusRecordsForSync('student');
+        $alumni = $this->fetchCompleteCampusRecordsForSync('alumni');
         $syncedAt = DocumentHelper::now();
+
+        $syncSvc = new StudentDetailsSyncService();
+        $studentStats = $syncSvc->syncFromAesRecords($students, [
+            'syncSource' => 'admin_campus',
+            'studRole'   => 'student',
+        ]);
+        $alumniStats = $syncSvc->syncFromAesRecords($alumni, [
+            'syncSource' => 'admin_campus',
+            'studRole'   => 'alumni',
+        ]);
+        $merged = $syncSvc->mergeSyncStats([$studentStats, $alumniStats]);
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
+            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students);
+            $merged['alumniRoleReconcile'] = $detailsModel->reconcileAlumniWithoutExplicitAesRole();
+        }
+
+        // Legacy file snapshot kept for rollback/audit only.
         $this->writeCampusDirectorySnapshot($students, $alumni, $adminUserId, $syncedAt);
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
         self::$aesAlumniDirectoryCache = [];
 
+        $studentCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('student') : count($students);
+        $alumniCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('alumni') : count($alumni);
+
         return [
-            'syncedAt'           => $syncedAt,
-            'studentRecordCount' => count($students),
-            'alumniRecordCount'  => count($alumni),
-            'recordCount'        => count($students) + count($alumni),
+            'syncedAt'           => $merged['syncedAt'] ?? $syncedAt,
+            'studentRecordCount' => $studentCount,
+            'alumniRecordCount'  => $alumniCount,
+            'recordCount'        => $studentCount + $alumniCount,
+            'fetchedStudents'    => count($students),
+            'fetchedAlumni'      => count($alumni),
+            'fetched'            => (int) ($merged['fetched'] ?? 0),
+            'inserted'           => (int) ($merged['inserted'] ?? 0),
+            'updated'            => (int) ($merged['updated'] ?? 0),
+            'unchanged'          => (int) ($merged['unchanged'] ?? 0),
+            'failed'             => (int) ($merged['failed'] ?? 0),
+            'skipped'            => (int) ($merged['skipped'] ?? 0),
+            'durationMs'         => (int) ($merged['durationMs'] ?? 0),
+            'source'             => 'student_details',
         ];
+    }
+
+    /**
+     * Campus-wide AES master fetch for Sync from AES — full records, all departments merged.
+     *
+     * @param 'student'|'alumni' $syncStudRole
+     * @return list<array<string, mixed>>
+     */
+    private function fetchCompleteCampusRecordsForSync(string $syncStudRole): array
+    {
+        $api = new AesApiService();
+        $roleValues = $syncStudRole === 'alumni'
+            ? $this->aesAlumniStudRoleParamValues()
+            : $this->aesStudyingStudRoleParamValues();
+
+        $merged = [];
+        $seen = [];
+        $appendBatch = function (array $records) use (&$merged, &$seen, $syncStudRole): void {
+            foreach ($records as $record) {
+                if (!is_array($record) || !$this->recordQualifiesForSyncPass($record, $syncStudRole)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) (
+                    $record['admno']
+                    ?? $record['stud_admno']
+                    ?? $record['registerNumber']
+                    ?? $record['registerno']
+                    ?? ''
+                )));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $merged[] = $record;
+            }
+        };
+
+        $fetchParams = function (array $baseParams) use ($api, $roleValues, $appendBatch): void {
+            foreach ($roleValues as $role) {
+                try {
+                    $batch = $api->fetchAllStudInfo4Placement(
+                        array_merge($baseParams, ['stud_role' => $role]),
+                        false,
+                        false
+                    );
+                    if ($batch !== []) {
+                        $appendBatch($batch);
+                    }
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+            if ($roleValues === []) {
+                try {
+                    $appendBatch($api->fetchAllStudInfo4Placement($baseParams, false, false));
+                } catch (\Throwable) {
+                    // ignore
+                }
+            }
+        };
+
+        $fetchParams([]);
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            $fetchParams(['stud_deptcode' => $aesId]);
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param 'student'|'alumni' $syncStudRole
+     */
+    private function recordQualifiesForSyncPass(array $record, string $syncStudRole): bool
+    {
+        if ($syncStudRole === 'alumni') {
+            return $this->recordQualifiesForAlumniTab($record);
+        }
+
+        $role = AesApiService::normalizeStudRole($record);
+        if ($role === 'alumni') {
+            return false;
+        }
+
+        return $this->isAesStudyingStudent($record);
     }
 
     /**
@@ -2305,10 +2513,104 @@ final class OfficerDataService
 
         $rows = array_values(array_filter(
             $rows,
-            static fn (array $row): bool => AesApiService::normalizeStudRole($row) !== 'alumni'
+            fn (array $row): bool => $this->rowQualifiesForFinalYearStudentsTab($row)
         ));
+        foreach ($rows as &$row) {
+            $row = $this->enrichFinalYearStudentsTabRow($row);
+        }
+        unset($row);
 
         return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function enrichFinalYearStudentsTabRow(array $row): array
+    {
+        $role = $this->resolveRowStudRole($row);
+        if ($role === 'student') {
+            $row['studRole'] = 'student';
+            $row['stud_role'] = 'Student';
+        }
+        if (!isset($row['registrationStatus']) || $row['registrationStatus'] === '') {
+            $row['registrationStatus'] = !empty($row['policyAccepted']) ? 'registered' : 'non_registered';
+        }
+        if (!array_key_exists('policyAccepted', $row)) {
+            $row['policyAccepted'] = ($row['registrationStatus'] ?? '') === 'registered';
+        }
+
+        return $row;
+    }
+
+    /**
+     * Registered / Non-Registered tabs: AES stud_role = student only (never alumni).
+     *
+     * @param array<string, mixed> $row
+     */
+    private function rowQualifiesForFinalYearStudentsTab(array $row): bool
+    {
+        return $this->resolveRowStudRole($row) === 'student';
+    }
+
+    /**
+     * Resolve AES student vs alumni for Students page tabs.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function resolveRowStudRole(array $row): ?string
+    {
+        $role = AesApiService::normalizeStudRole($row);
+        if ($role !== null) {
+            return $role;
+        }
+
+        $admno = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+        if ($admno === '') {
+            return null;
+        }
+        if (isset($this->alumniAdmnoIndex()[$admno])) {
+            return 'alumni';
+        }
+
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $doc = $detailsModel->findByAesAdmno($admno);
+            if (is_array($doc)) {
+                $storedRole = AesApiService::normalizeStudRole($doc);
+
+                return $storedRole ?? (string) ($doc['studRole'] ?? 'student');
+            }
+        }
+
+        return 'student';
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function alumniAdmnoIndex(): array
+    {
+        static $cache = null;
+        if (is_array($cache)) {
+            return $cache;
+        }
+
+        $cache = [];
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if (!$detailsModel->isAvailable()) {
+            return $cache;
+        }
+
+        foreach ($detailsModel->listDirectoryRecords('', true, 'alumni', \PMS\Models\StudentDetailsModel::LIST_MAX) as $record) {
+            $key = strtoupper(trim((string) ($record['admno'] ?? $record['stud_admno'] ?? '')));
+            if ($key !== '') {
+                $cache[$key] = true;
+            }
+        }
+
+        return $cache;
     }
 
     /**
@@ -2392,6 +2694,9 @@ final class OfficerDataService
 
             $admno = strtoupper(trim((string) ($student['registerNumber'] ?? '')));
             if ($admno === '' || !preg_match('/^[A-Z0-9]{4,20}$/', $admno)) {
+                continue;
+            }
+            if (isset($this->alumniAdmnoIndex()[$admno])) {
                 continue;
             }
             $userId = (string) ($student['userId'] ?? '');
@@ -2591,9 +2896,19 @@ final class OfficerDataService
             $aesRow['id'] = $localRow['id'] ?? $localRow['_id'];
             unset($aesRow['aesOnly'], $aesRow['isNew']);
         }
-        if (!empty($localRow['policyAccepted'])) {
-            $aesRow['policyAccepted'] = true;
-            $aesRow['policyAcceptedAt'] = $localRow['policyAcceptedAt'] ?? ($aesRow['policyAcceptedAt'] ?? '');
+        $policyModel = new PlacementPolicySettingsModel();
+        if (is_array($localRow) && $localRow !== []) {
+            $registration = $policyModel->registrationState($localRow);
+            $aesRow['policyAccepted'] = !empty($registration['policyAccepted']);
+            $aesRow['placementPolicyAccepted'] = !empty($registration['placementPolicyAccepted']);
+            $aesRow['internshipPolicyAccepted'] = !empty($registration['internshipPolicyAccepted']);
+            $aesRow['policyRegistrationRequired'] = !empty($registration['policyRegistrationRequired']);
+            $aesRow['registrationStatus'] = !empty($registration['policyAccepted'])
+                ? 'registered'
+                : 'non_registered';
+            if (!empty($localRow['policyAcceptedAt'])) {
+                $aesRow['policyAcceptedAt'] = $localRow['policyAcceptedAt'];
+            }
         }
         // Keep local self-placement pending/approved state on AES-merged directory rows.
         if (!empty($localRow['selfPlacement']) && is_array($localRow['selfPlacement'])) {
@@ -2838,6 +3153,17 @@ final class OfficerDataService
             )
         );
 
+        $rows = array_values(array_filter(
+            $rows,
+            static fn (array $row): bool => AesApiService::normalizeStudRole($row) === 'alumni'
+        ));
+        foreach ($rows as &$row) {
+            $row['studRole'] = 'alumni';
+            $row['stud_role'] = 'Alumni';
+            unset($row['registrationStatus'], $row['policyAccepted']);
+        }
+        unset($row);
+
         return $rows;
     }
 
@@ -2900,6 +3226,21 @@ final class OfficerDataService
             return self::$aesDirectoryCache[$cacheKey];
         }
 
+        if (!$forceLive && !($liveRegistry && $forceLive)) {
+            $detailsModel = new \PMS\Models\StudentDetailsModel();
+            if ($detailsModel->isAvailable()) {
+                $local = $detailsModel->listDirectoryRecords(
+                    $deptAesId,
+                    $campusWide,
+                    'student',
+                    \PMS\Models\StudentDetailsModel::LIST_MAX
+                );
+                if ($local !== []) {
+                    return self::$aesDirectoryCache[$cacheKey] = $local;
+                }
+            }
+        }
+
         if ($campusWide) {
             $records = ($liveRegistry || $forceLive)
                 ? $this->fetchLiveCampusStudyingDirectoryRecords()
@@ -2950,18 +3291,10 @@ final class OfficerDataService
             } catch (\Throwable) {
                 continue;
             }
-            if ($merged !== []) {
-                break;
-            }
         }
 
-        if ($merged === []) {
-            foreach ($this->campusParentDeptAesIds() as $aesId) {
-                $append($this->fetchAesStudyingDirectoryRecords($api, ['stud_deptcode' => $aesId]));
-                if ($merged !== []) {
-                    break;
-                }
-            }
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            $append($this->fetchAesStudyingDirectoryRecords($api, ['stud_deptcode' => $aesId]));
         }
 
         return $merged;
@@ -2972,11 +3305,27 @@ final class OfficerDataService
      */
     private function readCampusStudyingDirectorySnapshotRecords(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $rows = $detailsModel->listDirectoryRecords('', true, 'student', \PMS\Models\StudentDetailsModel::LIST_MAX);
+            if ($rows !== []) {
+                return $rows;
+            }
+        }
+
         return $this->studyingRecordsFromCampusDirectoryPayload($this->readCampusDirectorySnapshotPayload());
     }
 
     private function readCampusAlumniDirectorySnapshotRecords(): array
     {
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $rows = $detailsModel->listDirectoryRecords('', true, 'alumni', \PMS\Models\StudentDetailsModel::LIST_MAX);
+            if ($rows !== []) {
+                return $rows;
+            }
+        }
+
         return $this->alumniRecordsFromCampusDirectoryPayload($this->readCampusDirectorySnapshotPayload());
     }
 
@@ -3117,13 +3466,8 @@ final class OfficerDataService
         };
 
         $fetchWithRole([]);
-        if ($merged === []) {
-            foreach ($this->campusParentDeptAesIds() as $aesId) {
-                $fetchWithRole(['stud_deptcode' => $aesId]);
-                if ($merged !== []) {
-                    break;
-                }
-            }
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            $fetchWithRole(['stud_deptcode' => $aesId]);
         }
 
         return $merged;
@@ -3135,27 +3479,43 @@ final class OfficerDataService
      */
     private function fetchAesStudyingDirectoryRecords(AesApiService $api, array $baseParams): array
     {
+        $merged = [];
+        $seen = [];
+        $append = function (array $records) use (&$merged, &$seen): void {
+            foreach ($this->filterAesStudyingDirectoryRecords($records) as $record) {
+                $key = strtoupper(trim((string) (
+                    $record['admno']
+                    ?? $record['stud_admno']
+                    ?? $record['registerNumber']
+                    ?? $record['registerno']
+                    ?? ''
+                )));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $merged[] = $record;
+            }
+        };
+
         foreach ($this->aesStudyingStudRoleParamValues() as $role) {
             try {
-                $records = $api->fetchAllStudInfo4Placement(
+                $append($api->fetchAllStudInfo4Placement(
                     array_merge($baseParams, ['stud_role' => $role]),
                     true
-                );
-                if ($records !== []) {
-                    return $this->filterAesStudyingDirectoryRecords($records);
-                }
+                ));
             } catch (\Throwable) {
                 continue;
             }
         }
 
         try {
-            $records = $api->fetchAllStudInfo4Placement($baseParams, true);
-
-            return $this->filterAesStudyingDirectoryRecords($records);
+            $append($api->fetchAllStudInfo4Placement($baseParams, true));
         } catch (\Throwable) {
-            return [];
+            // ignore
         }
+
+        return $merged;
     }
 
     /**
@@ -3265,28 +3625,37 @@ final class OfficerDataService
         $roles = $this->aesAlumniStudRoleParamValues();
 
         $fetchWithRole = function (array $baseParams) use ($api, $roles): array {
+            $merged = [];
+            $seen = [];
             foreach ($roles as $role) {
                 try {
                     $records = $api->fetchAllStudInfo4Placement(
                         array_merge($baseParams, ['stud_role' => $role]),
                         true
                     );
-                    if ($records === []) {
-                        continue;
-                    }
-                    $filtered = array_values(array_filter(
-                        $records,
-                        fn (array $row): bool => $this->recordQualifiesForAlumniTab($row)
-                    ));
-                    if ($filtered !== []) {
-                        return $filtered;
+                    foreach ($records as $record) {
+                        if (!is_array($record) || !$this->recordQualifiesForAlumniTab($record)) {
+                            continue;
+                        }
+                        $key = strtoupper(trim((string) (
+                            $record['admno']
+                            ?? $record['stud_admno']
+                            ?? $record['registerNumber']
+                            ?? $record['registerno']
+                            ?? ''
+                        )));
+                        if ($key === '' || isset($seen[$key])) {
+                            continue;
+                        }
+                        $seen[$key] = true;
+                        $merged[] = $record;
                     }
                 } catch (\Throwable) {
                     continue;
                 }
             }
 
-            return [];
+            return $merged;
         };
 
         if (!$campusWide) {
@@ -3455,39 +3824,7 @@ final class OfficerDataService
      */
     private function isAesAlumniDirectoryRecord(array $record): bool
     {
-        $role = AesApiService::normalizeStudRole($record);
-        if ($role === 'alumni') {
-            return true;
-        }
-        if ($role === 'student') {
-            return false;
-        }
-
-        $blob = strtolower(trim(implode(' ', array_filter([
-            (string) ($record['stud_status'] ?? ''),
-            (string) ($record['status'] ?? ''),
-            (string) ($record['student_status'] ?? ''),
-            (string) ($record['stud_type'] ?? ''),
-            (string) ($record['category'] ?? ''),
-            (string) ($record['stud_class'] ?? ''),
-            (string) ($record['classBatch'] ?? ''),
-        ]))));
-
-        if ($blob !== '' && preg_match('/\b(faculty|staff|employee|transferred)\b/', $blob) === 1) {
-            return false;
-        }
-
-        if ($blob !== '' && preg_match('/\b(alumni|alumnus|passed\s*out|passout|graduated)\b/', $blob) === 1) {
-            return true;
-        }
-
-        $batch = strtoupper(trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')));
-        if ($batch !== '' && preg_match('/\b(ALUMNI|PASS\s*OUT|PASSOUT|GRADUATED)\b/', $batch) === 1) {
-            return true;
-        }
-
-        return $blob !== ''
-            && preg_match('/\b(left|dropout|discontinued)\b/', $blob) !== 1;
+        return AesApiService::qualifiesAsAlumniRecord($record);
     }
 
     /**
@@ -3856,19 +4193,9 @@ final class OfficerDataService
         if ($semester !== '') {
             $row['semester'] = $semester;
         }
-        $record = (new AesApiService())->applyStudInfoContactAliases($record);
         $row['collegeEmail'] = trim((string) ($record['collegeEmail'] ?? $record['stud_ajce_mails'] ?? $row['collegeEmail'] ?? ''));
         $row['personalEmail'] = trim((string) ($record['personalEmail'] ?? $record['stud_personal_mails'] ?? $row['personalEmail'] ?? ''));
         $row['phone'] = trim((string) ($record['phone'] ?? $record['stud_mobiles'] ?? $row['phone'] ?? ''));
-        $row['email'] = trim((string) (
-            $row['email']
-            ?? $row['collegeEmail']
-            ?? $row['personalEmail']
-            ?? ''
-        ));
-        if ($name !== '') {
-            $row['studentName'] = $name;
-        }
         if ($photoUrl !== '' && filter_var($photoUrl, FILTER_VALIDATE_URL)) {
             $row['photoUrl'] = $photoUrl;
             $row['photo'] = ['url' => $photoUrl, 'source' => 'aes'];
@@ -3955,6 +4282,36 @@ final class OfficerDataService
             $row['user'] = $userOut;
         }
 
+        $policyModel = new PlacementPolicySettingsModel();
+        if (is_array($local) && $local !== []) {
+            $registration = $policyModel->registrationState($local);
+            $row['policyAccepted'] = !empty($registration['policyAccepted']);
+            $row['placementPolicyAccepted'] = !empty($registration['placementPolicyAccepted']);
+            $row['internshipPolicyAccepted'] = !empty($registration['internshipPolicyAccepted']);
+            $row['policyRegistrationRequired'] = !empty($registration['policyRegistrationRequired']);
+            $row['registrationStatus'] = !empty($registration['policyAccepted'])
+                ? 'registered'
+                : 'non_registered';
+            if (!empty($local['policyAcceptedAt'])) {
+                $row['policyAcceptedAt'] = (string) $local['policyAcceptedAt'];
+            }
+        } elseif ($studRole !== 'alumni') {
+            $regStatus = trim((string) ($record['registrationStatus'] ?? ''));
+            if ($regStatus !== 'registered' && $regStatus !== 'non_registered') {
+                $detailsModel = new \PMS\Models\StudentDetailsModel();
+                if ($detailsModel->isAvailable()) {
+                    $doc = $detailsModel->findByAesAdmno($admno);
+                    if (is_array($doc)) {
+                        $regStatus = trim((string) ($doc['registrationStatus'] ?? ''));
+                    }
+                }
+            }
+            if ($regStatus === 'registered' || $regStatus === 'non_registered') {
+                $row['registrationStatus'] = $regStatus;
+                $row['policyAccepted'] = $regStatus === 'registered';
+            }
+        }
+
         $self = is_array($row['selfPlacement'] ?? null) ? $row['selfPlacement'] : null;
         if ($self !== null && empty($row['placed']) && (string) ($self['status'] ?? '') === 'pending') {
             $row['placementStatus'] = 'pending_placement';
@@ -3962,10 +4319,17 @@ final class OfficerDataService
             $row['placementStatus'] = 'placed';
         }
 
-        $fromDirectory = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord($record);
+        $fromDirectory = (new AesApiService())->placementFieldsFromStudInfoDirectoryRecord(array_merge($record, $row));
         if ($fromDirectory !== []) {
             $existing = is_array($row['placement'] ?? null) ? $row['placement'] : [];
             $row['placement'] = array_merge($existing, $fromDirectory);
+            if (trim((string) ($row['phone'] ?? '')) === '' && trim((string) ($fromDirectory['phone'] ?? '')) !== '') {
+                $row['phone'] = (string) $fromDirectory['phone'];
+            }
+            if (trim((string) ($row['collegeEmail'] ?? '')) === '' && trim((string) ($fromDirectory['email'] ?? '')) !== '') {
+                $row['collegeEmail'] = (string) $fromDirectory['email'];
+                $row['email'] = (string) $fromDirectory['email'];
+            }
             $row['placed'] = trim((string) ($row['placement']['company'] ?? '')) !== '';
         }
 

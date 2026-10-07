@@ -54,12 +54,12 @@
 
 <div class="tab-content">
   <div class="tab-pane fade show active" id="tabCreate" role="tabpanel" aria-labelledby="tabCreateBtn">
-    <div class="card-surface p-3 p-md-4 mb-3">
+<div class="card-surface p-3 p-md-4 mb-3">
       <label class="form-label small fw-semibold" for="courseSearch">Course code</label>
       <div class="d-flex gap-2">
         <input class="form-control" id="courseSearch" type="search" placeholder="Type at least 3 letters, for example 26M" autocomplete="off" />
         <button type="button" class="btn btn-primary flex-shrink-0" id="btnGet">Get</button>
-      </div>
+    </div>
       <div class="border rounded mt-2 d-none" id="courseResults" style="max-height:16rem;overflow:auto"></div>
       <div class="form-text" id="deptLabel">Type at least 3 letters of a course code.</div>
     </div>
@@ -162,7 +162,7 @@
         <div class="d-flex flex-wrap gap-2">
           <button type="button" class="btn btn-outline-secondary d-none" id="btnRetryBatch">
             <i class="bi bi-arrow-clockwise me-1"></i>Retry this batch
-          </button>
+  </button>
           <button type="button" class="btn btn-outline-primary d-none" id="btnNextBatch">
             <i class="bi bi-arrow-right me-1"></i>Next batch
           </button>
@@ -362,7 +362,7 @@ async function getSelectedCourse() {
     document.getElementById('practicePanel').innerHTML = '';
     document.getElementById('genStatus').textContent = '';
     clearMcqView();
-    renderSyllabus();
+  renderSyllabus();
     loadBank();
     if (loaded?.semsubId) {
       prepareSyllabusForAi(loaded).then((data) => {
@@ -456,7 +456,7 @@ function renderQuestionCard(q, i, selectable) {
           <div>
             <label class="fw-semibold mb-0" ${selectable ? `for="draftQ${draftIndex}"` : ''}>Q${i + 1}. ${esc(q.question)}</label>
             ${dupMsg}
-          </div>
+    </div>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center">
           ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
@@ -533,18 +533,18 @@ function renderMcqReviewQuestion(q, i) {
     const right = idx === q.correctIndex ? ' <span class="badge-soft success">Answer</span>' : '';
     return `<li class="${mark} mb-1">${esc(opt)}${right}</li>`;
   }).join('');
-  return `
-    <article class="card-surface p-3 p-md-4 mb-3">
-      <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
-        <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
+      return `
+        <article class="card-surface p-3 p-md-4 mb-3">
+          <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+            <div class="fw-semibold">Q${i + 1}. ${esc(q.question)}</div>
         <div class="d-flex flex-wrap gap-2">
-          ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
+            ${q.module ? `<span class="badge-soft info">${esc(q.module)}</span>` : ''}
           ${q.difficulty ? `<span class="badge-soft info">${esc(q.difficulty)}</span>` : ''}
-        </div>
+          </div>
       </div>
       <ol class="mb-2 ps-3" type="A">${options}</ol>
       ${description ? `<div class="small"><span class="fw-semibold">Description:</span> <span class="text-muted-2">${esc(description)}</span></div>` : ''}
-    </article>`;
+        </article>`;
 }
 
 function renderMcqReview(payload) {
@@ -1765,10 +1765,10 @@ async function postDifficultyBatchRequest(planIndex, { retry = false, continueFi
   const difficulty = entry?.difficulty || '';
   const questionCount = Number(entry?.count || 0);
   return api('/staff/courses/questions/batch', {
-    method: 'POST',
-    body: JSON.stringify({
+      method: 'POST',
+      body: JSON.stringify({
       difficultyBatchMode: true,
-      courseCode: course.code,
+        courseCode: course.code,
       courseTitle: course.title || '',
       semsubId: course.semsubId || '',
       encid: course.encid || '',
@@ -1780,8 +1780,8 @@ async function postDifficultyBatchRequest(planIndex, { retry = false, continueFi
       progressKey,
       retryDifficultyBatch: retry || undefined,
       continueDifficultyBatch: continueFill || undefined,
-    }),
-  });
+      }),
+    });
 }
 
 async function runDifficultyBatch(planIndex, retry = false) {
@@ -1837,7 +1837,7 @@ async function runDifficultyBatch(planIndex, retry = false) {
         continueFill: isContinue,
         retry: retry && sliceAttempt === 1 && !isContinue,
       });
-    } catch (err) {
+  } catch (err) {
       stopSliceWaitProgress();
       if (sliceAttempt === 1 && !isContinue) {
         staffBatchGenStatus = 'error';
@@ -2196,7 +2196,7 @@ document.getElementById('courseSearch').addEventListener('input', () => {
     document.getElementById('practicePanel').innerHTML = '';
     document.getElementById('genStatus').textContent = '';
     if (mcqView) clearMcqView();
-    renderSyllabus();
+  renderSyllabus();
   }
   window.clearTimeout(searchTimer);
   searchTimer = window.setTimeout(searchCourses, 550);

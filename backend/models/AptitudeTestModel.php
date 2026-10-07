@@ -71,8 +71,19 @@ class AptitudeTestModel extends BaseModel
         if (self::normalizeTestKind((string) ($test['testKind'] ?? '')) === 'company') {
             return true;
         }
+        if (trim((string) ($test['companyId'] ?? '')) !== '') {
+            return true;
+        }
+        if (self::normalizeQuestionSource((string) ($test['questionSource'] ?? '')) === 'random_jd') {
+            return true;
+        }
+        foreach ((array) ($test['jdFilterRules'] ?? []) as $rule) {
+            if (is_array($rule) && trim((string) ($rule['jdSetId'] ?? '')) !== '') {
+                return true;
+            }
+        }
 
-        return trim((string) ($test['companyId'] ?? '')) !== '';
+        return false;
     }
 
     /**
@@ -539,7 +550,12 @@ class AptitudeTestModel extends BaseModel
             $id = 'q' . ($index + 1);
         }
 
-        return [
+        $questionType = trim((string) ($q['questionType'] ?? ''));
+        if ($questionType === 'STATEMENTS_CONCLUSIONS') {
+            $prompt = \PMS\Services\AptitudeManualQuestionParser::formatStatementsConclusionsPrompt($prompt);
+        }
+
+        $row = [
             'id' => $id,
             'type' => 'mcq',
             'prompt' => $prompt,
@@ -553,6 +569,11 @@ class AptitudeTestModel extends BaseModel
             'category' => self::normalizeCategory((string) ($q['category'] ?? $fallbackCategory)),
             'difficulty' => self::normalizeDifficulty((string) ($q['difficulty'] ?? 'Medium')),
         ];
+        if ($questionType !== '') {
+            $row['questionType'] = $questionType;
+        }
+
+        return $row;
     }
 
     public static function sanitizeOptionText(string $value): string
@@ -643,6 +664,13 @@ class AptitudeTestModel extends BaseModel
             $last = (string) end($matches[1]);
 
             return (float) str_replace(',', '', $last);
+        }
+        if (preg_match(
+            '/\bis\s+(?:about\s+|approximately\s+|equal\s+to\s+)?([\d,]+(?:\.\d+)?)\s*(?:%|percent\b)/iu',
+            $explanation,
+            $pctMatch
+        ) === 1) {
+            return (float) str_replace(',', '', (string) ($pctMatch[1] ?? ''));
         }
 
         return null;
@@ -792,6 +820,15 @@ class AptitudeTestModel extends BaseModel
     {
         $numeric = self::parseOptionNumeric($optNorm);
         if ($numeric !== null) {
+            if (str_contains($optNorm, '%')) {
+                $numStr = abs($numeric - round($numeric)) < 0.001
+                    ? (string) (int) round($numeric)
+                    : rtrim(rtrim(number_format($numeric, 2, '.', ''), '0'), '.');
+                $pctPattern = '/(?<!\d)' . preg_quote($numStr, '/') . '\s*(?:%|percent\b)/iu';
+
+                return @preg_match($pctPattern, $explanationNorm) === 1;
+            }
+
             $formatted = self::formatNumericLikeOptions($numeric, [$optNorm]);
             $candidates = array_unique(array_filter([
                 strtolower(trim($optNorm)),
@@ -1147,6 +1184,9 @@ class AptitudeTestModel extends BaseModel
                 'marks' => $norm['marks'],
                 'category' => $norm['category'],
             ];
+            if (!empty($norm['questionType'])) {
+                $row['questionType'] = (string) $norm['questionType'];
+            }
             if ($includeAnswers) {
                 $row['correctIndex'] = $norm['correctIndex'];
                 $row['explanation'] = $norm['explanation'];

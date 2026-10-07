@@ -328,12 +328,15 @@ final class AptitudeController
         Response::success(null, 'JD question set deleted.');
     }
 
-    /** PATCH /api/aptitude/jd-sets/{id}/questions/{questionId} */
-    public function updateJdSetQuestion(string $id, string $questionId): void
+    /** POST /api/aptitude/jd-sets/{id}/publish-mock — body: questionCount, durationMinutes, negativeMarking?, negativeMarks? */
+    public function publishLocalBankMock(string $id): void
     {
         $user = AuthMiddleware::authenticate();
-        $detail = $this->service->updateJdQuestionSetQuestion($user, $id, $questionId, $this->body());
-        Response::success($detail, 'Question updated.');
+        $body = json_decode((string) file_get_contents('php://input'), true) ?: [];
+        Response::success(
+            $this->service->publishLocalBankMock($user, $id, is_array($body) ? $body : []),
+            'Company mock test published.'
+        );
     }
 
     /** GET /api/aptitude/student/jd-block */

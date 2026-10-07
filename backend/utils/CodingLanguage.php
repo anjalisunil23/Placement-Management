@@ -50,6 +50,22 @@ final class CodingLanguage
     }
 
     /**
+     * Canonical display label when the language is supported, otherwise null.
+     */
+    public static function supportedLabel(string $language): ?string
+    {
+        $key = self::normalizeKey($language);
+
+        return $key !== null ? (self::LABELS[$key] ?? null) : null;
+    }
+
+    /** @return list<string> */
+    public static function supportedLabels(): array
+    {
+        return array_values(self::LABELS);
+    }
+
+    /**
      * When the client sends Python but the source is clearly C/C++, route to the C++ compiler.
      *
      * @return array{label:string,key:string,requested:string,override:bool}

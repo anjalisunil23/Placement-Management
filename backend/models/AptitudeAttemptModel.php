@@ -140,6 +140,16 @@ class AptitudeAttemptModel extends BaseModel
         );
     }
 
+    public function deleteForTest(string $testId): int
+    {
+        $testOid = Security::toObjectId($testId);
+        if ($testOid === null) {
+            return 0;
+        }
+
+        return $this->deleteMany(['testId' => $testOid]);
+    }
+
     /**
      * @param array<string, mixed> $filter
      * @return array<int, array<string, mixed>>

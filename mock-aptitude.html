@@ -116,7 +116,7 @@
               <ul class="nav nav-pills gap-1 flex-wrap mb-0" id="studentJdBlockViewNav">
                 <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-jd-block-view="tests">Tests</a></li>
                 <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-jd-block-view="bank">Question bank</a></li>
-                <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-jd-block-view="local">Local bank</a></li>
+                <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-jd-block-view="mock">Company mock test</a></li>
               </ul>
               <button type="button" class="btn btn-sm btn-outline-secondary" id="btnStudentJdBlockBack"><i class="bi bi-arrow-left me-1"></i>All companies</button>
             </div>
@@ -605,6 +605,51 @@
   <div class="modal-footer">
     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
     <button type="button" class="btn btn-primary" id="btnAptManualJdSave"><i class="bi bi-save me-1"></i>Save</button>
+  </div>
+</div></div></div>
+
+<!-- Publish local bank as company mock test -->
+<div class="modal fade" id="aptPublishMockModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title fw-bold">Publish company mock test</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <input type="hidden" id="aptPublishMockSetId" value=""/>
+    <p class="small text-muted-2 mb-3" id="aptPublishMockIntro">Students will see a shuffled random subset from this local bank each time they start the mock test.</p>
+    <div class="mb-3">
+      <div class="fw-semibold" id="aptPublishMockTitle">—</div>
+      <div class="small text-muted-2" id="aptPublishMockPool">—</div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label small fw-semibold" for="aptPublishMockCount">Questions per attempt</label>
+      <input class="form-control" type="number" id="aptPublishMockCount" min="1" value="10"/>
+    </div>
+    <div class="mb-3">
+      <label class="form-label small fw-semibold" for="aptPublishMockDuration">Duration (minutes)</label>
+      <input class="form-control" type="number" id="aptPublishMockDuration" min="1" max="300" value="30"/>
+    </div>
+    <div class="mb-3">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="aptPublishMockNegative"/>
+        <label class="form-check-label" for="aptPublishMockNegative">Negative marking for wrong answers</label>
+      </div>
+      <div class="d-none mt-2" id="aptPublishMockNegativeWrap">
+        <label class="form-label small fw-semibold" for="aptPublishMockNegativeMarks">Marks deducted per wrong answer</label>
+        <input class="form-control" type="number" id="aptPublishMockNegativeMarks" min="0.01" max="10" step="0.01" value="0.25"/>
+        <div class="form-text">Example: 0.25 means −0.25 marks for each incorrect option.</div>
+      </div>
+    </div>
+    <div class="d-none border-top pt-3" id="aptPublishMockShareWrap">
+      <label class="form-label small fw-semibold mb-1" for="aptPublishMockShareUrl">Student share link</label>
+      <div class="input-group input-group-sm">
+        <input type="text" class="form-control font-monospace small" id="aptPublishMockShareUrl" readonly aria-label="Student mock test share link"/>
+        <button type="button" class="btn btn-outline-primary" id="btnAptPublishMockCopyLink"><i class="bi bi-clipboard me-1"></i>Copy</button>
+      </div>
+      <p class="small text-muted-2 mb-0 mt-2">Share this link so students can open the mock test directly.</p>
+    </div>
+  </div>
+  <div class="modal-footer">
+    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+    <button type="button" class="btn btn-outline-primary d-none" id="btnAptPublishMockDone" data-bs-dismiss="modal">Done</button>
+    <button type="button" class="btn btn-primary" id="btnAptPublishMockConfirm"><i class="bi bi-megaphone me-1"></i>Publish</button>
   </div>
 </div></div></div>
 

@@ -202,7 +202,48 @@
     if (boot?.meta) meta = { ...meta, ...boot.meta };
     if (boot?.myProgress) myProgress = boot.myProgress;
     const cachedTests = readSessionCache(APT_TESTS_CACHE_KEY);
-    if (Array.isArray(cachedTests) && cachedTests.length) tests = cachedTests;
+    // Students always fetch fresh tests so admin deletes are not shown from cache.
+    if (access.canManage && Array.isArray(cachedTests) && cachedTests.length) {
+      tests = cachedTests;
+    }
+  }
+
+  function removeTestFromClientState(id) {
+    const sid = String(id || '');
+    if (!sid) return;
+    tests = tests.filter((t) => String(t.id) !== sid);
+    writeSessionCache(APT_TESTS_CACHE_KEY, tests);
+  }
+
+  function testIdsLinkedToJdSet(setId) {
+    const sid = String(setId || '');
+    if (!sid) return [];
+    return tests
+      .filter((t) => primaryJdSetIdForTest(t) === sid)
+      .map((t) => String(t.id || ''))
+      .filter(Boolean);
+  }
+
+  function purgeDemoTestsLinkedToJdSet(setId) {
+    const sid = String(setId || '');
+    if (!sid) return;
+    saveDemoTestsStore(loadDemoTestsStore().filter((t) => primaryJdSetIdForTest(t) !== sid));
+  }
+
+  async function refreshAfterJdLinkedTestsRemoved() {
+    await loadTests({ force: true });
+    refreshTakeUiAfterTestsChange();
+  }
+
+  function refreshTakeUiAfterTestsChange() {
+    renderTestList();
+    if (access.canManage) renderManage();
+    if (!access.canTake) return;
+    if (studentJdSelectedCompanyId) {
+      showStudentJdCompanyDetail(studentJdSelectedCompanyId);
+    } else if (takeListPanel === 'company') {
+      renderStudentJdBlock();
+    }
   }
 
   function paintCachedTakeUi() {
@@ -444,10 +485,12 @@
   let studentJdSelectedCompanyId = null;
   let studentJdBlockView = 'tests';
   let adminJdBlockView = 'tests';
-  const JD_BLOCK_VIEWS = ['tests', 'bank', 'local'];
+  const ADMIN_JD_BLOCK_VIEWS = ['tests', 'bank', 'local'];
+  const STUDENT_JD_BLOCK_VIEWS = ['tests', 'bank', 'mock'];
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aptJdManualModal;
+  let aptPublishMockModal;
   let manualJdUploadBusy = false;
   let aiPreviewQuestions = [];
   let aiLastFormParams = null;
@@ -751,26 +794,26 @@
         accuracy: r.userId === 'u-s2' ? 65 : 74,
         recentScore: r.userId === 'u-s2' ? 72 : 74,
       }));
-      const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
-      const avg = (key) => {
-        if (!withAttempts.length) return 0;
-        const sum = withAttempts.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
-        return Math.round((sum / withAttempts.length) * 10) / 10;
-      };
-      const bestScores = withAttempts.map((r) => Number(r.bestScore) || 0);
-      return {
-        rows,
-        summary: {
-          students: rows.length,
-          withAttempts: withAttempts.length,
-          totalAttempts: withAttempts.reduce((acc, r) => acc + (Number(r.testsAttempted) || 0), 0),
-          avgPercentage: avg('averageScore'),
-          avgBestScore: avg('bestScore'),
-          highestBestScore: bestScores.length ? Math.max(...bestScores) : 0,
-        },
-        noClass: false,
-      };
-    }
+    const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
+    const avg = (key) => {
+      if (!withAttempts.length) return 0;
+      const sum = withAttempts.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
+      return Math.round((sum / withAttempts.length) * 10) / 10;
+    };
+    const bestScores = withAttempts.map((r) => Number(r.bestScore) || 0);
+    return {
+      rows,
+      summary: {
+        students: rows.length,
+        withAttempts: withAttempts.length,
+        totalAttempts: withAttempts.reduce((acc, r) => acc + (Number(r.testsAttempted) || 0), 0),
+        avgPercentage: avg('averageScore'),
+        avgBestScore: avg('bestScore'),
+        highestBestScore: bestScores.length ? Math.max(...bestScores) : 0,
+      },
+      noClass: false,
+    };
+  }
 
     const titles = [
       'Quantitative Aptitude — Basics',
@@ -1816,14 +1859,23 @@
       const count = res.data?.questionCount ?? 0;
       const viaAi = res.data?.parseMethod === 'ai';
       const replaced = !!res.data?.replacedExisting;
+      const answersKnown = Number(res.data?.answersKnown ?? 0);
+      const answersAnalyzed = Number(res.data?.answersAnalyzed ?? 0);
+      const answersFromKey = Number(res.data?.answersFromKey ?? 0);
+      const answerHint = count > 0 && answersKnown > 0
+        ? ` Answers shown for ${answersKnown}/${count}`
+          + (answersAnalyzed > 0 ? ` (${answersAnalyzed} inferred by AI` : '')
+          + (answersFromKey > 0 ? `${answersAnalyzed > 0 ? ', ' : ' ('}${answersFromKey} from answer key` : '')
+          + (answersAnalyzed > 0 || answersFromKey > 0 ? ').' : '.')
+        : '';
       let msg;
       if (replaced) {
         msg = count > 0
-          ? `Updated local bank entry — ${count} question(s)${viaAi ? ' (AI-read from manual)' : ''}.`
+          ? `Updated local bank entry — ${count} question(s)${viaAi ? ' (AI-read from manual)' : ''}.${answerHint}`
           : 'Updated local bank entry (no MCQs detected in file).';
       } else {
         msg = count > 0
-          ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.`
+          ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.${answerHint}`
           : 'Saved manual to local bank (no MCQs detected in file).';
       }
       toast(msg.trim(), 'success');
@@ -1977,6 +2029,24 @@
     return /\.(jpg|jpeg|png)$/i.test(String(detail?.jdFilename || ''));
   }
 
+  function explanationNeedsPreWrap(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return false;
+    if (/\n/.test(raw)) return true;
+    return /(?:^|\n)\s*(?:\d+[\.\)]\s|[-•*]\s|Step\s+\d)/i.test(raw);
+  }
+
+  function renderExplanationBlock(explanation, { label = 'Explanation', className = 'small mt-2' } = {}) {
+    const raw = String(explanation || '').trim();
+    if (!raw) return '';
+    const preWrap = explanationNeedsPreWrap(raw);
+    const style = preWrap ? ' style="white-space:pre-wrap"' : '';
+    if (/<[^>]+>/.test(raw)) {
+      return `<div class="${className}"><span class="fw-semibold">${esc(label)}:</span><div class="apt-rich mt-1"${style}>${raw}</div></div>`;
+    }
+    return `<div class="${className}"><span class="fw-semibold">${esc(label)}:</span><div class="apt-explanation mt-1"${style}>${esc(raw)}</div></div>`;
+  }
+
   function renderMcqPickDetailHtml(q, index, { compact = false, manualPreview = false } = {}) {
     const isDs = q.questionType === 'DATA_SUFFICIENCY';
     const isSc = q.questionType === 'STATEMENTS_CONCLUSIONS';
@@ -2009,6 +2079,9 @@
       conf != null && !Number.isNaN(conf) ? `<div class="small text-muted-2">Confidence: ${conf}%</div>` : '',
     ].filter(Boolean).join('') : '';
     const answerLabel = letters[correct] || (isDs ? String(correct + 1) : String.fromCharCode(65 + correct));
+    const aiAnswerNote = manualPreview && answerKnown && q.answerSource === 'ai'
+      ? '<div class="small text-info mb-1">Answer inferred by AI — verify before publishing.</div>'
+      : '';
     const answerLine = manualPreview && !answerKnown
       ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>')
       : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : (isSc ? `${esc(answerLabel)})` : `${esc(answerLabel)}.`)} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
@@ -2021,6 +2094,7 @@
       <div class="fw-semibold mb-2">${esc(qLabel)}${meta ? `<span class="text-muted-2 fw-normal"> · ${meta}</span>` : ''}</div>
       ${promptBlock}
       ${dupWarn}
+      ${aiAnswerNote}
       <div class="small mb-2">${displayOpts.length
         ? displayOpts.map((o, oi) => {
           const label = esc(stripHtml(String(o || '')) || String(o || ''));
@@ -2032,7 +2106,7 @@
         : '<div class="text-muted-2">No options</div>'}</div>
       ${answerLine}
       ${importMetaLines}
-      ${explanation ? `<div class="small mt-2"><span class="fw-semibold">Explanation:</span> ${esc(explanation)}</div>` : ''}
+      ${renderExplanationBlock(explanation)}
     </div>`;
   }
 
@@ -2070,7 +2144,7 @@
         }).join('')}</select>
       </div>
       <label class="form-label small mb-1">Explanation</label>
-      <textarea class="form-control form-control-sm mb-2" rows="2" data-jd-q-field="explanation">${esc(String(q.explanation || ''))}</textarea>
+      <textarea class="form-control form-control-sm mb-2" rows="5" data-jd-q-field="explanation" placeholder="Use numbered steps, e.g.&#10;1. Convert units&#10;2. Apply formula&#10;3. Answer is 4% (option C).">${esc(String(q.explanation || ''))}</textarea>
       <div class="form-check mb-2">
         <input class="form-check-input" type="checkbox" id="jd-q-answer-known-${qIndex}" data-jd-q-field="answerKnown" ${q.answerKnown !== false && q.answerKnown !== 0 ? 'checked' : ''}/>
         <label class="form-check-label small" for="jd-q-answer-known-${qIndex}">Answer is known (show correct option in preview)</label>
@@ -2306,19 +2380,30 @@
     </div>`;
   }
 
-  function renderJdSetCardsHtml(sets, { allowDelete = true, selectable = false, forProblems = false } = {}) {
+  function renderJdSetCardsHtml(sets, {
+    allowDelete = true,
+    selectable = false,
+    forProblems = false,
+    showPublishButton = false,
+    companyId = '',
+  } = {}) {
     return (sets || []).map((set) => {
       const id = String(set.id || '');
       const hasDoc = !!(set.hasDocument || set.jdFileUrl);
       const checked = selectedJdSetIds.has(id);
+      const mockTest = showPublishButton ? companyMockTestForLocalSet(companyId, id) : null;
+      const publishLabel = mockTest ? 'Republish' : 'Publish';
       return `<div class="border rounded-3 p-3" data-jd-set-card="${esc(id)}">
         <div class="d-flex align-items-start gap-2">
           ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-jd-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select JD set"/>` : ''}
           <div class="min-w-0 flex-grow-1 text-start">
-            <div class="fw-semibold text-start">${esc(set.jdTitle || 'Untitled JD')}</div>
-            <div class="small text-muted-2 mt-1 text-start">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}</div>
+            <div class="fw-semibold text-start">${esc(set.jdTitle || 'Untitled JD')}${mockTest ? ' <span class="badge bg-success-subtle text-success ms-1">Live mock</span>' : ''}</div>
+            <div class="small text-muted-2 mt-1 text-start">${esc(set.questionCount || 0)} question(s)${set.jdFilename ? ` · ${esc(set.jdFilename)}` : ''}${mockTest ? ` · Mock: ${esc(mockTest.questionCount || 0)} q / ${esc(mockTest.durationMinutes || 30)} min` : ''}</div>
           </div>
           <div class="d-flex gap-2 flex-shrink-0 ms-auto">
+            ${showPublishButton ? `<button type="button" class="btn btn-sm btn-success" data-jd-publish-mock="${esc(id)}">${publishLabel}</button>` : ''}
+            ${mockTest ? `<button type="button" class="btn btn-sm btn-outline-danger" data-jd-delete-mock="${esc(mockTest.id)}" title="Remove published mock test from students">Remove mock</button>` : ''}
+            ${mockTest ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(mockTest.id)}" title="Copy student share link"><i class="bi bi-link-45deg"></i></button>` : ''}
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
             <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
             ${forProblems ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-edit-problem="${esc(id)}">Edit</button>` : ''}
@@ -2435,6 +2520,15 @@
         btn.addEventListener('click', () => deleteJdSet(btn.getAttribute('data-jd-delete')));
       });
     }
+    root.querySelectorAll('[data-jd-publish-mock]').forEach((btn) => {
+      btn.addEventListener('click', () => openPublishMockModal(btn.getAttribute('data-jd-publish-mock')));
+    });
+    root.querySelectorAll('[data-jd-delete-mock]').forEach((btn) => {
+      btn.addEventListener('click', () => deleteTest(btn.getAttribute('data-jd-delete-mock')));
+    });
+    root.querySelectorAll('[data-copy-test-link]').forEach((btn) => {
+      btn.addEventListener('click', () => copyTestShareLink(btn.getAttribute('data-copy-test-link')));
+    });
   }
 
   function syncAdminJdBlockViewNav() {
@@ -2451,7 +2545,7 @@
   }
 
   function applyAdminJdBlockView(view) {
-    adminJdBlockView = JD_BLOCK_VIEWS.includes(view) ? view : 'tests';
+    adminJdBlockView = ADMIN_JD_BLOCK_VIEWS.includes(view) ? view : 'tests';
     syncAdminJdBlockViewNav();
     if (jdSelectedCompanyId) {
       showJdCompanyDetail(jdSelectedCompanyId);
@@ -2490,10 +2584,44 @@
     return '';
   }
 
+  function jdSetSummaryById(setId) {
+    const sid = String(setId || '').trim();
+    if (!sid) return null;
+    const pools = [
+      jdCompanyBlocks.flatMap((b) => b.sets || []),
+      studentJdCompanyBlocks.flatMap((b) => b.sets || []),
+      jdLibrarySets,
+      manualJdSetSummaries,
+      loadDemoJdStore(),
+    ];
+    for (const pool of pools) {
+      const hit = (pool || []).find((s) => String(s.id || '') === sid);
+      if (hit) return hit;
+    }
+    const cached = jdSetDetailsCache[sid];
+    return cached || null;
+  }
+
+  function jdSetBankKindForTest(t) {
+    const setId = primaryJdSetIdForTest(t);
+    if (!setId) return '';
+    const set = jdSetSummaryById(setId);
+    return set ? jdSetCompanyBankKind(set) : '';
+  }
+
   function companyTestForManualSet(companyId, setId) {
     const sid = String(setId || '');
     if (!sid) return null;
-    return studentCompanyTestsFor(companyId).find((t) => primaryJdSetIdForTest(t) === sid) || null;
+    return studentCompanyTestsFor(companyId).find((t) => {
+      if (isCompanyMockTest(t)) return false;
+      return primaryJdSetIdForTest(t) === sid;
+    }) || null;
+  }
+
+  function companyMockTestForLocalSet(companyId, setId) {
+    const sid = String(setId || '');
+    if (!sid) return null;
+    return studentCompanyMockTestsFor(companyId).find((t) => primaryJdSetIdForTest(t) === sid) || null;
   }
 
   async function openCompanyProblemEditFromManualSet(set) {
@@ -2529,7 +2657,7 @@
   }
 
   function renderAdminCompanyProblemsHtml(companyId) {
-    const companyTests = studentCompanyTestsFor(companyId);
+    const companyTests = studentCompanyProblemsFor(companyId);
     const linkedManualSetIds = new Set(
       companyTests.map((t) => primaryJdSetIdForTest(t)).filter(Boolean)
     );
@@ -2589,7 +2717,12 @@
         return;
       }
       bulkBar?.classList.remove('d-none');
-      list.innerHTML = renderJdSetCardsHtml(sets, { selectable: true });
+      const showPublish = adminJdBlockView === 'local';
+      list.innerHTML = renderJdSetCardsHtml(sets, {
+        selectable: true,
+        showPublishButton: showPublish,
+        companyId,
+      });
       bindJdSetCardEvents(list);
       updateJdSelectionToolbar(sets);
     }
@@ -2648,9 +2781,20 @@
     });
   }
 
-  function renderStudentCompanyTestsHtml(companyTests) {
+  function studentCompanyProblemsFor(companyId) {
+    return studentCompanyTestsFor(companyId).filter((t) => !isCompanyMockTest(t));
+  }
+
+  function studentCompanyMockTestsFor(companyId) {
+    return studentCompanyTestsFor(companyId).filter((t) => isCompanyMockTest(t));
+  }
+
+  function renderStudentCompanyTestsHtml(companyTests, { mockTests = false } = {}) {
     if (!companyTests.length) {
-      return '<p class="small text-muted-2 mb-0">No company tests published for this company yet.</p>';
+      const emptyMsg = mockTests
+        ? 'No company mock tests published for this company yet.'
+        : 'No company tests published for this company yet.';
+      return `<p class="small text-muted-2 mb-0">${emptyMsg}</p>`;
     }
     return `<div class="apt-prob-list">${companyTests.map((t, i) => {
       const mine = bestHistoryForTest(t.id);
@@ -2660,9 +2804,12 @@
       const canOpen = access.canTake && published;
       const tag = canOpen ? 'button' : 'div';
       const extra = canOpen ? ` type="button" data-open-company-test="${esc(t.id)}"` : '';
+      const meta = mockTests
+        ? `<span class="small text-muted-2 ms-1">(${esc(t.questionCount || 0)} q · ${esc(t.durationMinutes || 30)} min · random each attempt)</span>`
+        : '';
       return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : ''}"${extra}>
         <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
-        <span class="apt-prob-title">${i + 1}. ${esc(t.title)}</span>
+        <span class="apt-prob-title">${i + 1}. ${esc(t.title)}${meta}</span>
         <span class="apt-prob-pct">${esc(formatListPercentage(t, mine))}</span>
         <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
       </${tag}>`;
@@ -2686,7 +2833,7 @@
   }
 
   function applyStudentJdBlockView(view) {
-    studentJdBlockView = JD_BLOCK_VIEWS.includes(view) ? view : 'tests';
+    studentJdBlockView = STUDENT_JD_BLOCK_VIEWS.includes(view) ? view : 'tests';
     syncStudentJdBlockViewNav();
     if (studentJdSelectedCompanyId) {
       showStudentJdCompanyDetail(studentJdSelectedCompanyId);
@@ -2703,29 +2850,28 @@
     document.getElementById('studentJdBlockDetailNav')?.classList.remove('d-none');
     syncStudentJdBlockViewNav();
     const showTests = studentJdBlockView === 'tests';
+    const showMock = studentJdBlockView === 'mock';
+    const showBank = studentJdBlockView === 'bank';
     const testsRoot = document.getElementById('studentJdBlockCompanyTests');
     const bankSection = document.getElementById('studentJdBlockBankSection');
-    testsRoot?.classList.toggle('d-none', !showTests);
-    bankSection?.classList.toggle('d-none', showTests);
-    if (showTests) {
-      const companyTests = studentCompanyTestsFor(companyId);
+    testsRoot?.classList.toggle('d-none', !showTests && !showMock);
+    bankSection?.classList.toggle('d-none', !showBank);
+    if (showTests || showMock) {
+      const companyTests = showMock
+        ? studentCompanyMockTestsFor(companyId)
+        : studentCompanyProblemsFor(companyId);
       if (testsRoot) {
-        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests);
+        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests, { mockTests: showMock });
         bindStudentCompanyTestEvents(testsRoot);
       }
-    } else {
+    } else if (showBank) {
       const list = document.getElementById('studentJdBlockSetsList');
       const allSets = (block?.sets || []).filter((s) => s.showInCompanyBank !== false);
-      const sets = studentJdBlockView === 'local'
-        ? allSets.filter((s) => jdSetCompanyBankKind(s) === 'local')
-        : allSets.filter((s) => jdSetCompanyBankKind(s) === 'question');
+      const sets = allSets.filter((s) => jdSetCompanyBankKind(s) === 'question');
       if (!list) return;
-      const emptyMsg = studentJdBlockView === 'local'
-        ? 'No local bank content for this company yet.'
-        : 'No question bank sets for this company yet.';
       list.innerHTML = sets.length
         ? renderJdSetCardsHtml(sets, { allowDelete: false })
-        : `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+        : '<p class="text-muted-2 mb-0">No question bank sets for this company yet.</p>';
       bindJdSetCardEvents(list, { getDetail: getStudentJdSetDetail, allowDelete: false });
     }
   }
@@ -2757,13 +2903,219 @@
     }
   }
 
+  function syncPublishMockNegativePanel() {
+    const enabled = !!document.getElementById('aptPublishMockNegative')?.checked;
+    document.getElementById('aptPublishMockNegativeWrap')?.classList.toggle('d-none', !enabled);
+  }
+
+  function readPublishMockNegativeMarking() {
+    const enabled = !!document.getElementById('aptPublishMockNegative')?.checked;
+    const marks = Math.max(0, Number(document.getElementById('aptPublishMockNegativeMarks')?.value) || 0);
+    return {
+      negativeMarking: enabled,
+      negativeMarks: enabled ? marks : 0,
+    };
+  }
+
+  function resetPublishMockModalUi() {
+    document.getElementById('btnAptPublishMockConfirm')?.classList.remove('d-none');
+    document.getElementById('btnAptPublishMockDone')?.classList.add('d-none');
+    const negCheck = document.getElementById('aptPublishMockNegative');
+    const negMarks = document.getElementById('aptPublishMockNegativeMarks');
+    if (negCheck) negCheck.checked = false;
+    if (negMarks) negMarks.value = '0.25';
+    syncPublishMockNegativePanel();
+    setPublishMockShareLink('');
+  }
+
+  function setPublishMockShareLink(testId) {
+    const wrap = document.getElementById('aptPublishMockShareWrap');
+    const input = document.getElementById('aptPublishMockShareUrl');
+    if (!wrap || !input) return;
+    const id = String(testId || '').trim();
+    if (!id) {
+      wrap.classList.add('d-none');
+      input.value = '';
+      return;
+    }
+    input.value = buildTestShareUrl(id);
+    wrap.classList.remove('d-none');
+  }
+
+  function showPublishMockPublishedUi(testId) {
+    setPublishMockShareLink(testId);
+    document.getElementById('btnAptPublishMockConfirm')?.classList.add('d-none');
+    document.getElementById('btnAptPublishMockDone')?.classList.remove('d-none');
+  }
+
+  async function copyPublishMockShareLink() {
+    const input = document.getElementById('aptPublishMockShareUrl');
+    const url = String(input?.value || '').trim();
+    if (!url) {
+      toast('Publish the mock test first to get a share link.', 'info');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const helper = document.createElement('textarea');
+      helper.value = url;
+      document.body.appendChild(helper);
+      helper.select();
+      document.execCommand('copy');
+      helper.remove();
+    }
+    toast('Student mock test link copied.', 'success');
+  }
+
+  function openPublishMockModal(setId) {
+    const id = String(setId || '');
+    if (!id) return;
+    const set = companyLocalBankSets(jdSelectedCompanyId).find((s) => String(s.id) === id)
+      || (jdCompanyBlocks.flatMap((b) => b.sets || [])).find((s) => String(s.id) === id);
+    if (!set) {
+      toast('Local bank set not found.', 'error');
+      return;
+    }
+    resetPublishMockModalUi();
+    const pool = Math.max(0, Number(set.questionCount) || 0);
+    const existing = companyMockTestForLocalSet(jdSelectedCompanyId, id);
+    document.getElementById('aptPublishMockSetId').value = id;
+    document.getElementById('aptPublishMockTitle').textContent = set.jdTitle || 'Untitled manual';
+    document.getElementById('aptPublishMockPool').textContent = `${pool} question(s) available in this local bank.`;
+    const countInput = document.getElementById('aptPublishMockCount');
+    const durationInput = document.getElementById('aptPublishMockDuration');
+    if (countInput) {
+      countInput.max = String(Math.max(1, pool));
+      countInput.value = String(existing?.questionCount || Math.min(10, Math.max(1, pool)));
+    }
+    if (durationInput) {
+      durationInput.value = String(existing?.durationMinutes || Math.max(30, Math.min(180, (Number(countInput?.value) || 10) * 2)));
+    }
+    const negCheck = document.getElementById('aptPublishMockNegative');
+    const negMarks = document.getElementById('aptPublishMockNegativeMarks');
+    if (negCheck) {
+      negCheck.checked = !!(existing?.negativeMarking);
+    }
+    if (negMarks) {
+      negMarks.value = String(existing?.negativeMarking ? (existing.negativeMarks || 0.25) : 0.25);
+    }
+    syncPublishMockNegativePanel();
+    if (existing?.id) {
+      setPublishMockShareLink(existing.id);
+    }
+    aptPublishMockModal?.show();
+  }
+
+  async function confirmPublishMock() {
+    const setId = String(document.getElementById('aptPublishMockSetId')?.value || '');
+    const questionCount = Math.max(1, Number(document.getElementById('aptPublishMockCount')?.value) || 1);
+    const durationMinutes = Math.max(1, Math.min(300, Number(document.getElementById('aptPublishMockDuration')?.value) || 30));
+    const { negativeMarking, negativeMarks } = readPublishMockNegativeMarking();
+    if (negativeMarking && negativeMarks <= 0) {
+      toast('Enter marks deducted per wrong answer.', 'warn');
+      return;
+    }
+    if (!setId) return;
+
+    const set = companyLocalBankSets(jdSelectedCompanyId).find((s) => String(s.id) === setId);
+    const pool = Math.max(0, Number(set?.questionCount) || 0);
+    if (questionCount > pool) {
+      toast(`Only ${pool} question(s) available in this manual.`, 'error');
+      return;
+    }
+
+    const live = Auth.hasRealAuth() && !Auth.isDemo();
+    if (!live) {
+      const companyId = String(jdSelectedCompanyId || set?.companyId || '');
+      const detail = await getJdSetDetail(setId);
+      const jdTitle = String(detail?.jdTitle || set?.jdTitle || 'Company mock test');
+      const existing = companyMockTestForLocalSet(companyId, setId);
+      const payload = {
+        title: jdTitle,
+        description: 'Company mock test — random questions from the local bank each attempt.',
+        testKind: 'company',
+        companyId,
+        companyName: set?.companyName || '',
+        contestType: 'none',
+        questionSource: 'random_jd',
+        status: 'published',
+        questionCount,
+        durationMinutes,
+        negativeMarking,
+        negativeMarks,
+        category: detail?.questions?.[0]?.category || 'General Aptitude',
+        difficulty: detail?.questions?.[0]?.difficulty || 'Medium',
+        jdFilterRules: [{
+          jdSetId: setId,
+          jdTitle,
+          count: questionCount,
+          marks: 1,
+        }],
+        questions: [],
+        bankQuestionIds: [],
+        randomRules: [],
+        bankFilterRules: [],
+      };
+      try {
+        resolveDemoTestQuestions(payload);
+      } catch (err) {
+        toast(err?.message || 'Could not publish mock test.', 'error');
+        return;
+      }
+      const store = loadDemoTestsStore();
+      let publishedId = String(existing?.id || '');
+      if (existing) {
+        const idx = store.findIndex((t) => String(t.id) === String(existing.id));
+        if (idx >= 0) store[idx] = { ...store[idx], ...payload, id: existing.id };
+        publishedId = String(existing.id);
+      } else {
+        publishedId = 'demo-mock-' + Date.now();
+        store.push({ ...payload, id: publishedId });
+      }
+      saveDemoTestsStore(store);
+      await loadTests();
+      showPublishMockPublishedUi(publishedId);
+      toast('Company mock test published (demo). Copy the share link below.', 'success');
+      if (jdSelectedCompanyId) showJdCompanyDetail(jdSelectedCompanyId);
+      return;
+    }
+
+    const btn = document.getElementById('btnAptPublishMockConfirm');
+    btn?.setAttribute('disabled', 'disabled');
+    const res = await api(`/aptitude/jd-sets/${encodeURIComponent(setId)}/publish-mock`, {
+      method: 'POST',
+      body: { questionCount, durationMinutes, negativeMarking, negativeMarks },
+    }).catch(() => null);
+    btn?.removeAttribute('disabled');
+    if (!res?.success) {
+      toast(res?.message || 'Could not publish mock test.', 'error');
+      return;
+    }
+    const publishedId = String(res.data?.id || res.data?.test?.id || '');
+    await loadTests();
+    const testId = publishedId
+      || String(companyMockTestForLocalSet(jdSelectedCompanyId, setId)?.id || '');
+    showPublishMockPublishedUi(testId);
+    toast('Company mock test published. Copy the share link below.', 'success');
+    if (jdSelectedCompanyId) showJdCompanyDetail(jdSelectedCompanyId);
+  }
+
   async function deleteJdSet(id) {
     if (!id) return;
-    if (!confirm('Delete this JD question set and all its questions?')) return;
+    const linkedMock = companyMockTestForLocalSet(jdSelectedCompanyId, id);
+    const confirmMsg = linkedMock
+      ? 'Delete this local bank manual? Its published mock test will also be removed from students.'
+      : 'Delete this JD question set and all its questions?';
+    if (!confirm(confirmMsg)) return;
+    const linkedIds = testIdsLinkedToJdSet(id);
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     if (!live) {
       saveDemoJdStore(loadDemoJdStore().filter((s) => String(s.id) !== String(id)));
+      purgeDemoTestsLinkedToJdSet(id);
+      linkedIds.forEach(removeTestFromClientState);
       toast('JD set deleted (demo).', 'success');
+      await refreshAfterJdLinkedTestsRemoved();
       await loadJdLibrary();
       return;
     }
@@ -2774,7 +3126,9 @@
     }
     delete jdSetDetailsCache[String(id)];
     manualJdSetSummaries = manualJdSetSummaries.filter((s) => String(s.id) !== String(id));
-    toast('JD set deleted.', 'success');
+    linkedIds.forEach(removeTestFromClientState);
+    toast(linkedMock ? 'Local bank manual and its mock test were deleted.' : 'JD set deleted.', 'success');
+    await refreshAfterJdLinkedTestsRemoved();
     await loadJdLibrary();
   }
 
@@ -2813,10 +3167,10 @@
         return;
       }
       saveDemoTestsStore(loadDemoTestsStore().filter((t) => String(t.id) !== String(id)));
+      removeTestFromClientState(id);
       toast('Test deleted (demo).', 'success');
-      await loadTests();
-      renderTestList();
-      renderManage();
+      await loadTests({ force: true });
+      refreshTakeUiAfterTestsChange();
       return;
     }
     if (!isLiveAptitudeId(id)) {
@@ -2828,10 +3182,13 @@
       toast(res?.message || 'Could not delete test.', 'error');
       return;
     }
+    removeTestFromClientState(id);
     toast('Test deleted.', 'success');
-    await loadTests();
-    renderTestList();
-    renderManage();
+    await loadTests({ force: true });
+    refreshTakeUiAfterTestsChange();
+    if (jdSelectedCompanyId && adminJdBlockView === 'local') {
+      showJdCompanyDetail(jdSelectedCompanyId);
+    }
   }
 
   async function setContestResultsPublished(id, published) {
@@ -4120,7 +4477,7 @@
               ${[0, 1, 2, 3].map((oi) => `<label class="form-check form-check-inline ms-1"><input class="form-check-input" type="radio" name="ai-correct-${i}" data-ai-set-correct="${i}" value="${oi}" ${correct === oi ? 'checked' : ''}/> ${letters[oi]}</label>`).join('')}
             </div>
             <div class="small text-muted-2">${esc(q.category || '')} · ${esc(q.topic || '')} · ${esc(q.difficulty || '')}</div>
-            <div class="small mt-1"><span class="fw-semibold">Explanation:</span> ${esc(q.explanation || '')}</div>
+            ${renderExplanationBlock(q.explanation, { className: 'small mt-1' })}
             ${mismatchWarn}
             ${dup}
             <div class="d-flex flex-wrap gap-2 mt-2">
@@ -5581,12 +5938,14 @@
     if (payload.questionSource === 'random_jd') {
       const rules = payload.jdFilterRules || [];
       if (!rules.length) throw new Error('Add at least one JD random rule.');
-      payload.questions = demoPickRandomJdRules(rules);
-      payload.questionCount = payload.questions.length;
+      demoPickRandomJdRules(rules);
+      const ruleTotal = rules.reduce((sum, rule) => sum + Math.max(0, Number(rule.count) || 0), 0);
+      payload.questions = [];
+      payload.questionCount = ruleTotal || Math.max(1, Number(payload.questionCount) || 1);
       payload.bankQuestionIds = [];
       payload.randomRules = [];
-      payload.category = payload.questions[0]?.category || 'General Aptitude';
-      payload.difficulty = payload.questions[0]?.difficulty || 'Medium';
+      payload.category = payload.category || 'General Aptitude';
+      payload.difficulty = payload.difficulty || 'Medium';
       return payload;
     }
     if (payload.questionSource === 'random') {
@@ -5635,7 +5994,19 @@
   function isCompanyTest(t) {
     if (!t) return false;
     if (String(t.testKind || '') === 'company') return true;
-    return String(t.companyId || '').trim() !== '';
+    if (String(t.companyId || '').trim() !== '') return true;
+    if (String(t?.questionSource || '') === 'random_jd') return true;
+    return (Array.isArray(t?.jdFilterRules) ? t.jdFilterRules : []).some(
+      (r) => String(r?.jdSetId || '').trim() !== ''
+    );
+  }
+
+  function isCompanyMockTest(t) {
+    if (!isCompanyTest(t)) return false;
+    const bankKind = jdSetBankKindForTest(t);
+    if (bankKind === 'local') return true;
+    if (bankKind === 'question') return false;
+    return String(t?.questionSource || '') === 'random_jd';
   }
 
   function isRegularTest(t) {
@@ -5694,7 +6065,7 @@
 
     if (isCompanyTest(t)) {
       takeListPanel = 'jdblock';
-      studentJdBlockView = 'tests';
+      studentJdBlockView = isCompanyMockTest(t) ? 'mock' : 'tests';
       document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
         link.classList.toggle('active', link.getAttribute('data-take-list') === 'jdblock');
       });
@@ -5897,22 +6268,22 @@
       <div class="border rounded-3 p-3">
         <div class="d-flex flex-wrap align-items-start gap-2">
           <div class="d-flex align-items-start gap-2 min-w-0 flex-grow-1 text-start">
-          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
+            ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
             <div class="min-w-0 flex-grow-1 text-start">
-          <strong>${esc(t.title)}</strong>
-          <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
-          ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
-          ${showContestBadge ? contestBadgeHtml(t) : ''}
-          ${showContestBadge ? contestScheduleControls(t) : ''}
+            <strong>${esc(t.title)}</strong>
+            <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
+            ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
+            ${showContestBadge ? contestBadgeHtml(t) : ''}
+            ${showContestBadge ? contestScheduleControls(t) : ''}
+            </div>
           </div>
-        </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 ms-auto">
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(docSetId)}">Document</button>` : ''}
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(docSetId)}">Questions</button>` : ''}
             ${docSetId ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>`}
-          <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
-          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
-        </div>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
+          </div>
         </div>
         ${docSetId ? `<div class="d-none mt-3" data-jd-doc-panel="${esc(docSetId)}"></div><div class="d-none mt-3" data-jd-questions="${esc(docSetId)}"></div>` : ''}
       </div>`;
@@ -6010,12 +6381,19 @@
       toast('Select at least one JD set to delete.', 'error');
       return;
     }
-    if (!confirm(`Delete ${ids.length} selected JD set(s) and all their questions?`)) return;
+    const hasLinkedMocks = ids.some((id) => companyMockTestForLocalSet(jdSelectedCompanyId, id));
+    const bulkConfirm = hasLinkedMocks
+      ? `Delete ${ids.length} selected local bank manual(s)? Any published mock tests will also be removed from students.`
+      : `Delete ${ids.length} selected JD set(s) and all their questions?`;
+    if (!confirm(bulkConfirm)) return;
     const live = Auth.hasRealAuth() && !Auth.isDemo();
     let deleted = 0;
     for (const id of ids) {
+      const linkedIds = testIdsLinkedToJdSet(id);
       if (!live) {
         saveDemoJdStore(loadDemoJdStore().filter((s) => String(s.id) !== String(id)));
+        purgeDemoTestsLinkedToJdSet(id);
+        linkedIds.forEach(removeTestFromClientState);
         deleted += 1;
         selectedJdSetIds.delete(String(id));
         continue;
@@ -6025,6 +6403,7 @@
         deleted += 1;
         delete jdSetDetailsCache[String(id)];
         manualJdSetSummaries = manualJdSetSummaries.filter((s) => String(s.id) !== String(id));
+        linkedIds.forEach(removeTestFromClientState);
         selectedJdSetIds.delete(String(id));
       }
     }
@@ -6033,6 +6412,7 @@
       return;
     }
     toast(`Deleted ${deleted} JD set(s).`, 'success');
+    await refreshAfterJdLinkedTestsRemoved();
     await loadJdLibrary();
   }
 
@@ -6529,31 +6909,32 @@
     body.innerHTML = renderProgressDetail(res.data || {});
   }
 
-  async function loadTests() {
-    if (testsInflight) return testsInflight;
+  async function loadTests(options = {}) {
+    const force = options.force === true;
+    if (testsInflight && !force) return testsInflight;
     testsInflight = (async () => {
-      if (Auth.hasRealAuth() && !Auth.isDemo()) {
-        const res = await api('/aptitude/tests').catch(() => null);
-        if (res?.success) {
-          tests = res.data?.tests || [];
+    if (Auth.hasRealAuth() && !Auth.isDemo()) {
+      const res = await api('/aptitude/tests').catch(() => null);
+      if (res?.success) {
+        tests = res.data?.tests || [];
           writeSessionCache(APT_TESTS_CACHE_KEY, tests);
-          return;
-        }
+        return;
+      }
         if (!tests.length) {
           tests = [];
           toast(res?.message || 'Could not load aptitude tests from the server.', 'error');
         }
         return;
-      }
-      tests = loadDemoTestsStore().map((t) => {
-        const copy = JSON.parse(JSON.stringify(t));
+    }
+    tests = loadDemoTestsStore().map((t) => {
+      const copy = JSON.parse(JSON.stringify(t));
         if (!access.canManage && typeof AptitudeExam !== 'undefined' && AptitudeExam.stripExamQuestions) {
           copy.questions = AptitudeExam.stripExamQuestions(copy.questions || []);
         } else if (!access.canManage) {
-          copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
-        }
-        return copy;
-      });
+        copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
+      }
+      return copy;
+    });
     })().finally(() => {
       testsInflight = null;
     });
@@ -6689,7 +7070,7 @@
     let visible = tests.filter((t) => {
       const isContest = isContestTest(t);
       if (wantContests !== isContest) return false;
-      if (!access.canManage && !wantContests && isCompanyTest(t)) return false;
+      if (!wantContests && isCompanyTest(t)) return false;
       if (isContest && String(t.contestType || '') !== takeContestType) return false;
       if (access.canManage) return true;
       if ((t.status || 'published') !== 'published') return false;
@@ -6707,7 +7088,7 @@
           ? `No ${contestLabel} challenges are open today, or you have already taken them.`
           : `No ${contestLabel} aptitude challenges are available yet.`)
         : (Auth.role() === 'student'
-          ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
+        ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
           : 'No published aptitude tests yet.');
       root.innerHTML = `<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">${msg}</p>`;
       return;
@@ -6744,6 +7125,11 @@
   }
 
   function openExam(test) {
+    if (!test || !tests.some((t) => String(t.id) === String(test.id))) {
+      toast('This test is no longer available.', 'info');
+      loadTests({ force: true }).then(() => refreshTakeUiAfterTestsChange()).catch(() => {});
+      return;
+    }
     if (access.canTake && isContestTest(test)) {
       const life = contestStatusClient(test);
       if (life === 'UPCOMING') {
@@ -7318,7 +7704,7 @@
     if (cacheKey === dirResultsCacheKey && dirResultsCache) {
       data = dirResultsCache;
     } else {
-      const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
+    const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
       if (seq !== dirLoadSeq) return;
       data = res?.success ? res.data : null;
       if (data) {
@@ -7356,12 +7742,27 @@
     aptJdManualModal = document.getElementById('aptJdManualModal')
       ? new bootstrap.Modal(document.getElementById('aptJdManualModal'))
       : null;
+    aptPublishMockModal = document.getElementById('aptPublishMockModal')
+      ? new bootstrap.Modal(document.getElementById('aptPublishMockModal'))
+      : null;
+    document.getElementById('aptPublishMockModal')?.addEventListener('hidden.bs.modal', () => resetPublishMockModalUi());
+    document.getElementById('aptPublishMockNegative')?.addEventListener('change', () => syncPublishMockNegativePanel());
+    document.getElementById('btnAptPublishMockConfirm')?.addEventListener('click', () => confirmPublishMock());
+    document.getElementById('btnAptPublishMockCopyLink')?.addEventListener('click', () => copyPublishMockShareLink());
     exam = AptitudeExam.createExamController({
       root: document.getElementById('examShell'),
       onExit: () => closeExam(),
       resolveDemoQuestions: (id) => {
         const t = fullDemoTest(id);
-        const qs = t?.questions || [];
+        if (!t) return [];
+        let qs = t.questions || [];
+        if (String(t.questionSource || '') === 'random_jd') {
+          try {
+            qs = demoPickRandomJdRules(t.jdFilterRules || []);
+          } catch {
+            qs = [];
+          }
+        }
         return typeof AptitudeExam !== 'undefined' && AptitudeExam.normalizeExamQuestions
           ? AptitudeExam.normalizeExamQuestions(qs)
           : qs.map(({ correctIndex, explanation, ...q }, i) => ({ ...q, id: String(q.id || q.bankId || `q${i + 1}`) }));
@@ -7460,6 +7861,18 @@
       e.preventDefault();
       applyMyResultsContestType(link.getAttribute('data-results-contest-type'));
     });
+
+    let testsRefreshTimer = null;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible' || !access.canTake) return;
+      clearTimeout(testsRefreshTimer);
+      testsRefreshTimer = setTimeout(() => {
+        loadTests({ force: true })
+          .then(() => refreshTakeUiAfterTestsChange())
+          .catch(() => {});
+      }, 300);
+    });
+
     bindPracticeNav('progressContestTypeNav', (e) => {
       const link = e.target.closest('[data-progress-contest-type]');
       if (!link) return;
@@ -7904,7 +8317,7 @@
       if (payload.status !== 'published') {
         toast('Test saved as unpublished. Set status to Published for students to see it.', 'info');
       } else {
-        toast('Test saved.', 'success');
+      toast('Test saved.', 'success');
       }
       testFormModal.hide();
       await loadTests();
