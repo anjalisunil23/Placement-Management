@@ -1753,6 +1753,47 @@
     });
   }
 
+  function setManualJdSaveStatus(statusEl, html) {
+    if (!statusEl) return;
+    statusEl.classList.remove('d-none');
+    statusEl.innerHTML = html;
+  }
+
+  async function inferJdSetAnswersAfterUpload(setId, { statusEl, questionCount = 0, pendingStart = 0 } = {}) {
+    const sid = String(setId || '');
+    if (!sid) return { pending: 0, answersKnown: 0 };
+    const total = Math.max(0, Number(questionCount) || 0);
+    const batchLimit = 18;
+    let pending = Math.max(0, Number(pendingStart) || 0);
+    let answersKnown = Math.max(0, total > 0 ? total - pending : 0);
+    let rounds = 0;
+    while (pending > 0 && rounds < 60) {
+      setManualJdSaveStatus(
+        statusEl,
+        `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Inferring answers… `
+          + `${answersKnown}/${total || '?'} done`
+          + (pending > 0 ? `, ${pending} remaining` : '')
+          + '. This runs automatically in batches.'
+      );
+      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(sid)}/analyze-answers`, {
+        method: 'POST',
+        body: { limit: batchLimit },
+        timeoutMs: 300000,
+      });
+      if (!res?.success) throw new Error(res?.message || 'Could not infer answers.');
+      pending = Number(res.data?.pending ?? 0);
+      answersKnown = Number(res.data?.answersKnown ?? answersKnown);
+      const analyzed = Number(res.data?.analyzed ?? 0);
+      if (res.data?.set) jdSetDetailsCache[sid] = res.data.set;
+      if (analyzed <= 0 && pending > 0) {
+        throw new Error('Answer inference stopped early. Ensure OpenAI is configured on the server, then re-upload or edit remaining questions.');
+      }
+      rounds += 1;
+      if (total <= 0 && pending <= 0) break;
+    }
+    return { pending, answersKnown };
+  }
+
   async function saveJdManualUpload() {
     if (manualJdUploadBusy) return;
     const sel = document.getElementById('aptManualJdCompany');
@@ -1786,8 +1827,8 @@
     if (status) {
       const isPdf = file && /\.pdf$/i.test(String(file.name || ''));
       status.innerHTML = isPdf
-        ? '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Reading PDF, parsing questions, and inferring answers… large files may take several minutes.'
-        : '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Parsing questions and inferring answers…';
+        ? '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Reading PDF and parsing questions…'
+        : '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Parsing questions…';
     }
     btn?.setAttribute('disabled', 'disabled');
     manualJdUploadBusy = true;
@@ -1866,12 +1907,28 @@
         timeoutMs: 900000,
       });
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
-      const count = res.data?.questionCount ?? 0;
+      const setId = String(res.data?.id || '');
+      let count = res.data?.questionCount ?? 0;
       const viaAi = res.data?.parseMethod === 'ai';
       const replaced = !!res.data?.replacedExisting;
-      const answersKnown = Number(res.data?.answersKnown ?? 0);
-      const answersAnalyzed = Number(res.data?.answersAnalyzed ?? 0);
+      let answersKnown = Number(res.data?.answersKnown ?? 0);
+      let answersAnalyzed = Number(res.data?.answersAnalyzed ?? 0);
       const answersFromKey = Number(res.data?.answersFromKey ?? 0);
+      let answersPending = Number(res.data?.answersPending ?? 0);
+      if (answersPending > 0 && setId) {
+        setManualJdSaveStatus(
+          status,
+          `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Saved ${count} question(s). Starting automatic answer inference…`
+        );
+        const inferred = await inferJdSetAnswersAfterUpload(setId, {
+          statusEl: status,
+          questionCount: count,
+          pendingStart: answersPending,
+        });
+        answersPending = Number(inferred.pending ?? answersPending);
+        answersKnown = Number(inferred.answersKnown ?? answersKnown);
+        answersAnalyzed = Math.max(answersAnalyzed, Math.max(0, answersKnown - answersFromKey));
+      }
       const answerHint = count > 0 && answersKnown > 0
         ? ` Answers shown for ${answersKnown}/${count}`
           + (answersAnalyzed > 0 ? ` (${answersAnalyzed} inferred by AI` : '')
@@ -1888,23 +1945,21 @@
           ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.${answerHint}`
           : 'Saved manual to local bank (no MCQs detected in file).';
       }
-      const answersPending = Number(res.data?.answersPending ?? 0);
       if (answersPending > 0) {
         msg += ` ${answersPending} answer(s) could not be inferred — use Edit on those questions.`;
       }
-      toast(msg.trim(), 'success');
-      delete jdSetDetailsCache[String(res.data?.id || '')];
+      toast(msg.trim(), answersPending > 0 ? 'info' : 'success');
+      delete jdSetDetailsCache[setId];
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();
       await loadJdLibrary();
       if (jdSelectedCompanyId) {
         applyAdminJdBlockView('local');
         showJdCompanyDetail(jdSelectedCompanyId);
-        const newSetId = String(res.data?.id || '');
-        if (newSetId) {
+        if (setId) {
           window.setTimeout(() => {
             const card = [...document.querySelectorAll('[data-jd-set-card]')].find(
-              (el) => el.getAttribute('data-jd-set-card') === newSetId
+              (el) => el.getAttribute('data-jd-set-card') === setId
             );
             card?.querySelector('[data-jd-view]')?.click();
           }, 300);

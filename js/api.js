@@ -5814,9 +5814,12 @@ async function apiFetch(path, opts = {}) {
         const pathLower = String(path || '').toLowerCase();
         if (pathLower.includes('placements-higher-education') || pathLower.includes('placement-filters')) {
           message = `Request timed out (${res.status}). The placement grid should load from student_placements without live AES — deploy latest code and set STAFF_PLACEMENT_LIST_LITE_FILTERS=1 and STAFF_PLACEMENT_FILTERS_SKIP_AES=1 in .env. Use Sync from AES only when importing a class roster.`;
-        } else if (pathLower.includes('upload-manual') || pathLower.includes('jd-sets')) {
-          message = `Request timed out (${res.status}). Reading the PDF and parsing questions can take several minutes on large aptitude manuals. `
-            + 'Try again with a smaller PDF, paste the text instead of uploading, or ask the host to raise PHP/LiteSpeed timeouts (APTITUDE_MANUAL_UPLOAD_TIME_LIMIT, often 120–600s).';
+        } else if (pathLower.includes('upload-manual')) {
+          message = `Upload timed out (${res.status}) while reading or parsing the PDF. Try again, paste the text instead of uploading, or ask the host to raise PHP/LiteSpeed timeouts (APTITUDE_MANUAL_UPLOAD_TIME_LIMIT). Answer inference runs in separate steps after the file is saved.`;
+        } else if (pathLower.includes('analyze-answers')) {
+          message = `Answer inference timed out (${res.status}) for this batch. The manual may still be saved — open Questions to check, or try uploading again.`;
+        } else if (pathLower.includes('jd-sets')) {
+          message = `Request timed out (${res.status}). Large aptitude manuals can take several minutes — try again or ask the host to raise PHP/LiteSpeed timeouts.`;
         } else {
           message = `Request timed out (${res.status}). The server stopped a long step (reading the syllabus for AI or generating a batch). `
             + 'Click Get and wait for the PDF, then try Generate again with fewer questions. If it keeps failing, ask the host to raise PHP/LiteSpeed timeouts (often 60–120s).';

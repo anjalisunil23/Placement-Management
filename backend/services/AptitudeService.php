@@ -751,7 +751,8 @@ final class AptitudeService
         $manualSanitizer = new JdTextExtractionService();
         $extracted = $manualSanitizer->sanitizeManualText($extracted);
 
-        $parseResult = $this->parseManualUploadQuestions($extracted);
+        // Answer inference runs in follow-up API calls so shared-host proxies do not 500 on large manuals.
+        $parseResult = $this->parseManualUploadQuestions($extracted, false);
         $parsed = $parseResult['questions'];
         $parseMethod = (string) ($parseResult['parseMethod'] ?? 'none');
         $answersAnalyzed = (int) ($parseResult['answersAnalyzed'] ?? 0);
@@ -822,6 +823,7 @@ final class AptitudeService
                 'answersFromKey' => $answersFromKey,
                 'answersKnown' => $answersKnown,
                 'answersPending' => max(0, count($parsed) - $answersKnown),
+                'answersDeferred' => max(0, count($parsed) - $answersKnown) > 0,
                 'importMeta' => $importMeta,
             ];
         } catch (\InvalidArgumentException $e) {
@@ -837,7 +839,7 @@ final class AptitudeService
      *
      * @return array{questions:list<array<string,mixed>>,parseMethod:string,sections:list<string>}
      */
-    private function parseManualUploadQuestions(string $extracted): array
+    private function parseManualUploadQuestions(string $extracted, bool $inferAnswers = false): array
     {
         $parser = new AptitudeManualQuestionParser();
         $local = $parser->parse($extracted);
@@ -876,7 +878,7 @@ final class AptitudeService
             AptitudeManualQuestionAiParser::applyAnswerKeyToQuestions($final, $answerKey);
             $answersFromKey = $this->countKnownAnswers($final) - $beforeKey;
 
-            $answersAnalyzed = $this->analyzeAllManualAnswers($final);
+            $answersAnalyzed = $inferAnswers ? $this->analyzeAllManualAnswers($final) : 0;
         } else {
             $answersAnalyzed = 0;
         }
@@ -1239,7 +1241,8 @@ final class AptitudeService
         if (!Security::isValidId($id)) {
             Response::error('Invalid JD set id.', 400);
         }
-        $limit = max(1, min(24, $limit));
+        $batchCap = max(6, min(24, (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 12)));
+        $limit = max(1, min($batchCap * 2, $limit));
         $model = new \PMS\Models\AptitudeJdQuestionSetModel();
         $set = $model->findById($id);
         if ($set === null) {
