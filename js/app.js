@@ -929,6 +929,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       freshAesLogin ? { soft: false, fast: true } : { soft: false, fast: true }
     );
   }
+  if (!hasSession && typeof Auth.hasCachedSession === 'function' && Auth.hasCachedSession()) {
+    hasSession = true;
+    Auth._sessionReady = true;
+  }
   if (!hasSession && typeof ADMIN_ONLY_PAGES !== 'undefined' && ADMIN_ONLY_PAGES.includes(pageBase)) {
     revealApp();
     window.location.replace(`public-stats.html?next=${encodeURIComponent(pageBase)}`);

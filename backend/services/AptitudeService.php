@@ -293,7 +293,32 @@ final class AptitudeService
         }
         $userId = (string) ($user['_id'] ?? $user['id'] ?? '');
         $examQuestions = [];
-        if (AptitudeTestModel::isContest($test)) {
+        $questionSource = AptitudeTestModel::normalizeQuestionSource((string) ($test['questionSource'] ?? ''));
+        if ($questionSource === 'random_jd' && !AptitudeTestModel::isContest($test)) {
+            $existing = $this->attempts->forUserAndTest($userId, $testId, 20);
+            foreach ($existing as $row) {
+                if (($row['status'] ?? '') === 'in_progress') {
+                    $stored = array_values((array) ($row['examQuestions'] ?? []));
+                    if ($stored !== []) {
+                        $examTest = $this->examViewFromQuestions($test, $stored);
+
+                        return [
+                            'attemptId' => (string) ($row['_id'] ?? ''),
+                            'test' => $examTest,
+                        ];
+                    }
+                }
+            }
+            try {
+                $rules = array_values(array_filter((array) ($test['jdFilterRules'] ?? []), 'is_array'));
+                $examQuestions = (new \PMS\Models\AptitudeJdQuestionSetModel())->pickRandomByRules($rules);
+            } catch (\InvalidArgumentException $e) {
+                Response::error($e->getMessage(), 422);
+            }
+            if ($examQuestions === []) {
+                Response::error('This mock test has no questions available yet.', 422);
+            }
+        } elseif (AptitudeTestModel::isContest($test)) {
             $existing = $this->attempts->forUserAndTest($userId, $testId, 20);
             foreach ($existing as $row) {
                 if (($row['status'] ?? '') === 'completed') {
@@ -817,13 +842,11 @@ final class AptitudeService
         $final = $local;
         if ($useAi) {
             $aiParsed = (new AptitudeManualQuestionAiParser())->parse($extracted);
-            $merged = $this->mergeManualUploadParse($local, $aiParsed);
-            if ($merged !== []) {
-                $final = $merged;
-            } elseif ($aiParsed !== []) {
+            if (count($aiParsed) > count($final)) {
                 $final = $aiParsed;
-            }
-            if ($aiParsed !== []) {
+                $parseMethod = 'ai';
+            } elseif ($final === [] && $aiParsed !== []) {
+                $final = $aiParsed;
                 $parseMethod = 'ai';
             }
         }
@@ -845,80 +868,6 @@ final class AptitudeService
             'parseMethod' => $parseMethod,
             'sections' => $sections,
         ];
-    }
-
-    /**
-     * Keep local data-sufficiency / statements-conclusions items when AI returns more plain MCQs.
-     *
-     * @param list<array<string, mixed>> $local
-     * @param list<array<string, mixed>> $ai
-     * @return list<array<string, mixed>>
-     */
-    private function mergeManualUploadParse(array $local, array $ai): array
-    {
-        if ($ai === []) {
-            return $local;
-        }
-        if ($local === []) {
-            return $ai;
-        }
-
-        $byNum = [];
-        $extras = [];
-
-        $ingest = static function (array $q, bool $localWinsTie) use (&$byNum, &$extras): void {
-            $n = (int) ($q['questionNumber'] ?? 0);
-            if ($n <= 0) {
-                $extras[] = $q;
-
-                return;
-            }
-            $type = strtoupper(trim((string) ($q['questionType'] ?? '')));
-            $special = in_array($type, ['DATA_SUFFICIENCY', 'STATEMENTS_CONCLUSIONS'], true);
-            if (!isset($byNum[$n])) {
-                $byNum[$n] = $q;
-
-                return;
-            }
-            $cur = $byNum[$n];
-            $curType = strtoupper(trim((string) ($cur['questionType'] ?? '')));
-            $curSpecial = in_array($curType, ['DATA_SUFFICIENCY', 'STATEMENTS_CONCLUSIONS'], true);
-            if ($special && !$curSpecial) {
-                $byNum[$n] = $q;
-
-                return;
-            }
-            if ($localWinsTie && $special && $curSpecial) {
-                $byNum[$n] = $q;
-
-                return;
-            }
-            if ($localWinsTie && !$special && !$curSpecial) {
-                $byNum[$n] = $q;
-            }
-        };
-
-        foreach ($ai as $q) {
-            if (is_array($q)) {
-                $ingest($q, false);
-            }
-        }
-        foreach ($local as $q) {
-            if (is_array($q)) {
-                $ingest($q, true);
-            }
-        }
-
-        $merged = array_values($byNum);
-        usort($merged, static function (array $a, array $b): int {
-            return ((int) ($a['questionNumber'] ?? 0)) <=> ((int) ($b['questionNumber'] ?? 0));
-        });
-
-        foreach ($extras as $q) {
-            $merged[] = $q;
-        }
-
-        return $merged;
     }
 
     private function estimateMcqCountInText(string $text): int
@@ -990,6 +939,121 @@ final class AptitudeService
     }
 
     /**
+     * Publish (or update) a company mock test from a local bank JD set.
+     *
+     * @param array<string, mixed> $admin
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function publishLocalBankMock(array $admin, string $jdSetId, array $body): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($jdSetId)) {
+            Response::error('Invalid JD set id.', 400);
+        }
+
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $set = $model->findById($jdSetId);
+        if ($set === null) {
+            Response::notFound('JD question set not found.');
+        }
+
+        $manualSource = strtolower(trim((string) ($set['manualSource'] ?? '')));
+        $bankKind = strtolower(trim((string) ($set['companyBankKind'] ?? '')));
+        if ($bankKind !== 'local' && $manualSource !== 'upload') {
+            Response::error('Only local bank manuals can be published as company mock tests.', 422);
+        }
+
+        $companyId = trim((string) ($set['companyId'] ?? ''));
+        if ($companyId === '' || !Security::isValidId($companyId)) {
+            Response::error('This manual is not linked to a company.', 422);
+        }
+
+        $poolSize = count(array_values(array_filter((array) ($set['questions'] ?? []), 'is_array')));
+        if ($poolSize <= 0) {
+            Response::error('This local bank manual has no questions yet.', 422);
+        }
+
+        $questionCount = max(1, (int) ($body['questionCount'] ?? 0));
+        $durationMinutes = max(1, min(300, (int) ($body['durationMinutes'] ?? 30)));
+        if ($questionCount > $poolSize) {
+            Response::error(
+                'Only ' . $poolSize . ' question(s) available in this manual. Reduce the mock test size.',
+                422
+            );
+        }
+
+        $companyName = trim((string) ($set['companyName'] ?? ''));
+        $jdTitle = trim((string) ($set['jdTitle'] ?? 'Company mock test'));
+        $questions = array_values(array_filter((array) ($set['questions'] ?? []), 'is_array'));
+        $category = trim((string) ($questions[0]['category'] ?? 'General Aptitude')) ?: 'General Aptitude';
+
+        $payload = [
+            'title' => $jdTitle,
+            'description' => 'Company mock test — random questions from the local bank each attempt.',
+            'testKind' => 'company',
+            'companyId' => $companyId,
+            'companyName' => $companyName,
+            'contestType' => 'none',
+            'questionSource' => 'random_jd',
+            'status' => 'published',
+            'questionCount' => $questionCount,
+            'durationMinutes' => $durationMinutes,
+            'category' => $category,
+            'jdFilterRules' => [[
+                'jdSetId' => $jdSetId,
+                'jdTitle' => $jdTitle,
+                'count' => $questionCount,
+                'marks' => 1,
+            ]],
+            'questions' => [],
+            'bankQuestionIds' => [],
+            'randomRules' => [],
+            'bankFilterRules' => [],
+        ];
+
+        $existing = $this->findCompanyMockTestByJdSetId($jdSetId);
+        if ($existing !== null) {
+            $existingId = (string) ($existing['_id'] ?? '');
+            if ($existingId !== '') {
+                return $this->updateTest($admin, $existingId, $payload);
+            }
+        }
+
+        return $this->createTest($admin, $payload);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function findCompanyMockTestByJdSetId(string $jdSetId): ?array
+    {
+        $target = trim($jdSetId);
+        if ($target === '') {
+            return null;
+        }
+        $rows = $this->tests->findAll([], 500);
+        foreach ($rows as $row) {
+            if (!AptitudeTestModel::isCompanyTest($row)) {
+                continue;
+            }
+            if (AptitudeTestModel::normalizeQuestionSource((string) ($row['questionSource'] ?? '')) !== 'random_jd') {
+                continue;
+            }
+            foreach ((array) ($row['jdFilterRules'] ?? []) as $rule) {
+                if (!is_array($rule)) {
+                    continue;
+                }
+                if (trim((string) ($rule['jdSetId'] ?? '')) === $target) {
+                    return $row;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function listJdQuestionSets(): array
@@ -1037,34 +1101,6 @@ final class AptitudeService
         }
 
         return $model->publicDetail($set);
-    }
-
-    /**
-     * @param array<string, mixed> $admin
-     * @param array<string, mixed> $patch
-     * @return array<string, mixed>
-     */
-    public function updateJdQuestionSetQuestion(array $admin, string $setId, string $questionId, array $patch): array
-    {
-        AptitudeAccessService::requireManager($admin);
-        if (!Security::isValidId($setId)) {
-            Response::notFound('JD question set not found.');
-        }
-        $questionId = trim($questionId);
-        if ($questionId === '') {
-            Response::error('Question id is required.', 400);
-        }
-
-        try {
-            $detail = (new \PMS\Models\AptitudeJdQuestionSetModel())->updateQuestion($setId, $questionId, $patch);
-        } catch (\InvalidArgumentException $e) {
-            Response::error($e->getMessage(), 422);
-        }
-        if ($detail === null) {
-            Response::notFound('Question not found in this set.');
-        }
-
-        return $detail;
     }
 
     /**
@@ -2788,25 +2824,15 @@ final class AptitudeService
                 Response::error('Total questions must match the sum of JD random rule counts.', 422);
             }
             try {
-                $questions = (new \PMS\Models\AptitudeJdQuestionSetModel())->pickRandomByRules($rules);
+                (new \PMS\Models\AptitudeJdQuestionSetModel())->pickRandomByRules($rules);
             } catch (\InvalidArgumentException $e) {
                 Response::error($e->getMessage(), 422);
             }
-            if ($questions === []) {
-                Response::error('Could not pick questions from the JD sets for the given rules.', 422);
-            }
-            $data['questions'] = $questions;
-            $data['questionCount'] = count($questions);
+            $data['questions'] = [];
+            $data['questionCount'] = $ruleTotal > 0 ? $ruleTotal : max(1, $expected);
             $data['bankQuestionIds'] = [];
             $data['randomRules'] = [];
             $data['bankFilterRules'] = [];
-            if (trim((string) ($data['category'] ?? '')) === '' && $questions !== []) {
-                $data['category'] = (string) ($questions[0]['category'] ?? 'General Aptitude');
-            }
-            if (trim((string) ($data['difficulty'] ?? '')) === '' && $questions !== []) {
-                $data['difficulty'] = (string) ($questions[0]['difficulty'] ?? 'Medium');
-            }
-
             return $data;
         }
 
