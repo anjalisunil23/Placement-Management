@@ -2277,21 +2277,26 @@ final class OfficerDataService
         $payload = $this->readCampusDirectorySnapshotPayload();
         $fetchedStudents = (int) ($payload['fetchedStudents'] ?? $payload['studentRecordCount'] ?? 0);
         $fetchedAlumni = (int) ($payload['fetchedAlumni'] ?? $payload['alumniRecordCount'] ?? 0);
+        $studentAlumniOverlap = (int) ($payload['studentAlumniOverlap'] ?? 0);
 
         if ($detailsModel->isAvailable()) {
             $meta = $detailsModel->latestSyncMeta();
             if (is_array($meta)) {
+                $storedStudents = (int) ($meta['studentRecordCount'] ?? 0);
+                $storedAlumni = (int) ($meta['alumniRecordCount'] ?? 0);
+
                 return [
                     'syncedAt'            => $meta['syncedAt'] ?? null,
-                    'studentRecordCount'  => (int) ($meta['studentRecordCount'] ?? 0),
-                    'alumniRecordCount'   => (int) ($meta['alumniRecordCount'] ?? 0),
+                    'studentRecordCount'  => $storedStudents,
+                    'alumniRecordCount'   => $storedAlumni,
                     'fetchedStudents'     => $fetchedStudents > 0
                         ? $fetchedStudents
-                        : (int) ($meta['studentRecordCount'] ?? 0),
+                        : $storedStudents,
                     'fetchedAlumni'       => $fetchedAlumni > 0
                         ? $fetchedAlumni
-                        : (int) ($meta['alumniRecordCount'] ?? 0),
-                    'recordCount'         => (int) ($meta['recordCount'] ?? 0),
+                        : $storedAlumni,
+                    'studentAlumniOverlap' => $studentAlumniOverlap,
+                    'recordCount'         => (int) ($meta['recordCount'] ?? ($storedStudents + $storedAlumni)),
                     'hasStudentSnapshot'  => ((int) ($meta['studentRecordCount'] ?? 0)) > 0,
                     'hasAlumniSnapshot'   => ((int) ($meta['alumniRecordCount'] ?? 0)) > 0,
                     'hasSnapshot'         => ((int) ($meta['recordCount'] ?? 0)) > 0,
@@ -2308,12 +2313,13 @@ final class OfficerDataService
             'studentRecordCount'  => count($students),
             'alumniRecordCount'   => count($alumni),
             'fetchedStudents'     => $fetchedStudents > 0 ? $fetchedStudents : count($students),
-            'fetchedAlumni'       => $fetchedAlumni > 0 ? $fetchedAlumni : count($alumni),
-            'recordCount'         => count($students) + count($alumni),
-            'hasStudentSnapshot'  => $students !== [],
-            'hasAlumniSnapshot'   => $alumni !== [],
-            'hasSnapshot'         => $students !== [] || $alumni !== [],
-            'source'              => 'legacy_snapshot',
+            'fetchedAlumni'        => $fetchedAlumni > 0 ? $fetchedAlumni : count($alumni),
+            'studentAlumniOverlap' => $studentAlumniOverlap,
+            'recordCount'          => count($students) + count($alumni),
+            'hasStudentSnapshot'   => $students !== [],
+            'hasAlumniSnapshot'    => $alumni !== [],
+            'hasSnapshot'          => $students !== [] || $alumni !== [],
+            'source'               => 'legacy_snapshot',
         ];
     }
 
@@ -2332,6 +2338,8 @@ final class OfficerDataService
         $students = $this->fetchCompleteCampusRecordsForSync('student');
         $studentAdmnos = $this->indexAesAdmnosFromRecords($students);
         $alumni = $this->fetchCompleteCampusRecordsForSync('alumni', $studentAdmnos);
+        $alumniExclusive = $this->excludeRecordsInAdmnoIndex($alumni, $studentAdmnos);
+        $studentAlumniOverlap = max(0, count($alumni) - count($alumniExclusive));
         $syncedAt = DocumentHelper::now();
 
         $syncSvc = new StudentDetailsSyncService();
@@ -2339,7 +2347,7 @@ final class OfficerDataService
             'syncSource' => 'admin_campus',
             'studRole'   => 'student',
         ]);
-        $alumniStats = $syncSvc->syncFromAesRecords($alumni, [
+        $alumniStats = $syncSvc->syncFromAesRecords($alumniExclusive, [
             'syncSource' => 'admin_campus',
             'studRole'   => 'alumni',
         ]);
@@ -2347,12 +2355,21 @@ final class OfficerDataService
         $detailsModel = new \PMS\Models\StudentDetailsModel();
         if ($detailsModel->isAvailable()) {
             $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
-            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumni);
-            $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows($alumni);
+            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumniExclusive);
+            $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows(
+                $alumniExclusive,
+                $studentAdmnos
+            );
         }
 
         // Legacy file snapshot kept for rollback/audit only.
-        $this->writeCampusDirectorySnapshot($students, $alumni, $adminUserId, $syncedAt);
+        $this->writeCampusDirectorySnapshot(
+            $students,
+            $alumniExclusive,
+            $adminUserId,
+            $syncedAt,
+            $studentAlumniOverlap
+        );
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
         self::$aesAlumniDirectoryCache = [];
 
@@ -2364,9 +2381,10 @@ final class OfficerDataService
             'studentRecordCount' => $studentCount,
             'alumniRecordCount'  => $alumniCount,
             'recordCount'        => $studentCount + $alumniCount,
-            'fetchedStudents'    => count($students),
-            'fetchedAlumni'      => count($alumni),
-            'fetched'            => (int) ($merged['fetched'] ?? 0),
+            'fetchedStudents'       => count($students),
+            'fetchedAlumni'         => count($alumniExclusive),
+            'studentAlumniOverlap'  => $studentAlumniOverlap,
+            'fetched'               => (int) ($merged['fetched'] ?? 0),
             'inserted'           => (int) ($merged['inserted'] ?? 0),
             'updated'            => (int) ($merged['updated'] ?? 0),
             'unchanged'          => (int) ($merged['unchanged'] ?? 0),
@@ -2412,10 +2430,17 @@ final class OfficerDataService
                 if (!is_array($record)) {
                     continue;
                 }
+                if ($syncStudRole === 'alumni' && $this->recordMatchesAdmnoIndex($record, $authoritativeStudentAdmnos)) {
+                    continue;
+                }
                 if ($residualAlumniPass) {
                     if (!AesApiService::qualifiesAsResidualAlumniRecord($record, $authoritativeStudentAdmnos)) {
                         continue;
                     }
+                } elseif ($syncStudRole === 'alumni'
+                    && $authoritativeStudentAdmnos !== []
+                    && AesApiService::qualifiesAsResidualAlumniRecord($record, $authoritativeStudentAdmnos)) {
+                    // dept/class roster rows not in the studying-student set
                 } elseif (!$this->recordQualifiesForSyncPass($record, $syncStudRole)) {
                     continue;
                 }
@@ -2469,6 +2494,7 @@ final class OfficerDataService
                 $fetchParams(['stud_deptcode' => $aesId]);
                 $this->fetchAlumniScopedByProgramme($api, $aesId, $roleValues, $appendBatch, $directoryList);
             }
+            $this->supplementAlumniFromKnownClassBatches($api, $appendBatch, $authoritativeStudentAdmnos);
             $this->supplementAlumniFromDeptPassOutRecords($api, $appendBatch);
             $this->supplementAlumniFromClassBatchFetches($api, $appendBatch, $authoritativeStudentAdmnos);
             $this->supplementAlumniResidualFromDeptDirectories($api, $appendBatch, $authoritativeStudentAdmnos);
@@ -2495,13 +2521,123 @@ final class OfficerDataService
             if (!is_array($record)) {
                 continue;
             }
-            $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
-            if ($key !== '') {
+            foreach ($this->aesAdmnoKeysFromRecord($record) as $key) {
                 $index[$key] = true;
             }
         }
 
         return $index;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     * @param array<string, true> $admnoIndex
+     * @return list<array<string, mixed>>
+     */
+    private function excludeRecordsInAdmnoIndex(array $records, array $admnoIndex): array
+    {
+        if ($admnoIndex === []) {
+            return array_values($records);
+        }
+
+        $out = [];
+        foreach ($records as $record) {
+            if (!is_array($record) || $this->recordMatchesAdmnoIndex($record, $admnoIndex)) {
+                continue;
+            }
+            $out[] = $record;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param array<string, true> $admnoIndex
+     */
+    private function recordMatchesAdmnoIndex(array $record, array $admnoIndex): bool
+    {
+        foreach ($this->aesAdmnoKeysFromRecord($record) as $key) {
+            if (isset($admnoIndex[$key])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @return list<string>
+     */
+    private function aesAdmnoKeysFromRecord(array $record): array
+    {
+        $keys = [];
+        foreach (['aesAdmno', 'admno', 'stud_admno', 'registerNumber', 'registerno'] as $field) {
+            $key = strtoupper(trim((string) ($record[$field] ?? '')));
+            if ($key !== '') {
+                $keys[$key] = $key;
+            }
+        }
+
+        return array_values($keys);
+    }
+
+    /**
+     * Class batches from AES field labels — fills alumni gaps beyond capped directory responses.
+     *
+     * @param array<string, true> $authoritativeStudentAdmnos
+     * @param callable(array<int, array<string, mixed>>, bool): void $appendBatch
+     */
+    private function supplementAlumniFromKnownClassBatches(
+        AesApiService $api,
+        callable $appendBatch,
+        array $authoritativeStudentAdmnos = []
+    ): void {
+        $programmes = [];
+        foreach (DepartmentProgrammeCatalog::groups() as $group) {
+            foreach ($group['programmes'] ?? [] as $programme) {
+                $code = trim((string) ($programme['code'] ?? ''));
+                if ($code !== '') {
+                    $programmes[$code] = true;
+                }
+            }
+        }
+
+        $maxFetches = (int) (
+            $_ENV['AES_ALUMNI_CLASS_FETCH_MAX']
+            ?? getenv('AES_ALUMNI_CLASS_FETCH_MAX')
+            ?: 0
+        );
+        $fetched = 0;
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            foreach (array_keys($programmes) as $programme) {
+                try {
+                    $batches = $api->fetchPlacementClassBatches($aesId, $programme);
+                } catch (\Throwable) {
+                    continue;
+                }
+                foreach ($batches as $batch) {
+                    if ($maxFetches > 0 && $fetched >= max(100, min(10000, $maxFetches))) {
+                        return;
+                    }
+                    $batch = trim((string) $batch);
+                    if ($batch === '') {
+                        continue;
+                    }
+                    try {
+                        $records = $api->fetchClassStudInfo4Placement($aesId, $programme, $batch, true);
+                    } catch (\Throwable) {
+                        continue;
+                    }
+                    if ($records === []) {
+                        continue;
+                    }
+                    $appendBatch($records);
+                    $fetched++;
+                }
+            }
+        }
     }
 
     /**
@@ -2642,10 +2778,17 @@ final class OfficerDataService
             }
         }
 
-        $maxFetches = max(100, min(3000, (int) ($_ENV['AES_ALUMNI_CLASS_FETCH_MAX'] ?? 1500)));
+        $maxFetches = (int) (
+            $_ENV['AES_ALUMNI_CLASS_FETCH_MAX']
+            ?? getenv('AES_ALUMNI_CLASS_FETCH_MAX')
+            ?: 0
+        );
+        if ($maxFetches > 0) {
+            $maxFetches = max(100, min(10000, $maxFetches));
+        }
         $fetched = 0;
         foreach ($batchKeys as $entry) {
-            if ($fetched >= $maxFetches) {
+            if ($maxFetches > 0 && $fetched >= $maxFetches) {
                 break;
             }
             $records = $api->fetchClassStudInfo4Placement(
@@ -3639,18 +3782,20 @@ final class OfficerDataService
         array $studyingRecords,
         array $alumniRecords,
         string $adminUserId,
-        string $syncedAt
+        string $syncedAt,
+        int $studentAlumniOverlap = 0
     ): void {
         $path = $this->campusDirectorySnapshotPath();
         $payload = [
-            'syncedAt'           => $syncedAt,
-            'syncedBy'           => $adminUserId,
-            'studyingRecords'    => array_values($studyingRecords),
-            'alumniRecords'      => array_values($alumniRecords),
-            'studentRecordCount' => count($studyingRecords),
-            'alumniRecordCount'  => count($alumniRecords),
-            'fetchedStudents'    => count($studyingRecords),
-            'fetchedAlumni'      => count($alumniRecords),
+            'syncedAt'               => $syncedAt,
+            'syncedBy'               => $adminUserId,
+            'studyingRecords'        => array_values($studyingRecords),
+            'alumniRecords'          => array_values($alumniRecords),
+            'studentRecordCount'     => count($studyingRecords),
+            'alumniRecordCount'      => count($alumniRecords),
+            'fetchedStudents'        => count($studyingRecords),
+            'fetchedAlumni'          => count($alumniRecords),
+            'studentAlumniOverlap'   => max(0, $studentAlumniOverlap),
         ];
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($json)) {

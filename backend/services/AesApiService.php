@@ -850,7 +850,11 @@ final class AesApiService
             return true;
         }
 
-        return trim((string) ($record['stud_name'] ?? $record['name'] ?? '')) !== '';
+        if (trim((string) ($record['stud_name'] ?? $record['name'] ?? '')) !== '') {
+            return true;
+        }
+
+        return $admno !== '';
     }
 
     /**

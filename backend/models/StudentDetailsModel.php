@@ -515,7 +515,7 @@ class StudentDetailsModel extends BaseModel
                 continue;
             }
             $key = self::resolveAesAdmno($record);
-            if ($key !== '' && AesApiService::qualifiesAsAlumniDirectoryRecord($record)) {
+            if ($key !== '') {
                 $alumniAdmnos[$key] = true;
             }
         }
@@ -565,10 +565,13 @@ class StudentDetailsModel extends BaseModel
      * Demote alumni rows absent from the latest AES alumni fetch (upsert-only sync leaves stale rows).
      *
      * @param list<array<string, mixed>> $authoritativeAlumniRecords
+     * @param array<string, true> $authoritativeStudentAdmnos
      * @return array{demoted:int}
      */
-    public function reconcileStaleAlumniRows(array $authoritativeAlumniRecords): array
-    {
+    public function reconcileStaleAlumniRows(
+        array $authoritativeAlumniRecords,
+        array $authoritativeStudentAdmnos = []
+    ): array {
         $stats = ['demoted' => 0];
         if (!$this->bootstrapTable()) {
             return $stats;
@@ -580,15 +583,13 @@ class StudentDetailsModel extends BaseModel
                 continue;
             }
             $key = self::resolveAesAdmno($record);
-            if ($key !== ''
-                && AesApiService::normalizeStudRole($record) !== 'student'
-                && (
-                    AesApiService::qualifiesAsAlumniDirectoryRecord($record)
-                    || AesApiService::qualifiesAsAlumniByHeuristics($record)
-                    || AesApiService::qualifiesAsAlumniFromDeptScan($record)
-                )) {
-                $authoritative[$key] = true;
+            if ($key === '' || isset($authoritativeStudentAdmnos[$key])) {
+                continue;
             }
+            if (AesApiService::normalizeStudRole($record) === 'student') {
+                continue;
+            }
+            $authoritative[$key] = true;
         }
 
         try {

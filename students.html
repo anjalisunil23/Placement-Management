@@ -2256,11 +2256,16 @@ function formatCampusAesDirectorySyncStatus(meta) {
   const total = Number(meta.recordCount ?? (students + alumni));
   const fetchedStudents = Number(meta.fetchedStudents ?? 0);
   const fetchedAlumni = Number(meta.fetchedAlumni ?? 0);
+  const overlap = Number(meta.studentAlumniOverlap ?? 0);
   let summary = alumni > 0
     ? `${students} students · ${alumni} alumni · ${total} total`
     : `${students} students · ${total} total`;
   if (fetchedStudents > 0 || fetchedAlumni > 0) {
-    summary += ` (AES: ${fetchedStudents || students} + ${fetchedAlumni || alumni})`;
+    const aesStudents = fetchedStudents || students;
+    const aesAlumni = fetchedAlumni || alumni;
+    summary += overlap > 0
+      ? ` (AES: ${aesStudents} studying + ${aesAlumni} alumni, ${overlap} overlap excluded)`
+      : ` (AES: ${aesStudents} studying + ${aesAlumni} alumni)`;
   }
   return when !== ''
     ? `${summary} · last sync ${when}`
@@ -2298,7 +2303,9 @@ async function runCampusAesDirectorySync() {
     const ac = result.alumniRecordCount ?? 0;
     const fetchedStudents = result.fetchedStudents ?? sc;
     const fetchedAlumni = result.fetchedAlumni ?? ac;
-    toast(`Synced ${sc} students and ${ac} alumni into student_details (${fetchedStudents} + ${fetchedAlumni} fetched from AES).`, 'success');
+    const overlap = Number(result.studentAlumniOverlap ?? 0);
+    const overlapNote = overlap > 0 ? `, ${overlap} studying overlap excluded` : '';
+    toast(`Synced ${sc} students and ${ac} alumni (${fetchedStudents} + ${fetchedAlumni} from AES${overlapNote}).`, 'success');
     await refreshCampusAesDirectorySyncStatus();
     await loadFinalYearStudents(true);
     if (canViewAlumni) await loadAlumniStudents(true);
@@ -2977,7 +2984,8 @@ function renderAlumniDataTable(list) {
   const tableEl = document.getElementById('alumniTable');
   const countEl = document.getElementById('alumniCount');
   if (!tbody || !tableEl) return;
-  if (countEl) countEl.textContent = String(list.length);
+  const metaAlumni = Number(campusAesDirectoryMeta?.alumniRecordCount ?? 0);
+  if (countEl) countEl.textContent = String(metaAlumni > 0 ? metaAlumni : list.length);
 
   if (!alumniLoaded) {
     setAlumniPlainTable('<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading alumni…</td></tr>');

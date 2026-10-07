@@ -938,6 +938,29 @@ class StudentPlacementModel extends BaseModel
     }
 
     /**
+     * Merge incoming AES/portal fields without blanking existing placement data.
+     *
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $incoming
+     * @return array<string, mixed>
+     */
+    public static function mergeNonEmptyValues(array $base, array $incoming): array
+    {
+        $merged = $base;
+        foreach ($incoming as $key => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+            if (is_array($value) && $value === []) {
+                continue;
+            }
+            $merged[$key] = $value;
+        }
+
+        return $merged;
+    }
+
+    /**
      * @param array<string, mixed> $doc
      * @return array<string, mixed>
      */
