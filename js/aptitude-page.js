@@ -2228,6 +2228,17 @@
     };
   }
 
+  function bindManualQuestionShowAll(panel) {
+    if (!panel) return;
+    panel.querySelector('[data-jd-show-all-questions]')?.addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      const more = panel.querySelector('[data-jd-questions-more]');
+      if (!more) return;
+      more.classList.remove('d-none');
+      btn.remove();
+    });
+  }
+
   function bindManualQuestionEditEvents(panel) {
     if (!panel || panel.dataset.jdQEditBound === '1') return;
     panel.dataset.jdQEditBound = '1';
@@ -2237,7 +2248,9 @@
       const host = hostEl();
       if (!host) return;
       host.innerHTML = renderManualQuestionsPanel(detail || {}, { setId, editable: access.canManage });
-      bindManualQuestionEditEvents(host.querySelector('[data-jd-questions-panel]'));
+      const nextPanel = host.querySelector('[data-jd-questions-panel]');
+      bindManualQuestionEditEvents(nextPanel);
+      bindManualQuestionShowAll(nextPanel);
     };
     panel.addEventListener('click', async (e) => {
       const setId = String(panel.getAttribute('data-jd-set-id') || '');
@@ -2294,6 +2307,7 @@
         }
       }
     });
+    bindManualQuestionShowAll(panel);
   }
 
   function splitManualTextIntoBlocks(text) {
@@ -2349,7 +2363,16 @@
         }
         return header + renderJdQuestionDetailHtml(q, i, { setId, editable, qIndex: i });
       });
-      return summary + `<div class="d-flex flex-column gap-3" data-jd-questions-panel data-jd-set-id="${esc(setId)}">${cards.join('')}</div>`;
+      const initialShow = 20;
+      if (cards.length <= initialShow) {
+        return summary + `<div class="d-flex flex-column gap-3" data-jd-questions-panel data-jd-set-id="${esc(setId)}">${cards.join('')}</div>`;
+      }
+      const hiddenCount = cards.length - initialShow;
+      return summary + `<div class="d-flex flex-column gap-3" data-jd-questions-panel data-jd-set-id="${esc(setId)}">
+        ${cards.slice(0, initialShow).join('')}
+        <div class="d-none d-flex flex-column gap-3" data-jd-questions-more>${cards.slice(initialShow).join('')}</div>
+        <button type="button" class="btn btn-sm btn-outline-secondary align-self-start" data-jd-show-all-questions>Show all ${qs.length} questions (+${hiddenCount} more)</button>
+      </div>`;
     }
     const text = String(detail?.manualText || '').trim();
     const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};
@@ -2518,13 +2541,26 @@
         if (!panel.classList.contains('d-none')) {
           panel.classList.add('d-none');
           btn.textContent = 'Questions';
+          btn.removeAttribute('disabled');
           return;
         }
-        const detail = await getDetail(id);
-        panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
-        bindManualQuestionEditEvents(panel.querySelector('[data-jd-questions-panel]'));
+        btn.setAttribute('disabled', 'disabled');
+        btn.textContent = 'Loading…';
+        panel.innerHTML = '<div class="small text-muted-2 py-2"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading questions…</div>';
         panel.classList.remove('d-none');
-        btn.textContent = 'Hide';
+        try {
+          const detail = await getDetail(id);
+          panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
+          const qPanel = panel.querySelector('[data-jd-questions-panel]');
+          bindManualQuestionEditEvents(qPanel);
+          bindManualQuestionShowAll(qPanel);
+          btn.textContent = 'Hide';
+        } catch (err) {
+          panel.innerHTML = `<p class="small text-danger mb-0">${esc(err?.message || 'Could not load questions.')}</p>`;
+          btn.textContent = 'Questions';
+        } finally {
+          btn.removeAttribute('disabled');
+        }
       });
     });
     root.querySelectorAll('[data-jd-edit-problem]').forEach((btn) => {

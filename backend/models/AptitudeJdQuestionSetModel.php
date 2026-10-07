@@ -609,6 +609,10 @@ class AptitudeJdQuestionSetModel extends BaseModel
         }
 
         $id = (string) ($setRow['_id'] ?? '');
+        $hasStoredFile = trim((string) ($setRow['jdFile'] ?? '')) !== '';
+        $manualText = ($questions !== [] && $hasStoredFile)
+            ? ''
+            : $this->manualTextForView($setRow);
 
         return $this->withDocumentUrl([
             'id' => $id,
@@ -621,7 +625,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             'hasDocument' => $this->rowHasManualDocument($setRow),
             'questionCount' => count($questions),
             'questions' => $questions,
-            'manualText' => $this->manualTextForView($setRow),
+            'manualText' => $manualText,
             'manualSaveTarget' => (string) ($setRow['manualSaveTarget'] ?? 'bank'),
             'manualSource' => (string) ($setRow['manualSource'] ?? ''),
             'companyBankKind' => self::resolveCompanyBankKind($setRow),

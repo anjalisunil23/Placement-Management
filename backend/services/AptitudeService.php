@@ -910,12 +910,10 @@ final class AptitudeService
             return 0;
         }
 
-        $batchSize = max(6, min(24, (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 18)));
         $analyzer = new AptitudeManualAnswerAnalyzer();
         $total = 0;
-        $maxRounds = (int) ceil(count($questions) / max(1, $batchSize)) + 10;
 
-        for ($round = 0; $round < $maxRounds; $round++) {
+        for ($round = 0; $round < 3; $round++) {
             $unknown = 0;
             foreach ($questions as $q) {
                 if (empty($q['answerKnown'])) {
@@ -925,7 +923,7 @@ final class AptitudeService
             if ($unknown === 0) {
                 break;
             }
-            $resolved = $analyzer->analyze($questions, $batchSize);
+            $resolved = $analyzer->analyze($questions, 0);
             $total += $resolved;
             if ($resolved <= 0) {
                 break;

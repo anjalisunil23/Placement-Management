@@ -11,12 +11,15 @@ use PMS\Models\AptitudeTestModel;
  */
 final class AptitudeManualAnswerAnalyzer
 {
-    private const BATCH_SIZE = 6;
+    private int $batchSize;
 
     public function __construct(
-        private ?OpenAIService $openai = null
+        private ?OpenAIService $openai = null,
+        ?int $batchSize = null
     ) {
         $this->openai = $openai ?? new OpenAIService();
+        $configured = $batchSize ?? (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 12);
+        $this->batchSize = max(4, min(18, $configured));
     }
 
     /**
@@ -51,7 +54,7 @@ final class AptitudeManualAnswerAnalyzer
         }
 
         $resolved = 0;
-        foreach (array_chunk($pending, self::BATCH_SIZE, true) as $batch) {
+        foreach (array_chunk($pending, $this->batchSize, true) as $batch) {
             if ($maxResolve > 0 && $resolved >= $maxResolve) {
                 break;
             }
@@ -144,7 +147,8 @@ SYS;
             . json_encode(['questions' => $items], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
         try {
-            $raw = $this->openai->generateJson($system, $user, 4096, 0.0);
+            $maxTokens = min(8192, 2048 + count($items) * 512);
+            $raw = $this->openai->generateJson($system, $user, $maxTokens, 0.0);
         } catch (\Throwable $e) {
             error_log('[PMS Aptitude manual analyze] failed: ' . $e->getMessage());
 
