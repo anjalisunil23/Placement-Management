@@ -215,6 +215,12 @@ try {
     $throws(static function () use ($activities, $otherStaff, $tutorialId): void {
         $activities->listSubmissionsManaged($otherStaff, $tutorialId, []);
     }, '2 unauthorized staff cannot view another staff tutorial submissions');
+    $throws(static function () use ($activities, $otherStaff, $tutorialId, $attemptId): void {
+        $activities->getSubmissionManaged($otherStaff, $tutorialId, $attemptId);
+    }, '2b unauthorized staff cannot open another staff submission');
+    $throws(static function () use ($activities, $otherStaff, $tutorialId, $attemptId): void {
+        $activities->saveReviewManaged($otherStaff, $tutorialId, $attemptId, ['feedback' => 'Nope']);
+    }, '2c unauthorized staff cannot review another staff submission');
 
     // 3 students cannot access review APIs
     $throws(static function () use ($activities, $studentUser, $tutorialId): void {

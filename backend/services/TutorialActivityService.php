@@ -312,7 +312,7 @@ final class TutorialActivityService
      */
     public function listSubmissionsManaged(array $user, string $tutorialId, array $filters = []): array
     {
-        $course = $this->tutorials->showManaged($user, $tutorialId);
+        $course = $this->requireReviewableTutorial($user, $tutorialId);
         $moduleId = trim((string) ($filters['moduleId'] ?? ''));
         $activityId = trim((string) ($filters['activityId'] ?? ''));
         $status = strtolower(trim((string) ($filters['status'] ?? 'all')));
@@ -360,7 +360,7 @@ final class TutorialActivityService
      */
     public function getSubmissionManaged(array $user, string $tutorialId, string $submissionId): array
     {
-        $this->tutorials->showManaged($user, $tutorialId);
+        $this->requireReviewableTutorial($user, $tutorialId);
         $submission = $this->requireManagedSubmission($tutorialId, $submissionId);
         if ((string) ($submission['status'] ?? '') !== 'SUBMITTED') {
             throw new \InvalidArgumentException('Only submitted attempts can be reviewed.');
@@ -1206,7 +1206,7 @@ final class TutorialActivityService
         array $input,
         bool $finalize
     ): array {
-        $this->tutorials->showManaged($user, $tutorialId);
+        $this->requireReviewableTutorial($user, $tutorialId);
         $reviewerUserId = (string) ($user['_id'] ?? $user['id'] ?? '');
         if (!Security::isValidId($reviewerUserId)) {
             throw new \RuntimeException('You do not have permission to manage tutorials.', 403);
@@ -1538,6 +1538,22 @@ final class TutorialActivityService
         }
 
         return $ctx;
+    }
+
+    /**
+     * Student activity reviews are private to the course creator.
+     *
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireReviewableTutorial(array $user, string $tutorialId): array
+    {
+        $course = $this->tutorials->showManaged($user, $tutorialId);
+        if (($course['isOwner'] ?? false) !== true) {
+            throw new \RuntimeException('You can only review submissions for tutorials you created.', 403);
+        }
+
+        return $course;
     }
 
     /**

@@ -252,7 +252,9 @@
         ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-edit-tutorial="${esc(row.id)}">Edit</button>`
         : '';
       const manage = `<button type="button" class="btn btn-sm btn-outline-secondary" data-modules="${esc(row.id)}">${editable ? (status === 'published' ? 'Manage' : 'Continue Editing') : 'View only'}</button>`;
-      const reviews = `<button type="button" class="btn btn-sm btn-outline-secondary" data-activity-reviews="${esc(row.id)}">Reviews</button>`;
+      const reviews = editable
+        ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-activity-reviews="${esc(row.id)}">Reviews</button>`
+        : '';
       const remove = editable && status !== 'published'
         ? `<button type="button" class="btn btn-sm btn-outline-danger" data-delete-tutorial="${esc(row.id)}">Delete</button>`
         : '';
@@ -1140,6 +1142,8 @@
     if (addModule) addModule.classList.toggle('d-none', !editable);
     const genModule = document.getElementById('generateModuleAiBtn');
     if (genModule) genModule.classList.toggle('d-none', !editable);
+    const reviewsBtn = document.getElementById('builderActivityReviews');
+    if (reviewsBtn) reviewsBtn.classList.toggle('d-none', !editable);
   }
 
   async function openModules(id, stayOnArticle) {
@@ -1215,7 +1219,7 @@
         <div class="d-flex gap-2 align-items-start">
           ${handle}
           <div class="flex-grow-1 min-w-0">
-            <button type="button" class="btn btn-sm p-0 fw-semibold" data-select-module="${esc(module.id)}">${active ? '●' : '○'} ${esc(index + 1)}. ${esc(module.title)}</button>
+            <button type="button" class="btn btn-sm p-0 fw-semibold" data-select-module="${esc(module.id)}">${active ? '●' : '○'} ${esc(index + 1)}. ${esc(cleanModuleTitle(module.title))}</button>
             <div class="small text-muted-2 mb-2">${esc(excerpt)}</div>
             <div class="d-flex flex-wrap gap-1">
               ${controls}
@@ -3238,6 +3242,11 @@
     document.getElementById('activityReviewQueue').innerHTML = '<p class="text-muted-2 mb-0">Loading…</p>';
     try {
       const course = await call(`/tutorials/manage/${encodeURIComponent(tutorialId)}`);
+      if (course.isOwner !== true) {
+        toast('You can only review submissions for tutorials you created.', 'error');
+        showStaffScreen(state.active && state.active.id === tutorialId ? 'builder' : 'list');
+        return;
+      }
       state.reviewCourse = course;
       state.active = course;
       document.getElementById('activityReviewCourseMeta').textContent = `${course.title || 'Course'} · student practical activity submissions`;
@@ -3996,6 +4005,16 @@
     return flags[`${moduleId}:${lessonId}`] === true;
   }
 
+  function cleanModuleTitle(title) {
+    const raw = String(title || '').trim();
+    const stripped = raw.replace(/^(module\s*\d+\s*[:.\-–—]\s*)+/i, '').trim();
+    return stripped || raw || 'Module';
+  }
+
+  function studentModuleLabel(module, index) {
+    return `Module ${index + 1}: ${cleanModuleTitle(module && module.title)}`;
+  }
+
   function moduleHasPublishedAssessment(module, index) {
     if (module && module.hasPublishedAssessment === true) return true;
     return index === learn.moduleIndex && !!(learn.assessment && learn.assessment.assessment);
@@ -4031,22 +4050,22 @@
       const moduleReady = markedIds.includes(module.id) || ((learn.progress && learn.progress.workspace && learn.progress.workspace.readyModuleIds) || []).includes(module.id);
       const hasPublishedAssessment = moduleHasPublishedAssessment(module, index);
       const assessmentActive = learn.viewMode === 'assessment' && index === learn.moduleIndex;
+      const assessmentButton = expanded && hasPublishedAssessment
+        ? `<button type="button" class="btn btn-sm student-lesson student-assessment-nav ${assessmentActive ? 'btn-primary is-active' : 'btn-outline-primary'}" data-student-assessment-jump="${index}"><span class="me-1" aria-hidden="true">▣</span>Module assessment</button>`
+        : '';
       const lessonButtons = expanded ? `<div class="student-lessons">${lessons.map((lesson, lessonIndex) => {
         const active = learn.viewMode === 'lesson' && index === learn.moduleIndex && lessonIndex === learn.lessonIndex;
         const done = lessonIsComplete(module.id, lesson.id);
         return `<button type="button" class="btn btn-sm student-lesson ${active ? 'btn-primary is-active' : 'btn-outline-secondary'}" data-student-lesson-jump="${index}:${lessonIndex}"><span class="me-1" aria-hidden="true">${done ? '✓' : '○'}</span>${esc(lesson.title || ('Lesson ' + (lessonIndex + 1)))}</button>`;
-      }).join('')}</div>` : '';
-      const assessmentEntry = hasPublishedAssessment
-        ? `<button type="button" class="student-assessment-nav ${assessmentActive ? 'is-active' : ''}" data-student-assessment-jump="${index}">Module assessment · Module ${index + 1}</button>`
-        : '';
-      return `<div class="student-module ${index === learn.moduleIndex && learn.viewMode === 'lesson' ? 'is-active' : ''}">
+      }).join('')}${assessmentButton}</div>` : '';
+      return `<div class="student-module ${index === learn.moduleIndex ? 'is-active' : ''}">
         <button type="button" class="student-module-toggle" data-student-module="${index}" aria-expanded="${expanded ? 'true' : 'false'}">
           <span class="me-1" aria-hidden="true">${expanded ? '▾' : '▸'}</span>
           <span class="me-1" aria-hidden="true">${moduleReady ? '✓' : '○'}</span>
-          Module ${index + 1}: ${esc(module.title || 'Module')}
+          ${esc(studentModuleLabel(module, index))}
         </button>
         ${lessonButtons}
-      </div>${assessmentEntry}`;
+      </div>`;
     }).join('');
     root.querySelectorAll('[data-student-module]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -4421,7 +4440,7 @@
       paintProgress();
     } catch { /* module content still shows */ }
     document.getElementById('studentModulePosition').textContent = `Module ${learn.moduleIndex + 1} of ${modules.length}`;
-    document.getElementById('studentModuleHeading').textContent = learn.module.title || '';
+    document.getElementById('studentModuleHeading').textContent = cleanModuleTitle(learn.module.title);
     const subtitle = document.getElementById('studentModuleSubtitle');
     if (subtitle) subtitle.textContent = learn.module.subtitle || '';
     learn.lessons = Array.isArray(learn.module.lessons) && learn.module.lessons.length
@@ -4504,7 +4523,7 @@
     document.getElementById('studentModulePosition').textContent = `Module ${learn.moduleIndex + 1} of ${modules.length} · Assessment`;
     document.getElementById('studentModuleHeading').textContent = (learn.assessment.assessment && learn.assessment.assessment.title) || 'Module assessment';
     const subtitle = document.getElementById('studentModuleSubtitle');
-    if (subtitle) subtitle.textContent = `Quiz for ${(learn.module && learn.module.title) || 'this module'}`;
+    if (subtitle) subtitle.textContent = `Quiz for ${cleanModuleTitle((learn.module && learn.module.title) || 'this module')}`;
     const lessonHeading = document.getElementById('studentLessonHeading');
     if (lessonHeading) {
       lessonHeading.textContent = '';
