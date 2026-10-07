@@ -5,6 +5,13 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet"/>
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet"/>
+<style>
+  .select2-container { width: 100% !important; }
+  .select2-container--bootstrap-5 .select2-selection { min-height: 38px; }
+  .select2-container--open { z-index: 2000; }
+</style>
 </head>
 <body data-page="certifications.html"><div class="app">
 <aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="page">
@@ -164,7 +171,9 @@
               </div>
             </div>
           </div>
-          <div id="departmentPicker" class="border rounded-3 p-2 mt-2"></div>
+          <div id="departmentPicker" class="mt-2">
+            <select id="certificationDepartmentSelect" class="form-select" multiple data-placeholder="Search and select departments"></select>
+          </div>
           <p class="small text-danger mb-0 mt-2 d-none" id="certificationFormError"></p>
           <div id="certificationCompletion" class="small text-muted-2 mt-2 d-none"></div>
         </div>
@@ -179,6 +188,8 @@
 
 </main></div></div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="js/api.js?v=20260926certofficer"></script>
 <script src="js/app.js?v=20260930practice"></script>
 <script>
@@ -235,33 +246,68 @@ function showFormError(message) {
   el.classList.toggle('d-none', !message);
 }
 
+function certificationDepartmentSelect() {
+  return document.getElementById('certificationDepartmentSelect');
+}
+
+function bindCertificationDepartmentSelect2() {
+  const el = certificationDepartmentSelect();
+  if (!el || typeof jQuery === 'undefined' || !jQuery.fn.select2) return;
+  const $el = jQuery(el);
+  if ($el.data('select2')) $el.select2('destroy');
+  $el.select2({
+    theme: 'bootstrap-5',
+    width: '100%',
+    placeholder: 'Search and select departments',
+    allowClear: true,
+    closeOnSelect: false,
+    dropdownParent: jQuery('#certificationModal .modal-content'),
+  });
+}
+
+function setCertificationDepartmentDisabled(disabled) {
+  const el = certificationDepartmentSelect();
+  if (!el) return;
+  el.disabled = !!disabled;
+  if (typeof jQuery === 'undefined' || !jQuery.fn.select2 || !jQuery(el).data('select2')) return;
+  jQuery(el).prop('disabled', !!disabled).trigger('change.select2');
+}
+
 function syncDepartmentPicker() {
   const selected = document.getElementById('visibilitySelected')?.checked;
   const picker = document.getElementById('departmentPicker');
   if (!picker) return;
   picker.classList.toggle('d-none', !selected);
-  picker.querySelectorAll('input').forEach((input) => { input.disabled = !selected; });
+  const locked = certificationRole() === 'placement_officer';
+  const viewOnly = document.getElementById('certificationSaveBtn')?.classList.contains('d-none');
+  setCertificationDepartmentDisabled(!selected || locked || viewOnly);
 }
 
 function renderDepartmentPicker(selectedIds) {
   const picker = document.getElementById('departmentPicker');
+  if (!picker) return;
   const locked = certificationRole() === 'placement_officer' ? officerDepartmentId() : '';
   const chosen = new Set((selectedIds || []).map(String));
   const depts = certificationState.departments.filter((dept) => !locked || String(dept.id || dept._id) === locked);
   if (!depts.length) {
+    const existing = certificationDepartmentSelect();
+    if (existing && typeof jQuery !== 'undefined' && jQuery(existing).data('select2')) jQuery(existing).select2('destroy');
     picker.innerHTML = '<div class="small text-muted-2 mb-0">No departments are available for your account.</div>';
     return;
   }
-  picker.innerHTML = depts.map((dept) => {
+  let select = certificationDepartmentSelect();
+  if (select && typeof jQuery !== 'undefined' && jQuery(select).data('select2')) jQuery(select).select2('destroy');
+  if (!select) {
+    picker.innerHTML = '<select id="certificationDepartmentSelect" class="form-select" multiple data-placeholder="Search and select departments"></select>';
+    select = certificationDepartmentSelect();
+  }
+  select.innerHTML = depts.map((dept) => {
     const id = String(dept.id || dept._id || '');
     const label = dept.code ? `${dept.code}${dept.name ? ' · ' + dept.name : ''}` : (dept.name || id);
-    const checked = locked ? 'checked' : (chosen.has(id) ? 'checked' : '');
-    const disabled = locked ? 'disabled' : '';
-    return `<div class="form-check">
-      <input class="form-check-input cert-dept" type="checkbox" value="${escHtml(id)}" id="dept-${escHtml(id)}" ${checked} ${disabled}/>
-      <label class="form-check-label" for="dept-${escHtml(id)}">${escHtml(label)}</label>
-    </div>`;
+    const selected = locked || chosen.has(id) ? ' selected' : '';
+    return `<option value="${escHtml(id)}"${selected}>${escHtml(label)}</option>`;
   }).join('');
+  bindCertificationDepartmentSelect2();
   if (locked) {
     document.getElementById('visibilitySelected').checked = true;
     document.getElementById('visibilityAll').disabled = true;
@@ -319,7 +365,13 @@ async function loadCertifications() {
 }
 
 function selectedDepartmentIds() {
-  return Array.from(document.querySelectorAll('.cert-dept:checked')).map((input) => input.value);
+  const el = certificationDepartmentSelect();
+  if (!el) return [];
+  if (typeof jQuery !== 'undefined' && jQuery(el).data('select2')) {
+    const val = jQuery(el).val();
+    return Array.isArray(val) ? val : [];
+  }
+  return Array.from(el.selectedOptions).map((opt) => opt.value);
 }
 
 function openCertificationForm(row) {
@@ -343,9 +395,7 @@ function openCertificationForm(row) {
     if (!el) return;
     el.disabled = viewOnly || (id === 'visibilityAll' && certificationRole() === 'placement_officer');
   });
-  if (viewOnly) {
-    document.querySelectorAll('.cert-dept').forEach((el) => { el.disabled = true; });
-  }
+  if (viewOnly) setCertificationDepartmentDisabled(true);
   showFormError('');
   const completion = document.getElementById('certificationCompletion');
   completion.classList.add('d-none');

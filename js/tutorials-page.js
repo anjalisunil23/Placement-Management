@@ -130,32 +130,69 @@
     if (current) select.value = current;
   }
 
+  function departmentOptionHtml() {
+    return state.departments.map((row) => {
+      const label = row.code ? `${row.code} · ${row.name || row.code}` : (row.name || row.id);
+      return `<option value="${esc(row.id)}">${esc(label)}</option>`;
+    }).join('');
+  }
+
+  function bindDepartmentSelect2(selectId, parentSelector) {
+    const el = document.getElementById(selectId);
+    if (!el || typeof jQuery === 'undefined' || !jQuery.fn.select2) return;
+    const $el = jQuery(el);
+    if ($el.data('select2')) $el.select2('destroy');
+    $el.select2({
+      theme: 'bootstrap-5',
+      width: '100%',
+      placeholder: el.getAttribute('data-placeholder') || 'Search and select departments',
+      allowClear: true,
+      closeOnSelect: false,
+      dropdownParent: parentSelector ? jQuery(parentSelector) : jQuery(document.body),
+    });
+  }
+
+  function fillDepartmentSelect(selectId, parentSelector) {
+    const el = document.getElementById(selectId);
+    if (!el) return;
+    const current = selectedSelectValues(el);
+    if (typeof jQuery !== 'undefined' && jQuery(el).data('select2')) jQuery(el).select2('destroy');
+    el.innerHTML = departmentOptionHtml();
+    [...el.options].forEach((opt) => { opt.selected = current.includes(opt.value); });
+    bindDepartmentSelect2(selectId, parentSelector);
+  }
+
+  function selectedSelectValues(el) {
+    if (!el) return [];
+    if (typeof jQuery !== 'undefined' && jQuery(el).data('select2')) {
+      const val = jQuery(el).val();
+      return Array.isArray(val) ? val : [];
+    }
+    return [...el.selectedOptions].map((opt) => opt.value);
+  }
+
+  function setSelectValues(el, ids) {
+    if (!el) return;
+    const wanted = new Set((ids || []).map(String));
+    [...el.options].forEach((opt) => { opt.selected = wanted.has(opt.value); });
+    if (typeof jQuery !== 'undefined' && jQuery.fn.select2) jQuery(el).trigger('change');
+  }
+
   async function loadDepartments() {
     if (typeof DepartmentStore !== 'undefined') {
       await DepartmentStore.fetch({ force: true });
       state.departments = DepartmentStore.all() || [];
     }
-    const checks = state.departments.map((row) => (
-      `<label class="form-check"><input class="form-check-input" type="checkbox" value="${esc(row.id)}" data-dept/> <span class="form-check-label">${esc(row.name || row.code)} <span class="text-muted-2">${esc(row.code || '')}</span></span></label>`
-    )).join('') || '<p class="text-muted-2 mb-0">No departments are available.</p>';
-    document.getElementById('departmentChecks').innerHTML = checks;
-    const aiChecks = document.getElementById('aiDepartmentChecks');
-    if (aiChecks) {
-      aiChecks.innerHTML = state.departments.map((row) => (
-        `<label class="form-check"><input class="form-check-input" type="checkbox" value="${esc(row.id)}" data-ai-dept/> <span class="form-check-label">${esc(row.name || row.code)} <span class="text-muted-2">${esc(row.code || '')}</span></span></label>`
-      )).join('') || '<p class="text-muted-2 mb-0">No departments are available.</p>';
-    }
+    fillDepartmentSelect('departmentSelect', '#tutorialModal .modal-content');
+    fillDepartmentSelect('aiDepartmentSelect', document.body);
   }
 
   function selectedDepartments() {
-    return [...document.querySelectorAll('[data-dept]:checked')].map((input) => input.value);
+    return selectedSelectValues(document.getElementById('departmentSelect'));
   }
 
   function setDepartments(ids) {
-    const wanted = new Set((ids || []).map(String));
-    document.querySelectorAll('[data-dept]').forEach((input) => {
-      input.checked = wanted.has(input.value);
-    });
+    setSelectValues(document.getElementById('departmentSelect'), ids);
   }
 
   function renderYears() {
@@ -195,7 +232,7 @@
   }
 
   function selectedAiDepartments() {
-    return [...document.querySelectorAll('[data-ai-dept]:checked')].map((input) => input.value);
+    return selectedSelectValues(document.getElementById('aiDepartmentSelect'));
   }
 
   function renderAiYears() {
@@ -527,7 +564,7 @@
     state.aiYears = [];
     const allStudents = document.getElementById('aiVisibilityAll');
     if (allStudents) allStudents.checked = true;
-    document.querySelectorAll('[data-ai-dept]').forEach((input) => { input.checked = false; });
+    setSelectValues(document.getElementById('aiDepartmentSelect'), []);
     const yearInput = document.getElementById('aiYearInput');
     if (yearInput) yearInput.value = '';
     renderAiYears();
