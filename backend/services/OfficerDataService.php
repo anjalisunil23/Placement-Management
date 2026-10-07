@@ -2383,7 +2383,10 @@ final class OfficerDataService
         }
 
         $studentCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('student') : count($students);
-        $alumniCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('alumni') : count($alumniExclusive);
+        $alumniForSnapshot = $this->stampAesAlumniRole($alumni);
+        $alumniCount = $detailsModel->isAvailable()
+            ? $detailsModel->countByRole('alumni')
+            : count($alumniForSnapshot);
         $roleBreakdown = $detailsModel->isAvailable() ? $detailsModel->countGroupedByStudRole() : [];
         $diagnostics = $detailsModel->isAvailable() ? $detailsModel->directoryCountDiagnostics() : [];
 
@@ -2424,10 +2427,10 @@ final class OfficerDataService
             ),
         ];
 
-        // Legacy file snapshot kept for rollback/audit only.
+        // Snapshot is the alumni source after student_details was retired.
         $this->writeCampusDirectorySnapshot(
             $students,
-            $alumniExclusive,
+            $alumniForSnapshot,
             $adminUserId,
             $syncedAt,
             $studentAlumniOverlap,
@@ -3952,6 +3955,48 @@ final class OfficerDataService
     }
 
     /**
+     * Keep existing studying rows and replace alumni with AES stud_role = Alumni.
+     *
+     * @param list<array<string, mixed>> $alumniRecords
+     */
+    private function persistCampusAlumniSnapshot(array $alumniRecords): void
+    {
+        $payload = $this->readCampusDirectorySnapshotPayload();
+        $studying = $this->studyingRecordsFromCampusDirectoryPayload($payload);
+        $alumni = $this->stampAesAlumniRole($alumniRecords);
+        $this->writeCampusDirectorySnapshot(
+            $studying,
+            $alumni,
+            (string) ($payload['syncedBy'] ?? ''),
+            \PMS\Utils\DocumentHelper::now(),
+            (int) ($payload['studentAlumniOverlap'] ?? 0),
+            is_array($payload['lastSyncReport'] ?? null) ? $payload['lastSyncReport'] : []
+        );
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     * @return list<array<string, mixed>>
+     */
+    private function stampAesAlumniRole(array $records): array
+    {
+        $out = [];
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            if (AesApiService::normalizeStudRole($record) === 'student') {
+                continue;
+            }
+            $record['stud_role'] = 'Alumni';
+            $record['studRole'] = 'alumni';
+            $out[] = $record;
+        }
+
+        return $out;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return list<array<string, mixed>>
      */
@@ -4290,6 +4335,17 @@ final class OfficerDataService
         $records = $liveRegistry
             ? $this->fetchLiveCampusAlumniDirectoryRecords()
             : $this->readCampusAlumniDirectorySnapshotRecords();
+
+        if ($records === [] && !$liveRegistry) {
+            $records = $this->fetchLiveCampusAlumniDirectoryRecords();
+            if ($records !== []) {
+                try {
+                    $this->persistCampusAlumniSnapshot($records);
+                } catch (\Throwable) {
+                    // Still return the live AES rows if the snapshot file cannot be written.
+                }
+            }
+        }
 
         return self::$aesAlumniDirectoryCache[$cacheKey] = $records;
     }
