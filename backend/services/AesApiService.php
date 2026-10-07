@@ -788,23 +788,15 @@ final class AesApiService
     }
 
     /**
-     * Persisted studRole for student_details — never guess alumni without AES/heuristic proof.
+     * Persisted studRole for student_details — AES stud_role field only (never heuristics).
      *
      * @param array<string, mixed> $record
      */
     public static function resolveStudRoleForStorage(array $record, string $syncHint = ''): string
     {
-        $role = self::normalizeStudRole($record);
-        if ($role !== null) {
-            return $role;
-        }
+        unset($syncHint);
 
-        $syncHint = strtolower(trim($syncHint));
-        if ($syncHint === 'alumni' && self::qualifiesAsAlumniRecord($record)) {
-            return 'alumni';
-        }
-
-        return 'student';
+        return self::normalizeStudRole($record) ?? 'student';
     }
 
     /**

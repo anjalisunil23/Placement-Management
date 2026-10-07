@@ -2335,6 +2335,7 @@ final class OfficerDataService
         if ($detailsModel->isAvailable()) {
             $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
             $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students);
+            $merged['alumniRoleReconcile'] = $detailsModel->reconcileAlumniWithoutExplicitAesRole();
         }
 
         // Legacy file snapshot kept for rollback/audit only.
@@ -2437,7 +2438,7 @@ final class OfficerDataService
     private function recordQualifiesForSyncPass(array $record, string $syncStudRole): bool
     {
         if ($syncStudRole === 'alumni') {
-            return AesApiService::qualifiesAsAlumniRecord($record);
+            return $this->recordQualifiesForAlumniTab($record);
         }
 
         $role = AesApiService::normalizeStudRole($record);
@@ -3290,18 +3291,10 @@ final class OfficerDataService
             } catch (\Throwable) {
                 continue;
             }
-            if ($merged !== []) {
-                break;
-            }
         }
 
-        if ($merged === []) {
-            foreach ($this->campusParentDeptAesIds() as $aesId) {
-                $append($this->fetchAesStudyingDirectoryRecords($api, ['stud_deptcode' => $aesId]));
-                if ($merged !== []) {
-                    break;
-                }
-            }
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            $append($this->fetchAesStudyingDirectoryRecords($api, ['stud_deptcode' => $aesId]));
         }
 
         return $merged;
@@ -3473,13 +3466,8 @@ final class OfficerDataService
         };
 
         $fetchWithRole([]);
-        if ($merged === []) {
-            foreach ($this->campusParentDeptAesIds() as $aesId) {
-                $fetchWithRole(['stud_deptcode' => $aesId]);
-                if ($merged !== []) {
-                    break;
-                }
-            }
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            $fetchWithRole(['stud_deptcode' => $aesId]);
         }
 
         return $merged;
@@ -3491,27 +3479,43 @@ final class OfficerDataService
      */
     private function fetchAesStudyingDirectoryRecords(AesApiService $api, array $baseParams): array
     {
+        $merged = [];
+        $seen = [];
+        $append = function (array $records) use (&$merged, &$seen): void {
+            foreach ($this->filterAesStudyingDirectoryRecords($records) as $record) {
+                $key = strtoupper(trim((string) (
+                    $record['admno']
+                    ?? $record['stud_admno']
+                    ?? $record['registerNumber']
+                    ?? $record['registerno']
+                    ?? ''
+                )));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $merged[] = $record;
+            }
+        };
+
         foreach ($this->aesStudyingStudRoleParamValues() as $role) {
             try {
-                $records = $api->fetchAllStudInfo4Placement(
+                $append($api->fetchAllStudInfo4Placement(
                     array_merge($baseParams, ['stud_role' => $role]),
                     true
-                );
-                if ($records !== []) {
-                    return $this->filterAesStudyingDirectoryRecords($records);
-                }
+                ));
             } catch (\Throwable) {
                 continue;
             }
         }
 
         try {
-            $records = $api->fetchAllStudInfo4Placement($baseParams, true);
-
-            return $this->filterAesStudyingDirectoryRecords($records);
+            $append($api->fetchAllStudInfo4Placement($baseParams, true));
         } catch (\Throwable) {
-            return [];
+            // ignore
         }
+
+        return $merged;
     }
 
     /**
@@ -3621,28 +3625,37 @@ final class OfficerDataService
         $roles = $this->aesAlumniStudRoleParamValues();
 
         $fetchWithRole = function (array $baseParams) use ($api, $roles): array {
+            $merged = [];
+            $seen = [];
             foreach ($roles as $role) {
                 try {
                     $records = $api->fetchAllStudInfo4Placement(
                         array_merge($baseParams, ['stud_role' => $role]),
                         true
                     );
-                    if ($records === []) {
-                        continue;
-                    }
-                    $filtered = array_values(array_filter(
-                        $records,
-                        fn (array $row): bool => $this->recordQualifiesForAlumniTab($row)
-                    ));
-                    if ($filtered !== []) {
-                        return $filtered;
+                    foreach ($records as $record) {
+                        if (!is_array($record) || !$this->recordQualifiesForAlumniTab($record)) {
+                            continue;
+                        }
+                        $key = strtoupper(trim((string) (
+                            $record['admno']
+                            ?? $record['stud_admno']
+                            ?? $record['registerNumber']
+                            ?? $record['registerno']
+                            ?? ''
+                        )));
+                        if ($key === '' || isset($seen[$key])) {
+                            continue;
+                        }
+                        $seen[$key] = true;
+                        $merged[] = $record;
                     }
                 } catch (\Throwable) {
                     continue;
                 }
             }
 
-            return [];
+            return $merged;
         };
 
         if (!$campusWide) {

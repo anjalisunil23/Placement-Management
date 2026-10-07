@@ -17,7 +17,8 @@ use PMS\Models\StudentModel;
  */
 class StudentDetailsModel extends BaseModel
 {
-    public const LIST_MAX = 20000;
+    /** 0 = no SQL row cap (full campus directory). Override via STUDENT_DETAILS_LIST_MAX. */
+    public const LIST_MAX = 0;
 
     /** @var list<string> AES-owned fields updated on sync (never placement data). */
     public const AES_OWNED_SCALAR_KEYS = [
@@ -360,7 +361,7 @@ class StudentDetailsModel extends BaseModel
             return [];
         }
 
-        $limit = max(1, min($limit, self::LIST_MAX));
+        $sqlLimit = self::resolveSqlListLimit($limit);
         $sql = 'SELECT id, payload, created_at, updated_at FROM `student_details` WHERE 1=1';
         $params = [];
 
@@ -378,7 +379,10 @@ class StudentDetailsModel extends BaseModel
             $params[] = $registrationStatus;
         }
 
-        $sql .= ' ORDER BY JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.studentName\')) ASC LIMIT ' . $limit;
+        $sql .= ' ORDER BY JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.studentName\')) ASC';
+        if ($sqlLimit !== null) {
+            $sql .= ' LIMIT ' . $sqlLimit;
+        }
 
         try {
             $stmt = $this->db->prepare($sql);
@@ -392,9 +396,11 @@ class StudentDetailsModel extends BaseModel
                 $filter['deptAesId'] = $deptAesId;
             }
 
+            $fallbackLimit = $sqlLimit ?? PHP_INT_MAX;
+
             return array_map(
                 fn (array $doc): array => self::toDirectoryRecord($doc),
-                $this->findAll($filter, $limit)
+                $this->findAll($filter, $fallbackLimit)
             );
         }
 
@@ -418,7 +424,7 @@ class StudentDetailsModel extends BaseModel
         string $batch,
         int $limit = 5000
     ): array {
-        $records = $this->listDirectoryRecords('', true, 'all', max(1, min($limit, self::LIST_MAX)));
+        $records = $this->listDirectoryRecords('', true, 'all', $limit);
         $program = trim($program);
         $batch = trim($batch);
         $deptModel = new DepartmentModel();
@@ -537,6 +543,72 @@ class StudentDetailsModel extends BaseModel
         return $stats;
     }
 
+    /**
+     * Demote alumni rows stored without explicit AES stud_role = Alumni.
+     *
+     * @return array{demoted:int}
+     */
+    public function reconcileAlumniWithoutExplicitAesRole(): array
+    {
+        $stats = ['demoted' => 0];
+        if (!$this->bootstrapTable()) {
+            return $stats;
+        }
+
+        try {
+            $stmt = $this->db->query(
+                'SELECT id, payload FROM `student_details` WHERE stud_role = \'alumni\''
+            );
+        } catch (\Throwable) {
+            return $stats;
+        }
+
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $doc = $this->rowToDoc($row);
+            $aesRecord = is_array($doc['aesRecord'] ?? null) ? $doc['aesRecord'] : $doc;
+            if (AesApiService::normalizeStudRole($aesRecord) === 'alumni') {
+                continue;
+            }
+
+            $id = (string) ($doc['_id'] ?? $row['id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            unset($doc['_id']);
+            $doc['studRole'] = 'student';
+            $doc['stud_role'] = 'Student';
+            $this->applyRegistrationStatusToPayload($doc);
+            $doc['updatedAt'] = DocumentHelper::now();
+            $this->update($id, $doc);
+            $stats['demoted']++;
+        }
+
+        return $stats;
+    }
+
+    /**
+     * @return int|null SQL LIMIT value, or null for no cap
+     */
+    public static function resolveSqlListLimit(int $requested = 0): ?int
+    {
+        $envRaw = $_ENV['STUDENT_DETAILS_LIST_MAX'] ?? getenv('STUDENT_DETAILS_LIST_MAX');
+        $configured = $envRaw !== false && $envRaw !== null && $envRaw !== ''
+            ? (int) $envRaw
+            : self::LIST_MAX;
+        if ($configured <= 0 && $requested <= 0) {
+            return null;
+        }
+        $cap = $configured > 0 ? $configured : PHP_INT_MAX;
+        if ($requested <= 0) {
+            return $cap >= PHP_INT_MAX ? null : $cap;
+        }
+
+        return min(max(1, $requested), $cap >= PHP_INT_MAX ? $requested : $cap);
+    }
+
     public function countByRole(string $studRole = ''): int
     {
         if (!$this->bootstrapTable()) {
@@ -553,11 +625,13 @@ class StudentDetailsModel extends BaseModel
 
             return (int) ($stmt->fetchColumn() ?: 0);
         } catch (\Throwable) {
+            $fallbackLimit = self::resolveSqlListLimit() ?? PHP_INT_MAX;
+
             return count($this->findAll(
                 $studRole !== '' && $studRole !== 'all'
                     ? ['studRole' => strtolower($studRole) === 'alumni' ? 'alumni' : 'student']
                     : [],
-                self::LIST_MAX
+                $fallbackLimit
             ));
         }
     }
@@ -805,12 +879,10 @@ class StudentDetailsModel extends BaseModel
 
         $existingRole = (string) ($existing['studRole'] ?? '');
         $incomingRole = (string) ($incoming['studRole'] ?? '');
-        if ($incomingRole === 'alumni' && $existingRole === 'student') {
-            if (AesApiService::normalizeStudRole($record) !== 'alumni'
-                && !AesApiService::qualifiesAsAlumniRecord($record)) {
-                $incoming['studRole'] = 'student';
-                $incoming['stud_role'] = 'Student';
-            }
+        if ($incomingRole === 'alumni'
+            && AesApiService::normalizeStudRole($record) !== 'alumni') {
+            $incoming['studRole'] = 'student';
+            $incoming['stud_role'] = 'Student';
         }
 
         return $incoming;
