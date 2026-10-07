@@ -2314,8 +2314,11 @@ final class OfficerDataService
     public function syncCampusStudyingDirectoryFromAes(string $adminUserId): array
     {
         $this->boostMemoryForAesDirectoryLoad();
-        $students = $this->fetchLiveCampusStudyingDirectoryRecords();
-        $alumni = $this->fetchLiveCampusAlumniDirectoryRecords();
+        unset(self::$aesDirectoryCache['campus:studRoleStudent']);
+        self::$aesAlumniDirectoryCache = [];
+
+        $students = $this->fetchCompleteCampusRecordsForSync('student');
+        $alumni = $this->fetchCompleteCampusRecordsForSync('alumni');
         $syncedAt = DocumentHelper::now();
 
         $syncSvc = new StudentDetailsSyncService();
@@ -2328,9 +2331,9 @@ final class OfficerDataService
             'studRole'   => 'alumni',
         ]);
         $merged = $syncSvc->mergeSyncStats([$studentStats, $alumniStats]);
-        if ((new \PMS\Models\StudentDetailsModel())->isAvailable()) {
-            $merged['registrationRefresh'] = (new \PMS\Models\StudentDetailsModel())
-                ->refreshRegistrationStatuses();
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        if ($detailsModel->isAvailable()) {
+            $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
         }
 
         // Legacy file snapshot kept for rollback/audit only.
@@ -2338,11 +2341,16 @@ final class OfficerDataService
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
         self::$aesAlumniDirectoryCache = [];
 
+        $studentCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('student') : count($students);
+        $alumniCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('alumni') : count($alumni);
+
         return [
             'syncedAt'           => $merged['syncedAt'] ?? $syncedAt,
-            'studentRecordCount' => count($students),
-            'alumniRecordCount'  => count($alumni),
-            'recordCount'        => count($students) + count($alumni),
+            'studentRecordCount' => $studentCount,
+            'alumniRecordCount'  => $alumniCount,
+            'recordCount'        => $studentCount + $alumniCount,
+            'fetchedStudents'    => count($students),
+            'fetchedAlumni'      => count($alumni),
             'fetched'            => (int) ($merged['fetched'] ?? 0),
             'inserted'           => (int) ($merged['inserted'] ?? 0),
             'updated'            => (int) ($merged['updated'] ?? 0),
@@ -2352,6 +2360,90 @@ final class OfficerDataService
             'durationMs'         => (int) ($merged['durationMs'] ?? 0),
             'source'             => 'student_details',
         ];
+    }
+
+    /**
+     * Campus-wide AES master fetch for Sync from AES — full records, all departments merged.
+     *
+     * @param 'student'|'alumni' $syncStudRole
+     * @return list<array<string, mixed>>
+     */
+    private function fetchCompleteCampusRecordsForSync(string $syncStudRole): array
+    {
+        $api = new AesApiService();
+        $roleValues = $syncStudRole === 'alumni'
+            ? $this->aesAlumniStudRoleParamValues()
+            : $this->aesStudyingStudRoleParamValues();
+
+        $merged = [];
+        $seen = [];
+        $appendBatch = function (array $records) use (&$merged, &$seen, $syncStudRole): void {
+            foreach ($records as $record) {
+                if (!is_array($record) || !$this->recordQualifiesForSyncPass($record, $syncStudRole)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) (
+                    $record['admno']
+                    ?? $record['stud_admno']
+                    ?? $record['registerNumber']
+                    ?? $record['registerno']
+                    ?? ''
+                )));
+                if ($key === '' || isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $merged[] = $record;
+            }
+        };
+
+        $fetchParams = function (array $baseParams) use ($api, $roleValues, $appendBatch): void {
+            foreach ($roleValues as $role) {
+                try {
+                    $batch = $api->fetchAllStudInfo4Placement(
+                        array_merge($baseParams, ['stud_role' => $role]),
+                        false,
+                        false
+                    );
+                    if ($batch !== []) {
+                        $appendBatch($batch);
+                    }
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+            if ($roleValues === []) {
+                try {
+                    $appendBatch($api->fetchAllStudInfo4Placement($baseParams, false, false));
+                } catch (\Throwable) {
+                    // ignore
+                }
+            }
+        };
+
+        $fetchParams([]);
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            $fetchParams(['stud_deptcode' => $aesId]);
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param 'student'|'alumni' $syncStudRole
+     */
+    private function recordQualifiesForSyncPass(array $record, string $syncStudRole): bool
+    {
+        $role = AesApiService::normalizeStudRole($record);
+        if ($syncStudRole === 'alumni') {
+            return $role !== 'student';
+        }
+        if ($role === 'alumni') {
+            return false;
+        }
+
+        return $this->isAesStudyingStudent($record);
     }
 
     /**

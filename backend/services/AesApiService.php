@@ -420,15 +420,18 @@ final class AesApiService
      *
      * @param array<string, scalar|null> $params
      * @param bool $directoryList When true, skip full profile normalization (Students list / filters).
+     * @param bool $useCache When false, always call AES live (admin Sync from AES).
      * @return list<array<string, mixed>>
      */
-    public function fetchAllStudInfo4Placement(array $params = [], bool $directoryList = false): array
+    public function fetchAllStudInfo4Placement(array $params = [], bool $directoryList = false, bool $useCache = true): array
     {
         ksort($params);
         $cacheKey = 'allstud_' . ($directoryList ? 'dir_' : '') . md5((string) json_encode($params));
-        $cached = $this->readSharedListCache($cacheKey, 1800);
-        if (is_array($cached)) {
-            return $cached;
+        if ($useCache) {
+            $cached = $this->readSharedListCache($cacheKey, 1800);
+            if (is_array($cached)) {
+                return $cached;
+            }
         }
 
         $result = $this->getAllStudInfo4Placement($params);
@@ -442,7 +445,9 @@ final class AesApiService
                 fn (array $record): array => $this->slimDirectoryRecord($record),
                 $records
             ));
-            $this->writeSharedListCache($cacheKey, $out);
+            if ($useCache) {
+                $this->writeSharedListCache($cacheKey, $out);
+            }
 
             return $out;
         }
@@ -508,7 +513,9 @@ final class AesApiService
             $out[] = $normalized;
         }
 
-        $this->writeSharedListCache($cacheKey, $out);
+        if ($useCache) {
+            $this->writeSharedListCache($cacheKey, $out);
+        }
 
         return $out;
     }

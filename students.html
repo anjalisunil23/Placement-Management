@@ -2290,7 +2290,9 @@ async function runCampusAesDirectorySync() {
     if (!result) return;
     const sc = result.studentRecordCount ?? 0;
     const ac = result.alumniRecordCount ?? 0;
-    toast(`Synced ${sc} students and ${ac} alumni from AES.`, 'success');
+    const fetchedStudents = result.fetchedStudents ?? sc;
+    const fetchedAlumni = result.fetchedAlumni ?? ac;
+    toast(`Synced ${sc} students and ${ac} alumni into student_details (${fetchedStudents} + ${fetchedAlumni} fetched from AES).`, 'success');
     await refreshCampusAesDirectorySyncStatus();
     await loadFinalYearStudents(true);
     if (canViewAlumni) await loadAlumniStudents(true);

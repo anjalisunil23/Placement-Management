@@ -17,7 +17,7 @@ use PMS\Models\StudentModel;
  */
 class StudentDetailsModel extends BaseModel
 {
-    public const LIST_MAX = 10000;
+    public const LIST_MAX = 20000;
 
     /** @var list<string> AES-owned fields updated on sync (never placement data). */
     public const AES_OWNED_SCALAR_KEYS = [
@@ -601,8 +601,20 @@ class StudentDetailsModel extends BaseModel
             'branch'         => $branch,
             'year'           => trim((string) ($record['stud_year'] ?? $record['year'] ?? '')),
             'semester'       => trim((string) ($record['stud_semester'] ?? $record['semester'] ?? '')),
-            'courseId'       => trim((string) ($record['courseId'] ?? '')),
-            'branchId'       => trim((string) ($record['branchId'] ?? '')),
+            'courseId'       => trim((string) (
+                $record['courseId']
+                ?? $record['course_id']
+                ?? $record['stud_courseid']
+                ?? $record['stud_course_id']
+                ?? ''
+            )),
+            'branchId'       => trim((string) (
+                $record['branchId']
+                ?? $record['branch_id']
+                ?? $record['stud_branchid']
+                ?? $record['stud_branch_id']
+                ?? ''
+            )),
             'deptAesId'      => $deptAesId,
             'departmentId'   => trim((string) ($options['departmentId'] ?? $record['departmentId'] ?? '')),
             'phone'          => $phone,
@@ -621,7 +633,35 @@ class StudentDetailsModel extends BaseModel
             $payload['placeHubStudentId'] = (string) $options['placeHubStudentId'];
         }
 
+        $payload['aesRecord'] = self::compactAesRecordForStorage($record);
+
         return $payload;
+    }
+
+    /**
+     * Preserve the full AES row inside payload without breaking indexed scalar fields.
+     *
+     * @param array<string, mixed> $record
+     * @return array<string, mixed>
+     */
+    public static function compactAesRecordForStorage(array $record): array
+    {
+        $out = [];
+        foreach ($record as $key => $value) {
+            if (!is_string($key) && !is_int($key)) {
+                continue;
+            }
+            $key = (string) $key;
+            if (is_scalar($value) || $value === null) {
+                $out[$key] = $value;
+                continue;
+            }
+            if (is_array($value)) {
+                $out[$key] = $value;
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -705,6 +745,9 @@ class StudentDetailsModel extends BaseModel
             if (array_key_exists($key, $doc) && !is_array($doc[$key])) {
                 $subset[$key] = $doc[$key];
             }
+        }
+        if (isset($doc['aesRecord']) && is_array($doc['aesRecord'])) {
+            $subset['aesRecord'] = md5((string) json_encode($doc['aesRecord'], JSON_UNESCAPED_UNICODE));
         }
         ksort($subset);
 
