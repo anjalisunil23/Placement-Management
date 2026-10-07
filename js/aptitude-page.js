@@ -2330,6 +2330,7 @@
           </div>
           <div class="d-flex gap-2 flex-shrink-0 ms-auto">
             ${showPublishButton ? `<button type="button" class="btn btn-sm btn-success" data-jd-publish-mock="${esc(id)}">${publishLabel}</button>` : ''}
+            ${mockTest ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(mockTest.id)}" title="Copy student share link"><i class="bi bi-link-45deg"></i></button>` : ''}
             ${hasDoc ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(id)}">Document</button>` : ''}
             <button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(id)}">Questions</button>
             ${forProblems ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-edit-problem="${esc(id)}">Edit</button>` : ''}
@@ -2449,6 +2450,9 @@
     root.querySelectorAll('[data-jd-publish-mock]').forEach((btn) => {
       btn.addEventListener('click', () => openPublishMockModal(btn.getAttribute('data-jd-publish-mock')));
     });
+    root.querySelectorAll('[data-copy-test-link]').forEach((btn) => {
+      btn.addEventListener('click', () => copyTestShareLink(btn.getAttribute('data-copy-test-link')));
+    });
   }
 
   function syncAdminJdBlockViewNav() {
@@ -2502,6 +2506,31 @@
       if (id) return id;
     }
     return '';
+  }
+
+  function jdSetSummaryById(setId) {
+    const sid = String(setId || '').trim();
+    if (!sid) return null;
+    const pools = [
+      jdCompanyBlocks.flatMap((b) => b.sets || []),
+      studentJdCompanyBlocks.flatMap((b) => b.sets || []),
+      jdLibrarySets,
+      manualJdSetSummaries,
+      loadDemoJdStore(),
+    ];
+    for (const pool of pools) {
+      const hit = (pool || []).find((s) => String(s.id || '') === sid);
+      if (hit) return hit;
+    }
+    const cached = jdSetDetailsCache[sid];
+    return cached || null;
+  }
+
+  function jdSetBankKindForTest(t) {
+    const setId = primaryJdSetIdForTest(t);
+    if (!setId) return '';
+    const set = jdSetSummaryById(setId);
+    return set ? jdSetCompanyBankKind(set) : '';
   }
 
   function companyTestForManualSet(companyId, setId) {
@@ -2798,6 +2827,52 @@
     }
   }
 
+  function resetPublishMockModalUi() {
+    document.getElementById('btnAptPublishMockConfirm')?.classList.remove('d-none');
+    document.getElementById('btnAptPublishMockDone')?.classList.add('d-none');
+    setPublishMockShareLink('');
+  }
+
+  function setPublishMockShareLink(testId) {
+    const wrap = document.getElementById('aptPublishMockShareWrap');
+    const input = document.getElementById('aptPublishMockShareUrl');
+    if (!wrap || !input) return;
+    const id = String(testId || '').trim();
+    if (!id) {
+      wrap.classList.add('d-none');
+      input.value = '';
+      return;
+    }
+    input.value = buildTestShareUrl(id);
+    wrap.classList.remove('d-none');
+  }
+
+  function showPublishMockPublishedUi(testId) {
+    setPublishMockShareLink(testId);
+    document.getElementById('btnAptPublishMockConfirm')?.classList.add('d-none');
+    document.getElementById('btnAptPublishMockDone')?.classList.remove('d-none');
+  }
+
+  async function copyPublishMockShareLink() {
+    const input = document.getElementById('aptPublishMockShareUrl');
+    const url = String(input?.value || '').trim();
+    if (!url) {
+      toast('Publish the mock test first to get a share link.', 'info');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const helper = document.createElement('textarea');
+      helper.value = url;
+      document.body.appendChild(helper);
+      helper.select();
+      document.execCommand('copy');
+      helper.remove();
+    }
+    toast('Student mock test link copied.', 'success');
+  }
+
   function openPublishMockModal(setId) {
     const id = String(setId || '');
     if (!id) return;
@@ -2807,6 +2882,7 @@
       toast('Local bank set not found.', 'error');
       return;
     }
+    resetPublishMockModalUi();
     const pool = Math.max(0, Number(set.questionCount) || 0);
     const existing = companyMockTestForLocalSet(jdSelectedCompanyId, id);
     document.getElementById('aptPublishMockSetId').value = id;
@@ -2820,6 +2896,9 @@
     }
     if (durationInput) {
       durationInput.value = String(existing?.durationMinutes || Math.max(30, Math.min(180, (Number(countInput?.value) || 10) * 2)));
+    }
+    if (existing?.id) {
+      setPublishMockShareLink(existing.id);
     }
     aptPublishMockModal?.show();
   }
@@ -2874,16 +2953,19 @@
         return;
       }
       const store = loadDemoTestsStore();
+      let publishedId = String(existing?.id || '');
       if (existing) {
         const idx = store.findIndex((t) => String(t.id) === String(existing.id));
         if (idx >= 0) store[idx] = { ...store[idx], ...payload, id: existing.id };
+        publishedId = String(existing.id);
       } else {
-        store.push({ ...payload, id: 'demo-mock-' + Date.now() });
+        publishedId = 'demo-mock-' + Date.now();
+        store.push({ ...payload, id: publishedId });
       }
       saveDemoTestsStore(store);
       await loadTests();
-      aptPublishMockModal?.hide();
-      toast('Company mock test published (demo).', 'success');
+      showPublishMockPublishedUi(publishedId);
+      toast('Company mock test published (demo). Copy the share link below.', 'success');
       if (jdSelectedCompanyId) showJdCompanyDetail(jdSelectedCompanyId);
       return;
     }
@@ -2899,9 +2981,12 @@
       toast(res?.message || 'Could not publish mock test.', 'error');
       return;
     }
-    aptPublishMockModal?.hide();
-    toast('Company mock test published.', 'success');
+    const publishedId = String(res.data?.id || res.data?.test?.id || '');
     await loadTests();
+    const testId = publishedId
+      || String(companyMockTestForLocalSet(jdSelectedCompanyId, setId)?.id || '');
+    showPublishMockPublishedUi(testId);
+    toast('Company mock test published. Copy the share link below.', 'success');
     if (jdSelectedCompanyId) showJdCompanyDetail(jdSelectedCompanyId);
   }
 
@@ -5789,7 +5874,11 @@
   }
 
   function isCompanyMockTest(t) {
-    return isCompanyTest(t) && String(t?.questionSource || '') === 'random_jd';
+    if (!isCompanyTest(t)) return false;
+    const bankKind = jdSetBankKindForTest(t);
+    if (bankKind === 'local') return true;
+    if (bankKind === 'question') return false;
+    return String(t?.questionSource || '') === 'random_jd';
   }
 
   function isRegularTest(t) {
@@ -6053,20 +6142,20 @@
           <div class="d-flex align-items-start gap-2 min-w-0 flex-grow-1 text-start">
             ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
             <div class="min-w-0 flex-grow-1 text-start">
-          <strong>${esc(t.title)}</strong>
+            <strong>${esc(t.title)}</strong>
             <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
             ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
-          ${showContestBadge ? contestBadgeHtml(t) : ''}
+            ${showContestBadge ? contestBadgeHtml(t) : ''}
             ${showContestBadge ? contestScheduleControls(t) : ''}
-        </div>
+            </div>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 ms-auto">
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(docSetId)}">Document</button>` : ''}
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(docSetId)}">Questions</button>` : ''}
             ${docSetId ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>`}
-          <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
             <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
-        </div>
+          </div>
         </div>
         ${docSetId ? `<div class="d-none mt-3" data-jd-doc-panel="${esc(docSetId)}"></div><div class="d-none mt-3" data-jd-questions="${esc(docSetId)}"></div>` : ''}
       </div>`;
@@ -7392,8 +7481,8 @@
       } else {
         testsBulkBar?.classList.remove('d-none');
         testsRoot.innerHTML = regular.map((t) => renderManageRow(t, { selectable: true })).join('');
-      bindManageListActions(testsRoot);
-    }
+        bindManageListActions(testsRoot);
+      }
       updateManageTestsSelectionToolbar();
     }
 
@@ -7513,7 +7602,9 @@
     aptPublishMockModal = document.getElementById('aptPublishMockModal')
       ? new bootstrap.Modal(document.getElementById('aptPublishMockModal'))
       : null;
+    document.getElementById('aptPublishMockModal')?.addEventListener('hidden.bs.modal', () => resetPublishMockModalUi());
     document.getElementById('btnAptPublishMockConfirm')?.addEventListener('click', () => confirmPublishMock());
+    document.getElementById('btnAptPublishMockCopyLink')?.addEventListener('click', () => copyPublishMockShareLink());
     exam = AptitudeExam.createExamController({
       root: document.getElementById('examShell'),
       onExit: () => closeExam(),
