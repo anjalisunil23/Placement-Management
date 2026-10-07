@@ -142,16 +142,16 @@
   function isCompanyTest(t) {
     if (!t) return false;
     if (String(t.testKind || '') === 'company') return true;
-    if (String(t.companyId || '').trim() !== '') return true;
     if (String(t?.questionSource || '') === 'random_jd') return true;
-    return (Array.isArray(t?.jdFilterRules) ? t.jdFilterRules : []).some(
-      (r) => String(r?.jdSetId || '').trim() !== ''
-    );
+    return String(t.companyId || '').trim() !== '';
   }
 
   function isCompanyMockTest(t) {
-    if (!isCompanyTest(t)) return false;
-    return String(t?.questionSource || '') === 'random_jd';
+    return isCompanyTest(t) && String(t?.questionSource || '') === 'random_jd';
+  }
+
+  function isCompanyResultsPanel(panel) {
+    return panel === 'company' || panel === 'companymock';
   }
 
   function isRegularTest(t) {
@@ -182,14 +182,7 @@
   }
 
   function historyEntryIsCompanyMock(h) {
-    const test = resolveHistoryTest(h);
-    if (test) return isCompanyMockTest(test);
-    if (String(h?.questionSource || '') === 'random_jd') return true;
-    return false;
-  }
-
-  function historyEntryIsCompanyProblem(h) {
-    return historyEntryIsCompany(h) && !historyEntryIsCompanyMock(h);
+    return historyEntryIsCompany(h) && isCompanyMockTest(resolveHistoryTest(h));
   }
 
   function historyEntryIsContest(h) {
@@ -2090,19 +2083,30 @@
       ?.classList.toggle('d-none', !access.canTake);
   }
 
-  function normalizeProgressPanel(panel) {
-    if (panel === 'contests') return 'contests';
-    if (panel === 'company') return 'company';
-    if (panel === 'companymock') return 'companymock';
-    return 'tests';
-  }
-
-  function applyMyResultsPanel(panel) {
-    myResultsView = normalizeProgressPanel(panel);
+  function syncMyResultsNav() {
     document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
+      const view = link.getAttribute('data-results-view');
+      const active = view === 'companywise'
+        ? isCompanyResultsPanel(myResultsView)
+        : view === myResultsView;
+      link.classList.toggle('active', active);
+    });
+    document.querySelectorAll('#myResultsCompanyTypeNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsView);
     });
     document.getElementById('myResultsContestTypeNav')?.classList.toggle('d-none', myResultsView !== 'contests');
+    document.getElementById('myResultsCompanyTypeNav')?.classList.toggle('d-none', !isCompanyResultsPanel(myResultsView));
+  }
+
+  function applyMyResultsPanel(panel) {
+    if (panel === 'companywise') {
+      if (!isCompanyResultsPanel(myResultsView)) myResultsView = 'company';
+    } else {
+      myResultsView = panel === 'contests' ? 'contests'
+        : (panel === 'companymock' ? 'companymock'
+        : (panel === 'company' ? 'company' : 'tests'));
+    }
+    syncMyResultsNav();
     syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
     if (myProgress) renderHistory(myProgress);
   }
@@ -2411,7 +2415,7 @@
         return historyEntryIsCompanyMock(h);
       }
       if (myResultsView === 'company') {
-        return historyEntryIsCompanyProblem(h);
+        return historyEntryIsCompany(h) && !historyEntryIsCompanyMock(h);
       }
       return !historyEntryIsContest(h) && !historyEntryIsCompany(h);
     });
@@ -2422,7 +2426,7 @@
       : (myResultsView === 'companymock'
         ? 'No company mock test attempts yet.'
         : (myResultsView === 'company'
-          ? 'No company-wise problem attempts yet.'
+          ? 'No company problem attempts yet.'
           : 'No attempts yet. Open a topic test or challenge to begin.'));
     const root = document.getElementById('myHistory');
     if (!root) return;
@@ -3487,8 +3491,6 @@
     document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirStats')?.classList.add('d-none');
     document.getElementById('dirStats').innerHTML = '';
-    document.getElementById('progressContestTypeNav')?.classList.remove('d-none');
-
     const merged = mergeCompletedContestRows(contests, completedContests)
       .filter((c) => String(c.contestType || '') === progressContestType);
 
@@ -3503,17 +3505,18 @@
 
     if (!merged.length) {
       root.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+      syncProgressViewNav();
       return;
     }
 
     root.innerHTML = renderProgressContestTable(merged, emptyMsg);
     bindDirContestActions(root);
+    syncProgressViewNav();
   }
 
   function renderDirectoryTable(rows, summary, scope = {}) {
     document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
-    document.getElementById('progressContestTypeNav')?.classList.add('d-none');
     document.getElementById('dirStats')?.classList.add('d-none');
     document.getElementById('dirStats').innerHTML = '';
 
@@ -3531,7 +3534,7 @@
           : (progressPanel === 'companymock'
             ? 'No company mock results in your authorized scope yet.'
             : (progressPanel === 'company'
-              ? 'No company-wise problem results in your authorized scope yet.'
+              ? 'No company problem results in your authorized scope yet.'
               : 'No test results in your authorized scope yet.'))));
 
     const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
@@ -3559,6 +3562,7 @@
     document.getElementById('dirRows').querySelectorAll('[data-detail]').forEach((btn) => {
       btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
     });
+    syncProgressViewNav();
   }
 
   function demoProgressFilterOptions() {
@@ -3725,13 +3729,40 @@
     }
   }
 
-  function applyProgressPanel(panel) {
-    progressPanel = normalizeProgressPanel(panel);
+  function syncProgressViewNav() {
     document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
+      const view = link.getAttribute('data-progress-view');
+      const active = view === 'companywise'
+        ? isCompanyResultsPanel(progressPanel)
+        : view === progressPanel;
+      link.classList.toggle('active', active);
+    });
+    document.querySelectorAll('#progressCompanyTypeNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
     });
     document.getElementById('progressContestTypeNav')?.classList.toggle('d-none', progressPanel !== 'contests');
+    document.getElementById('progressCompanyTypeNav')?.classList.toggle('d-none', !isCompanyResultsPanel(progressPanel));
+  }
+
+  function applyProgressPanel(panel) {
+    if (panel === 'companywise') {
+      if (!isCompanyResultsPanel(progressPanel)) progressPanel = 'company';
+    } else {
+      progressPanel = panel === 'contests' ? 'contests'
+        : (panel === 'companymock' ? 'companymock'
+        : (panel === 'company' ? 'company' : 'tests'));
+    }
+    syncProgressViewNav();
     syncContestTypeNav('progressContestTypeNav', progressContestType, 'data-progress-contest-type');
+  }
+
+  function applyProgressCompanyType(panel) {
+    progressPanel = panel === 'companymock' ? 'companymock' : 'company';
+    syncProgressViewNav();
+    dirResultsCacheKey = '';
+    dirResultsCache = null;
+    showDirectoryLoading();
+    loadDirectory().catch(() => {});
   }
 
   function applyProgressContestType(type) {
@@ -4107,7 +4138,7 @@
     if (branch) qs.set('course', branch);
     if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
-    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company' || progressPanel === 'companymock') {
+    if (progressPanel === 'tests' || progressPanel === 'contests' || isCompanyResultsPanel(progressPanel)) {
       qs.set('resultType', progressPanel);
     }
     return qs;
@@ -4143,7 +4174,7 @@
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
     const seq = ++dirLoadSeq;
-    applyProgressPanel(progressPanel);
+    syncProgressViewNav();
     if (staffNeedsClassFilter() && progressPanel !== 'contests') {
       const batches = staffAssignedBatches();
       if (!batches.length) {
@@ -4794,6 +4825,12 @@
       showDirectoryLoading();
       loadDirectory().catch(() => {});
     });
+    bindPracticeNav('progressCompanyTypeNav', (e) => {
+      const link = e.target.closest('[data-progress-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyProgressCompanyType(link.getAttribute('data-progress-view'));
+    });
     bindPracticeNav('progressContestTypeNav', (e) => {
       const link = e.target.closest('[data-progress-contest-type]');
       if (!link) return;
@@ -4835,6 +4872,12 @@
       if (!link) return;
       e.preventDefault();
       applyMyResultsPanel(link.getAttribute('data-results-view') || 'tests');
+    });
+    bindPracticeNav('myResultsCompanyTypeNav', (e) => {
+      const link = e.target.closest('[data-results-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyMyResultsPanel(link.getAttribute('data-results-view') || 'company');
     });
     bindPracticeNav('myResultsContestTypeNav', (e) => {
       const link = e.target.closest('[data-results-contest-type]');

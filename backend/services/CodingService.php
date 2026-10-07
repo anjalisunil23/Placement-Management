@@ -1970,15 +1970,14 @@ final class CodingService
         $isCompany = CodingTestModel::isCompanyTest($test)
             || CodingTestModel::normalizeTestKind((string) ($attempt['testKind'] ?? '')) === 'company'
             || trim((string) ($attempt['companyId'] ?? '')) !== '';
-        $isMock = CodingTestModel::isCompanyMockTest($test);
         if ($resultType === 'contests') {
             return in_array($contest, ['weekly', 'monthly'], true);
         }
         if ($resultType === 'companymock') {
-            return $isMock;
+            return CodingTestModel::isCompanyMockTest($test);
         }
         if ($resultType === 'company') {
-            return $isCompany && !$isMock;
+            return $isCompany && !CodingTestModel::isCompanyMockTest($test);
         }
 
         return !in_array($contest, ['weekly', 'monthly'], true) && !$isCompany;

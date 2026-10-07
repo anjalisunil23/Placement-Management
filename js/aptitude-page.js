@@ -491,6 +491,10 @@
   function isJdCompanyTakePanel(panel) {
     return panel === 'jdblock' || panel === 'companymock';
   }
+
+  function isCompanyResultsPanel(panel) {
+    return panel === 'company' || panel === 'companymock';
+  }
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aptJdManualModal;
@@ -751,8 +755,9 @@
     });
 
     if (resultType === 'company' || resultType === 'companymock') {
-      const problemTitle = 'soti demo test -1';
-      const mockTitle = 'Associate Software Engineer mock';
+      const titles = resultType === 'companymock'
+        ? ['Associate Software Engineer mock']
+        : ['soti demo test -1'];
       const rows = [];
       studentSummaries.forEach((s) => {
         const count = Number(s.testsAttempted) || 0;
@@ -760,19 +765,21 @@
         const pct = Math.max(40, Math.min(100, Number(s.recentScore ?? s.averageScore) || 0));
         const totalMarks = resultType === 'companymock' ? 10 : 7;
         const marksObtained = Math.round((pct / 100) * totalMarks);
-        rows.push({
-          attemptId: `demo-company-${resultType}-attempt-${s.userId}-final`,
-          userId: s.userId,
-          name: s.name,
-          registerNumber: s.registerNumber,
-          classBatch: s.classBatch,
-          attemptCount: 1,
-          testTitle: resultType === 'companymock' ? mockTitle : problemTitle,
-          marksObtained,
-          totalMarks,
-          score: marksObtained,
-          percentage: pct,
-          completedAt: new Date().toISOString(),
+        titles.forEach((testTitle, idx) => {
+          rows.push({
+            attemptId: `demo-company-attempt-${s.userId}-${resultType}-${idx}`,
+            userId: s.userId,
+            name: s.name,
+            registerNumber: s.registerNumber,
+            classBatch: s.classBatch,
+            attemptCount: 1,
+            testTitle,
+            marksObtained,
+            totalMarks,
+            score: marksObtained,
+            percentage: pct,
+            completedAt: new Date().toISOString(),
+          });
         });
       });
       const percentages = rows.map((r) => Number(r.percentage) || 0);
@@ -1069,8 +1076,6 @@
     document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirStats')?.classList.add('d-none');
     document.getElementById('dirStats').innerHTML = '';
-    document.getElementById('progressContestTypeNav')?.classList.remove('d-none');
-
     const merged = mergeCompletedContestRows(contests, completedContests)
       .filter((c) => String(c.contestType || '') === progressContestType);
 
@@ -1085,11 +1090,13 @@
 
     if (!merged.length) {
       root.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+      syncProgressViewNav();
       return;
     }
 
     root.innerHTML = renderProgressContestTable(merged, emptyMsg);
     bindDirContestActions(root);
+    syncProgressViewNav();
   }
 
   function formatAttemptScore(row) {
@@ -1105,7 +1112,6 @@
   function renderDirectoryTable(rows, summary, scope = {}) {
     document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
-    document.getElementById('progressContestTypeNav')?.classList.add('d-none');
     document.getElementById('dirStats')?.classList.add('d-none');
     document.getElementById('dirStats').innerHTML = '';
 
@@ -1123,7 +1129,7 @@
           : (progressPanel === 'companymock'
             ? 'No company mock results in your authorized scope yet.'
             : (progressPanel === 'company'
-              ? 'No company-wise problem results in your authorized scope yet.'
+              ? 'No company problem results in your authorized scope yet.'
               : 'No test results in your authorized scope yet.'))));
 
     const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
@@ -1150,6 +1156,7 @@
     document.getElementById('dirRows').querySelectorAll('[data-detail]').forEach((btn) => {
       btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
     });
+    syncProgressViewNav();
   }
 
   function demoProgressFilterOptions() {
@@ -1296,30 +1303,43 @@
     if (branch) qs.set('course', branch);
     if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
-    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company' || progressPanel === 'companymock') {
+    if (progressPanel === 'tests' || progressPanel === 'contests' || isCompanyResultsPanel(progressPanel)) {
       qs.set('resultType', progressPanel);
     }
     return qs;
   }
 
-  function normalizeProgressPanel(panel) {
-    if (panel === 'contests') return 'contests';
-    if (panel === 'company') return 'company';
-    if (panel === 'companymock') return 'companymock';
-    return 'tests';
-  }
-
-  function normalizeMyResultsPanel(panel) {
-    return normalizeProgressPanel(panel);
-  }
-
-  function applyProgressPanel(panel) {
-    progressPanel = normalizeProgressPanel(panel);
+  function syncProgressViewNav() {
     document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
+      const view = link.getAttribute('data-progress-view');
+      const active = view === 'companywise'
+        ? isCompanyResultsPanel(progressPanel)
+        : view === progressPanel;
+      link.classList.toggle('active', active);
+    });
+    document.querySelectorAll('#progressCompanyTypeNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
     });
     document.getElementById('progressContestTypeNav')?.classList.toggle('d-none', progressPanel !== 'contests');
+    document.getElementById('progressCompanyTypeNav')?.classList.toggle('d-none', !isCompanyResultsPanel(progressPanel));
+  }
+
+  function applyProgressPanel(panel) {
+    if (panel === 'companywise') {
+      if (!isCompanyResultsPanel(progressPanel)) progressPanel = 'company';
+    } else {
+      progressPanel = panel === 'contests' ? 'contests'
+        : (panel === 'companymock' ? 'companymock'
+        : (panel === 'company' ? 'company' : 'tests'));
+    }
+    syncProgressViewNav();
     syncContestTypeNav('progressContestTypeNav', progressContestType, 'data-progress-contest-type');
+  }
+
+  function applyProgressCompanyType(panel) {
+    progressPanel = panel === 'companymock' ? 'companymock' : 'company';
+    syncProgressViewNav();
+    loadDirectory().catch(() => {});
   }
 
   function applyProgressContestType(type) {
@@ -1328,12 +1348,30 @@
     if (progressPanel === 'contests') loadDirectory().catch(() => {});
   }
 
-  function applyMyResultsPanel(panel) {
-    myResultsPanel = normalizeMyResultsPanel(panel);
+  function syncMyResultsNav() {
     document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
+      const view = link.getAttribute('data-results-view');
+      const active = view === 'companywise'
+        ? isCompanyResultsPanel(myResultsPanel)
+        : view === myResultsPanel;
+      link.classList.toggle('active', active);
+    });
+    document.querySelectorAll('#myResultsCompanyTypeNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsPanel);
     });
     document.getElementById('myResultsContestTypeNav')?.classList.toggle('d-none', myResultsPanel !== 'contests');
+    document.getElementById('myResultsCompanyTypeNav')?.classList.toggle('d-none', !isCompanyResultsPanel(myResultsPanel));
+  }
+
+  function applyMyResultsPanel(panel) {
+    if (panel === 'companywise') {
+      if (!isCompanyResultsPanel(myResultsPanel)) myResultsPanel = 'company';
+    } else {
+      myResultsPanel = panel === 'contests' ? 'contests'
+        : (panel === 'companymock' ? 'companymock'
+        : (panel === 'company' ? 'company' : 'tests'));
+    }
+    syncMyResultsNav();
     syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
   }
 
@@ -1398,14 +1436,7 @@
   }
 
   function historyEntryIsCompanyMock(h) {
-    const test = resolveHistoryTest(h);
-    if (test) return isCompanyMockTest(test);
-    if (String(h?.questionSource || '') === 'random_jd') return true;
-    return false;
-  }
-
-  function historyEntryIsCompanyProblem(h) {
-    return historyEntryIsCompany(h) && !historyEntryIsCompanyMock(h);
+    return historyEntryIsCompany(h) && isCompanyMockTest(resolveHistoryTest(h));
   }
 
   function historyResultMode(h) {
@@ -7215,7 +7246,7 @@
         return historyEntryIsCompanyMock(h);
       }
       if (myResultsPanel === 'company') {
-        return historyEntryIsCompanyProblem(h);
+        return historyEntryIsCompany(h) && !historyEntryIsCompanyMock(h);
       }
       return !historyEntryIsContest(h) && !historyEntryIsCompany(h);
     });
@@ -7226,7 +7257,7 @@
       : (myResultsPanel === 'companymock'
         ? 'No company mock test attempts yet.'
         : (myResultsPanel === 'company'
-          ? 'No company-wise problem attempts yet.'
+          ? 'No company problem attempts yet.'
           : 'No attempts yet. Select a test on the left to begin.'));
     document.getElementById('myHistory').innerHTML = filtered.length
       ? filtered.slice(0, 8).map((h) => {
@@ -7898,6 +7929,7 @@
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
     const seq = ++dirLoadSeq;
+    syncProgressViewNav();
     if (staffNeedsClassFilter() && progressPanel !== 'contests') {
       const batches = staffAssignedBatches();
       if (!batches.length) {
@@ -8068,6 +8100,12 @@
       applyProgressPanel(link.getAttribute('data-progress-view'));
       loadDirectory().catch(() => {});
     });
+    bindPracticeNav('progressCompanyTypeNav', (e) => {
+      const link = e.target.closest('[data-progress-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyProgressCompanyType(link.getAttribute('data-progress-view'));
+    });
     bindPracticeNav('takeListNav', (e) => {
       const link = e.target.closest('[data-take-list]');
       if (!link) return;
@@ -8081,6 +8119,13 @@
       applyTakeContestType(link.getAttribute('data-take-contest-type'));
     });
     bindPracticeNav('myResultsNav', (e) => {
+      const link = e.target.closest('[data-results-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyMyResultsPanel(link.getAttribute('data-results-view'));
+      renderHistory(myProgress);
+    });
+    bindPracticeNav('myResultsCompanyTypeNav', (e) => {
       const link = e.target.closest('[data-results-view]');
       if (!link) return;
       e.preventDefault();

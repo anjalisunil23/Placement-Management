@@ -2005,12 +2005,11 @@ final class AptitudeService
             return $resultType === 'contests';
         }
         $isCompany = AptitudeTestModel::isCompanyTest($test);
-        $isMock = AptitudeTestModel::isCompanyMockTest($test);
         if ($resultType === 'companymock') {
-            return $isMock;
+            return AptitudeTestModel::isCompanyMockTest($test);
         }
         if ($resultType === 'company') {
-            return $isCompany && !$isMock;
+            return $isCompany && !AptitudeTestModel::isCompanyMockTest($test);
         }
         if ($resultType === 'contests') {
             return false;
