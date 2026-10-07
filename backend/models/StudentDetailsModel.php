@@ -493,19 +493,34 @@ class StudentDetailsModel extends BaseModel
     }
 
     /**
-     * After campus sync, demote alumni rows that AES still lists as studying students.
+     * After campus sync, demote alumni only when AES explicitly marks them as Student.
+     * Rows present in both student and alumni directory fetches keep alumni (AES overlap).
      *
      * @param list<array<string, mixed>> $authoritativeStudentRecords
+     * @param list<array<string, mixed>> $authoritativeAlumniRecords
      * @return array{demoted:int}
      */
-    public function reconcileMisclassifiedStudRoles(array $authoritativeStudentRecords): array
-    {
+    public function reconcileMisclassifiedStudRoles(
+        array $authoritativeStudentRecords,
+        array $authoritativeAlumniRecords = []
+    ): array {
         $stats = ['demoted' => 0];
         if (!$this->bootstrapTable()) {
             return $stats;
         }
 
-        $studentAdmnos = [];
+        $alumniAdmnos = [];
+        foreach ($authoritativeAlumniRecords as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = self::resolveAesAdmno($record);
+            if ($key !== '' && AesApiService::qualifiesAsAlumniDirectoryRecord($record)) {
+                $alumniAdmnos[$key] = true;
+            }
+        }
+
+        $explicitStudentAdmnos = [];
         foreach ($authoritativeStudentRecords as $record) {
             if (!is_array($record)) {
                 continue;
@@ -514,16 +529,19 @@ class StudentDetailsModel extends BaseModel
             if ($key === '') {
                 continue;
             }
-            if (AesApiService::resolveStudRoleForStorage($record, 'student') === 'student') {
-                $studentAdmnos[$key] = true;
+            if (AesApiService::normalizeStudRole($record) === 'student') {
+                $explicitStudentAdmnos[$key] = true;
             }
         }
 
-        if ($studentAdmnos === []) {
+        if ($explicitStudentAdmnos === []) {
             return $stats;
         }
 
-        foreach (array_keys($studentAdmnos) as $admno) {
+        foreach (array_keys($explicitStudentAdmnos) as $admno) {
+            if (isset($alumniAdmnos[$admno])) {
+                continue;
+            }
             $doc = $this->findByAesAdmno($admno);
             if ($doc === null || (string) ($doc['studRole'] ?? '') !== 'alumni') {
                 continue;
@@ -562,7 +580,12 @@ class StudentDetailsModel extends BaseModel
                 continue;
             }
             $key = self::resolveAesAdmno($record);
-            if ($key !== '' && AesApiService::qualifiesAsAlumniDirectoryRecord($record)) {
+            if ($key !== ''
+                && AesApiService::normalizeStudRole($record) !== 'student'
+                && (
+                    AesApiService::qualifiesAsAlumniDirectoryRecord($record)
+                    || AesApiService::qualifiesAsAlumniByHeuristics($record)
+                )) {
                 $authoritative[$key] = true;
             }
         }
