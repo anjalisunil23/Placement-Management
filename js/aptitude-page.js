@@ -750,23 +750,24 @@
       };
     });
 
-    if (resultType === 'company') {
-      const titles = ['soti demo test -1', 'Associate Software Engineer mock'];
+    if (resultType === 'company' || resultType === 'companymock') {
+      const problemTitle = 'soti demo test -1';
+      const mockTitle = 'Associate Software Engineer mock';
       const rows = [];
       studentSummaries.forEach((s) => {
         const count = Number(s.testsAttempted) || 0;
         if (count === 0 || s.userId !== 'u-s1') return;
         const pct = Math.max(40, Math.min(100, Number(s.recentScore ?? s.averageScore) || 0));
-        const totalMarks = 7;
+        const totalMarks = resultType === 'companymock' ? 10 : 7;
         const marksObtained = Math.round((pct / 100) * totalMarks);
         rows.push({
-          attemptId: `demo-company-attempt-${s.userId}-final`,
+          attemptId: `demo-company-${resultType}-attempt-${s.userId}-final`,
           userId: s.userId,
           name: s.name,
           registerNumber: s.registerNumber,
           classBatch: s.classBatch,
           attemptCount: 1,
-          testTitle: titles[0],
+          testTitle: resultType === 'companymock' ? mockTitle : problemTitle,
           marksObtained,
           totalMarks,
           score: marksObtained,
@@ -1119,9 +1120,11 @@
       ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
         : (role === 'staff' && !hasStaffDirectoryLookup()
           ? 'Select your class batch above to view aptitude results for your students.'
-          : (progressPanel === 'company'
-            ? 'No company test results in your authorized scope yet.'
-            : 'No test results in your authorized scope yet.')));
+          : (progressPanel === 'companymock'
+            ? 'No company mock results in your authorized scope yet.'
+            : (progressPanel === 'company'
+              ? 'No company-wise problem results in your authorized scope yet.'
+              : 'No test results in your authorized scope yet.'))));
 
     const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
@@ -1293,14 +1296,25 @@
     if (branch) qs.set('course', branch);
     if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
-    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company') {
+    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company' || progressPanel === 'companymock') {
       qs.set('resultType', progressPanel);
     }
     return qs;
   }
 
+  function normalizeProgressPanel(panel) {
+    if (panel === 'contests') return 'contests';
+    if (panel === 'company') return 'company';
+    if (panel === 'companymock') return 'companymock';
+    return 'tests';
+  }
+
+  function normalizeMyResultsPanel(panel) {
+    return normalizeProgressPanel(panel);
+  }
+
   function applyProgressPanel(panel) {
-    progressPanel = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
+    progressPanel = normalizeProgressPanel(panel);
     document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
     });
@@ -1315,7 +1329,7 @@
   }
 
   function applyMyResultsPanel(panel) {
-    myResultsPanel = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
+    myResultsPanel = normalizeMyResultsPanel(panel);
     document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsPanel);
     });
@@ -1381,6 +1395,17 @@
     if (kind === 'regular') return false;
     if (String(row.companyId || '').trim() !== '') return true;
     return isCompanyTest(resolveHistoryTest(row));
+  }
+
+  function historyEntryIsCompanyMock(h) {
+    const test = resolveHistoryTest(h);
+    if (test) return isCompanyMockTest(test);
+    if (String(h?.questionSource || '') === 'random_jd') return true;
+    return false;
+  }
+
+  function historyEntryIsCompanyProblem(h) {
+    return historyEntryIsCompany(h) && !historyEntryIsCompanyMock(h);
   }
 
   function historyResultMode(h) {
@@ -7186,8 +7211,11 @@
       if (myResultsPanel === 'contests') {
         return historyEntryIsContest(h) && contestTypeOf(h) === myResultsContestType;
       }
+      if (myResultsPanel === 'companymock') {
+        return historyEntryIsCompanyMock(h);
+      }
       if (myResultsPanel === 'company') {
-        return historyEntryIsCompany(h);
+        return historyEntryIsCompanyProblem(h);
       }
       return !historyEntryIsContest(h) && !historyEntryIsCompany(h);
     });
@@ -7195,9 +7223,11 @@
     const contestLabel = myResultsContestType === 'monthly' ? 'monthly' : 'weekly';
     const emptyLabel = myResultsPanel === 'contests'
       ? `No ${contestLabel} challenge attempts yet.`
-      : (myResultsPanel === 'company'
-        ? 'No company test attempts yet.'
-        : 'No attempts yet. Select a test on the left to begin.');
+      : (myResultsPanel === 'companymock'
+        ? 'No company mock test attempts yet.'
+        : (myResultsPanel === 'company'
+          ? 'No company-wise problem attempts yet.'
+          : 'No attempts yet. Select a test on the left to begin.'));
     document.getElementById('myHistory').innerHTML = filtered.length
       ? filtered.slice(0, 8).map((h) => {
           const attemptId = h.attemptId || h.id;

@@ -929,7 +929,7 @@ final class CodingService
                 }
             }
             if (($profile['userType'] ?? '') !== 'student') {
-                if ($resultType === 'company' || in_array($role, ['staff', 'placement_officer'], true)) {
+                if (in_array($resultType, ['company', 'companymock'], true) || in_array($role, ['staff', 'placement_officer'], true)) {
                     continue;
                 }
             }
@@ -1952,7 +1952,7 @@ final class CodingService
     private function normalizeDirectoryResultType(string $resultType): string
     {
         $resultType = strtolower(trim($resultType));
-        if ($resultType === 'contests' || $resultType === 'company') {
+        if (in_array($resultType, ['contests', 'company', 'companymock'], true)) {
             return $resultType;
         }
 
@@ -1970,11 +1970,15 @@ final class CodingService
         $isCompany = CodingTestModel::isCompanyTest($test)
             || CodingTestModel::normalizeTestKind((string) ($attempt['testKind'] ?? '')) === 'company'
             || trim((string) ($attempt['companyId'] ?? '')) !== '';
+        $isMock = CodingTestModel::isCompanyMockTest($test);
         if ($resultType === 'contests') {
             return in_array($contest, ['weekly', 'monthly'], true);
         }
+        if ($resultType === 'companymock') {
+            return $isMock;
+        }
         if ($resultType === 'company') {
-            return $isCompany;
+            return $isCompany && !$isMock;
         }
 
         return !in_array($contest, ['weekly', 'monthly'], true) && !$isCompany;

@@ -626,7 +626,7 @@ final class AptitudeAccessService
     {
         $raw = strtolower(trim((string) ($filters['resultType'] ?? '')));
 
-        return in_array($raw, ['tests', 'contests', 'company'], true) ? $raw : '';
+        return in_array($raw, ['tests', 'contests', 'company', 'companymock'], true) ? $raw : '';
     }
 
     /**

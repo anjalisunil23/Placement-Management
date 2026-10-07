@@ -142,7 +142,16 @@
   function isCompanyTest(t) {
     if (!t) return false;
     if (String(t.testKind || '') === 'company') return true;
-    return String(t.companyId || '').trim() !== '';
+    if (String(t.companyId || '').trim() !== '') return true;
+    if (String(t?.questionSource || '') === 'random_jd') return true;
+    return (Array.isArray(t?.jdFilterRules) ? t.jdFilterRules : []).some(
+      (r) => String(r?.jdSetId || '').trim() !== ''
+    );
+  }
+
+  function isCompanyMockTest(t) {
+    if (!isCompanyTest(t)) return false;
+    return String(t?.questionSource || '') === 'random_jd';
   }
 
   function isRegularTest(t) {
@@ -170,6 +179,17 @@
     if (String(row.companyId || '').trim()) return true;
     const test = resolveHistoryTest(row);
     return isCompanyTest(test);
+  }
+
+  function historyEntryIsCompanyMock(h) {
+    const test = resolveHistoryTest(h);
+    if (test) return isCompanyMockTest(test);
+    if (String(h?.questionSource || '') === 'random_jd') return true;
+    return false;
+  }
+
+  function historyEntryIsCompanyProblem(h) {
+    return historyEntryIsCompany(h) && !historyEntryIsCompanyMock(h);
   }
 
   function historyEntryIsContest(h) {
@@ -2070,8 +2090,15 @@
       ?.classList.toggle('d-none', !access.canTake);
   }
 
+  function normalizeProgressPanel(panel) {
+    if (panel === 'contests') return 'contests';
+    if (panel === 'company') return 'company';
+    if (panel === 'companymock') return 'companymock';
+    return 'tests';
+  }
+
   function applyMyResultsPanel(panel) {
-    myResultsView = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
+    myResultsView = normalizeProgressPanel(panel);
     document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsView);
     });
@@ -2380,8 +2407,11 @@
       if (myResultsView === 'contests') {
         return historyEntryIsContest(h) && contestTypeOf(h) === myResultsContestType;
       }
+      if (myResultsView === 'companymock') {
+        return historyEntryIsCompanyMock(h);
+      }
       if (myResultsView === 'company') {
-        return historyEntryIsCompany(h);
+        return historyEntryIsCompanyProblem(h);
       }
       return !historyEntryIsContest(h) && !historyEntryIsCompany(h);
     });
@@ -2389,9 +2419,11 @@
     const contestLabel = myResultsContestType === 'monthly' ? 'monthly' : 'weekly';
     const emptyLabel = myResultsView === 'contests'
       ? `No ${contestLabel} challenge attempts yet.`
-      : (myResultsView === 'company'
-        ? 'No company test attempts yet.'
-        : 'No attempts yet. Open a topic test or challenge to begin.');
+      : (myResultsView === 'companymock'
+        ? 'No company mock test attempts yet.'
+        : (myResultsView === 'company'
+          ? 'No company-wise problem attempts yet.'
+          : 'No attempts yet. Open a topic test or challenge to begin.'));
     const root = document.getElementById('myHistory');
     if (!root) return;
     root.innerHTML = filtered.length
@@ -3496,9 +3528,11 @@
         ? 'No class is assigned to your account. Contact the placement office to monitor student coding progress.'
         : (role === 'staff' && !hasStaffDirectoryLookup()
           ? 'Select your class batch above to view coding results for your students.'
-          : (progressPanel === 'company'
-            ? 'No company test results in your authorized scope yet.'
-            : 'No test results in your authorized scope yet.')));
+          : (progressPanel === 'companymock'
+            ? 'No company mock results in your authorized scope yet.'
+            : (progressPanel === 'company'
+              ? 'No company-wise problem results in your authorized scope yet.'
+              : 'No test results in your authorized scope yet.'))));
 
     const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
@@ -3692,7 +3726,7 @@
   }
 
   function applyProgressPanel(panel) {
-    progressPanel = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
+    progressPanel = normalizeProgressPanel(panel);
     document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
     });
@@ -4073,7 +4107,7 @@
     if (branch) qs.set('course', branch);
     if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
-    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company') {
+    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company' || progressPanel === 'companymock') {
       qs.set('resultType', progressPanel);
     }
     return qs;

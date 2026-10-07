@@ -1930,7 +1930,7 @@ final class AptitudeService
                 }
             }
             if (($profile['userType'] ?? '') !== 'student') {
-                if ($resultType === 'company' || in_array($role, ['staff', 'placement_officer'], true)) {
+                if (in_array($resultType, ['company', 'companymock'], true) || in_array($role, ['staff', 'placement_officer'], true)) {
                     continue;
                 }
             }
@@ -1983,7 +1983,7 @@ final class AptitudeService
     private function normalizeDirectoryResultType(string $resultType): string
     {
         $resultType = strtolower(trim($resultType));
-        if ($resultType === 'contests' || $resultType === 'company') {
+        if (in_array($resultType, ['contests', 'company', 'companymock'], true)) {
             return $resultType;
         }
 
@@ -2005,8 +2005,12 @@ final class AptitudeService
             return $resultType === 'contests';
         }
         $isCompany = AptitudeTestModel::isCompanyTest($test);
+        $isMock = AptitudeTestModel::isCompanyMockTest($test);
+        if ($resultType === 'companymock') {
+            return $isMock;
+        }
         if ($resultType === 'company') {
-            return $isCompany;
+            return $isCompany && !$isMock;
         }
         if ($resultType === 'contests') {
             return false;

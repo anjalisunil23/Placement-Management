@@ -87,6 +87,18 @@ class AptitudeTestModel extends BaseModel
     }
 
     /**
+     * @param array<string, mixed> $test
+     */
+    public static function isCompanyMockTest(array $test): bool
+    {
+        if (!self::isCompanyTest($test)) {
+            return false;
+        }
+
+        return self::normalizeQuestionSource((string) ($test['questionSource'] ?? '')) === 'random_jd';
+    }
+
+    /**
      * Regular tests always expose results. Contests stay hidden until published.
      *
      * @param array<string, mixed> $test
