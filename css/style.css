@@ -279,14 +279,17 @@ a{color:inherit;text-decoration:none}
   font-weight:600;
 }
 
-/* Company-wise detail tabs — Problems / Question bank / Company mock test */
+/* Practice tabs — Problems / Challenges / Company-Wise and company sub-nav */
+#takeListNav.jd-block-tabs,
 #studentJdBlockViewNav.jd-block-tabs{
   border-bottom:1px solid #111827;
   gap:0;
 }
+#takeListNav.jd-block-tabs .nav-item,
 #studentJdBlockViewNav.jd-block-tabs .nav-item{
   margin-bottom:-1px;
 }
+#takeListNav.jd-block-tabs .nav-link,
 #studentJdBlockViewNav.jd-block-tabs .nav-link{
   color:#111827;
   background:#fff;
@@ -298,13 +301,17 @@ a{color:inherit;text-decoration:none}
   margin-right:-1px;
   padding:.4rem .85rem;
 }
+#takeListNav.jd-block-tabs .nav-item:first-child .nav-link,
 #studentJdBlockViewNav.jd-block-tabs .nav-item:first-child .nav-link{
   border-top-left-radius:6px;
 }
+#takeListNav.jd-block-tabs .nav-item:last-child .nav-link,
 #studentJdBlockViewNav.jd-block-tabs .nav-item:last-child .nav-link{
   border-top-right-radius:6px;
   margin-right:0;
 }
+#takeListNav.jd-block-tabs .nav-link:hover,
+#takeListNav.jd-block-tabs .nav-link:focus,
 #studentJdBlockViewNav.jd-block-tabs .nav-link:hover,
 #studentJdBlockViewNav.jd-block-tabs .nav-link:focus{
   color:#111827;
@@ -312,6 +319,7 @@ a{color:inherit;text-decoration:none}
   border-color:#111827;
   border-bottom:0;
 }
+#takeListNav.jd-block-tabs .nav-link.active,
 #studentJdBlockViewNav.jd-block-tabs .nav-link.active{
   color:#111827;
   background:#fff;
