@@ -2330,7 +2330,8 @@ final class OfficerDataService
         self::$aesAlumniDirectoryCache = [];
 
         $students = $this->fetchCompleteCampusRecordsForSync('student');
-        $alumni = $this->fetchCompleteCampusRecordsForSync('alumni');
+        $studentAdmnos = $this->indexAesAdmnosFromRecords($students);
+        $alumni = $this->fetchCompleteCampusRecordsForSync('alumni', $studentAdmnos);
         $syncedAt = DocumentHelper::now();
 
         $syncSvc = new StudentDetailsSyncService();
@@ -2382,8 +2383,14 @@ final class OfficerDataService
      * @param 'student'|'alumni' $syncStudRole
      * @return list<array<string, mixed>>
      */
-    private function fetchCompleteCampusRecordsForSync(string $syncStudRole): array
-    {
+    /**
+     * @param array<string, true> $authoritativeStudentAdmnos
+     * @return list<array<string, mixed>>
+     */
+    private function fetchCompleteCampusRecordsForSync(
+        string $syncStudRole,
+        array $authoritativeStudentAdmnos = []
+    ): array {
         $api = $this->aesApiForCampusDirectorySync();
         $roleValues = $syncStudRole === 'alumni'
             ? $this->aesAlumniStudRoleParamValues()
@@ -2392,18 +2399,27 @@ final class OfficerDataService
 
         $merged = [];
         $seen = [];
-        $appendBatch = function (array $records) use (&$merged, &$seen, $syncStudRole): void {
+        $appendBatch = function (
+            array $records,
+            bool $residualAlumniPass = false
+        ) use (
+            &$merged,
+            &$seen,
+            $syncStudRole,
+            $authoritativeStudentAdmnos
+        ): void {
             foreach ($records as $record) {
-                if (!is_array($record) || !$this->recordQualifiesForSyncPass($record, $syncStudRole)) {
+                if (!is_array($record)) {
                     continue;
                 }
-                $key = strtoupper(trim((string) (
-                    $record['admno']
-                    ?? $record['stud_admno']
-                    ?? $record['registerNumber']
-                    ?? $record['registerno']
-                    ?? ''
-                )));
+                if ($residualAlumniPass) {
+                    if (!AesApiService::qualifiesAsResidualAlumniRecord($record, $authoritativeStudentAdmnos)) {
+                        continue;
+                    }
+                } elseif (!$this->recordQualifiesForSyncPass($record, $syncStudRole)) {
+                    continue;
+                }
+                $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
                 if ($key === '' || isset($seen[$key])) {
                     continue;
                 }
@@ -2453,19 +2469,62 @@ final class OfficerDataService
                 $fetchParams(['stud_deptcode' => $aesId]);
                 $this->fetchAlumniScopedByProgramme($api, $aesId, $roleValues, $appendBatch, $directoryList);
             }
-            $fetchParams([]);
             $this->supplementAlumniFromDeptPassOutRecords($api, $appendBatch);
-            $this->supplementAlumniFromClassBatchFetches($api, $appendBatch);
+            $this->supplementAlumniFromClassBatchFetches($api, $appendBatch, $authoritativeStudentAdmnos);
+            $this->supplementAlumniResidualFromDeptDirectories($api, $appendBatch, $authoritativeStudentAdmnos);
 
             return $merged;
         }
 
-        $fetchParams([]);
         foreach ($this->campusParentDeptAesIds() as $aesId) {
             $fetchParams(['stud_deptcode' => $aesId]);
         }
+        $fetchParams([]);
 
         return $merged;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $records
+     * @return array<string, true>
+     */
+    private function indexAesAdmnosFromRecords(array $records): array
+    {
+        $index = [];
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            if ($key !== '') {
+                $index[$key] = true;
+            }
+        }
+
+        return $index;
+    }
+
+    /**
+     * Every AES dept roster row not in the studying-student set (fills gap to campus total).
+     *
+     * @param array<string, true> $authoritativeStudentAdmnos
+     * @param callable(array<int, array<string, mixed>>, bool): void $appendBatch
+     */
+    private function supplementAlumniResidualFromDeptDirectories(
+        AesApiService $api,
+        callable $appendBatch,
+        array $authoritativeStudentAdmnos
+    ): void {
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            try {
+                $records = $api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId], true, false);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($records !== []) {
+                $appendBatch($records, true);
+            }
+        }
     }
 
     /**
@@ -2541,8 +2600,15 @@ final class OfficerDataService
     /**
      * Class-scoped getStudInfo4Placement for discovered alumni batches (fills gaps in getAllStudInfo4Placement).
      */
-    private function supplementAlumniFromClassBatchFetches(AesApiService $api, callable $appendBatch): void
-    {
+    /**
+     * @param callable(array<int, array<string, mixed>>, bool): void $appendBatch
+     * @param array<string, true> $authoritativeStudentAdmnos
+     */
+    private function supplementAlumniFromClassBatchFetches(
+        AesApiService $api,
+        callable $appendBatch,
+        array $authoritativeStudentAdmnos = []
+    ): void {
         $batchKeys = [];
         foreach ($this->campusParentDeptAesIds() as $aesId) {
             try {
@@ -2551,7 +2617,14 @@ final class OfficerDataService
                 continue;
             }
             foreach ($records as $record) {
-                if (!is_array($record) || !AesApiService::qualifiesAsAlumniFromDeptScan($record)) {
+                if (!is_array($record)) {
+                    continue;
+                }
+                $admno = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+                if ($admno !== '' && isset($authoritativeStudentAdmnos[$admno])) {
+                    continue;
+                }
+                if (AesApiService::looksLikeActiveStudyingClassBatch($record)) {
                     continue;
                 }
                 $batch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
@@ -2569,7 +2642,7 @@ final class OfficerDataService
             }
         }
 
-        $maxFetches = max(50, min(500, (int) ($_ENV['AES_ALUMNI_CLASS_FETCH_MAX'] ?? 250)));
+        $maxFetches = max(100, min(3000, (int) ($_ENV['AES_ALUMNI_CLASS_FETCH_MAX'] ?? 1500)));
         $fetched = 0;
         foreach ($batchKeys as $entry) {
             if ($fetched >= $maxFetches) {

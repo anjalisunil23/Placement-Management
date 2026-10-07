@@ -585,6 +585,7 @@ class StudentDetailsModel extends BaseModel
                 && (
                     AesApiService::qualifiesAsAlumniDirectoryRecord($record)
                     || AesApiService::qualifiesAsAlumniByHeuristics($record)
+                    || AesApiService::qualifiesAsAlumniFromDeptScan($record)
                 )) {
                 $authoritative[$key] = true;
             }

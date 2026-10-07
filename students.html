@@ -2251,14 +2251,16 @@ function formatCampusAesDirectorySyncStatus(meta) {
   const when = d && !Number.isNaN(d.getTime())
     ? d.toLocaleString()
     : String(meta.syncedAt || '').trim();
-  const students = Number(meta.studentRecordCount ?? meta.recordCount ?? 0);
+  const students = Number(meta.studentRecordCount ?? 0);
   const alumni = Number(meta.alumniRecordCount ?? 0);
+  const total = Number(meta.recordCount ?? (students + alumni));
+  const fetchedStudents = Number(meta.fetchedStudents ?? 0);
   const fetchedAlumni = Number(meta.fetchedAlumni ?? 0);
   let summary = alumni > 0
-    ? `${students} students · ${alumni} alumni`
-    : `${students} students`;
-  if (fetchedAlumni > alumni) {
-    summary += ` (${fetchedAlumni} fetched from AES)`;
+    ? `${students} students · ${alumni} alumni · ${total} total`
+    : `${students} students · ${total} total`;
+  if (fetchedStudents > 0 || fetchedAlumni > 0) {
+    summary += ` (AES: ${fetchedStudents || students} + ${fetchedAlumni || alumni})`;
   }
   return when !== ''
     ? `${summary} · last sync ${when}`

@@ -821,6 +821,39 @@ final class AesApiService
     }
 
     /**
+     * AES dept roster row not in the studying-student directory — treat as alumni.
+     *
+     * @param array<string, mixed> $record
+     * @param array<string, true> $authoritativeStudentAdmnos
+     */
+    public static function qualifiesAsResidualAlumniRecord(array $record, array $authoritativeStudentAdmnos): bool
+    {
+        $admno = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+        if ($admno === '' || isset($authoritativeStudentAdmnos[$admno])) {
+            return false;
+        }
+
+        $role = self::normalizeStudRole($record);
+        if ($role === 'student') {
+            return false;
+        }
+        if ($role === 'alumni') {
+            return true;
+        }
+        if (self::qualifiesAsAlumniByHeuristics($record)) {
+            return true;
+        }
+        if (self::looksLikeActiveStudyingClassBatch($record)) {
+            return false;
+        }
+        if (self::qualifiesAsAlumniFromDeptScan($record)) {
+            return true;
+        }
+
+        return trim((string) ($record['stud_name'] ?? $record['name'] ?? '')) !== '';
+    }
+
+    /**
      * Pass-out / graduated hints when AES omits stud_role (never treat bare class labels as alumni).
      *
      * @param array<string, mixed> $record
