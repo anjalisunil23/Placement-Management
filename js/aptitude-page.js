@@ -1786,8 +1786,8 @@
     if (status) {
       const isPdf = file && /\.pdf$/i.test(String(file.name || ''));
       status.innerHTML = isPdf
-        ? '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Reading PDF and parsing questions… large files may take 2–3 minutes.'
-        : '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Saving…';
+        ? '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Reading PDF, parsing questions, and inferring answers… large files may take several minutes.'
+        : '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Parsing questions and inferring answers…';
     }
     btn?.setAttribute('disabled', 'disabled');
     manualJdUploadBusy = true;
@@ -1863,7 +1863,7 @@
       const res = await api('/aptitude/jd-sets/upload-manual', {
         method: 'POST',
         body: fd,
-        timeoutMs: 600000,
+        timeoutMs: 900000,
       });
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
       const count = res.data?.questionCount ?? 0;
@@ -1890,11 +1890,10 @@
       }
       const answersPending = Number(res.data?.answersPending ?? 0);
       if (answersPending > 0) {
-        msg += ` Open Questions and use Analyze answers with AI for the remaining ${answersPending}.`;
+        msg += ` ${answersPending} answer(s) could not be inferred — use Edit on those questions.`;
       }
       toast(msg.trim(), 'success');
       delete jdSetDetailsCache[String(res.data?.id || '')];
-      jdSetAutoAnalyzeDone.delete(String(res.data?.id || ''));
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();
       await loadJdLibrary();
@@ -2098,7 +2097,7 @@
       ? '<div class="small text-info mb-1">Answer inferred by AI — verify before publishing.</div>'
       : '';
     const answerLine = manualPreview && !answerKnown
-      ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Pending — use <strong>Analyze answers with AI</strong> above or edit manually.</div>')
+      ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not determined — use Edit to set the correct option.</div>')
       : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : (isSc ? `${esc(answerLabel)})` : `${esc(answerLabel)}.`)} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
     const normOpts = displayOpts.map((o) => String(o || '').trim().toLowerCase()).filter(Boolean);
     const hasDupOpts = manualPreview && normOpts.length >= 2 && new Set(normOpts).size < normOpts.length;
@@ -2229,106 +2228,6 @@
     };
   }
 
-  const jdSetAutoAnalyzeDone = new Set();
-  let jdAnalyzeInflight = false;
-
-  function jdPendingAnswerCount(detail) {
-    return (detail?.questions || []).filter((q) => !q.answerKnown).length;
-  }
-
-  function rerenderJdQuestionsPanel(setId, detail, panel) {
-    const sid = String(setId || detail?.id || '');
-    const host = panel?.closest('[data-jd-questions]') || panel?.parentElement;
-    if (!host || !detail) return null;
-    host.innerHTML = renderManualQuestionsPanel(detail, { setId: sid, editable: access.canManage });
-    const nextPanel = host.querySelector('[data-jd-questions-panel]');
-    bindManualQuestionEditEvents(nextPanel);
-    return nextPanel;
-  }
-
-  async function runJdAnalyzeAnswers(setId, panel, { limit = 18, silent = false, manageUi = true } = {}) {
-    const sid = String(setId || '');
-    if (!sid) return null;
-    const btn = panel?.querySelector('[data-jd-analyze-answers]');
-    const statusEl = panel?.querySelector('[data-jd-analyze-status]');
-    if (manageUi) btn?.setAttribute('disabled', 'disabled');
-    try {
-      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(sid)}/analyze-answers`, {
-        method: 'POST',
-        body: { limit },
-        timeoutMs: 300000,
-      });
-      if (!res?.success) throw new Error(res?.message || 'Could not analyze answers.');
-      const detail = res.data?.set || res.data;
-      if (detail) jdSetDetailsCache[sid] = detail;
-      let nextPanel = panel;
-      if (panel && detail) {
-        nextPanel = rerenderJdQuestionsPanel(sid, detail, panel) || panel;
-      }
-      if (!silent) {
-        const n = Number(res.data?.analyzed ?? 0);
-        const pending = Number(res.data?.pending ?? 0);
-        if (n > 0) {
-          toast(`Analyzed ${n} answer(s)${pending > 0 ? ` — ${pending} still pending` : ''}.`, 'success');
-        } else if (pending > 0) {
-          toast(res?.message || 'Could not infer answers. Check OpenAI is configured on the server, then try again.', 'error');
-        } else {
-          toast('All answers are set.', 'success');
-        }
-      }
-      return { ...res.data, panel: nextPanel };
-    } finally {
-      if (manageUi) btn?.removeAttribute('disabled');
-      if (statusEl && manageUi) statusEl.textContent = '';
-    }
-  }
-
-  async function runJdAnalyzeAllAnswers(setId, panel) {
-    if (jdAnalyzeInflight) return;
-    const sid = String(setId || '');
-    if (!sid || !panel) return;
-    jdAnalyzeInflight = true;
-    const btn = panel.querySelector('[data-jd-analyze-answers]');
-    const statusEl = panel.querySelector('[data-jd-analyze-status]');
-    btn?.setAttribute('disabled', 'disabled');
-    let totalAnalyzed = 0;
-    let currentPanel = panel;
-    try {
-      for (let round = 0; round < 60; round += 1) {
-        const detail = jdSetDetailsCache[sid] || (await getJdSetDetail(sid));
-        const pending = jdPendingAnswerCount(detail);
-        if (pending <= 0) break;
-        if (statusEl) {
-          statusEl.textContent = totalAnalyzed > 0
-            ? `Analyzing… ${totalAnalyzed} done, ${pending} remaining (batch ${round + 1})`
-            : `Analyzing ${pending} question(s)… this may take several minutes.`;
-        }
-        const result = await runJdAnalyzeAnswers(sid, currentPanel, {
-          limit: 18,
-          silent: true,
-          manageUi: false,
-        });
-        currentPanel = result?.panel || currentPanel;
-        const n = Number(result?.analyzed ?? 0);
-        totalAnalyzed += n;
-        if (n <= 0) break;
-      }
-      const finalDetail = jdSetDetailsCache[sid] || (await getJdSetDetail(sid));
-      const pending = jdPendingAnswerCount(finalDetail);
-      if (totalAnalyzed > 0) {
-        toast(`Analyzed ${totalAnalyzed} answer(s)${pending > 0 ? ` — ${pending} still pending` : ''}.`, pending > 0 ? 'info' : 'success');
-      } else if (pending > 0) {
-        toast('Could not infer answers. Ensure OpenAI is configured on the server, then try again.', 'error');
-      }
-    } catch (err) {
-      toast(err?.message || 'Could not analyze answers.', 'error');
-    } finally {
-      jdAnalyzeInflight = false;
-      btn?.removeAttribute('disabled');
-      if (statusEl) statusEl.textContent = '';
-    }
-  }
-
   function bindManualQuestionEditEvents(panel) {
     if (!panel || panel.dataset.jdQEditBound === '1') return;
     panel.dataset.jdQEditBound = '1';
@@ -2369,13 +2268,6 @@
         return;
       }
 
-      const analyzeBtn = e.target.closest('[data-jd-analyze-answers]');
-      if (analyzeBtn) {
-        e.preventDefault();
-        await runJdAnalyzeAllAnswers(setId, panel);
-        return;
-      }
-
       const saveBtn = e.target.closest('[data-jd-q-save]');
       if (saveBtn) {
         e.preventDefault();
@@ -2402,18 +2294,6 @@
         }
       }
     });
-
-    const setId = String(panel.getAttribute('data-jd-set-id') || '');
-    if (access.canManage && setId && !jdSetAutoAnalyzeDone.has(setId)) {
-      const detail = jdSetDetailsCache[setId] || null;
-      const pending = jdPendingAnswerCount(detail);
-      if (pending > 0 && pending <= 12) {
-        jdSetAutoAnalyzeDone.add(setId);
-        runJdAnalyzeAnswers(setId, panel, { limit: 18 }).catch((err) => {
-          toast(err?.message || 'Automatic answer analysis failed. Click Analyze all answers with AI.', 'error');
-        });
-      }
-    }
   }
 
   function splitManualTextIntoBlocks(text) {
@@ -2449,17 +2329,14 @@
       const fname = esc(detail?.jdFilename || 'Uploaded manual');
       const unknownCount = qs.filter((q) => !q.answerKnown).length;
       const knownCount = qs.length - unknownCount;
-      const analyzeBar = editable && unknownCount > 0
-        ? `<div class="alert alert-info py-2 px-3 small mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
-            <span data-jd-analyze-status>${unknownCount} question(s) still need answers${knownCount > 0 ? ` (${knownCount} already set)` : ''}. Large sets are processed in batches automatically.</span>
-            <button type="button" class="btn btn-sm btn-primary" data-jd-analyze-answers="1">Analyze all answers with AI</button>
-          </div>`
+      const pendingNote = editable && unknownCount > 0
+        ? `<div class="small text-warning mb-3">${unknownCount} answer(s) could not be inferred automatically — use Edit on those questions.</div>`
         : '';
       const summary = `<div class="small text-muted-2 mb-3 border-bottom pb-2">
         <div><span class="fw-semibold text-body">${fname}</span></div>
-        <div>Questions detected: <strong>${qs.length}</strong>${knownCount > 0 ? ` · Answers known: <strong>${knownCount}</strong>` : ''}${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
+        <div>Questions detected: <strong>${qs.length}</strong>${knownCount > 0 ? ` · Answers with explanations: <strong>${knownCount}</strong>` : ''}${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
         ${sections.length ? `<div class="mt-1">Sections: ${sections.map((s) => esc(s)).join(', ')}</div>` : ''}
-      </div>${analyzeBar}`;
+      </div>${pendingNote}`;
       let lastDirections = null;
       const cards = qs.map((q, i) => {
         const dir = String(q.directionsBlock || '').trim();

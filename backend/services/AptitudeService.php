@@ -876,21 +876,7 @@ final class AptitudeService
             AptitudeManualQuestionAiParser::applyAnswerKeyToQuestions($final, $answerKey);
             $answersFromKey = $this->countKnownAnswers($final) - $beforeKey;
 
-            $unknownAnswers = 0;
-            foreach ($final as $q) {
-                if (empty($q['answerKnown'])) {
-                    $unknownAnswers++;
-                }
-            }
-            $maxAiAnswers = max(0, (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_MAX'] ?? 20));
-            if ($unknownAnswers > 0 && $maxAiAnswers > 0 && $unknownAnswers <= $maxAiAnswers) {
-                $answersAnalyzed = (new AptitudeManualAnswerAnalyzer())->analyze($final);
-            } else {
-                $answersAnalyzed = 0;
-                if ($unknownAnswers > $maxAiAnswers) {
-                    error_log('[PMS Aptitude] Skipped AI answer analysis for manual upload (' . $unknownAnswers . ' unknown; limit ' . $maxAiAnswers . ').');
-                }
-            }
+            $answersAnalyzed = $this->analyzeAllManualAnswers($final);
         } else {
             $answersAnalyzed = 0;
         }
@@ -911,6 +897,42 @@ final class AptitudeService
             'answersFromKey' => max(0, $answersFromKey),
             'answersKnown' => $this->countKnownAnswers($final),
         ];
+    }
+
+    /**
+     * Infer answers and step-by-step explanations for every unanswered MCQ during upload.
+     *
+     * @param list<array<string, mixed>> $questions
+     */
+    private function analyzeAllManualAnswers(array &$questions): int
+    {
+        if ($questions === [] || !(new OpenAIService())->isConfigured()) {
+            return 0;
+        }
+
+        $batchSize = max(6, min(24, (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 18)));
+        $analyzer = new AptitudeManualAnswerAnalyzer();
+        $total = 0;
+        $maxRounds = (int) ceil(count($questions) / max(1, $batchSize)) + 10;
+
+        for ($round = 0; $round < $maxRounds; $round++) {
+            $unknown = 0;
+            foreach ($questions as $q) {
+                if (empty($q['answerKnown'])) {
+                    $unknown++;
+                }
+            }
+            if ($unknown === 0) {
+                break;
+            }
+            $resolved = $analyzer->analyze($questions, $batchSize);
+            $total += $resolved;
+            if ($resolved <= 0) {
+                break;
+            }
+        }
+
+        return $total;
     }
 
     /**
