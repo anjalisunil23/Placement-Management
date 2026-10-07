@@ -335,7 +335,7 @@ final class AptitudeController
         @set_time_limit(max(120, (int) ($_ENV['APTITUDE_MANUAL_UPLOAD_TIME_LIMIT'] ?? 600)));
         $user = AuthMiddleware::authenticate();
         $body = json_decode((string) file_get_contents('php://input'), true) ?: [];
-        $limit = isset($body['limit']) ? (int) $body['limit'] : 18;
+        $limit = isset($body['limit']) ? (int) $body['limit'] : 6;
         Response::success(
             $this->service->analyzeJdSetAnswers($user, $id, $limit),
             'Answers analyzed.'

@@ -1241,8 +1241,9 @@ final class AptitudeService
         if (!Security::isValidId($id)) {
             Response::error('Invalid JD set id.', 400);
         }
-        $batchCap = max(6, min(24, (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 12)));
-        $limit = max(1, min($batchCap * 2, $limit));
+        // One OpenAI call per HTTP request so shared-host proxies (~60s) do not kill multi-batch work.
+        $batchCap = max(4, min(8, (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 6)));
+        $limit = max(1, min($batchCap, $limit));
         $model = new \PMS\Models\AptitudeJdQuestionSetModel();
         $set = $model->findById($id);
         if ($set === null) {
@@ -1254,21 +1255,31 @@ final class AptitudeService
 
         $questions = array_values((array) ($set['questions'] ?? []));
         $pendingBefore = 0;
+        $eligibleBefore = 0;
         foreach ($questions as $q) {
-            if (is_array($q) && empty($q['answerKnown'])) {
-                $pendingBefore++;
+            if (!is_array($q) || !empty($q['answerKnown'])) {
+                continue;
+            }
+            $pendingBefore++;
+            $opts = array_values(array_filter(
+                array_map(static fn ($o) => trim((string) $o), (array) ($q['options'] ?? [])),
+                static fn ($o) => $o !== '' && $o !== '—'
+            ));
+            if (count($opts) >= 2) {
+                $eligibleBefore++;
             }
         }
         if ($pendingBefore === 0) {
             return [
-                'set' => $model->detailView($set),
+                'set' => $model->publicDetail($set),
                 'analyzed' => 0,
                 'pending' => 0,
                 'answersKnown' => $this->countKnownAnswers($questions),
+                'eligible' => 0,
             ];
         }
 
-        $analyzed = (new AptitudeManualAnswerAnalyzer())->analyze($questions, $limit);
+        $analyzed = (new AptitudeManualAnswerAnalyzer(null, $batchCap))->analyze($questions, $limit);
         $importMeta = is_array($set['importMeta'] ?? null) ? $set['importMeta'] : [];
         $importMeta['answersAnalyzed'] = (int) ($importMeta['answersAnalyzed'] ?? 0) + $analyzed;
         $importMeta['answersKnown'] = $this->countKnownAnswers($questions);
@@ -1279,7 +1290,7 @@ final class AptitudeService
         }
         $model->update($id, ['importMeta' => $importMeta]);
         $saved = $model->findById($id);
-        $detail = $saved !== null ? $model->detailView($saved) : $detail;
+        $detail = $saved !== null ? $model->publicDetail($saved) : $detail;
 
         $pendingAfter = 0;
         foreach ($questions as $q) {
@@ -1288,12 +1299,34 @@ final class AptitudeService
             }
         }
 
-        return [
+        $eligibleAfter = 0;
+        foreach ($questions as $q) {
+            if (!is_array($q) || !empty($q['answerKnown'])) {
+                continue;
+            }
+            $opts = array_values(array_filter(
+                array_map(static fn ($o) => trim((string) $o), (array) ($q['options'] ?? [])),
+                static fn ($o) => $o !== '' && $o !== '—'
+            ));
+            if (count($opts) >= 2) {
+                $eligibleAfter++;
+            }
+        }
+
+        $out = [
             'set' => $detail,
             'analyzed' => $analyzed,
             'pending' => $pendingAfter,
             'answersKnown' => $this->countKnownAnswers($questions),
+            'eligible' => $eligibleAfter,
         ];
+        if ($analyzed <= 0 && $eligibleBefore > 0) {
+            $out['message'] = 'AI could not infer answers for this batch. Check OpenAI on the server or retry.';
+        } elseif ($analyzed <= 0 && $pendingAfter > 0 && $eligibleBefore === 0) {
+            $out['message'] = 'Questions are missing options — edit them manually or re-upload a clearer PDF.';
+        }
+
+        return $out;
     }
 
     /**

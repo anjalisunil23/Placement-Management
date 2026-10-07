@@ -18,8 +18,8 @@ final class AptitudeManualAnswerAnalyzer
         ?int $batchSize = null
     ) {
         $this->openai = $openai ?? new OpenAIService();
-        $configured = $batchSize ?? (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 12);
-        $this->batchSize = max(4, min(18, $configured));
+        $configured = $batchSize ?? (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 6);
+        $this->batchSize = max(3, min(8, $configured));
     }
 
     /**

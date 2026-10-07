@@ -1763,32 +1763,45 @@
     const sid = String(setId || '');
     if (!sid) return { pending: 0, answersKnown: 0 };
     const total = Math.max(0, Number(questionCount) || 0);
-    const batchLimit = 18;
+    const batchLimit = 6;
     let pending = Math.max(0, Number(pendingStart) || 0);
     let answersKnown = Math.max(0, total > 0 ? total - pending : 0);
     let rounds = 0;
-    while (pending > 0 && rounds < 60) {
+    while (pending > 0 && rounds < 80) {
+      const batchNum = rounds + 1;
       setManualJdSaveStatus(
         statusEl,
-        `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Inferring answers… `
+        `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Batch ${batchNum}: contacting AI for up to ${batchLimit} question(s)… `
           + `${answersKnown}/${total || '?'} done`
           + (pending > 0 ? `, ${pending} remaining` : '')
-          + '. This runs automatically in batches.'
+          + '. Each batch may take up to a minute.'
       );
       const res = await api(`/aptitude/jd-sets/${encodeURIComponent(sid)}/analyze-answers`, {
         method: 'POST',
         body: { limit: batchLimit },
-        timeoutMs: 300000,
+        timeoutMs: 180000,
       });
       if (!res?.success) throw new Error(res?.message || 'Could not infer answers.');
       pending = Number(res.data?.pending ?? 0);
       answersKnown = Number(res.data?.answersKnown ?? answersKnown);
       const analyzed = Number(res.data?.analyzed ?? 0);
+      const eligible = Number(res.data?.eligible ?? -1);
       if (res.data?.set) jdSetDetailsCache[sid] = res.data.set;
       if (analyzed <= 0 && pending > 0) {
-        throw new Error('Answer inference stopped early. Ensure OpenAI is configured on the server, then re-upload or edit remaining questions.');
+        const hint = res.data?.message
+          || res.message
+          || (eligible === 0
+            ? 'Questions are missing answer options — edit them or re-upload a clearer PDF.'
+            : 'Ensure OpenAI is configured on the server, then try again.');
+        throw new Error(hint);
       }
       rounds += 1;
+      setManualJdSaveStatus(
+        statusEl,
+        `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Inferring answers… `
+          + `${answersKnown}/${total || '?'} done`
+          + (pending > 0 ? `, ${pending} remaining` : '')
+      );
       if (total <= 0 && pending <= 0) break;
     }
     return { pending, answersKnown };
