@@ -5754,6 +5754,8 @@ async function apiFetch(path, opts = {}) {
   } else if (body != null && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
+  let timeoutId = null;
+  let timeoutController = null;
   try {
     const fetchOpts = {
       method: opts.method || 'GET',
@@ -5761,7 +5763,11 @@ async function apiFetch(path, opts = {}) {
       body,
       credentials: 'include',
     };
-    if (opts.signal) {
+    if (opts.timeoutMs > 0 && typeof AbortController !== 'undefined') {
+      timeoutController = new AbortController();
+      timeoutId = setTimeout(() => timeoutController.abort(), opts.timeoutMs);
+      fetchOpts.signal = timeoutController.signal;
+    } else if (opts.signal) {
       fetchOpts.signal = opts.signal;
     }
     const res = await fetch(API_BASE + path, fetchOpts);
@@ -5808,6 +5814,9 @@ async function apiFetch(path, opts = {}) {
         const pathLower = String(path || '').toLowerCase();
         if (pathLower.includes('placements-higher-education') || pathLower.includes('placement-filters')) {
           message = `Request timed out (${res.status}). The placement grid should load from student_placements without live AES — deploy latest code and set STAFF_PLACEMENT_LIST_LITE_FILTERS=1 and STAFF_PLACEMENT_FILTERS_SKIP_AES=1 in .env. Use Sync from AES only when importing a class roster.`;
+        } else if (pathLower.includes('upload-manual') || pathLower.includes('jd-sets')) {
+          message = `Request timed out (${res.status}). Reading the PDF and parsing questions can take several minutes on large aptitude manuals. `
+            + 'Try again with a smaller PDF, paste the text instead of uploading, or ask the host to raise PHP/LiteSpeed timeouts (APTITUDE_MANUAL_UPLOAD_TIME_LIMIT, often 120–600s).';
         } else {
           message = `Request timed out (${res.status}). The server stopped a long step (reading the syllabus for AI or generating a batch). `
             + 'Click Get and wait for the PDF, then try Generate again with fewer questions. If it keeps failing, ask the host to raise PHP/LiteSpeed timeouts (often 60–120s).';
@@ -5841,9 +5850,19 @@ async function apiFetch(path, opts = {}) {
     return json;
   } catch (e) {
     if (e && typeof e === 'object' && e.name === 'AbortError') {
+      if (opts.timeoutMs > 0) {
+        return {
+          success: false,
+          message: `Request timed out after ${Math.round(opts.timeoutMs / 1000)}s. Large PDF manuals can take several minutes — try again or paste text instead of uploading.`,
+          data: null,
+          timedOut: true,
+        };
+      }
       return { success: false, message: 'Request cancelled', data: null, aborted: true };
     }
     return { success: false, message: e.message || 'Network error', data: null, _offline: true };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 

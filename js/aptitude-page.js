@@ -1783,6 +1783,12 @@
     const status = document.getElementById('aptManualJdSaveStatus');
     const btn = document.getElementById('btnAptManualJdSave');
     status?.classList.remove('d-none');
+    if (status) {
+      const isPdf = file && /\.pdf$/i.test(String(file.name || ''));
+      status.innerHTML = isPdf
+        ? '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Reading PDF and parsing questions… large files may take 2–3 minutes.'
+        : '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Saving…';
+    }
     btn?.setAttribute('disabled', 'disabled');
     manualJdUploadBusy = true;
     try {
@@ -1854,7 +1860,11 @@
       fd.append('saveTarget', saveTarget);
       if (manualText) fd.append('manualText', manualText);
       if (file) fd.append('manual', file);
-      const res = await api('/aptitude/jd-sets/upload-manual', { method: 'POST', body: fd });
+      const res = await api('/aptitude/jd-sets/upload-manual', {
+        method: 'POST',
+        body: fd,
+        timeoutMs: 600000,
+      });
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
       const count = res.data?.questionCount ?? 0;
       const viaAi = res.data?.parseMethod === 'ai';

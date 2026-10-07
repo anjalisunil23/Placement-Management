@@ -691,6 +691,7 @@ final class AptitudeService
         ?string $companyName = null,
         string $saveTarget = 'bank'
     ): array {
+        @set_time_limit(max(120, (int) ($_ENV['APTITUDE_MANUAL_UPLOAD_TIME_LIMIT'] ?? 600)));
         AptitudeAccessService::requireManager($admin);
         $jdTitle = trim($jdTitle);
         if ($jdTitle === '') {
@@ -874,7 +875,21 @@ final class AptitudeService
             AptitudeManualQuestionAiParser::applyAnswerKeyToQuestions($final, $answerKey);
             $answersFromKey = $this->countKnownAnswers($final) - $beforeKey;
 
-            $answersAnalyzed = (new AptitudeManualAnswerAnalyzer())->analyze($final);
+            $unknownAnswers = 0;
+            foreach ($final as $q) {
+                if (empty($q['answerKnown'])) {
+                    $unknownAnswers++;
+                }
+            }
+            $maxAiAnswers = max(0, (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_MAX'] ?? 20));
+            if ($unknownAnswers > 0 && $maxAiAnswers > 0 && $unknownAnswers <= $maxAiAnswers) {
+                $answersAnalyzed = (new AptitudeManualAnswerAnalyzer())->analyze($final);
+            } else {
+                $answersAnalyzed = 0;
+                if ($unknownAnswers > $maxAiAnswers) {
+                    error_log('[PMS Aptitude] Skipped AI answer analysis for manual upload (' . $unknownAnswers . ' unknown; limit ' . $maxAiAnswers . ').');
+                }
+            }
         } else {
             $answersAnalyzed = 0;
         }

@@ -265,6 +265,7 @@ final class AptitudeController
     /** POST /api/aptitude/jd-sets/upload-manual — multipart: companyId, jdTitle, manualText?, manual? */
     public function uploadJdQuestionManual(): void
     {
+        @set_time_limit(max(120, (int) ($_ENV['APTITUDE_MANUAL_UPLOAD_TIME_LIMIT'] ?? 600)));
         $user = AuthMiddleware::authenticate();
         $companyId = trim((string) ($_POST['companyId'] ?? ''));
         $jdTitle = trim((string) ($_POST['jdTitle'] ?? ''));
