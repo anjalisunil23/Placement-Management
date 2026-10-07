@@ -241,7 +241,7 @@
     if (!access.canTake) return;
     if (studentJdSelectedCompanyId) {
       showStudentJdCompanyDetail(studentJdSelectedCompanyId);
-    } else if (takeListPanel === 'company') {
+    } else if (takeListPanel === 'jdblock' || takeListPanel === 'companymock') {
       renderStudentJdBlock();
     }
   }
@@ -486,7 +486,15 @@
   let studentJdBlockView = 'tests';
   let adminJdBlockView = 'tests';
   const ADMIN_JD_BLOCK_VIEWS = ['tests', 'bank', 'local'];
-  const STUDENT_JD_BLOCK_VIEWS = ['tests', 'bank', 'mock'];
+  const STUDENT_JD_BLOCK_VIEWS = ['tests', 'bank'];
+
+  function isJdCompanyTakePanel(panel) {
+    return panel === 'jdblock' || panel === 'companymock';
+  }
+
+  function isCompanyResultsPanel(panel) {
+    return panel === 'company' || panel === 'companymock';
+  }
   const jdSetDetailsCache = {};
   let aptAiModal;
   let aptJdManualModal;
@@ -746,28 +754,32 @@
       };
     });
 
-    if (resultType === 'company') {
-      const titles = ['soti demo test -1', 'Associate Software Engineer mock'];
+    if (resultType === 'company' || resultType === 'companymock') {
+      const titles = resultType === 'companymock'
+        ? ['Associate Software Engineer mock']
+        : ['soti demo test -1'];
       const rows = [];
       studentSummaries.forEach((s) => {
         const count = Number(s.testsAttempted) || 0;
         if (count === 0 || s.userId !== 'u-s1') return;
         const pct = Math.max(40, Math.min(100, Number(s.recentScore ?? s.averageScore) || 0));
-        const totalMarks = 7;
+        const totalMarks = resultType === 'companymock' ? 10 : 7;
         const marksObtained = Math.round((pct / 100) * totalMarks);
-        rows.push({
-          attemptId: `demo-company-attempt-${s.userId}-final`,
-          userId: s.userId,
-          name: s.name,
-          registerNumber: s.registerNumber,
-          classBatch: s.classBatch,
-          attemptCount: 1,
-          testTitle: titles[0],
-          marksObtained,
-          totalMarks,
-          score: marksObtained,
-          percentage: pct,
-          completedAt: new Date().toISOString(),
+        titles.forEach((testTitle, idx) => {
+          rows.push({
+            attemptId: `demo-company-attempt-${s.userId}-${resultType}-${idx}`,
+            userId: s.userId,
+            name: s.name,
+            registerNumber: s.registerNumber,
+            classBatch: s.classBatch,
+            attemptCount: 1,
+            testTitle,
+            marksObtained,
+            totalMarks,
+            score: marksObtained,
+            percentage: pct,
+            completedAt: new Date().toISOString(),
+          });
         });
       });
       const percentages = rows.map((r) => Number(r.percentage) || 0);
@@ -1064,8 +1076,6 @@
     document.getElementById('dirContestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirStats')?.classList.add('d-none');
     document.getElementById('dirStats').innerHTML = '';
-    document.getElementById('progressContestTypeNav')?.classList.remove('d-none');
-
     const merged = mergeCompletedContestRows(contests, completedContests)
       .filter((c) => String(c.contestType || '') === progressContestType);
 
@@ -1080,11 +1090,13 @@
 
     if (!merged.length) {
       root.innerHTML = `<p class="text-muted-2 mb-0">${emptyMsg}</p>`;
+      syncProgressViewNav();
       return;
     }
 
     root.innerHTML = renderProgressContestTable(merged, emptyMsg);
     bindDirContestActions(root);
+    syncProgressViewNav();
   }
 
   function formatAttemptScore(row) {
@@ -1100,7 +1112,6 @@
   function renderDirectoryTable(rows, summary, scope = {}) {
     document.getElementById('dirTestResultsWrap')?.classList.remove('d-none');
     document.getElementById('dirContestResultsWrap')?.classList.add('d-none');
-    document.getElementById('progressContestTypeNav')?.classList.add('d-none');
     document.getElementById('dirStats')?.classList.add('d-none');
     document.getElementById('dirStats').innerHTML = '';
 
@@ -1115,9 +1126,11 @@
       ? 'No class is assigned to your account. Contact the placement office to monitor student aptitude progress.'
         : (role === 'staff' && !hasStaffDirectoryLookup()
           ? 'Select your class batch above to view aptitude results for your students.'
-          : (progressPanel === 'company'
-            ? 'No company test results in your authorized scope yet.'
-            : 'No test results in your authorized scope yet.')));
+          : (progressPanel === 'companymock'
+            ? 'No company mock results in your authorized scope yet.'
+            : (progressPanel === 'company'
+              ? 'No company problem results in your authorized scope yet.'
+              : 'No test results in your authorized scope yet.'))));
 
     const canViewDetail = Auth.hasRealAuth() && !Auth.isDemo();
     document.getElementById('dirRows').innerHTML = rows.length ? rows.map((r) => {
@@ -1143,6 +1156,7 @@
     document.getElementById('dirRows').querySelectorAll('[data-detail]').forEach((btn) => {
       btn.addEventListener('click', () => openStudentDetail(btn.getAttribute('data-detail')));
     });
+    syncProgressViewNav();
   }
 
   function demoProgressFilterOptions() {
@@ -1289,19 +1303,43 @@
     if (branch) qs.set('course', branch);
     if (batch) qs.set('class', batch);
     if (type) qs.set('userType', type);
-    if (progressPanel === 'tests' || progressPanel === 'contests' || progressPanel === 'company') {
+    if (progressPanel === 'tests' || progressPanel === 'contests' || isCompanyResultsPanel(progressPanel)) {
       qs.set('resultType', progressPanel);
     }
     return qs;
   }
 
-  function applyProgressPanel(panel) {
-    progressPanel = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
+  function syncProgressViewNav() {
     document.querySelectorAll('#progressViewNav .nav-link').forEach((link) => {
+      const view = link.getAttribute('data-progress-view');
+      const active = view === 'companywise'
+        ? isCompanyResultsPanel(progressPanel)
+        : view === progressPanel;
+      link.classList.toggle('active', active);
+    });
+    document.querySelectorAll('#progressCompanyTypeNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-progress-view') === progressPanel);
     });
     document.getElementById('progressContestTypeNav')?.classList.toggle('d-none', progressPanel !== 'contests');
+    document.getElementById('progressCompanyTypeNav')?.classList.toggle('d-none', !isCompanyResultsPanel(progressPanel));
+  }
+
+  function applyProgressPanel(panel) {
+    if (panel === 'companywise') {
+      if (!isCompanyResultsPanel(progressPanel)) progressPanel = 'company';
+    } else {
+      progressPanel = panel === 'contests' ? 'contests'
+        : (panel === 'companymock' ? 'companymock'
+        : (panel === 'company' ? 'company' : 'tests'));
+    }
+    syncProgressViewNav();
     syncContestTypeNav('progressContestTypeNav', progressContestType, 'data-progress-contest-type');
+  }
+
+  function applyProgressCompanyType(panel) {
+    progressPanel = panel === 'companymock' ? 'companymock' : 'company';
+    syncProgressViewNav();
+    loadDirectory().catch(() => {});
   }
 
   function applyProgressContestType(type) {
@@ -1310,12 +1348,30 @@
     if (progressPanel === 'contests') loadDirectory().catch(() => {});
   }
 
-  function applyMyResultsPanel(panel) {
-    myResultsPanel = panel === 'contests' ? 'contests' : (panel === 'company' ? 'company' : 'tests');
+  function syncMyResultsNav() {
     document.querySelectorAll('#myResultsNav .nav-link').forEach((link) => {
+      const view = link.getAttribute('data-results-view');
+      const active = view === 'companywise'
+        ? isCompanyResultsPanel(myResultsPanel)
+        : view === myResultsPanel;
+      link.classList.toggle('active', active);
+    });
+    document.querySelectorAll('#myResultsCompanyTypeNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-results-view') === myResultsPanel);
     });
     document.getElementById('myResultsContestTypeNav')?.classList.toggle('d-none', myResultsPanel !== 'contests');
+    document.getElementById('myResultsCompanyTypeNav')?.classList.toggle('d-none', !isCompanyResultsPanel(myResultsPanel));
+  }
+
+  function applyMyResultsPanel(panel) {
+    if (panel === 'companywise') {
+      if (!isCompanyResultsPanel(myResultsPanel)) myResultsPanel = 'company';
+    } else {
+      myResultsPanel = panel === 'contests' ? 'contests'
+        : (panel === 'companymock' ? 'companymock'
+        : (panel === 'company' ? 'company' : 'tests'));
+    }
+    syncMyResultsNav();
     syncContestTypeNav('myResultsContestTypeNav', myResultsContestType, 'data-results-contest-type');
   }
 
@@ -1326,15 +1382,21 @@
   }
 
   function applyTakeListPanel(panel) {
-    takeListPanel = panel === 'contests' ? 'contests' : (panel === 'jdblock' ? 'jdblock' : 'tests');
+    const prev = takeListPanel;
+    takeListPanel = panel === 'contests' ? 'contests'
+      : (panel === 'jdblock' ? 'jdblock'
+      : (panel === 'companymock' ? 'companymock' : 'tests'));
     document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
       link.classList.toggle('active', link.getAttribute('data-take-list') === takeListPanel);
     });
     document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
-    document.getElementById('testList')?.classList.toggle('d-none', takeListPanel === 'jdblock');
-    document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', takeListPanel !== 'jdblock');
+    document.getElementById('testList')?.classList.toggle('d-none', isJdCompanyTakePanel(takeListPanel));
+    document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', !isJdCompanyTakePanel(takeListPanel));
     syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
-    if (takeListPanel === 'jdblock') {
+    if (isJdCompanyTakePanel(prev) && prev !== takeListPanel) {
+      showStudentJdCompanyGrid();
+    }
+    if (isJdCompanyTakePanel(takeListPanel)) {
       loadStudentJdBlock().catch(() => {});
     } else {
       renderTestList();
@@ -1342,9 +1404,13 @@
   }
 
   function setupTakeListNav() {
+    const show = access.canTake;
     document.querySelector('#takeListNav [data-take-list="jdblock"]')
       ?.closest('.nav-item')
-      ?.classList.toggle('d-none', !access.canTake);
+      ?.classList.toggle('d-none', !show);
+    document.querySelector('#takeListNav [data-take-list="companymock"]')
+      ?.closest('.nav-item')
+      ?.classList.toggle('d-none', !show);
   }
 
   function applyTakeContestType(type) {
@@ -1367,6 +1433,10 @@
     if (kind === 'regular') return false;
     if (String(row.companyId || '').trim() !== '') return true;
     return isCompanyTest(resolveHistoryTest(row));
+  }
+
+  function historyEntryIsCompanyMock(h) {
+    return historyEntryIsCompany(h) && isCompanyMockTest(resolveHistoryTest(h));
   }
 
   function historyResultMode(h) {
@@ -1753,6 +1823,91 @@
     });
   }
 
+  function setManualJdSaveStatus(statusEl, html) {
+    if (!statusEl) return;
+    statusEl.classList.remove('d-none');
+    statusEl.innerHTML = html;
+  }
+
+  let jdAnswerInferInflight = false;
+
+  function jdPendingAnswerCount(detail) {
+    return (detail?.questions || []).filter((q) => !q.answerKnown && !q.aiAnalyzeFailed).length;
+  }
+
+  async function inferJdSetAnswersAfterUpload(setId, { statusEl, questionCount = 0, pendingStart = 0 } = {}) {
+    const sid = String(setId || '');
+    if (!sid) return { pending: 0, answersKnown: 0 };
+    const total = Math.max(0, Number(questionCount) || 0);
+    const batchLimit = 4;
+    let pending = Math.max(0, Number(pendingStart) || 0);
+    let answersKnown = Math.max(0, total > 0 ? total - pending : 0);
+    let rounds = 0;
+    let consecutiveZeros = 0;
+    let useLimit = batchLimit;
+    while (pending > 0 && rounds < 120) {
+      const batchNum = rounds + 1;
+      setManualJdSaveStatus(
+        statusEl,
+        `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Batch ${batchNum}: contacting AI for up to ${useLimit} question(s)… `
+          + `${answersKnown}/${total || '?'} done`
+          + (pending > 0 ? `, ${pending} remaining` : '')
+          + '. Each batch may take up to a minute.'
+      );
+      const res = await api(`/aptitude/jd-sets/${encodeURIComponent(sid)}/analyze-answers`, {
+        method: 'POST',
+        body: { limit: useLimit },
+        timeoutMs: 180000,
+      });
+      if (!res?.success) throw new Error(res?.message || 'Could not infer answers.');
+      pending = Number(res.data?.pending ?? 0);
+      answersKnown = Number(res.data?.answersKnown ?? answersKnown);
+      const analyzed = Number(res.data?.analyzed ?? 0);
+      if (res.data?.set) jdSetDetailsCache[sid] = res.data.set;
+      if (analyzed <= 0 && pending > 0) {
+        consecutiveZeros += 1;
+        if (useLimit > 1) {
+          useLimit = 1;
+          continue;
+        }
+        if (consecutiveZeros >= 10) break;
+        continue;
+      }
+      consecutiveZeros = 0;
+      useLimit = batchLimit;
+      rounds += 1;
+      setManualJdSaveStatus(
+        statusEl,
+        `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Inferring answers… `
+          + `${answersKnown}/${total || '?'} done`
+          + (pending > 0 ? `, ${pending} remaining` : '')
+      );
+      if (total <= 0 && pending <= 0) break;
+    }
+    return { pending, answersKnown };
+  }
+
+  async function resumeJdAnswerInferenceIfNeeded(setId, detail, statusEl) {
+    const sid = String(setId || '');
+    if (!sid || !access.canManage || jdAnswerInferInflight) return detail;
+    const pending = jdPendingAnswerCount(detail);
+    if (pending <= 0) return detail;
+    jdAnswerInferInflight = true;
+    try {
+      await inferJdSetAnswersAfterUpload(sid, {
+        statusEl,
+        questionCount: (detail?.questions || []).length,
+        pendingStart: pending,
+      });
+      return jdSetDetailsCache[sid] || (await getJdSetDetail(sid)) || detail;
+    } catch (err) {
+      toast(err?.message || 'Could not finish inferring answers.', 'error');
+      return detail;
+    } finally {
+      jdAnswerInferInflight = false;
+    }
+  }
+
   async function saveJdManualUpload() {
     if (manualJdUploadBusy) return;
     const sel = document.getElementById('aptManualJdCompany');
@@ -1783,6 +1938,12 @@
     const status = document.getElementById('aptManualJdSaveStatus');
     const btn = document.getElementById('btnAptManualJdSave');
     status?.classList.remove('d-none');
+    if (status) {
+      const isPdf = file && /\.pdf$/i.test(String(file.name || ''));
+      status.innerHTML = isPdf
+        ? '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Reading PDF and parsing questions…'
+        : '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Parsing questions…';
+    }
     btn?.setAttribute('disabled', 'disabled');
     manualJdUploadBusy = true;
     try {
@@ -1854,14 +2015,39 @@
       fd.append('saveTarget', saveTarget);
       if (manualText) fd.append('manualText', manualText);
       if (file) fd.append('manual', file);
-      const res = await api('/aptitude/jd-sets/upload-manual', { method: 'POST', body: fd });
+      const res = await api('/aptitude/jd-sets/upload-manual', {
+        method: 'POST',
+        body: fd,
+        timeoutMs: 900000,
+      });
       if (!res?.success) throw new Error(res?.message || 'Could not save question manual.');
-      const count = res.data?.questionCount ?? 0;
+      const setId = String(res.data?.id || '');
+      let count = res.data?.questionCount ?? 0;
       const viaAi = res.data?.parseMethod === 'ai';
       const replaced = !!res.data?.replacedExisting;
-      const answersKnown = Number(res.data?.answersKnown ?? 0);
-      const answersAnalyzed = Number(res.data?.answersAnalyzed ?? 0);
+      let answersKnown = Number(res.data?.answersKnown ?? 0);
+      let answersAnalyzed = Number(res.data?.answersAnalyzed ?? 0);
       const answersFromKey = Number(res.data?.answersFromKey ?? 0);
+      let answersPending = Number(res.data?.answersPending ?? 0);
+      if (answersPending > 0 && setId) {
+        setManualJdSaveStatus(
+          status,
+          `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Saved ${count} question(s). Starting automatic answer inference…`
+        );
+        try {
+          const inferred = await inferJdSetAnswersAfterUpload(setId, {
+            statusEl: status,
+            questionCount: count,
+            pendingStart: answersPending,
+          });
+          answersPending = Number(inferred.pending ?? answersPending);
+          answersKnown = Number(inferred.answersKnown ?? answersKnown);
+          answersAnalyzed = Math.max(answersAnalyzed, Math.max(0, answersKnown - answersFromKey));
+        } catch (inferErr) {
+          toast(inferErr?.message || 'Some answers could not be inferred. Open Questions to continue automatically.', 'error');
+          delete jdSetDetailsCache[setId];
+        }
+      }
       const answerHint = count > 0 && answersKnown > 0
         ? ` Answers shown for ${answersKnown}/${count}`
           + (answersAnalyzed > 0 ? ` (${answersAnalyzed} inferred by AI` : '')
@@ -1878,19 +2064,21 @@
           ? `Saved ${count} question(s) to local bank${viaAi ? ' (AI-read from manual)' : ''}.${answerHint}`
           : 'Saved manual to local bank (no MCQs detected in file).';
       }
-      toast(msg.trim(), 'success');
-      delete jdSetDetailsCache[String(res.data?.id || '')];
+      if (answersPending > 0) {
+        msg += ` ${answersPending} answer(s) could not be inferred — use Edit on those questions.`;
+      }
+      toast(msg.trim(), answersPending > 0 ? 'info' : 'success');
+      delete jdSetDetailsCache[setId];
       manualJdSetSummaries = [];
       aptJdManualModal?.hide();
       await loadJdLibrary();
       if (jdSelectedCompanyId) {
         applyAdminJdBlockView('local');
         showJdCompanyDetail(jdSelectedCompanyId);
-        const newSetId = String(res.data?.id || '');
-        if (newSetId) {
+        if (setId) {
           window.setTimeout(() => {
             const card = [...document.querySelectorAll('[data-jd-set-card]')].find(
-              (el) => el.getAttribute('data-jd-set-card') === newSetId
+              (el) => el.getAttribute('data-jd-set-card') === setId
             );
             card?.querySelector('[data-jd-view]')?.click();
           }, 300);
@@ -2054,7 +2242,7 @@
     const opts = (q.options || []).filter((o) => String(o || '').trim() && String(o).trim() !== '—').slice(0, 5);
     const pad = opts.length ? opts : (q.options || []).slice(0, 5);
     const displayOpts = pad.length ? pad : [];
-    const answerKnown = q.answerKnown !== false && q.answerKnown !== 0;
+    const answerKnown = !!q.answerKnown;
     const correct = Math.max(0, Math.min(Math.max(displayOpts.length, 1) - 1, Number(q.correctIndex ?? 0)));
     const promptRaw = String(q.prompt || '').trim();
     const promptWrapStyle = (isSc || isDs || /\n/.test(promptRaw)) ? ' style="white-space:pre-wrap"' : '';
@@ -2083,7 +2271,7 @@
       ? '<div class="small text-info mb-1">Answer inferred by AI — verify before publishing.</div>'
       : '';
     const answerLine = manualPreview && !answerKnown
-      ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not in document</div>')
+      ? (isSc ? '' : '<div class="small mb-1 text-muted-2"><span class="fw-semibold">Answer:</span> Not determined — use Edit to set the correct option.</div>')
       : `<div class="small mb-1"><span class="fw-semibold">Answer:</span> ${isDs ? `(${esc(answerLabel)})` : (isSc ? `${esc(answerLabel)})` : `${esc(answerLabel)}.`)} ${esc(stripHtml(String(displayOpts[correct] || '')) || displayOpts[correct] || '—')}</div>`;
     const normOpts = displayOpts.map((o) => String(o || '').trim().toLowerCase()).filter(Boolean);
     const hasDupOpts = manualPreview && normOpts.length >= 2 && new Set(normOpts).size < normOpts.length;
@@ -2214,6 +2402,17 @@
     };
   }
 
+  function bindManualQuestionShowAll(panel) {
+    if (!panel) return;
+    panel.querySelector('[data-jd-show-all-questions]')?.addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      const more = panel.querySelector('[data-jd-questions-more]');
+      if (!more) return;
+      more.classList.remove('d-none');
+      btn.remove();
+    });
+  }
+
   function bindManualQuestionEditEvents(panel) {
     if (!panel || panel.dataset.jdQEditBound === '1') return;
     panel.dataset.jdQEditBound = '1';
@@ -2223,7 +2422,9 @@
       const host = hostEl();
       if (!host) return;
       host.innerHTML = renderManualQuestionsPanel(detail || {}, { setId, editable: access.canManage });
-      bindManualQuestionEditEvents(host.querySelector('[data-jd-questions-panel]'));
+      const nextPanel = host.querySelector('[data-jd-questions-panel]');
+      bindManualQuestionEditEvents(nextPanel);
+      bindManualQuestionShowAll(nextPanel);
     };
     panel.addEventListener('click', async (e) => {
       const setId = String(panel.getAttribute('data-jd-set-id') || '');
@@ -2280,6 +2481,7 @@
         }
       }
     });
+    bindManualQuestionShowAll(panel);
   }
 
   function splitManualTextIntoBlocks(text) {
@@ -2313,11 +2515,19 @@
       const ocrNote = meta.ocrAttempted ? ' · OCR' : '';
       const pages = meta.pageCount > 0 ? ` · ${meta.pageCount} page(s) processed` : '';
       const fname = esc(detail?.jdFilename || 'Uploaded manual');
+      const unknownCount = qs.filter((q) => !q.answerKnown && !q.aiAnalyzeFailed).length;
+      const knownCount = qs.length - unknownCount;
+      const failedCount = qs.filter((q) => !q.answerKnown && q.aiAnalyzeFailed).length;
+      const pendingNote = editable && unknownCount > 0
+        ? `<div class="small text-info mb-3" data-jd-infer-status>${unknownCount} answer(s) still being inferred automatically…</div>`
+        : (editable && failedCount > 0
+          ? `<div class="small text-warning mb-3">${failedCount} answer(s) need manual Edit — AI could not infer them.</div>`
+          : '');
       const summary = `<div class="small text-muted-2 mb-3 border-bottom pb-2">
         <div><span class="fw-semibold text-body">${fname}</span></div>
-        <div>Questions detected: <strong>${qs.length}</strong>${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
+        <div>Questions detected: <strong>${qs.length}</strong>${knownCount > 0 ? ` · Answers with explanations: <strong>${knownCount}</strong>` : ''}${sections.length ? ` · Sections detected: <strong>${sections.length}</strong>` : ''}${via}${ocrNote}${pages}</div>
         ${sections.length ? `<div class="mt-1">Sections: ${sections.map((s) => esc(s)).join(', ')}</div>` : ''}
-      </div>`;
+      </div>${pendingNote}`;
       let lastDirections = null;
       const cards = qs.map((q, i) => {
         const dir = String(q.directionsBlock || '').trim();
@@ -2330,7 +2540,16 @@
         }
         return header + renderJdQuestionDetailHtml(q, i, { setId, editable, qIndex: i });
       });
-      return summary + `<div class="d-flex flex-column gap-3" data-jd-questions-panel data-jd-set-id="${esc(setId)}">${cards.join('')}</div>`;
+      const initialShow = 20;
+      if (cards.length <= initialShow) {
+        return summary + `<div class="d-flex flex-column gap-3" data-jd-questions-panel data-jd-set-id="${esc(setId)}">${cards.join('')}</div>`;
+      }
+      const hiddenCount = cards.length - initialShow;
+      return summary + `<div class="d-flex flex-column gap-3" data-jd-questions-panel data-jd-set-id="${esc(setId)}">
+        ${cards.slice(0, initialShow).join('')}
+        <div class="d-none d-flex flex-column gap-3" data-jd-questions-more>${cards.slice(initialShow).join('')}</div>
+        <button type="button" class="btn btn-sm btn-outline-secondary align-self-start" data-jd-show-all-questions>Show all ${qs.length} questions (+${hiddenCount} more)</button>
+      </div>`;
     }
     const text = String(detail?.manualText || '').trim();
     const meta = detail?.importMeta && typeof detail.importMeta === 'object' ? detail.importMeta : {};
@@ -2499,13 +2718,34 @@
         if (!panel.classList.contains('d-none')) {
           panel.classList.add('d-none');
           btn.textContent = 'Questions';
+          btn.removeAttribute('disabled');
           return;
         }
-        const detail = await getDetail(id);
-        panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
-        bindManualQuestionEditEvents(panel.querySelector('[data-jd-questions-panel]'));
+        btn.setAttribute('disabled', 'disabled');
+        btn.textContent = 'Loading…';
+        panel.innerHTML = '<div class="small text-muted-2 py-2"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading questions…</div>';
         panel.classList.remove('d-none');
-        btn.textContent = 'Hide';
+        try {
+          let detail = await getDetail(id);
+          panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
+          let qPanel = panel.querySelector('[data-jd-questions-panel]');
+          bindManualQuestionEditEvents(qPanel);
+          bindManualQuestionShowAll(qPanel);
+          btn.textContent = 'Hide';
+          if (allowDelete && access.canManage && jdPendingAnswerCount(detail) > 0) {
+            const statusEl = panel.querySelector('[data-jd-infer-status]') || panel;
+            detail = await resumeJdAnswerInferenceIfNeeded(id, detail, statusEl);
+            panel.innerHTML = renderManualQuestionsPanel(detail || {}, { setId: id, editable: allowDelete && access.canManage });
+            qPanel = panel.querySelector('[data-jd-questions-panel]');
+            bindManualQuestionEditEvents(qPanel);
+            bindManualQuestionShowAll(qPanel);
+          }
+        } catch (err) {
+          panel.innerHTML = `<p class="small text-danger mb-0">${esc(err?.message || 'Could not load questions.')}</p>`;
+          btn.textContent = 'Questions';
+        } finally {
+          btn.removeAttribute('disabled');
+        }
       });
     });
     root.querySelectorAll('[data-jd-edit-problem]').forEach((btn) => {
@@ -2842,26 +3082,41 @@
     }
   }
 
+  function studentJdBlocksForCurrentPanel() {
+    if (takeListPanel === 'companymock') {
+      return studentJdCompanyBlocks.filter((b) => studentCompanyMockTestsFor(b.companyId).length > 0);
+    }
+    return studentJdCompanyBlocks;
+  }
+
   function showStudentJdCompanyDetail(companyId) {
     const block = studentJdCompanyBlocks.find((b) => String(b.companyId || '') === String(companyId || ''));
     studentJdSelectedCompanyId = companyId;
+    const isMockPanel = takeListPanel === 'companymock';
     document.getElementById('studentJdBlockCompanyView')?.classList.add('d-none');
     document.getElementById('studentJdBlockCompanyDetail')?.classList.remove('d-none');
-    document.getElementById('studentJdBlockDetailNav')?.classList.remove('d-none');
-    syncStudentJdBlockViewNav();
-    const showTests = studentJdBlockView === 'tests';
-    const showMock = studentJdBlockView === 'mock';
-    const showBank = studentJdBlockView === 'bank';
+    document.getElementById('studentJdBlockDetailNav')?.classList.toggle('d-none', isMockPanel);
+    if (!isMockPanel) syncStudentJdBlockViewNav();
     const testsRoot = document.getElementById('studentJdBlockCompanyTests');
     const bankSection = document.getElementById('studentJdBlockBankSection');
-    testsRoot?.classList.toggle('d-none', !showTests && !showMock);
-    bankSection?.classList.toggle('d-none', !showBank);
-    if (showTests || showMock) {
-      const companyTests = showMock
-        ? studentCompanyMockTestsFor(companyId)
-        : studentCompanyProblemsFor(companyId);
+    if (isMockPanel) {
+      testsRoot?.classList.remove('d-none');
+      bankSection?.classList.add('d-none');
       if (testsRoot) {
-        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests, { mockTests: showMock });
+        const companyTests = studentCompanyMockTestsFor(companyId);
+        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests, { mockTests: true });
+        bindStudentCompanyTestEvents(testsRoot);
+      }
+      return;
+    }
+    const showTests = studentJdBlockView === 'tests';
+    const showBank = studentJdBlockView === 'bank';
+    testsRoot?.classList.toggle('d-none', !showTests);
+    bankSection?.classList.toggle('d-none', !showBank);
+    if (showTests) {
+      const companyTests = studentCompanyProblemsFor(companyId);
+      if (testsRoot) {
+        testsRoot.innerHTML = renderStudentCompanyTestsHtml(companyTests);
         bindStudentCompanyTestEvents(testsRoot);
       }
     } else if (showBank) {
@@ -2887,12 +3142,17 @@
     const grid = document.getElementById('studentJdBlockCompanyGrid');
     if (!grid) return;
     const activeCompanyId = studentJdSelectedCompanyId;
-    if (!studentJdCompanyBlocks.length) {
+    const blocks = studentJdBlocksForCurrentPanel();
+    const isMockPanel = takeListPanel === 'companymock';
+    if (!blocks.length) {
       showStudentJdCompanyGrid();
-      grid.innerHTML = '<div class="col-12"><p class="text-muted-2 mb-0">No Company Block entries are available yet. Check back later.</p></div>';
+      const emptyMsg = isMockPanel
+        ? 'No company mock tests are published yet. Check back later.'
+        : 'No Company Block entries are available yet. Check back later.';
+      grid.innerHTML = `<div class="col-12"><p class="text-muted-2 mb-0">${emptyMsg}</p></div>`;
       return;
     }
-    grid.innerHTML = renderJdCompanyGridHtml(studentJdCompanyBlocks);
+    grid.innerHTML = renderJdCompanyGridHtml(blocks);
     grid.querySelectorAll('[data-jd-company-id]').forEach((btn) => {
       btn.addEventListener('click', () => showStudentJdCompanyDetail(btn.getAttribute('data-jd-company-id')));
     });
@@ -6064,14 +6324,12 @@
     }
 
     if (isCompanyTest(t)) {
-      takeListPanel = 'jdblock';
-      studentJdBlockView = isCompanyMockTest(t) ? 'mock' : 'tests';
-      document.querySelectorAll('#takeListNav .nav-link').forEach((link) => {
-        link.classList.toggle('active', link.getAttribute('data-take-list') === 'jdblock');
-      });
-      document.getElementById('takeContestTypeNav')?.classList.add('d-none');
-      document.getElementById('testList')?.classList.add('d-none');
-      document.getElementById('studentJdBlockPanel')?.classList.remove('d-none');
+      if (isCompanyMockTest(t)) {
+        applyTakeListPanel('companymock');
+      } else {
+        studentJdBlockView = 'tests';
+        applyTakeListPanel('jdblock');
+      }
       await loadStudentJdBlock();
       const companyId = String(t.companyId || '');
       if (companyId) showStudentJdCompanyDetail(companyId);
@@ -6778,7 +7036,7 @@
       setupTakeListNav();
       if (!skipTests) await loadTests();
       if (!skipProgress) await loadMyProgress();
-      if (takeListPanel === 'jdblock') {
+      if (isJdCompanyTakePanel(takeListPanel)) {
         await loadStudentJdBlock();
       } else {
         renderTestList();
@@ -6984,8 +7242,11 @@
       if (myResultsPanel === 'contests') {
         return historyEntryIsContest(h) && contestTypeOf(h) === myResultsContestType;
       }
+      if (myResultsPanel === 'companymock') {
+        return historyEntryIsCompanyMock(h);
+      }
       if (myResultsPanel === 'company') {
-        return historyEntryIsCompany(h);
+        return historyEntryIsCompany(h) && !historyEntryIsCompanyMock(h);
       }
       return !historyEntryIsContest(h) && !historyEntryIsCompany(h);
     });
@@ -6993,9 +7254,11 @@
     const contestLabel = myResultsContestType === 'monthly' ? 'monthly' : 'weekly';
     const emptyLabel = myResultsPanel === 'contests'
       ? `No ${contestLabel} challenge attempts yet.`
-      : (myResultsPanel === 'company'
-        ? 'No company test attempts yet.'
-        : 'No attempts yet. Select a test on the left to begin.');
+      : (myResultsPanel === 'companymock'
+        ? 'No company mock test attempts yet.'
+        : (myResultsPanel === 'company'
+          ? 'No company problem attempts yet.'
+          : 'No attempts yet. Select a test on the left to begin.'));
     document.getElementById('myHistory').innerHTML = filtered.length
       ? filtered.slice(0, 8).map((h) => {
           const attemptId = h.attemptId || h.id;
@@ -7666,6 +7929,7 @@
   async function loadDirectory() {
     if (!access.canViewDirectory) return;
     const seq = ++dirLoadSeq;
+    syncProgressViewNav();
     if (staffNeedsClassFilter() && progressPanel !== 'contests') {
       const batches = staffAssignedBatches();
       if (!batches.length) {
@@ -7836,6 +8100,12 @@
       applyProgressPanel(link.getAttribute('data-progress-view'));
       loadDirectory().catch(() => {});
     });
+    bindPracticeNav('progressCompanyTypeNav', (e) => {
+      const link = e.target.closest('[data-progress-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyProgressCompanyType(link.getAttribute('data-progress-view'));
+    });
     bindPracticeNav('takeListNav', (e) => {
       const link = e.target.closest('[data-take-list]');
       if (!link) return;
@@ -7849,6 +8119,13 @@
       applyTakeContestType(link.getAttribute('data-take-contest-type'));
     });
     bindPracticeNav('myResultsNav', (e) => {
+      const link = e.target.closest('[data-results-view]');
+      if (!link) return;
+      e.preventDefault();
+      applyMyResultsPanel(link.getAttribute('data-results-view'));
+      renderHistory(myProgress);
+    });
+    bindPracticeNav('myResultsCompanyTypeNav', (e) => {
       const link = e.target.closest('[data-results-view]');
       if (!link) return;
       e.preventDefault();

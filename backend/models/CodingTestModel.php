@@ -87,6 +87,18 @@ class CodingTestModel extends BaseModel
         return trim((string) ($test['companyId'] ?? '')) !== '';
     }
 
+    /**
+     * @param array<string, mixed> $test
+     */
+    public static function isCompanyMockTest(array $test): bool
+    {
+        if (!self::isCompanyTest($test)) {
+            return false;
+        }
+
+        return self::normalizeQuestionSource((string) ($test['questionSource'] ?? '')) === 'random_jd';
+    }
+
     public static function composeProblemTestId(string $parentId, string $problemId): string
     {
         return $parentId . self::PROBLEM_TEST_SEP . $problemId;

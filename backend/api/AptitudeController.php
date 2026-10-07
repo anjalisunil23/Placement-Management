@@ -265,6 +265,7 @@ final class AptitudeController
     /** POST /api/aptitude/jd-sets/upload-manual — multipart: companyId, jdTitle, manualText?, manual? */
     public function uploadJdQuestionManual(): void
     {
+        @set_time_limit(max(120, (int) ($_ENV['APTITUDE_MANUAL_UPLOAD_TIME_LIMIT'] ?? 600)));
         $user = AuthMiddleware::authenticate();
         $companyId = trim((string) ($_POST['companyId'] ?? ''));
         $jdTitle = trim((string) ($_POST['jdTitle'] ?? ''));
@@ -326,6 +327,30 @@ final class AptitudeController
         $user = AuthMiddleware::authenticate();
         $this->service->deleteJdQuestionSet($user, $id);
         Response::success(null, 'JD question set deleted.');
+    }
+
+    /** POST /api/aptitude/jd-sets/{id}/analyze-answers — body: limit? */
+    public function analyzeJdSetAnswers(string $id): void
+    {
+        @set_time_limit(max(120, (int) ($_ENV['APTITUDE_MANUAL_UPLOAD_TIME_LIMIT'] ?? 600)));
+        $user = AuthMiddleware::authenticate();
+        $body = json_decode((string) file_get_contents('php://input'), true) ?: [];
+        $limit = isset($body['limit']) ? (int) $body['limit'] : 6;
+        Response::success(
+            $this->service->analyzeJdSetAnswers($user, $id, $limit),
+            'Answers analyzed.'
+        );
+    }
+
+    /** PATCH /api/aptitude/jd-sets/{id}/questions/{questionId} */
+    public function patchJdSetQuestion(string $id, string $questionId): void
+    {
+        $user = AuthMiddleware::authenticate();
+        $body = json_decode((string) file_get_contents('php://input'), true) ?: [];
+        Response::success(
+            $this->service->patchJdSetQuestion($user, $id, $questionId, is_array($body) ? $body : []),
+            'Question updated.'
+        );
     }
 
     /** POST /api/aptitude/jd-sets/{id}/publish-mock — body: questionCount, durationMinutes, negativeMarking?, negativeMarks? */

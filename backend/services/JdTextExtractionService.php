@@ -638,7 +638,8 @@ final class JdTextExtractionService
 
         $ocrResult = ['text' => '', 'pageCount' => 0];
         if ($needsOcr && $this->openai->isConfigured()) {
-            $ocrResult = $this->extractPdfViaVisionOcrPaged($path, 200, 40);
+            $maxPages = max(1, min(60, (int) ($_ENV['APTITUDE_MANUAL_OCR_MAX_PAGES'] ?? 15)));
+            $ocrResult = $this->extractPdfViaVisionOcrPaged($path, 200, $maxPages);
         }
 
         $viaOcr = self::repairCommonPdfMojibake((string) ($ocrResult['text'] ?? ''));

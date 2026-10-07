@@ -285,7 +285,7 @@ class AptitudeJdQuestionSetModel extends BaseModel
             }
             $norm['id'] = 'jdq-' . ($i + 1) . '-' . bin2hex(random_bytes(4));
             $norm['source'] = 'MANUAL_UPLOAD';
-            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'answerSource', 'aiAnalyzed', 'directionsBlock', 'questionType'] as $metaKey) {
+            foreach (['questionNumber', 'sourcePage', 'section', 'confidence', 'containsImage', 'answerKnown', 'answerSource', 'aiAnalyzed', 'aiAnalyzeFailed', 'directionsBlock', 'questionType'] as $metaKey) {
                 if (array_key_exists($metaKey, $q)) {
                     $norm[$metaKey] = $q[$metaKey];
                 }
@@ -574,14 +574,14 @@ class AptitudeJdQuestionSetModel extends BaseModel
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function detailView(array $row, bool $forStudent = false): array
+    private function detailView(array $setRow, bool $forStudent = false): array
     {
         $questions = [];
-        foreach (array_values((array) ($row['questions'] ?? [])) as $q) {
+        foreach (array_values((array) ($setRow['questions'] ?? [])) as $q) {
             if (!is_array($q)) {
                 continue;
             }
-            $row = [
+            $questionView = [
                 'id' => (string) ($q['id'] ?? ''),
                 'prompt' => (string) ($q['prompt'] ?? ''),
                 'options' => array_values((array) ($q['options'] ?? [])),
@@ -599,37 +599,42 @@ class AptitudeJdQuestionSetModel extends BaseModel
                 'questionType' => (string) ($q['questionType'] ?? ''),
             ];
             if (!$forStudent) {
-                $row['correctIndex'] = (int) ($q['correctIndex'] ?? 0);
-                $row['explanation'] = (string) ($q['explanation'] ?? '');
-                $row['answerKnown'] = !empty($q['answerKnown']);
-                $row['answerSource'] = (string) ($q['answerSource'] ?? '');
-                $row['aiAnalyzed'] = !empty($q['aiAnalyzed']);
+                $questionView['correctIndex'] = (int) ($q['correctIndex'] ?? 0);
+                $questionView['explanation'] = (string) ($q['explanation'] ?? '');
+                $questionView['answerKnown'] = !empty($q['answerKnown']);
+                $questionView['answerSource'] = (string) ($q['answerSource'] ?? '');
+                $questionView['aiAnalyzed'] = !empty($q['aiAnalyzed']);
+                $questionView['aiAnalyzeFailed'] = !empty($q['aiAnalyzeFailed']);
             }
-            $questions[] = $row;
+            $questions[] = $questionView;
         }
 
-        $id = (string) ($row['_id'] ?? '');
+        $id = (string) ($setRow['_id'] ?? '');
+        $hasStoredFile = trim((string) ($setRow['jdFile'] ?? '')) !== '';
+        $manualText = ($questions !== [] && $hasStoredFile)
+            ? ''
+            : $this->manualTextForView($setRow);
 
         return $this->withDocumentUrl([
             'id' => $id,
-            'companyId' => (string) ($row['companyId'] ?? ''),
-            'companyName' => (string) ($row['companyName'] ?? ''),
-            'jdTitle' => (string) ($row['jdTitle'] ?? ''),
-            'jdFilename' => (string) ($row['jdFilename'] ?? ''),
-            'jdFileUrl' => (string) ($row['jdFileUrl'] ?? ''),
-            'jdMimeType' => (string) ($row['jdMimeType'] ?? ''),
-            'hasDocument' => $this->rowHasManualDocument($row),
+            'companyId' => (string) ($setRow['companyId'] ?? ''),
+            'companyName' => (string) ($setRow['companyName'] ?? ''),
+            'jdTitle' => (string) ($setRow['jdTitle'] ?? ''),
+            'jdFilename' => (string) ($setRow['jdFilename'] ?? ''),
+            'jdFileUrl' => (string) ($setRow['jdFileUrl'] ?? ''),
+            'jdMimeType' => (string) ($setRow['jdMimeType'] ?? ''),
+            'hasDocument' => $this->rowHasManualDocument($setRow),
             'questionCount' => count($questions),
             'questions' => $questions,
-            'manualText' => $this->manualTextForView($row),
-            'manualSaveTarget' => (string) ($row['manualSaveTarget'] ?? 'bank'),
-            'manualSource' => (string) ($row['manualSource'] ?? ''),
-            'companyBankKind' => self::resolveCompanyBankKind($row),
-            'showInCompanyBank' => !array_key_exists('showInCompanyBank', $row) || !empty($row['showInCompanyBank']),
-            'manualParseMethod' => (string) ($row['manualParseMethod'] ?? ''),
-            'importMeta' => is_array($row['importMeta'] ?? null) ? $row['importMeta'] : [],
-            'createdAt' => (string) ($row['createdAt'] ?? ''),
-        ], $row, $forStudent);
+            'manualText' => $manualText,
+            'manualSaveTarget' => (string) ($setRow['manualSaveTarget'] ?? 'bank'),
+            'manualSource' => (string) ($setRow['manualSource'] ?? ''),
+            'companyBankKind' => self::resolveCompanyBankKind($setRow),
+            'showInCompanyBank' => !array_key_exists('showInCompanyBank', $setRow) || !empty($setRow['showInCompanyBank']),
+            'manualParseMethod' => (string) ($setRow['manualParseMethod'] ?? ''),
+            'importMeta' => is_array($setRow['importMeta'] ?? null) ? $setRow['importMeta'] : [],
+            'createdAt' => (string) ($setRow['createdAt'] ?? ''),
+        ], $setRow, $forStudent);
     }
 
     /**
@@ -704,5 +709,77 @@ class AptitudeJdQuestionSetModel extends BaseModel
     public function studentPublicDetail(array $row): array
     {
         return $this->detailView($row, true);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $questions
+     * @return array<string, mixed>|null
+     */
+    public function saveQuestions(string $setId, array $questions): ?array
+    {
+        if (!Security::isValidId($setId)) {
+            return null;
+        }
+        $set = $this->findById($setId);
+        if ($set === null) {
+            return null;
+        }
+        if (!$this->update($setId, [
+            'questions' => array_values($questions),
+            'questionCount' => count($questions),
+        ])) {
+            return null;
+        }
+        $saved = $this->findById($setId);
+
+        return $saved !== null ? $this->detailView($saved) : null;
+    }
+
+    /**
+     * @param array<string, mixed> $patch
+     * @return array<string, mixed>|null
+     */
+    public function patchQuestion(string $setId, string $questionId, array $patch): ?array
+    {
+        if (!Security::isValidId($setId) || trim($questionId) === '') {
+            return null;
+        }
+        $set = $this->findById($setId);
+        if ($set === null) {
+            return null;
+        }
+        $questions = array_values((array) ($set['questions'] ?? []));
+        $found = false;
+        foreach ($questions as &$q) {
+            if (!is_array($q) || (string) ($q['id'] ?? '') !== $questionId) {
+                continue;
+            }
+            if (array_key_exists('prompt', $patch)) {
+                $q['prompt'] = trim((string) $patch['prompt']);
+            }
+            if (array_key_exists('options', $patch) && is_array($patch['options'])) {
+                $q['options'] = array_values(array_map(static fn ($o) => trim((string) $o), $patch['options']));
+            }
+            if (array_key_exists('correctIndex', $patch)) {
+                $q['correctIndex'] = max(0, (int) $patch['correctIndex']);
+            }
+            if (array_key_exists('explanation', $patch)) {
+                $q['explanation'] = trim((string) $patch['explanation']);
+            }
+            if (array_key_exists('answerKnown', $patch)) {
+                $q['answerKnown'] = !empty($patch['answerKnown']);
+            }
+            if (!empty($patch['answerKnown'])) {
+                $q['lockCorrectIndex'] = true;
+            }
+            $found = true;
+            break;
+        }
+        unset($q);
+        if (!$found) {
+            return null;
+        }
+
+        return $this->saveQuestions($setId, $questions);
     }
 }

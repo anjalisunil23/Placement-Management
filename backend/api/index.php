@@ -558,6 +558,8 @@ $routes = [
     ['GET',  '/aptitude/jd-sets/{id}/document', [AptitudeController::class, 'streamJdSetDocument']],
     ['GET',  '/aptitude/jd-sets/{id}',        [AptitudeController::class, 'getJdSet']],
     ['DELETE','/aptitude/jd-sets/{id}',        [AptitudeController::class, 'deleteJdSet']],
+    ['POST', '/aptitude/jd-sets/{id}/analyze-answers', [AptitudeController::class, 'analyzeJdSetAnswers']],
+    ['PATCH', '/aptitude/jd-sets/{id}/questions/{questionId}', [AptitudeController::class, 'patchJdSetQuestion']],
     ['POST', '/aptitude/jd-sets/{id}/publish-mock', [AptitudeController::class, 'publishLocalBankMock']],
     ['DELETE','/aptitude/question-bank/{id}', [AptitudeController::class, 'deleteBankQuestion']],
     ['POST', '/aptitude/tests/{id}/start',    [AptitudeController::class, 'start']],

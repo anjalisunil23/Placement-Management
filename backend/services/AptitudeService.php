@@ -691,6 +691,7 @@ final class AptitudeService
         ?string $companyName = null,
         string $saveTarget = 'bank'
     ): array {
+        @set_time_limit(max(120, (int) ($_ENV['APTITUDE_MANUAL_UPLOAD_TIME_LIMIT'] ?? 600)));
         AptitudeAccessService::requireManager($admin);
         $jdTitle = trim($jdTitle);
         if ($jdTitle === '') {
@@ -750,7 +751,8 @@ final class AptitudeService
         $manualSanitizer = new JdTextExtractionService();
         $extracted = $manualSanitizer->sanitizeManualText($extracted);
 
-        $parseResult = $this->parseManualUploadQuestions($extracted);
+        // Answer inference runs in follow-up API calls so shared-host proxies do not 500 on large manuals.
+        $parseResult = $this->parseManualUploadQuestions($extracted, false);
         $parsed = $parseResult['questions'];
         $parseMethod = (string) ($parseResult['parseMethod'] ?? 'none');
         $answersAnalyzed = (int) ($parseResult['answersAnalyzed'] ?? 0);
@@ -820,6 +822,8 @@ final class AptitudeService
                 'answersAnalyzed' => $answersAnalyzed,
                 'answersFromKey' => $answersFromKey,
                 'answersKnown' => $answersKnown,
+                'answersPending' => max(0, count($parsed) - $answersKnown),
+                'answersDeferred' => max(0, count($parsed) - $answersKnown) > 0,
                 'importMeta' => $importMeta,
             ];
         } catch (\InvalidArgumentException $e) {
@@ -835,7 +839,7 @@ final class AptitudeService
      *
      * @return array{questions:list<array<string,mixed>>,parseMethod:string,sections:list<string>}
      */
-    private function parseManualUploadQuestions(string $extracted): array
+    private function parseManualUploadQuestions(string $extracted, bool $inferAnswers = false): array
     {
         $parser = new AptitudeManualQuestionParser();
         $local = $parser->parse($extracted);
@@ -874,7 +878,7 @@ final class AptitudeService
             AptitudeManualQuestionAiParser::applyAnswerKeyToQuestions($final, $answerKey);
             $answersFromKey = $this->countKnownAnswers($final) - $beforeKey;
 
-            $answersAnalyzed = (new AptitudeManualAnswerAnalyzer())->analyze($final);
+            $answersAnalyzed = $inferAnswers ? $this->analyzeAllManualAnswers($final) : 0;
         } else {
             $answersAnalyzed = 0;
         }
@@ -895,6 +899,40 @@ final class AptitudeService
             'answersFromKey' => max(0, $answersFromKey),
             'answersKnown' => $this->countKnownAnswers($final),
         ];
+    }
+
+    /**
+     * Infer answers and step-by-step explanations for every unanswered MCQ during upload.
+     *
+     * @param list<array<string, mixed>> $questions
+     */
+    private function analyzeAllManualAnswers(array &$questions): int
+    {
+        if ($questions === [] || !(new OpenAIService())->isConfigured()) {
+            return 0;
+        }
+
+        $analyzer = new AptitudeManualAnswerAnalyzer();
+        $total = 0;
+
+        for ($round = 0; $round < 3; $round++) {
+            $unknown = 0;
+            foreach ($questions as $q) {
+                if (empty($q['answerKnown'])) {
+                    $unknown++;
+                }
+            }
+            if ($unknown === 0) {
+                break;
+            }
+            $resolved = $analyzer->analyze($questions, 0);
+            $total += $resolved;
+            if ($resolved <= 0) {
+                break;
+            }
+        }
+
+        return $total;
     }
 
     /**
@@ -1190,6 +1228,127 @@ final class AptitudeService
     /**
      * @return array<string, mixed>
      */
+    /**
+     * Infer answers/explanations for unanswered MCQs in a local bank JD set (batched).
+     *
+     * @param array<string, mixed> $admin
+     * @return array<string, mixed>
+     */
+    public function analyzeJdSetAnswers(array $admin, string $id, int $limit = 12): array
+    {
+        @set_time_limit(max(120, (int) ($_ENV['APTITUDE_MANUAL_UPLOAD_TIME_LIMIT'] ?? 600)));
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($id)) {
+            Response::error('Invalid JD set id.', 400);
+        }
+        // One OpenAI call per HTTP request so shared-host proxies (~60s) do not kill multi-batch work.
+        $batchCap = max(4, min(8, (int) ($_ENV['APTITUDE_MANUAL_ANSWER_AI_BATCH'] ?? 6)));
+        $limit = max(1, min($batchCap, $limit));
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $set = $model->findById($id);
+        if ($set === null) {
+            Response::notFound('JD question set not found.');
+        }
+        if (!(new OpenAIService())->isConfigured()) {
+            Response::error('OpenAI is not configured on the server. Answers cannot be inferred automatically.', 422);
+        }
+
+        $questions = array_values((array) ($set['questions'] ?? []));
+        $pendingBefore = 0;
+        $eligibleBefore = 0;
+        foreach ($questions as $q) {
+            if (!is_array($q) || !empty($q['answerKnown']) || !empty($q['aiAnalyzeFailed'])) {
+                continue;
+            }
+            $pendingBefore++;
+            $opts = array_values(array_filter(
+                array_map(static fn ($o) => trim((string) $o), (array) ($q['options'] ?? [])),
+                static fn ($o) => $o !== '' && $o !== '—'
+            ));
+            if (count($opts) >= 2) {
+                $eligibleBefore++;
+            }
+        }
+        if ($pendingBefore === 0) {
+            return [
+                'set' => $model->publicDetail($set),
+                'analyzed' => 0,
+                'pending' => 0,
+                'answersKnown' => $this->countKnownAnswers($questions),
+                'eligible' => 0,
+            ];
+        }
+
+        $analyzed = (new AptitudeManualAnswerAnalyzer(null, $batchCap))->analyze($questions, $limit);
+        $importMeta = is_array($set['importMeta'] ?? null) ? $set['importMeta'] : [];
+        $importMeta['answersAnalyzed'] = (int) ($importMeta['answersAnalyzed'] ?? 0) + $analyzed;
+        $importMeta['answersKnown'] = $this->countKnownAnswers($questions);
+
+        $detail = $model->saveQuestions($id, $questions);
+        if ($detail === null) {
+            Response::error('Could not save analyzed answers.', 500);
+        }
+        $model->update($id, ['importMeta' => $importMeta]);
+        $saved = $model->findById($id);
+        $detail = $saved !== null ? $model->publicDetail($saved) : $detail;
+
+        $pendingAfter = 0;
+        foreach ($questions as $q) {
+            if (is_array($q) && empty($q['answerKnown']) && empty($q['aiAnalyzeFailed'])) {
+                $pendingAfter++;
+            }
+        }
+
+        $eligibleAfter = 0;
+        foreach ($questions as $q) {
+            if (!is_array($q) || !empty($q['answerKnown']) || !empty($q['aiAnalyzeFailed'])) {
+                continue;
+            }
+            $opts = array_values(array_filter(
+                array_map(static fn ($o) => trim((string) $o), (array) ($q['options'] ?? [])),
+                static fn ($o) => $o !== '' && $o !== '—'
+            ));
+            if (count($opts) >= 2) {
+                $eligibleAfter++;
+            }
+        }
+
+        $out = [
+            'set' => $detail,
+            'analyzed' => $analyzed,
+            'pending' => $pendingAfter,
+            'answersKnown' => $this->countKnownAnswers($questions),
+            'eligible' => $eligibleAfter,
+        ];
+        if ($analyzed <= 0 && $eligibleBefore > 0) {
+            $out['message'] = 'AI could not infer answers for this batch. Check OpenAI on the server or retry.';
+        } elseif ($analyzed <= 0 && $pendingAfter > 0 && $eligibleBefore === 0) {
+            $out['message'] = 'Questions are missing options — edit them manually or re-upload a clearer PDF.';
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed> $admin
+     * @param array<string, mixed> $patch
+     * @return array<string, mixed>
+     */
+    public function patchJdSetQuestion(array $admin, string $setId, string $questionId, array $patch): array
+    {
+        AptitudeAccessService::requireManager($admin);
+        if (!Security::isValidId($setId)) {
+            Response::error('Invalid JD set id.', 400);
+        }
+        $model = new \PMS\Models\AptitudeJdQuestionSetModel();
+        $detail = $model->patchQuestion($setId, $questionId, $patch);
+        if ($detail === null) {
+            Response::notFound('JD question set or question not found.');
+        }
+
+        return $detail;
+    }
+
     public function getJdQuestionSet(string $id): array
     {
         $model = new \PMS\Models\AptitudeJdQuestionSetModel();
@@ -1771,7 +1930,7 @@ final class AptitudeService
                 }
             }
             if (($profile['userType'] ?? '') !== 'student') {
-                if ($resultType === 'company' || in_array($role, ['staff', 'placement_officer'], true)) {
+                if (in_array($resultType, ['company', 'companymock'], true) || in_array($role, ['staff', 'placement_officer'], true)) {
                     continue;
                 }
             }
@@ -1824,7 +1983,7 @@ final class AptitudeService
     private function normalizeDirectoryResultType(string $resultType): string
     {
         $resultType = strtolower(trim($resultType));
-        if ($resultType === 'contests' || $resultType === 'company') {
+        if (in_array($resultType, ['contests', 'company', 'companymock'], true)) {
             return $resultType;
         }
 
@@ -1846,8 +2005,11 @@ final class AptitudeService
             return $resultType === 'contests';
         }
         $isCompany = AptitudeTestModel::isCompanyTest($test);
+        if ($resultType === 'companymock') {
+            return AptitudeTestModel::isCompanyMockTest($test);
+        }
         if ($resultType === 'company') {
-            return $isCompany;
+            return $isCompany && !AptitudeTestModel::isCompanyMockTest($test);
         }
         if ($resultType === 'contests') {
             return false;

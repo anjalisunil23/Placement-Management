@@ -13,7 +13,7 @@ use PMS\Models\PlacementPolicySettingsModel;
 use PMS\Models\StudentModel;
 
 /**
- * AES student master / directory — local source of truth after synchronization.
+ * Legacy AES directory table (retired). Kept for static helpers; table is no longer used.
  */
 class StudentDetailsModel extends BaseModel
 {
@@ -51,18 +51,7 @@ class StudentDetailsModel extends BaseModel
             return true;
         }
         try {
-            $migration = dirname(__DIR__) . '/database/migrations/001_create_student_details.sql';
-            if (is_readable($migration)) {
-                $sql = (string) file_get_contents($migration);
-                foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmt) {
-                    if ($stmt !== '' && stripos($stmt, 'CREATE TABLE') !== false) {
-                        $this->db->exec($stmt);
-                        break;
-                    }
-                }
-            }
             $this->db->query('SELECT 1 FROM `student_details` LIMIT 1');
-            $this->ensureRegistrationStatusColumn();
             self::$tableReady = true;
 
             return true;
@@ -70,30 +59,6 @@ class StudentDetailsModel extends BaseModel
             self::$tableUnavailable = true;
 
             return false;
-        }
-    }
-
-    private function ensureRegistrationStatusColumn(): void
-    {
-        try {
-            $stmt = $this->db->query(
-                "SHOW COLUMNS FROM `student_details` LIKE 'registration_status'"
-            );
-            if ($stmt->fetch()) {
-                return;
-            }
-            $migration = dirname(__DIR__) . '/database/migrations/002_add_registration_status_to_student_details.sql';
-            if (!is_readable($migration)) {
-                return;
-            }
-            $sql = (string) file_get_contents($migration);
-            foreach (array_filter(array_map('trim', explode(';', $sql))) as $stmtSql) {
-                if ($stmtSql !== '' && stripos($stmtSql, 'ALTER TABLE') !== false) {
-                    $this->db->exec($stmtSql);
-                }
-            }
-        } catch (\Throwable) {
-            // Column may already exist or host may restrict DDL at runtime.
         }
     }
 
@@ -120,7 +85,7 @@ class StudentDetailsModel extends BaseModel
     /**
      * @param array<string, mixed> $record AES directory row or normalized payload
      * @param array<string, mixed> $options syncSource, studRole, departmentId
-     * @return array{action:string,id:string,aesAdmno:string}
+     * @return array{action:string,id:string,aesAdmno:string,skipReason?:string}
      */
     public function upsertFromAesRecord(array $record, array $options = []): array
     {
@@ -131,12 +96,29 @@ class StudentDetailsModel extends BaseModel
         $incoming = self::payloadFromAesRecord($record, $options);
         $aesAdmno = self::resolveAesAdmno($incoming);
         if ($aesAdmno === '') {
-            return ['action' => 'skipped', 'id' => '', 'aesAdmno' => ''];
+            return [
+                'action'     => 'skipped',
+                'id'         => '',
+                'aesAdmno'   => '',
+                'skipReason' => 'empty_admno',
+            ];
         }
         $incoming['aesAdmno'] = $aesAdmno;
 
         $existing = $this->findByAesAdmno($aesAdmno);
-        $incoming = self::guardStudRoleTransition($record, $existing, $incoming);
+        $syncHint = strtolower(trim((string) ($options['studRole'] ?? '')));
+        $markedAesAlumniDirectory = false;
+        if ($syncHint === 'alumni') {
+            $incoming['aesAlumniDirectory'] = true;
+            if (is_array($existing) && (string) ($existing['studRole'] ?? '') === 'student') {
+                // AES counts these in both studying and alumni totals; keep placement role as student.
+                $incoming['studRole'] = 'student';
+                $incoming['stud_role'] = 'Student';
+                $markedAesAlumniDirectory = empty($existing['aesAlumniDirectory']);
+            }
+        }
+
+        $incoming = self::guardStudRoleTransition($record, $existing, $incoming, $options);
         $now = DocumentHelper::now();
         $incoming['syncedAt'] = $now;
         if (!empty($options['syncSource'])) {
@@ -148,7 +130,12 @@ class StudentDetailsModel extends BaseModel
             $this->applyRegistrationStatusToPayload($incoming);
             $id = $this->insert($incoming);
 
-            return ['action' => 'inserted', 'id' => $id, 'aesAdmno' => $aesAdmno];
+            return [
+                'action'                   => 'inserted',
+                'id'                       => $id,
+                'aesAdmno'                 => $aesAdmno,
+                'markedAesAlumniDirectory' => $markedAesAlumniDirectory,
+            ];
         }
 
         $merged = StudentPlacementModel::mergeNonEmptyValues($existing, $incoming);
@@ -158,15 +145,105 @@ class StudentDetailsModel extends BaseModel
         $this->applyRegistrationStatusToPayload($merged);
         $registrationChanged = (string) ($merged['registrationStatus'] ?? '')
             !== (string) ($existing['registrationStatus'] ?? '');
-        if ($beforeHash === $afterHash && !$registrationChanged) {
-            return ['action' => 'unchanged', 'id' => (string) ($existing['_id'] ?? ''), 'aesAdmno' => $aesAdmno];
+        $directoryFlagChanged = !empty($merged['aesAlumniDirectory'])
+            && empty($existing['aesAlumniDirectory']);
+        if ($beforeHash === $afterHash && !$registrationChanged && !$directoryFlagChanged) {
+            if (!empty($options['touchSyncedAt'])) {
+                $touch = $existing;
+                unset($touch['_id']);
+                $touch['syncedAt'] = $now;
+                $touch['updatedAt'] = $now;
+                $this->update((string) ($existing['_id'] ?? ''), $touch);
+            }
+
+            return [
+                'action'                   => 'unchanged',
+                'id'                       => (string) ($existing['_id'] ?? ''),
+                'aesAdmno'                 => $aesAdmno,
+                'markedAesAlumniDirectory' => false,
+            ];
         }
 
         $merged['updatedAt'] = $now;
         $id = (string) ($existing['_id'] ?? '');
         $this->update($id, $merged);
 
-        return ['action' => 'updated', 'id' => $id, 'aesAdmno' => $aesAdmno];
+        return [
+            'action'                   => 'updated',
+            'id'                       => $id,
+            'aesAdmno'                 => $aesAdmno,
+            'markedAesAlumniDirectory' => $markedAesAlumniDirectory || $directoryFlagChanged,
+        ];
+    }
+
+    /**
+     * @return array<string, true> canonical aes_admno values for stored studying rows
+     */
+    public function indexStoredStudentAdmnos(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $index = [];
+        try {
+            $stmt = $this->db->query(
+                'SELECT aes_admno FROM `student_details` WHERE stud_role = \'student\' AND aes_admno IS NOT NULL'
+            );
+            while ($row = $stmt->fetch()) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) ($row['aes_admno'] ?? '')));
+                if ($key !== '') {
+                    $index[$key] = true;
+                }
+            }
+        } catch (\Throwable) {
+            foreach ($this->listDirectoryRecords('', true, 'student', self::LIST_MAX) as $record) {
+                $key = self::resolveAesAdmno($record);
+                if ($key !== '') {
+                    $index[$key] = true;
+                }
+            }
+        }
+
+        return $index;
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    public function indexAllStoredAdmnos(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $index = [];
+        try {
+            $stmt = $this->db->query(
+                'SELECT aes_admno FROM `student_details` WHERE aes_admno IS NOT NULL'
+            );
+            while ($row = $stmt->fetch()) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) ($row['aes_admno'] ?? '')));
+                if ($key !== '') {
+                    $index[$key] = true;
+                }
+            }
+        } catch (\Throwable) {
+            foreach ($this->listDirectoryRecords('', true, 'all', self::LIST_MAX) as $record) {
+                $key = self::resolveAesAdmno($record);
+                if ($key !== '') {
+                    $index[$key] = true;
+                }
+            }
+        }
+
+        return $index;
     }
 
     /**
@@ -370,8 +447,12 @@ class StudentDetailsModel extends BaseModel
             $params[] = $deptAesId;
         }
         if ($studRole !== '' && $studRole !== 'all') {
-            $sql .= ' AND stud_role = ?';
-            $params[] = strtolower($studRole) === 'alumni' ? 'alumni' : 'student';
+            if (strtolower($studRole) === 'alumni') {
+                $sql .= ' AND ' . self::sqlAlumniMembershipCondition();
+            } else {
+                $sql .= ' AND stud_role = ?';
+                $params[] = 'student';
+            }
         }
         $registrationStatus = strtolower(trim($registrationStatus));
         if ($registrationStatus === 'registered' || $registrationStatus === 'non_registered') {
@@ -398,9 +479,17 @@ class StudentDetailsModel extends BaseModel
 
             $fallbackLimit = $sqlLimit ?? PHP_INT_MAX;
 
+            $docs = $this->findAll($filter, $fallbackLimit);
+            if ($studRole !== '' && strtolower($studRole) === 'alumni') {
+                $docs = array_values(array_filter(
+                    $docs,
+                    static fn (array $doc): bool => self::recordInAesAlumniDirectory($doc)
+                ));
+            }
+
             return array_map(
                 fn (array $doc): array => self::toDirectoryRecord($doc),
-                $this->findAll($filter, $fallbackLimit)
+                $docs
             );
         }
 
@@ -493,19 +582,34 @@ class StudentDetailsModel extends BaseModel
     }
 
     /**
-     * After campus sync, demote alumni rows that AES still lists as studying students.
+     * After campus sync, demote alumni only when AES explicitly marks them as Student.
+     * Rows present in both student and alumni directory fetches keep alumni (AES overlap).
      *
      * @param list<array<string, mixed>> $authoritativeStudentRecords
+     * @param list<array<string, mixed>> $authoritativeAlumniRecords
      * @return array{demoted:int}
      */
-    public function reconcileMisclassifiedStudRoles(array $authoritativeStudentRecords): array
-    {
+    public function reconcileMisclassifiedStudRoles(
+        array $authoritativeStudentRecords,
+        array $authoritativeAlumniRecords = []
+    ): array {
         $stats = ['demoted' => 0];
         if (!$this->bootstrapTable()) {
             return $stats;
         }
 
-        $studentAdmnos = [];
+        $alumniAdmnos = [];
+        foreach ($authoritativeAlumniRecords as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = self::resolveAesAdmno($record);
+            if ($key !== '') {
+                $alumniAdmnos[$key] = true;
+            }
+        }
+
+        $explicitStudentAdmnos = [];
         foreach ($authoritativeStudentRecords as $record) {
             if (!is_array($record)) {
                 continue;
@@ -514,16 +618,19 @@ class StudentDetailsModel extends BaseModel
             if ($key === '') {
                 continue;
             }
-            if (AesApiService::resolveStudRoleForStorage($record, 'student') === 'student') {
-                $studentAdmnos[$key] = true;
+            if (AesApiService::normalizeStudRole($record) === 'student') {
+                $explicitStudentAdmnos[$key] = true;
             }
         }
 
-        if ($studentAdmnos === []) {
+        if ($explicitStudentAdmnos === []) {
             return $stats;
         }
 
-        foreach (array_keys($studentAdmnos) as $admno) {
+        foreach (array_keys($explicitStudentAdmnos) as $admno) {
+            if (isset($alumniAdmnos[$admno])) {
+                continue;
+            }
             $doc = $this->findByAesAdmno($admno);
             if ($doc === null || (string) ($doc['studRole'] ?? '') !== 'alumni') {
                 continue;
@@ -532,12 +639,79 @@ class StudentDetailsModel extends BaseModel
             unset($doc['_id']);
             $doc['studRole'] = 'student';
             $doc['stud_role'] = 'Student';
+            unset($doc['aesAlumniDirectory']);
             $this->applyRegistrationStatusToPayload($doc);
             $doc['updatedAt'] = DocumentHelper::now();
             if ($id !== '') {
                 $this->update($id, $doc);
                 $stats['demoted']++;
             }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Demote alumni rows absent from the latest AES alumni fetch (upsert-only sync leaves stale rows).
+     *
+     * @param list<array<string, mixed>> $authoritativeAlumniRecords
+     * @param array<string, true> $authoritativeStudentAdmnos
+     * @return array{demoted:int}
+     */
+    public function reconcileStaleAlumniRows(
+        array $authoritativeAlumniRecords,
+        array $authoritativeStudentAdmnos = []
+    ): array {
+        $stats = ['demoted' => 0];
+        if (!$this->bootstrapTable()) {
+            return $stats;
+        }
+
+        $authoritative = [];
+        foreach ($authoritativeAlumniRecords as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = self::resolveAesAdmno($record);
+            if ($key === '') {
+                continue;
+            }
+            if (AesApiService::normalizeStudRole($record) === 'student') {
+                continue;
+            }
+            $authoritative[$key] = true;
+        }
+
+        try {
+            $stmt = $this->db->query(
+                'SELECT id, payload FROM `student_details` WHERE stud_role = \'alumni\''
+            );
+        } catch (\Throwable) {
+            return $stats;
+        }
+
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $doc = $this->rowToDoc($row);
+            $admno = self::resolveAesAdmno($doc);
+            if ($admno === '' || isset($authoritative[$admno])) {
+                continue;
+            }
+
+            $id = (string) ($doc['_id'] ?? $row['id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            unset($doc['_id']);
+            $doc['studRole'] = 'student';
+            $doc['stud_role'] = 'Student';
+            unset($doc['aesAlumniDirectory']);
+            $this->applyRegistrationStatusToPayload($doc);
+            $doc['updatedAt'] = DocumentHelper::now();
+            $this->update($id, $doc);
+            $stats['demoted']++;
         }
 
         return $stats;
@@ -617,22 +791,184 @@ class StudentDetailsModel extends BaseModel
         try {
             if ($studRole === '' || $studRole === 'all') {
                 $stmt = $this->db->query('SELECT COUNT(*) FROM `student_details`');
+            } elseif (strtolower($studRole) === 'alumni') {
+                $stmt = $this->db->query(
+                    'SELECT COUNT(*) FROM `student_details` WHERE ' . self::sqlAlumniMembershipCondition()
+                );
             } else {
-                $role = strtolower($studRole) === 'alumni' ? 'alumni' : 'student';
                 $stmt = $this->db->prepare('SELECT COUNT(*) FROM `student_details` WHERE stud_role = ?');
-                $stmt->execute([$role]);
+                $stmt->execute(['student']);
             }
 
             return (int) ($stmt->fetchColumn() ?: 0);
         } catch (\Throwable) {
             $fallbackLimit = self::resolveSqlListLimit() ?? PHP_INT_MAX;
+            $docs = $this->findAll([], $fallbackLimit);
+            if ($studRole === '' || $studRole === 'all') {
+                return count($docs);
+            }
+            if (strtolower($studRole) === 'alumni') {
+                return count(array_filter(
+                    $docs,
+                    static fn (array $doc): bool => self::recordInAesAlumniDirectory($doc)
+                ));
+            }
 
-            return count($this->findAll(
-                $studRole !== '' && $studRole !== 'all'
-                    ? ['studRole' => strtolower($studRole) === 'alumni' ? 'alumni' : 'student']
-                    : [],
-                $fallbackLimit
+            return count(array_filter(
+                $docs,
+                static fn (array $doc): bool => strtolower(trim((string) ($doc['studRole'] ?? ''))) === 'student'
             ));
+        }
+    }
+
+    /**
+     * Ensure every AES alumni directory admission number is counted as alumni locally.
+     *
+     * @param list<array<string, mixed>> $alumniRecords
+     * @return array{marked:int,alreadyMarked:int,missing:int}
+     */
+    public function markAesAlumniDirectoryFromRecords(array $alumniRecords): array
+    {
+        $stats = ['marked' => 0, 'alreadyMarked' => 0, 'missing' => 0];
+        if (!$this->bootstrapTable()) {
+            return $stats;
+        }
+
+        $admnos = [];
+        foreach ($alumniRecords as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = self::resolveAesAdmno($record);
+            if ($key !== '') {
+                $admnos[$key] = true;
+            }
+        }
+        if ($admnos === []) {
+            return $stats;
+        }
+
+        foreach (array_chunk(array_keys($admnos), 200) as $chunk) {
+            $holders = implode(',', array_fill(0, count($chunk), '?'));
+            try {
+                $stmt = $this->db->prepare(
+                    'UPDATE `student_details`
+                     SET payload = JSON_SET(payload, \'$.aesAlumniDirectory\', CAST(\'true\' AS JSON)),
+                         updated_at = NOW(6)
+                     WHERE aes_admno IN (' . $holders . ')
+                       AND NOT ' . self::sqlAlumniMembershipCondition()
+                );
+                $stmt->execute($chunk);
+                $stats['marked'] += (int) $stmt->rowCount();
+            } catch (\Throwable) {
+                foreach ($chunk as $admno) {
+                    $doc = $this->findByAesAdmno($admno);
+                    if ($doc === null) {
+                        $stats['missing']++;
+                        continue;
+                    }
+                    if (self::recordInAesAlumniDirectory($doc)) {
+                        $stats['alreadyMarked']++;
+                        continue;
+                    }
+                    $id = (string) ($doc['_id'] ?? '');
+                    unset($doc['_id']);
+                    $doc['aesAlumniDirectory'] = true;
+                    $doc['updatedAt'] = DocumentHelper::now();
+                    if ($id !== '' && $this->update($id, $doc)) {
+                        $stats['marked']++;
+                    }
+                }
+
+                continue;
+            }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Distinct stored stud_role values for sync diagnostics.
+     *
+     * @return list<array{studRole:string,count:int}>
+     */
+    public function countGroupedByStudRole(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+        try {
+            $stmt = $this->db->query(
+                'SELECT stud_role, COUNT(*) AS cnt FROM `student_details`
+                 GROUP BY stud_role ORDER BY cnt DESC'
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $out = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $out[] = [
+                'studRole' => (string) ($row['stud_role'] ?? ''),
+                'count'    => (int) ($row['cnt'] ?? 0),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array{total:int,students:int,alumni:int,nullRole:int,uniqueAesAdmno:int}
+     */
+    public function directoryCountDiagnostics(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [
+                'total'         => 0,
+                'students'      => 0,
+                'alumni'        => 0,
+                'nullRole'      => 0,
+                'uniqueAesAdmno' => 0,
+            ];
+        }
+
+        try {
+            $alumniMembership = self::sqlAlumniMembershipCondition();
+            $stmt = $this->db->query(
+                'SELECT
+                    COUNT(*) AS total,
+                    SUM(stud_role = \'student\') AS students,
+                    SUM(stud_role = \'alumni\') AS alumni_role_only,
+                    SUM(' . $alumniMembership . ') AS alumni,
+                    SUM(stud_role = \'student\' AND ' . $alumniMembership . ') AS studying_alumni_overlap,
+                    SUM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.aesAlumniDirectory\')), \'false\') = \'true\') AS aes_alumni_directory,
+                    SUM(stud_role IS NULL OR TRIM(stud_role) = \'\') AS null_role,
+                    COUNT(DISTINCT aes_admno) AS unique_aes_admno
+                 FROM `student_details`'
+            );
+            $row = $stmt->fetch();
+
+            return [
+                'total'                  => (int) ($row['total'] ?? 0),
+                'students'               => (int) ($row['students'] ?? 0),
+                'alumniRoleOnly'         => (int) ($row['alumni_role_only'] ?? 0),
+                'alumni'                 => (int) ($row['alumni'] ?? 0),
+                'studyingAlumniOverlap'  => (int) ($row['studying_alumni_overlap'] ?? 0),
+                'aesAlumniDirectory'     => (int) ($row['aes_alumni_directory'] ?? 0),
+                'nullRole'               => (int) ($row['null_role'] ?? 0),
+                'uniqueAesAdmno'         => (int) ($row['unique_aes_admno'] ?? 0),
+            ];
+        } catch (\Throwable) {
+            return [
+                'total'          => $this->countByRole('all'),
+                'students'       => $this->countByRole('student'),
+                'alumni'         => $this->countByRole('alumni'),
+                'nullRole'       => 0,
+                'uniqueAesAdmno' => 0,
+            ];
         }
     }
 
@@ -871,21 +1207,56 @@ class StudentDetailsModel extends BaseModel
      * @param array<string, mixed> $incoming
      * @return array<string, mixed>
      */
-    private static function guardStudRoleTransition(array $record, ?array $existing, array $incoming): array
-    {
+    /**
+     * @param array<string, mixed> $options syncSource, studRole
+     */
+    private static function guardStudRoleTransition(
+        array $record,
+        ?array $existing,
+        array $incoming,
+        array $options = []
+    ): array {
         if ($existing === null) {
             return $incoming;
         }
 
-        $existingRole = (string) ($existing['studRole'] ?? '');
         $incomingRole = (string) ($incoming['studRole'] ?? '');
-        if ($incomingRole === 'alumni'
-            && AesApiService::normalizeStudRole($record) !== 'alumni') {
+        $aesRole = AesApiService::normalizeStudRole($record);
+        if ($incomingRole === 'alumni' && $aesRole === 'student') {
             $incoming['studRole'] = 'student';
             $incoming['stud_role'] = 'Student';
+
+            return $incoming;
+        }
+
+        $syncHint = strtolower(trim((string) ($options['studRole'] ?? '')));
+        if ($syncHint === 'alumni' && $incomingRole === 'alumni' && $aesRole !== 'student') {
+            return $incoming;
         }
 
         return $incoming;
+    }
+
+    /**
+     * AES alumni directory membership (stud_role = alumni OR synced from alumni pass while studying).
+     */
+    public static function sqlAlumniMembershipCondition(): string
+    {
+        return '(stud_role = \'alumni\''
+            . ' OR JSON_CONTAINS(payload, \'true\', \'$.aesAlumniDirectory\')'
+            . ' OR JSON_CONTAINS(payload, \'\"true\"\', \'$.aesAlumniDirectory\')'
+            . ' OR JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.aesAlumniDirectory\')) IN (\'true\', \'1\'))';
+    }
+
+    public static function recordInAesAlumniDirectory(array $doc): bool
+    {
+        if (strtolower(trim((string) ($doc['studRole'] ?? ''))) === 'alumni') {
+            return true;
+        }
+
+        $flag = $doc['aesAlumniDirectory'] ?? false;
+
+        return $flag === true || $flag === 1 || $flag === '1' || $flag === 'true';
     }
 
     /**

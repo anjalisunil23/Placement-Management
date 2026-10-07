@@ -753,6 +753,111 @@ final class AesApiService
     }
 
     /**
+     * Row from getAllStudInfo4Placement with stud_role = Alumni query param.
+     * AES often omits stud_role on each row — trust the alumni query unless row says Student.
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function qualifiesAsAlumniDirectoryRecord(array $record): bool
+    {
+        $role = self::normalizeStudRole($record);
+        if ($role === 'alumni') {
+            return true;
+        }
+        if ($role === 'student') {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Alumni hints on unfiltered dept directory rows (old batches without stud_role=Alumni).
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function qualifiesAsAlumniFromDeptScan(array $record): bool
+    {
+        $role = self::normalizeStudRole($record);
+        if ($role === 'alumni') {
+            return true;
+        }
+        if ($role === 'student') {
+            return false;
+        }
+        if (self::qualifiesAsAlumniByHeuristics($record)) {
+            return true;
+        }
+        if (self::looksLikeActiveStudyingClassBatch($record)) {
+            return false;
+        }
+
+        $batch = trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? ''));
+
+        return $batch !== '';
+    }
+
+    /**
+     * Current-cohort class labels (e.g. MCA2025-27-S3) — not alumni pass-outs.
+     *
+     * @param array<string, mixed> $record
+     */
+    public static function looksLikeActiveStudyingClassBatch(array $record): bool
+    {
+        $batch = strtoupper(trim((string) ($record['stud_class'] ?? $record['classBatch'] ?? '')));
+        if ($batch === '') {
+            return false;
+        }
+        if (preg_match('/-S[1-8]$/', $batch) !== 1) {
+            return false;
+        }
+        if (preg_match('/(\d{4})-(\d{2})-S\d+$/', $batch, $matches) === 1) {
+            $endYear = 2000 + (int) ($matches[2] ?? 0);
+
+            return $endYear >= ((int) date('Y')) - 1;
+        }
+
+        return true;
+    }
+
+    /**
+     * AES dept roster row not in the studying-student directory — treat as alumni.
+     *
+     * @param array<string, mixed> $record
+     * @param array<string, true> $authoritativeStudentAdmnos
+     */
+    public static function qualifiesAsResidualAlumniRecord(array $record, array $authoritativeStudentAdmnos): bool
+    {
+        $admno = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+        if ($admno === '' || isset($authoritativeStudentAdmnos[$admno])) {
+            return false;
+        }
+
+        $role = self::normalizeStudRole($record);
+        if ($role === 'student') {
+            return false;
+        }
+        if ($role === 'alumni') {
+            return true;
+        }
+        if (self::qualifiesAsAlumniByHeuristics($record)) {
+            return true;
+        }
+        if (self::looksLikeActiveStudyingClassBatch($record)) {
+            return false;
+        }
+        if (self::qualifiesAsAlumniFromDeptScan($record)) {
+            return true;
+        }
+
+        if (trim((string) ($record['stud_name'] ?? $record['name'] ?? '')) !== '') {
+            return true;
+        }
+
+        return $admno !== '';
+    }
+
+    /**
      * Pass-out / graduated hints when AES omits stud_role (never treat bare class labels as alumni).
      *
      * @param array<string, mixed> $record
@@ -788,15 +893,28 @@ final class AesApiService
     }
 
     /**
-     * Persisted studRole for student_details — AES stud_role field only (never heuristics).
+     * Persisted studRole for student_details.
+     * Explicit AES stud_role wins; alumni sync pass trusts stud_role=Alumni query when field omitted.
      *
      * @param array<string, mixed> $record
      */
     public static function resolveStudRoleForStorage(array $record, string $syncHint = ''): string
     {
-        unset($syncHint);
+        $role = self::normalizeStudRole($record);
+        if ($role !== null) {
+            return $role;
+        }
 
-        return self::normalizeStudRole($record) ?? 'student';
+        $syncHint = strtolower(trim($syncHint));
+        if ($syncHint === 'alumni') {
+            return 'alumni';
+        }
+
+        if (self::qualifiesAsAlumniByHeuristics($record)) {
+            return 'alumni';
+        }
+
+        return 'student';
     }
 
     /**
