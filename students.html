@@ -2253,9 +2253,13 @@ function formatCampusAesDirectorySyncStatus(meta) {
     : String(meta.syncedAt || '').trim();
   const students = Number(meta.studentRecordCount ?? meta.recordCount ?? 0);
   const alumni = Number(meta.alumniRecordCount ?? 0);
-  const summary = alumni > 0
+  const fetchedAlumni = Number(meta.fetchedAlumni ?? 0);
+  let summary = alumni > 0
     ? `${students} students · ${alumni} alumni`
     : `${students} students`;
+  if (fetchedAlumni > alumni) {
+    summary += ` (${fetchedAlumni} fetched from AES)`;
+  }
   return when !== ''
     ? `${summary} · last sync ${when}`
     : summary;
