@@ -33,6 +33,7 @@ try {
 $required = [
     Collections::USERS,
     Collections::STUDENTS,
+    Collections::STUDENT_DETAILS,
     Collections::STAFF,
     Collections::PLACEMENT_OFFICERS,
     Collections::STUDENT_VOLUNTEERS,
