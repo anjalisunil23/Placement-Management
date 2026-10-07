@@ -2285,10 +2285,17 @@ final class OfficerDataService
                 $storedStudents = (int) ($meta['studentRecordCount'] ?? 0);
                 $storedAlumni = (int) ($meta['alumniRecordCount'] ?? 0);
 
+                $snapshotSyncedAt = isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : '';
+
                 return [
-                    'syncedAt'            => $meta['syncedAt'] ?? null,
+                    'syncedAt'            => $snapshotSyncedAt !== ''
+                        ? $snapshotSyncedAt
+                        : ($meta['syncedAt'] ?? null),
                     'studentRecordCount'  => $storedStudents,
                     'alumniRecordCount'   => $storedAlumni,
+                    'lastSyncReport'      => is_array($payload['lastSyncReport'] ?? null)
+                        ? $payload['lastSyncReport']
+                        : null,
                     'fetchedStudents'     => $fetchedStudents > 0
                         ? $fetchedStudents
                         : $storedStudents,
@@ -2335,49 +2342,98 @@ final class OfficerDataService
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
         self::$aesAlumniDirectoryCache = [];
 
-        $students = $this->fetchCompleteCampusRecordsForSync('student');
-        $studentAdmnos = $this->indexAesAdmnosFromRecords($students);
-        $alumni = $this->fetchCompleteCampusRecordsForSync('alumni', $studentAdmnos);
-        $studentAlumniOverlap = $this->countRecordsMatchingAdmnoIndex($alumni, $studentAdmnos);
+        $syncSvc = new StudentDetailsSyncService();
+        $detailsModel = new \PMS\Models\StudentDetailsModel();
         $syncedAt = DocumentHelper::now();
 
-        $syncSvc = new StudentDetailsSyncService();
+        $students = $this->fetchCompleteCampusRecordsForSync('student');
         $studentStats = $syncSvc->syncFromAesRecords($students, [
-            'syncSource' => 'admin_campus',
-            'studRole'   => 'student',
+            'syncSource'    => 'admin_campus',
+            'studRole'      => 'student',
+            'touchSyncedAt' => true,
         ]);
-        $alumniToSync = $this->alumniRecordsForUpsert($alumni, $studentAdmnos);
-        $alumniStats = $syncSvc->syncFromAesRecords($alumniToSync, [
-            'syncSource' => 'admin_campus',
-            'studRole'   => 'alumni',
+
+        $studentAdmnos = $detailsModel->isAvailable()
+            ? $detailsModel->indexStoredStudentAdmnos()
+            : $this->indexAesAdmnosFromRecords($students);
+        $alumni = $this->fetchCompleteCampusRecordsForSync('alumni', $studentAdmnos);
+        $studentAlumniOverlap = $this->countRecordsMatchingAdmnoIndex($alumni, $studentAdmnos);
+        $alumniExclusive = $this->filterRecordsExclusiveFromAdmnoIndex($alumni, $studentAdmnos);
+
+        $alumniStats = $syncSvc->syncFromAesRecords($alumni, [
+            'syncSource'    => 'admin_campus',
+            'studRole'      => 'alumni',
+            'touchSyncedAt' => true,
         ]);
-        $merged = $syncSvc->mergeSyncStats([$studentStats, $alumniStats]);
-        $detailsModel = new \PMS\Models\StudentDetailsModel();
+        $backfillStats = ['fetched' => 0, 'inserted' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'skipped' => 0];
         if ($detailsModel->isAvailable()) {
-            $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
-            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumni);
-            $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows(
-                $alumni,
+            $backfillStats = $this->backfillAlumniRecordsMissingFromDatabase(
+                $syncSvc,
+                $detailsModel,
                 $studentAdmnos
             );
         }
 
+        $merged = $syncSvc->mergeSyncStats([$studentStats, $alumniStats, $backfillStats]);
+        if ($detailsModel->isAvailable()) {
+            $merged['registrationRefresh'] = $detailsModel->refreshRegistrationStatuses();
+            $merged['roleReconcile'] = $detailsModel->reconcileMisclassifiedStudRoles($students, $alumniExclusive);
+            $merged['staleAlumniReconcile'] = $detailsModel->reconcileStaleAlumniRows($alumniExclusive);
+        }
+
+        $studentCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('student') : count($students);
+        $alumniCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('alumni') : count($alumniExclusive);
+        $roleBreakdown = $detailsModel->isAvailable() ? $detailsModel->countGroupedByStudRole() : [];
+        $diagnostics = $detailsModel->isAvailable() ? $detailsModel->directoryCountDiagnostics() : [];
+
+        $lastSyncReport = [
+            'syncedAt'                 => $syncedAt,
+            'aesRecordsReceived'       => count($students) + count($alumni),
+            'aesStudentsReceived'      => count($students),
+            'aesAlumniReceived'        => count($alumni),
+            'aesAlumniExclusive'       => count($alumniExclusive),
+            'aesCanonicalOverlap'      => $studentAlumniOverlap,
+            'inserted'                 => (int) ($merged['inserted'] ?? 0),
+            'updated'                  => (int) ($merged['updated'] ?? 0),
+            'unchanged'                => (int) ($merged['unchanged'] ?? 0),
+            'skipped'                  => (int) ($merged['skipped'] ?? 0),
+            'skippedEmptyAdmno'        => (int) ($merged['skippedEmptyAdmno'] ?? 0),
+            'skippedRetainedAsStudent' => (int) ($merged['skippedRetainedAsStudent'] ?? 0),
+            'failed'                   => (int) ($merged['failed'] ?? 0),
+            'storedStudents'           => $studentCount,
+            'storedAlumni'             => $alumniCount,
+            'storedTotal'              => $studentCount + $alumniCount,
+            'roleBreakdown'            => $roleBreakdown,
+            'diagnostics'              => $diagnostics,
+            'passes'                   => $merged['passes'] ?? [],
+            'roleReconcile'            => $merged['roleReconcile'] ?? null,
+            'staleAlumniReconcile'     => $merged['staleAlumniReconcile'] ?? null,
+            'backfill'                 => $backfillStats,
+            'diagnosis'                => $this->diagnoseAlumniSyncGap(
+                count($alumni),
+                count($alumniExclusive),
+                $studentAlumniOverlap,
+                $alumniCount,
+                (int) ($merged['skippedRetainedAsStudent'] ?? 0),
+                (int) ($merged['skippedEmptyAdmno'] ?? 0),
+                (int) ($merged['failed'] ?? 0)
+            ),
+        ];
+
         // Legacy file snapshot kept for rollback/audit only.
         $this->writeCampusDirectorySnapshot(
             $students,
-            $alumni,
+            $alumniExclusive,
             $adminUserId,
             $syncedAt,
-            $studentAlumniOverlap
+            $studentAlumniOverlap,
+            $lastSyncReport
         );
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
         self::$aesAlumniDirectoryCache = [];
 
-        $studentCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('student') : count($students);
-        $alumniCount = $detailsModel->isAvailable() ? $detailsModel->countByRole('alumni') : count($alumni);
-
         return [
-            'syncedAt'           => $merged['syncedAt'] ?? $syncedAt,
+            'syncedAt'           => $syncedAt,
             'studentRecordCount' => $studentCount,
             'alumniRecordCount'  => $alumniCount,
             'recordCount'        => $studentCount + $alumniCount,
@@ -2392,21 +2448,7 @@ final class OfficerDataService
             'skipped'              => (int) ($merged['skipped'] ?? 0),
             'durationMs'           => (int) ($merged['durationMs'] ?? 0),
             'source'               => 'student_details',
-            'syncValidation'       => [
-                'aesStudentsReceived'  => count($students),
-                'aesAlumniReceived'    => count($alumni),
-                'aesAlumniUpserted'    => count($alumniToSync),
-                'aesCanonicalOverlap'  => $studentAlumniOverlap,
-                'storedStudents'       => $studentCount,
-                'storedAlumni'         => $alumniCount,
-                'storedTotal'          => $studentCount + $alumniCount,
-                'inserted'             => (int) ($merged['inserted'] ?? 0),
-                'updated'              => (int) ($merged['updated'] ?? 0),
-                'skipped'              => (int) ($merged['skipped'] ?? 0),
-                'failed'               => (int) ($merged['failed'] ?? 0),
-                'roleReconcile'        => $merged['roleReconcile'] ?? null,
-                'staleAlumniReconcile' => $merged['staleAlumniReconcile'] ?? null,
-            ],
+            'syncReport'           => $lastSyncReport,
         ];
     }
 
@@ -2434,7 +2476,8 @@ final class OfficerDataService
         $seen = [];
         $appendBatch = function (
             array $records,
-            bool $residualAlumniPass = false
+            bool $residualAlumniPass = false,
+            bool $fromAlumniRoleQuery = false
         ) use (
             &$merged,
             &$seen,
@@ -2445,7 +2488,11 @@ final class OfficerDataService
                 if (!is_array($record)) {
                     continue;
                 }
-                if ($residualAlumniPass) {
+                if ($fromAlumniRoleQuery && $syncStudRole === 'alumni') {
+                    if (AesApiService::normalizeStudRole($record) === 'student') {
+                        continue;
+                    }
+                } elseif ($residualAlumniPass) {
                     if (!AesApiService::qualifiesAsResidualAlumniRecord($record, $authoritativeStudentAdmnos)) {
                         continue;
                     }
@@ -2486,7 +2533,7 @@ final class OfficerDataService
                         );
                     }
                     if ($batch !== []) {
-                        $appendBatch($batch);
+                        $appendBatch($batch, false, $directoryList);
                     }
                 } catch (\Throwable) {
                     continue;
@@ -2494,7 +2541,11 @@ final class OfficerDataService
             }
             if ($roleValues === []) {
                 try {
-                    $appendBatch($api->fetchAllStudInfo4Placement($baseParams, $directoryList, false));
+                    $appendBatch(
+                        $api->fetchAllStudInfo4Placement($baseParams, $directoryList, false),
+                        false,
+                        $directoryList
+                    );
                 } catch (\Throwable) {
                     // ignore
                 }
@@ -2572,34 +2623,163 @@ final class OfficerDataService
     }
 
     /**
-     * Alumni rows to upsert: full AES alumni fetch minus studying students (same canonical admno)
-     * unless AES explicitly marks the row Alumni.
-     *
-     * @param list<array<string, mixed>> $alumniRecords
-     * @param array<string, true> $studentAdmnos
+     * @param list<array<string, mixed>> $records
+     * @param array<string, true> $admnoIndex
      * @return list<array<string, mixed>>
      */
-    private function alumniRecordsForUpsert(array $alumniRecords, array $studentAdmnos): array
+    private function filterRecordsExclusiveFromAdmnoIndex(array $records, array $admnoIndex): array
     {
-        if ($studentAdmnos === []) {
-            return array_values($alumniRecords);
+        if ($admnoIndex === []) {
+            return array_values($records);
         }
 
         $out = [];
-        foreach ($alumniRecords as $record) {
+        foreach ($records as $record) {
             if (!is_array($record)) {
                 continue;
             }
             $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
-            if ($key !== ''
-                && isset($studentAdmnos[$key])
-                && AesApiService::normalizeStudRole($record) !== 'alumni') {
+            if ($key !== '' && isset($admnoIndex[$key])) {
                 continue;
             }
             $out[] = $record;
         }
 
         return $out;
+    }
+
+    /**
+     * Discover alumni rows in AES not yet present in student_details at all.
+     *
+     * @param array<string, true> $studentAdmnos
+     * @return array<string, mixed>
+     */
+    private function backfillAlumniRecordsMissingFromDatabase(
+        StudentDetailsSyncService $syncSvc,
+        \PMS\Models\StudentDetailsModel $detailsModel,
+        array $studentAdmnos
+    ): array {
+        $existingAll = $detailsModel->indexAllStoredAdmnos();
+        $api = $this->aesApiForCampusDirectorySync();
+        $missing = [];
+        $seen = [];
+
+        $collect = function (array $records) use (&$missing, &$seen, $existingAll, $studentAdmnos): void {
+            foreach ($records as $record) {
+                if (!is_array($record)) {
+                    continue;
+                }
+                if (AesApiService::normalizeStudRole($record) === 'student') {
+                    continue;
+                }
+                if (AesApiService::looksLikeActiveStudyingClassBatch($record)) {
+                    continue;
+                }
+                $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+                if ($key === '' || isset($seen[$key]) || isset($existingAll[$key]) || isset($studentAdmnos[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $missing[] = $record;
+            }
+        };
+
+        foreach ($this->campusParentDeptAesIds() as $aesId) {
+            foreach ($this->aesAlumniStudRoleParamValues() as $role) {
+                try {
+                    $collect($api->fetchAllStudInfo4Placement([
+                        'stud_deptcode' => $aesId,
+                        'stud_role'      => $role,
+                    ], true, false));
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+            try {
+                $collect($api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId], true, false));
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        if ($missing === []) {
+            return [
+                'success'    => true,
+                'fetched'    => 0,
+                'inserted'   => 0,
+                'updated'    => 0,
+                'unchanged'  => 0,
+                'failed'     => 0,
+                'skipped'    => 0,
+                'syncSource' => 'admin_campus_backfill',
+                'studRole'   => 'alumni',
+            ];
+        }
+
+        return $syncSvc->syncFromAesRecords($missing, [
+            'syncSource'    => 'admin_campus_backfill',
+            'studRole'      => 'alumni',
+            'touchSyncedAt' => true,
+        ]);
+    }
+
+    /**
+     * @return array{code:string,summary:string}
+     */
+    private function diagnoseAlumniSyncGap(
+        int $aesAlumniReceived,
+        int $aesAlumniExclusive,
+        int $aesCanonicalOverlap,
+        int $storedAlumni,
+        int $skippedRetainedAsStudent,
+        int $skippedEmptyAdmno,
+        int $failed
+    ): array {
+        if ($storedAlumni >= $aesAlumniExclusive && $aesAlumniExclusive > 0) {
+            return [
+                'code'    => 'OK',
+                'summary' => 'Stored alumni matches AES-exclusive alumni population.',
+            ];
+        }
+
+        if ($aesAlumniReceived > 0 && $storedAlumni < $aesAlumniExclusive) {
+            if ($failed > 0) {
+                return [
+                    'code'    => 'D',
+                    'summary' => 'AES alumni were received but insert/upsert failed for some rows.',
+                ];
+            }
+            if ($skippedEmptyAdmno > 0) {
+                return [
+                    'code'    => 'D',
+                    'summary' => 'AES alumni rows were skipped because aes_admno could not be resolved.',
+                ];
+            }
+
+            return [
+                'code'    => 'A',
+                'summary' => 'AES alumni were fetched but not all exclusive alumni rows are stored in student_details.',
+            ];
+        }
+
+        if ($aesCanonicalOverlap > 0 && $skippedRetainedAsStudent > 0) {
+            return [
+                'code'    => 'D',
+                'summary' => 'AES returned alumni rows that share admission numbers with studying students; those rows were retained as students during upsert.',
+            ];
+        }
+
+        if ($aesAlumniReceived <= $storedAlumni) {
+            return [
+                'code'    => 'B',
+                'summary' => 'Stored alumni count exceeds or matches fetched AES alumni; inspect API count source.',
+            ];
+        }
+
+        return [
+            'code'    => 'A',
+            'summary' => 'AES alumni fetch is incomplete or not fully imported into student_details.',
+        ];
     }
 
     /**
@@ -3826,7 +4006,8 @@ final class OfficerDataService
         array $alumniRecords,
         string $adminUserId,
         string $syncedAt,
-        int $studentAlumniOverlap = 0
+        int $studentAlumniOverlap = 0,
+        array $lastSyncReport = []
     ): void {
         $path = $this->campusDirectorySnapshotPath();
         $payload = [
@@ -3837,8 +4018,9 @@ final class OfficerDataService
             'studentRecordCount'     => count($studyingRecords),
             'alumniRecordCount'      => count($alumniRecords),
             'fetchedStudents'        => count($studyingRecords),
-            'fetchedAlumni'          => count($alumniRecords),
+            'fetchedAlumni'          => (int) ($lastSyncReport['aesAlumniReceived'] ?? count($alumniRecords)),
             'studentAlumniOverlap'   => max(0, $studentAlumniOverlap),
+            'lastSyncReport'         => $lastSyncReport,
         ];
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($json)) {

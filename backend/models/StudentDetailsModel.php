@@ -120,7 +120,7 @@ class StudentDetailsModel extends BaseModel
     /**
      * @param array<string, mixed> $record AES directory row or normalized payload
      * @param array<string, mixed> $options syncSource, studRole, departmentId
-     * @return array{action:string,id:string,aesAdmno:string}
+     * @return array{action:string,id:string,aesAdmno:string,skipReason?:string}
      */
     public function upsertFromAesRecord(array $record, array $options = []): array
     {
@@ -131,11 +131,29 @@ class StudentDetailsModel extends BaseModel
         $incoming = self::payloadFromAesRecord($record, $options);
         $aesAdmno = self::resolveAesAdmno($incoming);
         if ($aesAdmno === '') {
-            return ['action' => 'skipped', 'id' => '', 'aesAdmno' => ''];
+            return [
+                'action'     => 'skipped',
+                'id'         => '',
+                'aesAdmno'   => '',
+                'skipReason' => 'empty_admno',
+            ];
         }
         $incoming['aesAdmno'] = $aesAdmno;
 
         $existing = $this->findByAesAdmno($aesAdmno);
+        $syncHint = strtolower(trim((string) ($options['studRole'] ?? '')));
+        if ($syncHint === 'alumni'
+            && is_array($existing)
+            && (string) ($existing['studRole'] ?? '') === 'student'
+            && AesApiService::normalizeStudRole($record) !== 'alumni') {
+            return [
+                'action'     => 'skipped',
+                'id'         => (string) ($existing['_id'] ?? ''),
+                'aesAdmno'   => $aesAdmno,
+                'skipReason' => 'retained_as_student',
+            ];
+        }
+
         $incoming = self::guardStudRoleTransition($record, $existing, $incoming, $options);
         $now = DocumentHelper::now();
         $incoming['syncedAt'] = $now;
@@ -159,6 +177,14 @@ class StudentDetailsModel extends BaseModel
         $registrationChanged = (string) ($merged['registrationStatus'] ?? '')
             !== (string) ($existing['registrationStatus'] ?? '');
         if ($beforeHash === $afterHash && !$registrationChanged) {
+            if (!empty($options['touchSyncedAt'])) {
+                $touch = $existing;
+                unset($touch['_id']);
+                $touch['syncedAt'] = $now;
+                $touch['updatedAt'] = $now;
+                $this->update((string) ($existing['_id'] ?? ''), $touch);
+            }
+
             return ['action' => 'unchanged', 'id' => (string) ($existing['_id'] ?? ''), 'aesAdmno' => $aesAdmno];
         }
 
@@ -167,6 +193,76 @@ class StudentDetailsModel extends BaseModel
         $this->update($id, $merged);
 
         return ['action' => 'updated', 'id' => $id, 'aesAdmno' => $aesAdmno];
+    }
+
+    /**
+     * @return array<string, true> canonical aes_admno values for stored studying rows
+     */
+    public function indexStoredStudentAdmnos(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $index = [];
+        try {
+            $stmt = $this->db->query(
+                'SELECT aes_admno FROM `student_details` WHERE stud_role = \'student\' AND aes_admno IS NOT NULL'
+            );
+            while ($row = $stmt->fetch()) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) ($row['aes_admno'] ?? '')));
+                if ($key !== '') {
+                    $index[$key] = true;
+                }
+            }
+        } catch (\Throwable) {
+            foreach ($this->listDirectoryRecords('', true, 'student', self::LIST_MAX) as $record) {
+                $key = self::resolveAesAdmno($record);
+                if ($key !== '') {
+                    $index[$key] = true;
+                }
+            }
+        }
+
+        return $index;
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    public function indexAllStoredAdmnos(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $index = [];
+        try {
+            $stmt = $this->db->query(
+                'SELECT aes_admno FROM `student_details` WHERE aes_admno IS NOT NULL'
+            );
+            while ($row = $stmt->fetch()) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) ($row['aes_admno'] ?? '')));
+                if ($key !== '') {
+                    $index[$key] = true;
+                }
+            }
+        } catch (\Throwable) {
+            foreach ($this->listDirectoryRecords('', true, 'all', self::LIST_MAX) as $record) {
+                $key = self::resolveAesAdmno($record);
+                if ($key !== '') {
+                    $index[$key] = true;
+                }
+            }
+        }
+
+        return $index;
     }
 
     /**

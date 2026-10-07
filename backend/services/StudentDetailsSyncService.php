@@ -40,15 +40,18 @@ final class StudentDetailsSyncService
         }
 
         $stats = [
-            'success'    => true,
-            'fetched'    => count($records),
-            'inserted'   => 0,
-            'updated'    => 0,
-            'unchanged'  => 0,
-            'failed'     => 0,
-            'skipped'    => 0,
-            'syncedAt'   => $syncedAt,
-            'syncSource' => (string) ($options['syncSource'] ?? 'aes'),
+            'success'                  => true,
+            'fetched'                  => count($records),
+            'inserted'                 => 0,
+            'updated'                  => 0,
+            'unchanged'                => 0,
+            'failed'                   => 0,
+            'skipped'                  => 0,
+            'skippedEmptyAdmno'        => 0,
+            'skippedRetainedAsStudent' => 0,
+            'syncedAt'                 => $syncedAt,
+            'syncSource'               => (string) ($options['syncSource'] ?? 'aes'),
+            'studRole'                 => (string) ($options['studRole'] ?? ''),
         ];
 
         $syncedAdmnos = [];
@@ -72,6 +75,12 @@ final class StudentDetailsSyncService
                     $stats['unchanged']++;
                 } elseif ($action === 'skipped') {
                     $stats['skipped']++;
+                    $skipReason = (string) ($result['skipReason'] ?? '');
+                    if ($skipReason === 'empty_admno') {
+                        $stats['skippedEmptyAdmno']++;
+                    } elseif ($skipReason === 'retained_as_student') {
+                        $stats['skippedRetainedAsStudent']++;
+                    }
                 } else {
                     $stats['failed']++;
                 }
@@ -116,8 +125,31 @@ final class StudentDetailsSyncService
             if (empty($part['success'])) {
                 $merged['success'] = false;
             }
-            foreach (['fetched', 'inserted', 'updated', 'unchanged', 'failed', 'skipped', 'durationMs'] as $key) {
+            foreach ([
+                'fetched',
+                'inserted',
+                'updated',
+                'unchanged',
+                'failed',
+                'skipped',
+                'skippedEmptyAdmno',
+                'skippedRetainedAsStudent',
+                'durationMs',
+            ] as $key) {
                 $merged[$key] += (int) ($part[$key] ?? 0);
+            }
+            if (!empty($part['studRole'])) {
+                $role = (string) $part['studRole'];
+                $merged['passes'][$role] = [
+                    'fetched'                  => (int) ($part['fetched'] ?? 0),
+                    'inserted'                 => (int) ($part['inserted'] ?? 0),
+                    'updated'                  => (int) ($part['updated'] ?? 0),
+                    'unchanged'                => (int) ($part['unchanged'] ?? 0),
+                    'failed'                   => (int) ($part['failed'] ?? 0),
+                    'skipped'                  => (int) ($part['skipped'] ?? 0),
+                    'skippedEmptyAdmno'        => (int) ($part['skippedEmptyAdmno'] ?? 0),
+                    'skippedRetainedAsStudent' => (int) ($part['skippedRetainedAsStudent'] ?? 0),
+                ];
             }
             if (!empty($part['syncedAt'])) {
                 $merged['syncedAt'] = (string) $part['syncedAt'];

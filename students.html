@@ -2254,13 +2254,9 @@ function formatCampusAesDirectorySyncStatus(meta) {
   const students = Number(meta.studentRecordCount ?? 0);
   const alumni = Number(meta.alumniRecordCount ?? 0);
   const total = Number(meta.recordCount ?? (students + alumni));
-  const fetchedAlumni = Number(meta.fetchedAlumni ?? 0);
   let summary = alumni > 0
     ? `${students} students · ${alumni} alumni`
     : `${students} students`;
-  if (fetchedAlumni > 0 && fetchedAlumni > alumni) {
-    summary += ' — run Sync from AES to load missing alumni';
-  }
   return when !== ''
     ? `${summary} · last sync ${when}`
     : summary;
@@ -2295,11 +2291,14 @@ async function runCampusAesDirectorySync() {
     if (!result) return;
     const sc = result.studentRecordCount ?? 0;
     const ac = result.alumniRecordCount ?? 0;
-    const validation = result.syncValidation ?? {};
-    const aesStudents = validation.aesStudentsReceived ?? result.fetchedStudents ?? sc;
-    const aesAlumni = validation.aesAlumniReceived ?? result.fetchedAlumni ?? ac;
+    const report = result.syncReport ?? {};
+    const aesStudents = report.aesStudentsReceived ?? result.fetchedStudents ?? sc;
+    const aesAlumni = report.aesAlumniReceived ?? result.fetchedAlumni ?? ac;
+    const overlap = report.aesCanonicalOverlap ?? result.studentAlumniOverlap ?? 0;
+    const retained = report.skippedRetainedAsStudent ?? 0;
+    const diagnosis = report.diagnosis?.code ?? '';
     toast(
-      `Synced ${sc} students and ${ac} alumni (AES: ${aesStudents} + ${aesAlumni}, skipped ${validation.skipped ?? result.skipped ?? 0}, failed ${validation.failed ?? result.failed ?? 0}).`,
+      `AES received ${aesStudents} students + ${aesAlumni} alumni. Stored ${sc} + ${ac}. Inserted ${report.inserted ?? result.inserted ?? 0}, updated ${report.updated ?? result.updated ?? 0}, skipped ${report.skipped ?? result.skipped ?? 0}${retained ? ` (${retained} retained as students` + (overlap ? `, overlap ${overlap}` : '') + ')' : ''}, failed ${report.failed ?? result.failed ?? 0}${diagnosis ? `. Diagnosis ${diagnosis}` : ''}.`,
       'success'
     );
     await refreshCampusAesDirectorySyncStatus();

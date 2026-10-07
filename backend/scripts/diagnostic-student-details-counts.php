@@ -50,6 +50,32 @@ if (is_readable($snapshotPath)) {
         echo '  fetchedStudents:    ' . (int) ($payload['fetchedStudents'] ?? 0) . "\n";
         echo '  fetchedAlumni:      ' . (int) ($payload['fetchedAlumni'] ?? 0) . "\n";
         echo '  canonical overlap:  ' . (int) ($payload['studentAlumniOverlap'] ?? 0) . "\n";
+        $report = is_array($payload['lastSyncReport'] ?? null) ? $payload['lastSyncReport'] : null;
+        if ($report !== null) {
+            echo "\nLast sync report:\n";
+            foreach ([
+                'aesStudentsReceived',
+                'aesAlumniReceived',
+                'aesAlumniExclusive',
+                'aesCanonicalOverlap',
+                'storedStudents',
+                'storedAlumni',
+                'inserted',
+                'updated',
+                'skipped',
+                'skippedRetainedAsStudent',
+                'skippedEmptyAdmno',
+                'failed',
+            ] as $key) {
+                if (array_key_exists($key, $report)) {
+                    echo "  {$key}: {$report[$key]}\n";
+                }
+            }
+            if (is_array($report['diagnosis'] ?? null)) {
+                echo '  diagnosis: ' . (string) ($report['diagnosis']['code'] ?? '') . ' — '
+                    . (string) ($report['diagnosis']['summary'] ?? '') . "\n";
+            }
+        }
     }
 }
 
