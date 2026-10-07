@@ -280,25 +280,46 @@ a{color:inherit;text-decoration:none}
 }
 
 /* Company-wise detail tabs — Problems / Question bank / Company mock test */
-#studentJdBlockViewNav.nav-pills .nav-link{
+#studentJdBlockViewNav.jd-block-tabs{
+  border-bottom:1px solid #111827;
+  gap:0;
+}
+#studentJdBlockViewNav.jd-block-tabs .nav-item{
+  margin-bottom:-1px;
+}
+#studentJdBlockViewNav.jd-block-tabs .nav-link{
   color:#111827;
   background:#fff;
   border:1px solid #111827;
-  border-radius:8px;
+  border-bottom:0;
+  border-radius:0;
   font-weight:600;
   box-shadow:none;
+  margin-right:-1px;
+  padding:.4rem .85rem;
 }
-#studentJdBlockViewNav.nav-pills .nav-link:hover,
-#studentJdBlockViewNav.nav-pills .nav-link:focus{
+#studentJdBlockViewNav.jd-block-tabs .nav-item:first-child .nav-link{
+  border-top-left-radius:6px;
+}
+#studentJdBlockViewNav.jd-block-tabs .nav-item:last-child .nav-link{
+  border-top-right-radius:6px;
+  margin-right:0;
+}
+#studentJdBlockViewNav.jd-block-tabs .nav-link:hover,
+#studentJdBlockViewNav.jd-block-tabs .nav-link:focus{
   color:#111827;
   background:#fff;
   border-color:#111827;
+  border-bottom:0;
 }
-#studentJdBlockViewNav.nav-pills .nav-link.active{
+#studentJdBlockViewNav.jd-block-tabs .nav-link.active{
   color:#111827;
   background:#fff;
   border:1px solid #111827;
+  border-bottom:1px solid #fff;
   font-weight:700;
+  position:relative;
+  z-index:1;
 }
 
 .sidebar > div:last-child{
