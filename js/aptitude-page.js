@@ -2827,9 +2827,28 @@
     }
   }
 
+  function syncPublishMockNegativePanel() {
+    const enabled = !!document.getElementById('aptPublishMockNegative')?.checked;
+    document.getElementById('aptPublishMockNegativeWrap')?.classList.toggle('d-none', !enabled);
+  }
+
+  function readPublishMockNegativeMarking() {
+    const enabled = !!document.getElementById('aptPublishMockNegative')?.checked;
+    const marks = Math.max(0, Number(document.getElementById('aptPublishMockNegativeMarks')?.value) || 0);
+    return {
+      negativeMarking: enabled,
+      negativeMarks: enabled ? marks : 0,
+    };
+  }
+
   function resetPublishMockModalUi() {
     document.getElementById('btnAptPublishMockConfirm')?.classList.remove('d-none');
     document.getElementById('btnAptPublishMockDone')?.classList.add('d-none');
+    const negCheck = document.getElementById('aptPublishMockNegative');
+    const negMarks = document.getElementById('aptPublishMockNegativeMarks');
+    if (negCheck) negCheck.checked = false;
+    if (negMarks) negMarks.value = '0.25';
+    syncPublishMockNegativePanel();
     setPublishMockShareLink('');
   }
 
@@ -2897,6 +2916,15 @@
     if (durationInput) {
       durationInput.value = String(existing?.durationMinutes || Math.max(30, Math.min(180, (Number(countInput?.value) || 10) * 2)));
     }
+    const negCheck = document.getElementById('aptPublishMockNegative');
+    const negMarks = document.getElementById('aptPublishMockNegativeMarks');
+    if (negCheck) {
+      negCheck.checked = !!(existing?.negativeMarking);
+    }
+    if (negMarks) {
+      negMarks.value = String(existing?.negativeMarking ? (existing.negativeMarks || 0.25) : 0.25);
+    }
+    syncPublishMockNegativePanel();
     if (existing?.id) {
       setPublishMockShareLink(existing.id);
     }
@@ -2907,6 +2935,11 @@
     const setId = String(document.getElementById('aptPublishMockSetId')?.value || '');
     const questionCount = Math.max(1, Number(document.getElementById('aptPublishMockCount')?.value) || 1);
     const durationMinutes = Math.max(1, Math.min(300, Number(document.getElementById('aptPublishMockDuration')?.value) || 30));
+    const { negativeMarking, negativeMarks } = readPublishMockNegativeMarking();
+    if (negativeMarking && negativeMarks <= 0) {
+      toast('Enter marks deducted per wrong answer.', 'warn');
+      return;
+    }
     if (!setId) return;
 
     const set = companyLocalBankSets(jdSelectedCompanyId).find((s) => String(s.id) === setId);
@@ -2933,6 +2966,8 @@
         status: 'published',
         questionCount,
         durationMinutes,
+        negativeMarking,
+        negativeMarks,
         category: detail?.questions?.[0]?.category || 'General Aptitude',
         difficulty: detail?.questions?.[0]?.difficulty || 'Medium',
         jdFilterRules: [{
@@ -2974,7 +3009,7 @@
     btn?.setAttribute('disabled', 'disabled');
     const res = await api(`/aptitude/jd-sets/${encodeURIComponent(setId)}/publish-mock`, {
       method: 'POST',
-      body: { questionCount, durationMinutes },
+      body: { questionCount, durationMinutes, negativeMarking, negativeMarks },
     }).catch(() => null);
     btn?.removeAttribute('disabled');
     if (!res?.success) {
@@ -7603,6 +7638,7 @@
       ? new bootstrap.Modal(document.getElementById('aptPublishMockModal'))
       : null;
     document.getElementById('aptPublishMockModal')?.addEventListener('hidden.bs.modal', () => resetPublishMockModalUi());
+    document.getElementById('aptPublishMockNegative')?.addEventListener('change', () => syncPublishMockNegativePanel());
     document.getElementById('btnAptPublishMockConfirm')?.addEventListener('click', () => confirmPublishMock());
     document.getElementById('btnAptPublishMockCopyLink')?.addEventListener('click', () => copyPublishMockShareLink());
     exam = AptitudeExam.createExamController({

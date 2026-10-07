@@ -539,7 +539,12 @@ class AptitudeTestModel extends BaseModel
             $id = 'q' . ($index + 1);
         }
 
-        return [
+        $questionType = trim((string) ($q['questionType'] ?? ''));
+        if ($questionType === 'STATEMENTS_CONCLUSIONS') {
+            $prompt = \PMS\Services\AptitudeManualQuestionParser::formatStatementsConclusionsPrompt($prompt);
+        }
+
+        $row = [
             'id' => $id,
             'type' => 'mcq',
             'prompt' => $prompt,
@@ -553,6 +558,11 @@ class AptitudeTestModel extends BaseModel
             'category' => self::normalizeCategory((string) ($q['category'] ?? $fallbackCategory)),
             'difficulty' => self::normalizeDifficulty((string) ($q['difficulty'] ?? 'Medium')),
         ];
+        if ($questionType !== '') {
+            $row['questionType'] = $questionType;
+        }
+
+        return $row;
     }
 
     public static function sanitizeOptionText(string $value): string
@@ -1147,6 +1157,9 @@ class AptitudeTestModel extends BaseModel
                 'marks' => $norm['marks'],
                 'category' => $norm['category'],
             ];
+            if (!empty($norm['questionType'])) {
+                $row['questionType'] = (string) $norm['questionType'];
+            }
             if ($includeAnswers) {
                 $row['correctIndex'] = $norm['correctIndex'];
                 $row['explanation'] = $norm['explanation'];

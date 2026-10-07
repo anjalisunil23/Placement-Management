@@ -626,6 +626,17 @@
       <label class="form-label small fw-semibold" for="aptPublishMockDuration">Duration (minutes)</label>
       <input class="form-control" type="number" id="aptPublishMockDuration" min="1" max="300" value="30"/>
     </div>
+    <div class="mb-3">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="aptPublishMockNegative"/>
+        <label class="form-check-label" for="aptPublishMockNegative">Negative marking for wrong answers</label>
+      </div>
+      <div class="d-none mt-2" id="aptPublishMockNegativeWrap">
+        <label class="form-label small fw-semibold" for="aptPublishMockNegativeMarks">Marks deducted per wrong answer</label>
+        <input class="form-control" type="number" id="aptPublishMockNegativeMarks" min="0.01" max="10" step="0.01" value="0.25"/>
+        <div class="form-text">Example: 0.25 means −0.25 marks for each incorrect option.</div>
+      </div>
+    </div>
     <div class="d-none border-top pt-3" id="aptPublishMockShareWrap">
       <label class="form-label small fw-semibold mb-1" for="aptPublishMockShareUrl">Student share link</label>
       <div class="input-group input-group-sm">

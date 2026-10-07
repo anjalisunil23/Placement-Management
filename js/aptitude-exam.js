@@ -43,8 +43,75 @@
     }
   }
 
-  function renderRichHtml(html) {
-    return `<div class="apt-rich">${sanitizeRichHtml(html)}</div>`;
+  function renderRichHtml(html, { preWrap = false } = {}) {
+    const style = preWrap ? ' style="white-space:pre-wrap"' : '';
+    return `<div class="apt-rich"${style}>${sanitizeRichHtml(html)}</div>`;
+  }
+
+  function splitSyllogismStatementLines(text) {
+    let t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    return t.replace(/\s+(?=(?:All|Some|No|Only|Every|None|Most|A few)\b)/gi, '\n').trim();
+  }
+
+  function formatSyllogismConclusionLines(text) {
+    let t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    const m = t.match(/^I\)\s*(.+?)\s*II\)\s*(.+)$/iu);
+    if (m) return `I) ${m[1].trim()}\nII) ${m[2].trim()}`;
+    t = t.replace(/\s*(II\))\s*/gi, '\n$1 ');
+    t = t.replace(/(?<!I)(I\))\s*/g, '\n$1 ');
+    return t.trim();
+  }
+
+  function formatStatementsConclusionsPrompt(prompt) {
+    let text = String(prompt || '').trim();
+    if (!text) return '';
+    text = text.replace(/^\s*\d{1,3}\)\s*/, '');
+    text = text.replace(/[^\S\n]+/g, ' ').trim();
+    text = text.replace(/\s*\n\s*/g, '\n');
+    const flat = text.replace(/\s+/g, ' ').trim();
+    const scMatch = flat.match(/^Statements\s+(.+?)\s+Conclusions\s+(.+)$/iu);
+    if (scMatch) {
+      return [
+        'Statements',
+        splitSyllogismStatementLines(scMatch[1]),
+        'Conclusions',
+        formatSyllogismConclusionLines(scMatch[2]),
+      ].join('\n');
+    }
+    text = text.replace(/\bStatements\b\s*/gi, 'Statements\n');
+    text = text.replace(/\s*\bConclusions\b\s*/gi, '\nConclusions\n');
+    text = text.replace(/\s+(II\))\s+/g, '\n$1 ');
+    text = text.replace(/(?<!I)(I\))\s+/g, '\n$1 ');
+    return text.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function isStatementsConclusionsQuestion(q, prompt) {
+    if (q?.questionType === 'STATEMENTS_CONCLUSIONS') return true;
+    const p = String(prompt || '').trim();
+    return /\bStatements\b/i.test(p) && /\bConclusions\b/i.test(p);
+  }
+
+  function resolveExamPromptText(q) {
+    let raw = String(q?.prompt ?? q?.question ?? '').trim();
+    if (!raw) return '';
+    if (isStatementsConclusionsQuestion(q, raw)) {
+      raw = formatStatementsConclusionsPrompt(raw);
+    }
+    return raw;
+  }
+
+  function renderExamPrompt(q) {
+    const raw = resolveExamPromptText(q);
+    const isSc = isStatementsConclusionsQuestion(q, raw);
+    const isDs = q?.questionType === 'DATA_SUFFICIENCY';
+    const preWrap = isSc || isDs || /\n/.test(raw);
+    const style = preWrap ? ' style="white-space:pre-wrap"' : '';
+    if (/<[^>]+>/.test(raw)) {
+      return `<div class="apt-rich"${style}>${sanitizeRichHtml(raw)}</div>`;
+    }
+    return `<div class="apt-rich"${style}>${esc(raw)}</div>`;
   }
 
   function testCategoryLabel(test) {
@@ -379,7 +446,7 @@
       const qid = questionKey(q);
       state.visited[qid] = true;
       el('q-num').textContent = `Question ${state.index + 1} of ${state.questions.length}`;
-      el('q-prompt').innerHTML = renderRichHtml(q.prompt || '');
+      el('q-prompt').innerHTML = renderExamPrompt(q);
       el('q-marks').textContent = `${q.marks ?? 1} mark${Number(q.marks) === 1 ? '' : 's'}`;
       const selected = getSelectedIndex(q);
       el('q-options').innerHTML = (q.options || []).map((opt, i) => `
@@ -657,7 +724,7 @@
       el('result-analysis').innerHTML = analysis.length ? analysis.map((a, i) => `
         <div class="border rounded-3 p-3 mb-2">
           <div class="d-flex justify-content-between gap-2 mb-1">
-            <div class="flex-grow-1"><strong>Q${i + 1}.</strong> ${renderRichHtml(a.question)}</div>
+            <div class="flex-grow-1"><strong>Q${i + 1}.</strong> ${renderExamPrompt({ prompt: a.question, questionType: a.questionType })}</div>
             <span class="badge-soft ${a.status === 'correct' ? 'success' : a.status === 'incorrect' ? 'danger' : 'muted'}">${esc(a.status)} · ${esc(a.marksObtained)}/${esc(a.marks)}</span>
           </div>
           ${(a.options || []).length ? `<div class="small mt-2 mb-1">${(a.options || []).map((o, oi) => {

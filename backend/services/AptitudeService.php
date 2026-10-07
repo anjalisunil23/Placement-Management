@@ -976,6 +976,11 @@ final class AptitudeService
 
         $questionCount = max(1, (int) ($body['questionCount'] ?? 0));
         $durationMinutes = max(1, min(300, (int) ($body['durationMinutes'] ?? 30)));
+        $negativeMarking = filter_var($body['negativeMarking'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $negativeMarks = $negativeMarking ? max(0, (float) ($body['negativeMarks'] ?? 0)) : 0.0;
+        if ($negativeMarking && $negativeMarks <= 0) {
+            Response::error('Enter marks deducted per wrong answer when negative marking is enabled.', 422);
+        }
         if ($questionCount > $poolSize) {
             Response::error(
                 'Only ' . $poolSize . ' question(s) available in this manual. Reduce the mock test size.',
@@ -999,6 +1004,8 @@ final class AptitudeService
             'status' => 'published',
             'questionCount' => $questionCount,
             'durationMinutes' => $durationMinutes,
+            'negativeMarking' => $negativeMarking,
+            'negativeMarks' => $negativeMarks,
             'category' => $category,
             'jdFilterRules' => [[
                 'jdSetId' => $jdSetId,
@@ -3792,6 +3799,7 @@ final class AptitudeService
                 'id' => $qid,
                 'questionId' => $qid,
                 'question' => (string) ($q['prompt'] ?? ''),
+                'questionType' => (string) ($q['questionType'] ?? ''),
                 'options' => $options,
                 'studentAnswerIndex' => $picked >= 0 ? $picked : null,
                 'selected_answer' => $picked >= 0 ? $picked : null,
