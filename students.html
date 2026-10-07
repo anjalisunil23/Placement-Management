@@ -2247,10 +2247,7 @@ function formatCampusAesDirectorySyncStatus(meta) {
   if (!meta?.hasSnapshot) {
     return 'AES directory not synced yet.';
   }
-  const d = meta.syncedAt ? new Date(meta.syncedAt) : null;
-  const when = d && !Number.isNaN(d.getTime())
-    ? d.toLocaleString()
-    : String(meta.syncedAt || '').trim();
+  const when = formatAesSyncTime(meta.syncedAt);
   const students = Number(meta.studentRecordCount ?? 0);
   const alumni = Number(meta.alumniRecordCount ?? 0);
   const total = Number(meta.recordCount ?? (students + alumni));
@@ -2260,6 +2257,27 @@ function formatCampusAesDirectorySyncStatus(meta) {
   return when !== ''
     ? `${summary} · last sync ${when}`
     : summary;
+}
+
+function formatAesSyncTime(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  let text = raw;
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(text) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(text)) {
+    text = text.replace(' ', 'T').replace(/\.\d+$/, '') + 'Z';
+  }
+  const d = new Date(text);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
 }
 
 async function refreshCampusAesDirectorySyncStatus() {

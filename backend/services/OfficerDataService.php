@@ -2285,13 +2285,18 @@ final class OfficerDataService
             $meta = $detailsModel->latestSyncMeta();
             if ($storedStudents > 0 || $storedAlumni > 0 || is_array($meta)) {
                 $snapshotSyncedAt = isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : '';
+                $dbSyncedAt = is_array($meta) ? (string) ($meta['syncedAt'] ?? '') : '';
+                $snapshotAlumni = count($this->alumniRecordsFromCampusDirectoryPayload($payload));
+                $snapshotStudents = count($this->studyingRecordsFromCampusDirectoryPayload($payload));
+                $alumniCount = max($storedAlumni, $snapshotAlumni);
+                $studentCount = max($storedStudents, $snapshotStudents);
 
                 return [
-                    'syncedAt'            => $snapshotSyncedAt !== ''
-                        ? $snapshotSyncedAt
-                        : (is_array($meta) ? ($meta['syncedAt'] ?? null) : null),
-                    'studentRecordCount'  => $storedStudents,
-                    'alumniRecordCount'   => $storedAlumni,
+                    'syncedAt'            => $this->syncTimestampIsoUtc(
+                        $this->laterSyncTimestamp($snapshotSyncedAt, $dbSyncedAt)
+                    ),
+                    'studentRecordCount'  => $studentCount,
+                    'alumniRecordCount'   => $alumniCount,
                     'lastSyncReport'      => is_array($payload['lastSyncReport'] ?? null)
                         ? $payload['lastSyncReport']
                         : null,
@@ -2315,7 +2320,9 @@ final class OfficerDataService
         $alumni = $this->alumniRecordsFromCampusDirectoryPayload($payload);
 
         return [
-            'syncedAt'            => isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : null,
+            'syncedAt'            => $this->syncTimestampIsoUtc(
+                isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : null
+            ),
             'studentRecordCount'  => count($students),
             'alumniRecordCount'   => count($alumni),
             'fetchedStudents'     => $fetchedStudents > 0 ? $fetchedStudents : count($students),
@@ -2440,7 +2447,7 @@ final class OfficerDataService
         self::$aesAlumniDirectoryCache = [];
 
         return [
-            'syncedAt'           => $syncedAt,
+            'syncedAt'           => $this->syncTimestampIsoUtc($syncedAt),
             'studentRecordCount' => $studentCount,
             'alumniRecordCount'  => $alumniCount,
             'recordCount'        => $studentCount + $alumniCount,
@@ -2457,6 +2464,75 @@ final class OfficerDataService
             'source'               => $detailsModel->isAvailable() ? 'student_details' : 'legacy_snapshot',
             'syncReport'           => $lastSyncReport,
         ];
+    }
+
+    /**
+     * Pass-out year slices. A single stud_role=Alumni response is capped, so a few
+     * alumni only appear when the same query is repeated per calendar year.
+     *
+     * @param callable(list<array<string, mixed>>, bool, bool): void $appendBatch
+     */
+    private function supplementAlumniByCalendarYear(AesApiService $api, callable $appendBatch): void
+    {
+        $end = (int) (new \DateTimeImmutable('now', new \DateTimeZone('Asia/Kolkata')))->format('Y');
+        $start = $end - 15;
+        for ($year = $end; $year >= $start; $year--) {
+            try {
+                $batch = $api->fetchAllStudInfo4Placement([
+                    'stud_role' => 'Alumni',
+                    'stud_year' => (string) $year,
+                ], true, false);
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($batch !== []) {
+                $appendBatch($batch, false, true);
+            }
+        }
+    }
+
+    /**
+     * Stored sync times are UTC without a timezone suffix.
+     */
+    private function syncTimestampIsoUtc(?string $value): ?string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+        try {
+            return (new \DateTimeImmutable($value, new \DateTimeZone('UTC')))
+                ->setTimezone(new \DateTimeZone('UTC'))
+                ->format('Y-m-d\TH:i:s\Z');
+        } catch (\Throwable) {
+            return $value;
+        }
+    }
+
+    private function laterSyncTimestamp(string $left, string $right): string
+    {
+        $left = trim($left);
+        $right = trim($right);
+        $leftTs = $this->syncTimestampUnix($left);
+        $rightTs = $this->syncTimestampUnix($right);
+        if ($rightTs > $leftTs) {
+            return $right;
+        }
+
+        return $left !== '' ? $left : $right;
+    }
+
+    private function syncTimestampUnix(string $value): int
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return 0;
+        }
+        try {
+            return (new \DateTimeImmutable($value, new \DateTimeZone('UTC')))->getTimestamp();
+        } catch (\Throwable) {
+            return 0;
+        }
     }
 
     /**
@@ -2574,6 +2650,7 @@ final class OfficerDataService
             $this->supplementAlumniFromClassBatchFetches($api, $appendBatch, $authoritativeStudentAdmnos);
             $this->supplementAlumniResidualFromDeptDirectories($api, $appendBatch, $authoritativeStudentAdmnos);
             $this->supplementAlumniFromUnfilteredDeptRosters($api, $appendBatch, $authoritativeStudentAdmnos);
+            $this->supplementAlumniByCalendarYear($api, $appendBatch);
 
             return $merged;
         }
