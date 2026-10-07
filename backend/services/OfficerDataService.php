@@ -2496,9 +2496,9 @@ final class OfficerDataService
                     continue;
                 }
                 if ($fromAlumniRoleQuery && $syncStudRole === 'alumni') {
-                    if (AesApiService::normalizeStudRole($record) === 'student') {
-                        continue;
-                    }
+                    // AES alumni list includes these rows even when the payload still says Student.
+                    $record['stud_role'] = 'Alumni';
+                    $record['studRole'] = 'alumni';
                 } elseif ($residualAlumniPass) {
                     if (!AesApiService::qualifiesAsResidualAlumniRecord($record, $authoritativeStudentAdmnos)) {
                         continue;
@@ -2511,6 +2511,9 @@ final class OfficerDataService
                     continue;
                 }
                 $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+                if ($key === '' && $syncStudRole === 'alumni') {
+                    $key = $this->alumniFallbackIdentity($record);
+                }
                 if ($key === '' || isset($seen[$key])) {
                     continue;
                 }
@@ -3749,6 +3752,9 @@ final class OfficerDataService
             }
 
             $admno = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            if ($admno === '') {
+                $admno = $this->alumniFallbackIdentity($record);
+            }
             $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
             if ($admno === '') {
                 continue;
@@ -3975,6 +3981,27 @@ final class OfficerDataService
     }
 
     /**
+     * Identity for an AES alumni row that has no admission number.
+     *
+     * @param array<string, mixed> $record
+     */
+    private function alumniFallbackIdentity(array $record): string
+    {
+        $parts = [];
+        foreach (['stud_name', 'name', 'stud_class', 'classBatch', 'stud_course', 'stud_cource_short', 'stud_deptcode', 'stud_mobiles', 'phone'] as $key) {
+            $value = strtoupper(trim((string) ($record[$key] ?? '')));
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+        if ($parts === []) {
+            return '';
+        }
+
+        return 'ALUMNI:' . implode('|', $parts);
+    }
+
+    /**
      * @param list<array<string, mixed>> $records
      * @return list<array<string, mixed>>
      */
@@ -4104,16 +4131,17 @@ final class OfficerDataService
         $seen = [];
         $append = function (array $records) use (&$merged, &$seen): void {
             foreach ($records as $record) {
-                if (!is_array($record) || !$this->recordQualifiesForAlumniTab($record)) {
+                if (!is_array($record)) {
                     continue;
                 }
-                $key = strtoupper(trim((string) (
-                    $record['admno']
-                    ?? $record['stud_admno']
-                    ?? $record['registerNumber']
-                    ?? $record['registerno']
-                    ?? ''
-                )));
+                if (AesApiService::normalizeStudRole($record) !== 'alumni') {
+                    $record['stud_role'] = 'Alumni';
+                    $record['studRole'] = 'alumni';
+                }
+                $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+                if ($key === '') {
+                    $key = $this->alumniFallbackIdentity($record);
+                }
                 if ($key === '' || isset($seen[$key])) {
                     continue;
                 }
