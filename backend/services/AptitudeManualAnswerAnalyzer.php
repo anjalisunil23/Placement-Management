@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PMS\Services;
 
+use PMS\Models\AptitudeTestModel;
+
 /**
  * Infer correct MCQ answers for manually uploaded questions (admin preview / save).
  */
@@ -62,13 +64,14 @@ final class AptitudeManualAnswerAnalyzer
                 if ($optIdx < 0 || $optIdx >= count($opts)) {
                     continue;
                 }
-                $questions[$idx]['correctIndex'] = $optIdx;
+                $exp = trim((string) ($hit['explanation'] ?? ''));
+                $reconciled = $this->reconcileAiAnswer($opts, $optIdx, $exp);
+                $questions[$idx]['correctIndex'] = $reconciled['correctIndex'];
                 $questions[$idx]['answerKnown'] = true;
                 $questions[$idx]['answerSource'] = 'ai';
                 $questions[$idx]['aiAnalyzed'] = true;
-                $exp = trim((string) ($hit['explanation'] ?? ''));
-                if ($exp !== '' && trim((string) ($questions[$idx]['explanation'] ?? '')) === '') {
-                    $questions[$idx]['explanation'] = $exp;
+                if ($reconciled['explanation'] !== '') {
+                    $questions[$idx]['explanation'] = $reconciled['explanation'];
                 }
                 $resolved++;
             }
@@ -121,7 +124,8 @@ You solve multiple-choice aptitude questions. Return JSON only:
 Rules:
 - index must match the input index field exactly.
 - answerLetter: use A–E for standard MCQ and statements/conclusions items; use 1–5 for data sufficiency items.
-- explanation: brief reason (one sentence).
+- explanation: brief reason (one sentence) that states the same final value as your chosen option text.
+- answerLetter and explanation must agree; if the computed result is 4%, choose the option that says 4%, not another percentage.
 - Use only the given prompt and options; do not invent extra facts beyond standard logical/mathematical reasoning.
 - For statements/conclusions, apply syllogism rules to conclusions I and II, then pick the matching A–E rule option.
 SYS;
@@ -175,5 +179,46 @@ SYS;
         }
 
         return -1;
+    }
+
+    /**
+     * Prefer explanation-derived answer when AI letter and reasoning disagree.
+     *
+     * @param list<string> $options
+     * @return array{correctIndex:int,explanation:string}
+     */
+    private function reconcileAiAnswer(array $options, int $letterIndex, string $explanation): array
+    {
+        $opts = array_values($options);
+        $count = count($opts);
+        if ($count === 0) {
+            return ['correctIndex' => 0, 'explanation' => trim($explanation)];
+        }
+
+        $correctIndex = max(0, min($count - 1, $letterIndex));
+        $explanation = trim($explanation);
+        if ($explanation === '') {
+            return ['correctIndex' => $correctIndex, 'explanation' => ''];
+        }
+
+        $fromExplanation = AptitudeTestModel::findUniqueOptionInExplanation($opts, $explanation);
+        if ($fromExplanation !== null) {
+            $correctIndex = $fromExplanation;
+        } else {
+            $computed = AptitudeTestModel::extractComputedNumericFromExplanation($explanation);
+            if ($computed !== null) {
+                foreach ($opts as $i => $opt) {
+                    $optNum = AptitudeTestModel::parseOptionNumeric((string) $opt);
+                    if ($optNum !== null && abs($optNum - $computed) < 0.01) {
+                        $correctIndex = $i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        $explanation = AptitudeTestModel::ensureExplanationMentionsCorrectOption($opts, $correctIndex, $explanation);
+
+        return ['correctIndex' => $correctIndex, 'explanation' => $explanation];
     }
 }

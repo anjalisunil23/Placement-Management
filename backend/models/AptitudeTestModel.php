@@ -654,6 +654,13 @@ class AptitudeTestModel extends BaseModel
 
             return (float) str_replace(',', '', $last);
         }
+        if (preg_match(
+            '/\bis\s+(?:about\s+|approximately\s+|equal\s+to\s+)?([\d,]+(?:\.\d+)?)\s*(?:%|percent\b)/iu',
+            $explanation,
+            $pctMatch
+        ) === 1) {
+            return (float) str_replace(',', '', (string) ($pctMatch[1] ?? ''));
+        }
 
         return null;
     }
@@ -802,6 +809,15 @@ class AptitudeTestModel extends BaseModel
     {
         $numeric = self::parseOptionNumeric($optNorm);
         if ($numeric !== null) {
+            if (str_contains($optNorm, '%')) {
+                $numStr = abs($numeric - round($numeric)) < 0.001
+                    ? (string) (int) round($numeric)
+                    : rtrim(rtrim(number_format($numeric, 2, '.', ''), '0'), '.');
+                $pctPattern = '/(?<!\d)' . preg_quote($numStr, '/') . '\s*(?:%|percent\b)/iu';
+
+                return @preg_match($pctPattern, $explanationNorm) === 1;
+            }
+
             $formatted = self::formatNumericLikeOptions($numeric, [$optNorm]);
             $candidates = array_unique(array_filter([
                 strtolower(trim($optNorm)),
