@@ -279,24 +279,26 @@ a{color:inherit;text-decoration:none}
   font-weight:600;
 }
 
-/* Company-wise sub-tabs — Problems / Question bank / Company mock test (light blue) */
-#studentJdBlockViewNav.nav-pills .nav-link,
-#adminJdBlockViewNav.nav-pills .nav-link{
-  color:var(--primary);
-  background:#EFF6FF;
+/* Company-wise detail tabs — Problems / Question bank / Company mock test */
+#studentJdBlockViewNav.nav-pills .nav-link{
+  color:#111827;
+  background:#fff;
+  border:1px solid #111827;
   border-radius:8px;
-  font-weight:500;
+  font-weight:600;
+  box-shadow:none;
 }
 #studentJdBlockViewNav.nav-pills .nav-link:hover,
-#adminJdBlockViewNav.nav-pills .nav-link:hover{
-  color:var(--primary);
-  background:#DBEAFE;
+#studentJdBlockViewNav.nav-pills .nav-link:focus{
+  color:#111827;
+  background:#fff;
+  border-color:#111827;
 }
-#studentJdBlockViewNav.nav-pills .nav-link.active,
-#adminJdBlockViewNav.nav-pills .nav-link.active{
-  color:#1D4ED8;
-  background:#BFDBFE;
-  font-weight:600;
+#studentJdBlockViewNav.nav-pills .nav-link.active{
+  color:#111827;
+  background:#fff;
+  border:1px solid #111827;
+  font-weight:700;
 }
 
 .sidebar > div:last-child{
