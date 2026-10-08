@@ -2406,6 +2406,12 @@ final class OfficerDataService
                 ?? $record['programme']
                 ?? ''
             ));
+            if (in_array(strtolower($dept), ['student', 'stud', 'alumni', 'alumnus'], true)) {
+                $dept = '';
+            }
+            if (in_array(strtolower($batch), ['student', 'stud', 'alumni', 'alumnus'], true)) {
+                $batch = '';
+            }
             $rows[] = [
                 'id'             => $admno,
                 'registerNumber' => $noAdmno ? '' : $admno,

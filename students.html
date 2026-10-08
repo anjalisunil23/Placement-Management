@@ -2769,11 +2769,23 @@ async function openAssignVolunteerModal() {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('assignVolunteerModal')).show();
 }
 
+function directoryFieldLabel(value) {
+  const text = String(value || '').trim();
+  if (/^(student|stud|alumni|alumnus)$/i.test(text)) return '—';
+  return text || '—';
+}
+
 function finalYearRowHtml(s, kind = 'registered') {
   const name = esc(s.displayName || s.name || '—');
   const admno = esc(s.registerNumber || s.admno || '—');
-  const dept = esc(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—'));
-  const batch = esc(s.classBatch || '—');
+  let deptRaw = typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—');
+  let batchRaw = s.classBatch || '—';
+  if (kind === 'pending') {
+    deptRaw = directoryFieldLabel(deptRaw);
+    batchRaw = directoryFieldLabel(batchRaw);
+  }
+  const dept = esc(deptRaw);
+  const batch = esc(batchRaw);
   const newBadge = (s.isNew || s.aesOnly) ? ' <span class="badge-soft info">New</span>' : '';
   const pending = studentHasPendingSelfPlacement(s);
   const pendingBadge = pending ? ' <span class="badge-soft warning">Under Review</span>' : '';
@@ -2932,8 +2944,8 @@ function alumniRowHtml(s) {
   const name = esc(s.displayName || s.name || '—');
   const rawAdmno = String(s.registerNumber || s.admno || '');
   const admno = (s.noAdmno || rawAdmno.startsWith('ALUMNI:')) ? '—' : esc(rawAdmno || '—');
-  const dept = esc(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—'));
-  const batch = esc(s.classBatch || '—');
+  const dept = esc(directoryFieldLabel(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '')));
+  const batch = esc(directoryFieldLabel(s.classBatch || ''));
   const regAttr = esc(s.registerNumber || s.admno || '');
   return `<tr>
     <td><strong>${name}</strong></td>
