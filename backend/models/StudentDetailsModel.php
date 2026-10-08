@@ -248,6 +248,38 @@ class StudentDetailsModel extends BaseModel
     }
 
     /**
+     * Directory rows for one stored stud_role. No JSON sort, so a full alumni read stays one query.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listStudRoleDirectoryRecords(string $studRole): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $studRole = strtolower($studRole) === 'alumni' ? 'alumni' : 'student';
+        try {
+            $stmt = $this->db->prepare(
+                'SELECT id, payload, created_at, updated_at FROM `student_details` WHERE stud_role = ?'
+            );
+            $stmt->execute([$studRole]);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $out = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $out[] = self::toDirectoryRecord($this->rowToDoc($row));
+        }
+
+        return $out;
+    }
+
+    /**
      * @return array<string, true>
      */
     public function indexAllStoredAdmnos(): array
@@ -828,9 +860,8 @@ class StudentDetailsModel extends BaseModel
             if ($studRole === '' || $studRole === 'all') {
                 $stmt = $this->db->query('SELECT COUNT(*) FROM `student_details`');
             } elseif (strtolower($studRole) === 'alumni') {
-                $stmt = $this->db->query(
-                    'SELECT COUNT(*) FROM `student_details` WHERE ' . self::sqlAlumniMembershipCondition()
-                );
+                $stmt = $this->db->prepare('SELECT COUNT(*) FROM `student_details` WHERE stud_role = ?');
+                $stmt->execute(['alumni']);
             } else {
                 $stmt = $this->db->prepare('SELECT COUNT(*) FROM `student_details` WHERE stud_role = ?');
                 $stmt->execute(['student']);

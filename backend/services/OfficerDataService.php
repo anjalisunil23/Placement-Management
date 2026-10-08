@@ -2267,7 +2267,7 @@ final class OfficerDataService
     {
         $payload = $this->readCampusDirectorySnapshotPayload();
         $records = $kind === 'alumni'
-            ? $this->alumniRecordsFromCampusDirectoryPayload($payload)
+            ? $this->campusAlumniDirectoryRecords($payload)
             : $this->studyingRecordsFromCampusDirectoryPayload($payload);
         if ($records === []) {
             return [];
@@ -2291,11 +2291,7 @@ final class OfficerDataService
             if (!is_array($record)) {
                 continue;
             }
-            if ($kind === 'alumni') {
-                if (!$this->recordQualifiesForAlumniTab($record) && AesApiService::normalizeStudRole($record) !== 'alumni') {
-                    continue;
-                }
-            } elseif (!$this->isAesStudyingStudent($record)) {
+            if ($kind === 'student' && !$this->isAesStudyingStudent($record)) {
                 continue;
             }
 
@@ -4201,6 +4197,65 @@ final class OfficerDataService
     }
 
     /**
+     * Alumni for the admin tab: saved snapshot, then stud_role = alumni rows, then one AES fetch.
+     *
+     * @param array<string, mixed> $payload
+     * @return list<array<string, mixed>>
+     */
+    private function campusAlumniDirectoryRecords(array $payload): array
+    {
+        $records = $this->alumniRecordsFromCampusDirectoryPayload($payload);
+        if ($records !== []) {
+            return $records;
+        }
+
+        $stored = (new \PMS\Models\StudentDetailsModel())->listStudRoleDirectoryRecords('alumni');
+        if ($stored !== []) {
+            return $stored;
+        }
+
+        return $this->fetchAndStoreCampusAlumni();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fetchAndStoreCampusAlumni(): array
+    {
+        try {
+            $records = $this->aesApiForCampusDirectorySync()->fetchAllStudInfo4Placement(
+                ['stud_role' => 'alumni'],
+                true,
+                false
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+        if ($records === []) {
+            return [];
+        }
+
+        foreach ($records as &$record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            if (AesApiService::normalizeStudRole($record) !== 'alumni') {
+                $record['stud_role'] = 'Alumni';
+                $record['studRole'] = 'alumni';
+            }
+        }
+        unset($record);
+
+        try {
+            $this->persistCampusAlumniSnapshot($records);
+        } catch (\Throwable) {
+            // Still show the AES rows when the snapshot file cannot be written.
+        }
+
+        return $records;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function readCampusDirectorySnapshotPayload(): array
@@ -4430,7 +4485,7 @@ final class OfficerDataService
             return $out !== [] ? $out : ['Alumni'];
         }
 
-        return ['Alumni', 'alumni', 'ALUMNI', 'Alumnus', 'alumnus'];
+        return ['alumni'];
     }
 
     /**
