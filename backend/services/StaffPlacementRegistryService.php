@@ -88,6 +88,12 @@ final class StaffPlacementRegistryService
 
         $filters['departmentId'] = trim((string) ($listCtx['departmentId'] ?? $filters['departmentId'] ?? ''));
 
+        try {
+            (new \PMS\Models\StudentPlacementDetailsTable())->ensure();
+        } catch (\Throwable) {
+            // The grid still reads student_placements if the new table cannot be created.
+        }
+
         return $this->buildRegistryResponse(
             $staffCtx,
             $listCtx,
@@ -859,30 +865,31 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * Registry grid — columns mirror student_placements JSON payload (+ Sl#).
+     * Registry grid headers match student_placement_details.
      *
      * @return list<array{key:string,label:string,sortable:bool,sortKey?:string,source:string,group?:string,payloadField?:string}>
      */
     public static function registryTableColumns(): array
     {
-        return [
-            ['key' => '_sl', 'label' => 'Sl#', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_placements', 'group' => 'snapshot'],
-            ['key' => 'studentName', 'label' => 'Student name', 'sortable' => true, 'sortKey' => 'studentName', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'studentName'],
-            ['key' => 'registerNumber', 'label' => 'Register no.', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'registerNumber'],
-            ['key' => 'classBatch', 'label' => 'Class batch', 'sortable' => true, 'sortKey' => 'classBatch', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'classBatch'],
-            ['key' => 'programme', 'label' => 'Programme', 'sortable' => true, 'sortKey' => 'programme', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'programme'],
-            ['key' => 'phone', 'label' => 'Phone', 'sortable' => true, 'sortKey' => 'phone', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'phone'],
-            ['key' => 'email', 'label' => 'Email', 'sortable' => true, 'sortKey' => 'email', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'email'],
-            ['key' => 'company', 'label' => 'Company / institution', 'sortable' => true, 'sortKey' => 'company', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'company'],
-            ['key' => 'recordType', 'label' => 'Record type', 'sortable' => true, 'sortKey' => 'recordType', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'recordType'],
-            ['key' => 'role', 'label' => 'Role', 'sortable' => true, 'sortKey' => 'role', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'role'],
-            ['key' => 'employerContact', 'label' => 'Contact', 'sortable' => true, 'sortKey' => 'employerContact', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'employerContact'],
-            ['key' => 'address', 'label' => 'Address', 'sortable' => true, 'sortKey' => 'address', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'address'],
-            ['key' => 'package', 'label' => 'Package', 'sortable' => true, 'sortKey' => 'package', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'package'],
-            ['key' => 'placementStatus', 'label' => 'Status', 'sortable' => true, 'sortKey' => 'placementStatus', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'placementStatus'],
-            ['key' => 'fordvv', 'label' => 'For DVV', 'sortable' => true, 'sortKey' => 'fordvv', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'fordvv'],
-            ['key' => 'includedvv', 'label' => 'Included DVV', 'sortable' => true, 'sortKey' => 'includedvv', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'includedvv'],
+        $keys = [
+            'student', 'admno', 'cno', 'email', 'year', 'courseid', 'branchid',
+            'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy',
+            'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdat',
         ];
+        $columns = [];
+        foreach ($keys as $key) {
+            $columns[] = [
+                'key' => $key,
+                'label' => $key,
+                'sortable' => true,
+                'sortKey' => $key,
+                'source' => 'student_placement_details',
+                'group' => 'record',
+                'payloadField' => $key,
+            ];
+        }
+
+        return $columns;
     }
 
     /**
@@ -1187,6 +1194,10 @@ final class StaffPlacementRegistryService
             'branch'          => $branch,
             'batch'           => $batch,
             'classBatch'      => $batch,
+            'createdBy'       => trim((string) ($row['createdBy'] ?? '')),
+            'updatedBy'       => trim((string) ($row['updatedBy'] ?? '')),
+            'createdAt'       => $row['createdAt'] ?? '',
+            'updatedAt'       => $row['updatedAt'] ?? '',
         ];
 
         $entries = [];
@@ -1451,12 +1462,40 @@ final class StaffPlacementRegistryService
         $row['registerNumber'] = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admissionNo'] ?? '')));
         $row['classBatch'] = trim((string) ($row['classBatch'] ?? $row['batch'] ?? ''));
         $row['programme'] = trim((string) ($row['programme'] ?? $row['program'] ?? ''));
-        $row['phone'] = trim((string) ($row['phone'] ?? ''));
+        $row['phone'] = trim((string) ($row['phone'] ?? $row['cno'] ?? ''));
         $row['email'] = trim((string) ($row['email'] ?? ''));
         $row['role'] = trim((string) ($row['role'] ?? ''));
-        $row['placementStatus'] = trim((string) ($row['placementStatus'] ?? ''));
+        $row['placementStatus'] = trim((string) ($row['placementStatus'] ?? $row['status'] ?? ''));
+        $row['student'] = trim((string) ($row['student'] ?? $row['studentName'] ?? ''));
+        $row['admno'] = trim((string) ($row['admno'] ?? $row['admissionNo'] ?? $row['registerNumber'] ?? ''));
+        $row['cno'] = trim((string) ($row['cno'] ?? $row['phone'] ?? ''));
+        $row['year'] = trim((string) ($row['year'] ?? $row['classBatch'] ?? $row['batch'] ?? ''));
+        $row['courseid'] = trim((string) ($row['courseid'] ?? $row['courseId'] ?? ''));
+        $row['branchid'] = trim((string) ($row['branchid'] ?? $row['branchId'] ?? ''));
+        $row['empcno'] = trim((string) ($row['empcno'] ?? $row['empco'] ?? $row['employerContact'] ?? ''));
+        $row['empadr'] = trim((string) ($row['empadr'] ?? $row['address'] ?? ''));
+        $row['payscale'] = trim((string) ($row['payscale'] ?? $row['package'] ?? ''));
+        $row['status'] = trim((string) ($row['status'] ?? $row['placementStatus'] ?? ''));
+        $row['createdBy'] = trim((string) ($row['createdBy'] ?? ''));
+        $row['updatedBy'] = trim((string) ($row['updatedBy'] ?? ''));
+        $row['createdat'] = $this->registryDateText($row['createdat'] ?? $row['createdAt'] ?? $row['createdDate'] ?? '');
+        $row['updatedate'] = $this->registryDateText($row['updatedate'] ?? $row['updatedAt'] ?? $row['updatedDate'] ?? '');
 
         return $row;
+    }
+
+    private function registryDateText(mixed $value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+        $text = trim((string) $value);
+        if ($text === '') {
+            return '';
+        }
+        $ts = strtotime($text);
+
+        return $ts === false ? $text : date('Y-m-d H:i:s', $ts);
     }
 
     /**

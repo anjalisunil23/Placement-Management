@@ -623,6 +623,10 @@ class StudentPlacementModel extends BaseModel
             'courseId'       => $snapshot['courseId'],
             'branchId'       => $snapshot['branchId'],
             'departmentId'   => $snapshot['departmentId'],
+            'createdBy'      => trim((string) ($doc['createdBy'] ?? '')),
+            'updatedBy'      => trim((string) ($doc['updatedBy'] ?? '')),
+            'createdAt'      => $doc['createdAt'] ?? ($doc['createdDate'] ?? ($doc['crteatedDate'] ?? '')),
+            'updatedAt'      => $doc['updatedAt'] ?? ($doc['updatedDate'] ?? ($doc['updatedate'] ?? '')),
             'placement'      => $placement,
             'placed'         => trim((string) ($placement['company'] ?? '')) !== '',
             'source'         => 'student_placements',
@@ -693,7 +697,7 @@ class StudentPlacementModel extends BaseModel
                 $register = strtoupper($studentId);
             }
         }
-        $phone = $pick([$doc, $roster, $personal, $placementFields], 'phone', 'mobile', 'stud_mobile', 'contactPhone');
+        $phone = $pick([$doc, $roster, $personal, $placementFields], 'phone', 'cno', 'mobile', 'stud_mobile', 'contactPhone');
         $email = $pick([$doc, $roster, $personal, $placementFields], 'email', 'collegeEmail', 'personalEmail', 'stud_email');
         $classBatch = $pick([$doc, $roster, $placementFields], 'classBatch', 'stud_class', 'batch');
         $programme = DepartmentProgrammeCatalog::resolveProgrammeCode($pick(
