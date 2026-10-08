@@ -32,10 +32,19 @@ class StudentPlacementDetailsTable
 
     public function ensure(): bool
     {
-        if ($this->isReady()) {
-            return true;
+        if (!$this->isReady()) {
+            $this->createTable();
         }
+        if (!$this->isReady()) {
+            return false;
+        }
+        $this->ensureColumns();
 
+        return $this->hasColumn('createdat');
+    }
+
+    private function createTable(): void
+    {
         $this->db->exec(
             'CREATE TABLE IF NOT EXISTS student_placement_details (
               id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -64,8 +73,43 @@ class StudentPlacementDetailsTable
               KEY idx_student_placement_details_type (`type`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+    }
 
-        return $this->isReady();
+    private function ensureColumns(): void
+    {
+        $missing = [
+            'courseid' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            'branchid' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            'empcno' => "VARCHAR(128) NOT NULL DEFAULT ''",
+            'empadr' => "VARCHAR(512) NOT NULL DEFAULT ''",
+            'payscale' => "VARCHAR(128) NOT NULL DEFAULT ''",
+            'status' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            'createdBy' => "VARCHAR(128) NOT NULL DEFAULT ''",
+            'updatedBy' => "VARCHAR(128) NOT NULL DEFAULT ''",
+            'updatedate' => 'DATETIME NULL',
+            'fordvv' => "VARCHAR(16) NOT NULL DEFAULT ''",
+            'type' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            'includedvv' => "VARCHAR(16) NOT NULL DEFAULT ''",
+            'createdat' => 'DATETIME NULL',
+        ];
+        foreach ($missing as $name => $definition) {
+            if ($this->hasColumn($name)) {
+                continue;
+            }
+            $this->db->exec(
+                'ALTER TABLE `student_placement_details` ADD COLUMN `' . $name . '` ' . $definition
+            );
+        }
+    }
+
+    private function hasColumn(string $name): bool
+    {
+        $statement = $this->db->prepare(
+            'SHOW COLUMNS FROM `student_placement_details` WHERE Field = ?'
+        );
+        $statement->execute([$name]);
+
+        return (bool) $statement->fetch();
     }
 
     /**
@@ -113,7 +157,7 @@ class StudentPlacementDetailsTable
      */
     public function listRows(int $limit = 5000): array
     {
-        if (!$this->isReady()) {
+        if (!$this->ensure()) {
             return [];
         }
         $limit = max(1, min($limit, 10000));
