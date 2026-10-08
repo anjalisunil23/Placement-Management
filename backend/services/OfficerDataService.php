@@ -4488,7 +4488,7 @@ final class OfficerDataService
             // Keep Mongo/local department AES ids.
         }
 
-        $out = array_keys($ids);
+        $out = array_map(static fn (int|string $id): string => (string) $id, array_keys($ids));
         sort($out, SORT_NUMERIC);
 
         return $out;
