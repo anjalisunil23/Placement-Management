@@ -51,7 +51,13 @@ class StudentDetailsModel extends BaseModel
             return true;
         }
         try {
-            $this->db->query('SELECT 1 FROM `student_details` LIMIT 1');
+            // The directory table uses student_name. This model only talks to the retired JSON table.
+            $column = $this->db->query("SHOW COLUMNS FROM `student_details` LIKE 'payload'");
+            if (!$column->fetch()) {
+                self::$tableUnavailable = true;
+
+                return false;
+            }
             self::$tableReady = true;
 
             return true;

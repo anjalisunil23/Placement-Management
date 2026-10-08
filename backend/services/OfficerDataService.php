@@ -2446,6 +2446,11 @@ final class OfficerDataService
     {
         $detailsModel = new \PMS\Models\StudentDetailsModel();
         $payload = $this->readCampusDirectorySnapshotPayload();
+        try {
+            (new \PMS\Models\StudentDirectoryTable())->storeSnapshotIfEmpty($payload);
+        } catch (\Throwable $e) {
+            error_log('student_details directory load failed: ' . $e->getMessage());
+        }
         $fetchedStudents = (int) ($payload['fetchedStudents'] ?? $payload['studentRecordCount'] ?? 0);
         $fetchedAlumni = (int) ($payload['fetchedAlumni'] ?? $payload['alumniRecordCount'] ?? 0);
         $studentAlumniOverlap = (int) ($payload['studentAlumniOverlap'] ?? 0);
@@ -4504,6 +4509,16 @@ final class OfficerDataService
 
         if (@file_put_contents($path, $json, LOCK_EX) === false) {
             throw new \RuntimeException('Could not save AES directory snapshot.');
+        }
+
+        try {
+            (new \PMS\Models\StudentDirectoryTable())->replaceFromAesRecords(
+                $studyingRecords,
+                $alumniRecords,
+                $syncedAt
+            );
+        } catch (\Throwable $e) {
+            error_log('student_details directory save failed: ' . $e->getMessage());
         }
     }
 

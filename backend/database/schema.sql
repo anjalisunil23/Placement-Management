@@ -489,3 +489,18 @@ CREATE TABLE IF NOT EXISTS student_exercise_attempts (
   updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   KEY idx_student_exercise_attempts (student_id, exercise_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS student_details (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  student_name VARCHAR(255) NOT NULL DEFAULT '',
+  adm_no VARCHAR(64) NOT NULL DEFAULT '',
+  department VARCHAR(255) NOT NULL DEFAULT '',
+  stud_role VARCHAR(16) NOT NULL,
+  batch VARCHAR(128) NOT NULL DEFAULT '',
+  action VARCHAR(191) NOT NULL,
+  synced_at DATETIME NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_student_details_action (action),
+  KEY idx_student_details_role (stud_role),
+  KEY idx_student_details_adm_no (adm_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
