@@ -2265,12 +2265,18 @@ final class OfficerDataService
      */
     private function listCampusDirectoryFromSnapshot(string $kind, ?string $query = null): array
     {
+        @set_time_limit(0);
+        $this->boostMemoryForAesDirectoryLoad();
         $payload = $this->readCampusDirectorySnapshotPayload();
         $records = $kind === 'alumni'
             ? $this->campusAlumniDirectoryRecords($payload)
             : $this->studyingRecordsFromCampusDirectoryPayload($payload);
         if ($records === []) {
             return [];
+        }
+
+        if ($kind === 'alumni') {
+            return $this->filterStudentRows($this->slimCampusAlumniList($records), $query);
         }
 
         $ctx = [
@@ -2357,6 +2363,72 @@ final class OfficerDataService
         );
 
         return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * Alumni table rows from the saved directory. No per-person AES or database lookup.
+     *
+     * @param list<array<string, mixed>> $records
+     * @return list<array<string, mixed>>
+     */
+    private function slimCampusAlumniList(array $records): array
+    {
+        $rows = [];
+        $seen = [];
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $admno = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            $noAdmno = !empty($record['noAdmno']);
+            if ($admno === '') {
+                $admno = $this->alumniFallbackIdentity($record);
+                $noAdmno = $admno !== '';
+            }
+            if ($admno === '' || isset($seen[$admno])) {
+                continue;
+            }
+            $seen[$admno] = true;
+            $name = trim((string) (
+                $record['stud_name']
+                ?? $record['name']
+                ?? $record['displayName']
+                ?? $record['studentName']
+                ?? ''
+            ));
+            $batch = trim((string) ($record['classBatch'] ?? $record['stud_class'] ?? ''));
+            $dept = trim((string) (
+                $record['departmentName']
+                ?? $record['parentDepartmentName']
+                ?? $record['stud_branch']
+                ?? $record['stud_course']
+                ?? $record['stud_cource_short']
+                ?? $record['programme']
+                ?? ''
+            ));
+            $rows[] = [
+                'id'             => $admno,
+                'registerNumber' => $noAdmno ? '' : $admno,
+                'admno'          => $noAdmno ? '' : $admno,
+                'noAdmno'        => $noAdmno,
+                'displayName'    => $name !== '' ? $name : '—',
+                'name'           => $name,
+                'departmentName' => $dept,
+                'classBatch'     => $batch,
+                'studRole'       => 'alumni',
+                'stud_role'      => 'Alumni',
+            ];
+        }
+
+        usort(
+            $rows,
+            static fn (array $a, array $b): int => strcasecmp(
+                (string) ($a['displayName'] ?? ''),
+                (string) ($b['displayName'] ?? '')
+            )
+        );
+
+        return $rows;
     }
 
     /**
