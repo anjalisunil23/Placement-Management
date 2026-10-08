@@ -2269,7 +2269,7 @@ final class OfficerDataService
         $this->boostMemoryForAesDirectoryLoad();
         $payload = $this->readCampusDirectorySnapshotPayload();
         $records = $kind === 'alumni'
-            ? $this->campusAlumniDirectoryRecords($payload)
+            ? $this->alumniRecordsExcludingStudyingStudents($payload)
             : $this->studyingRecordsFromCampusDirectoryPayload($payload);
         if ($records === []) {
             return [];
@@ -2457,9 +2457,9 @@ final class OfficerDataService
             if ($storedStudents > 0 || $storedAlumni > 0 || is_array($meta)) {
                 $snapshotSyncedAt = isset($payload['syncedAt']) ? (string) $payload['syncedAt'] : '';
                 $dbSyncedAt = is_array($meta) ? (string) ($meta['syncedAt'] ?? '') : '';
-                $snapshotAlumni = count($this->alumniRecordsFromCampusDirectoryPayload($payload));
+                $snapshotAlumni = count($this->alumniRecordsExcludingStudyingStudents($payload));
                 $snapshotStudents = count($this->studyingRecordsFromCampusDirectoryPayload($payload));
-                $alumniCount = max($storedAlumni, $snapshotAlumni);
+                $alumniCount = $snapshotAlumni > 0 ? $snapshotAlumni : $storedAlumni;
                 $studentCount = max($storedStudents, $snapshotStudents);
 
                 return [
@@ -2488,7 +2488,7 @@ final class OfficerDataService
         }
 
         $students = $this->studyingRecordsFromCampusDirectoryPayload($payload);
-        $alumni = $this->alumniRecordsFromCampusDirectoryPayload($payload);
+        $alumni = $this->alumniRecordsExcludingStudyingStudents($payload);
 
         return [
             'syncedAt'            => $this->syncTimestampIsoUtc(
@@ -4276,6 +4276,38 @@ final class OfficerDataService
     private function alumniRecordsFromCampusDirectoryPayload(array $payload): array
     {
         return is_array($payload['alumniRecords'] ?? null) ? $payload['alumniRecords'] : [];
+    }
+
+    /**
+     * Alumni directory without the current studying students.
+     * The saved alumni file also contains those students, which is why the tab showed 12389.
+     *
+     * @param array<string, mixed> $payload
+     * @return list<array<string, mixed>>
+     */
+    private function alumniRecordsExcludingStudyingStudents(array $payload): array
+    {
+        $records = $this->campusAlumniDirectoryRecords($payload);
+        $studentAdmnos = $this->indexAesAdmnosFromRecords(
+            $this->studyingRecordsFromCampusDirectoryPayload($payload)
+        );
+        if ($studentAdmnos === []) {
+            return $records;
+        }
+
+        $out = [];
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            if ($key !== '' && isset($studentAdmnos[$key])) {
+                continue;
+            }
+            $out[] = $record;
+        }
+
+        return $out;
     }
 
     /**
