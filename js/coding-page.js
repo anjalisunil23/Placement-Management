@@ -81,6 +81,7 @@
   let contestResultsModal = null;
   let bankDifficultyFilter = '';
   let bankCategoryFilter = '';
+  let bankProblemSearch = '';
   const selectedBankIds = new Set();
   const selectedManageTestIds = new Set();
   const selectedJdSetIds = new Set();
@@ -603,10 +604,18 @@
     }).join('');
   }
 
+  function problemMatchesQuery(p, search) {
+    const q = String(search || '').trim().toLowerCase();
+    if (!q) return true;
+    const hay = `${p.title || ''} ${p.category || ''} ${p.topic || ''} ${p.difficulty || ''}`.toLowerCase();
+    return hay.includes(q);
+  }
+
   function visibleBankProblems() {
     return bank.filter((q) => {
       if (bankCategoryFilter && normalizeCodingTopic(q.category) !== bankCategoryFilter) return false;
       if (bankDifficultyFilter && String(q.difficulty || 'Medium') !== bankDifficultyFilter) return false;
+      if (!problemMatchesQuery(q, bankProblemSearch)) return false;
       return true;
     });
   }
@@ -1826,26 +1835,35 @@
     </button>`;
   }
 
-  function categoryProblemRowHtml(p, index) {
+  function categoryProblemRowHtml(p, index, { showTopic = false } = {}) {
     const solved = p.practiceStatus === 'solved';
     const diff = difficultyListLabel(p.difficulty);
+    const topic = showTopic ? ` · ${esc(normalizeCodingTopic(p.category))}` : '';
     return `<button type="button" class="apt-prob-row is-clickable" data-open-category-problem="${esc(p.id || p.bankId)}">
       <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
-      <span class="apt-prob-title">${index + 1}. ${esc(p.title || 'Untitled')}</span>
+      <span class="apt-prob-title">${index + 1}. ${esc(p.title || 'Untitled')}${topic ? `<span class="small text-muted-2 fw-normal">${topic}</span>` : ''}</span>
       <span class="apt-prob-pct">${p.attemptCount ? esc(p.attemptCount) : '—'}</span>
       <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
     </button>`;
   }
 
+  function bindCategoryProblemOpens(root) {
+    root.querySelectorAll('[data-open-category-problem]').forEach((btn) => {
+      btn.addEventListener('click', () => openPracticeProblem(btn.getAttribute('data-open-category-problem')));
+    });
+  }
+
   function renderCategoryTestsView() {
     const root = document.getElementById('testList');
     if (!root) return;
+    const searching = String(practiceSearch || '').trim();
 
     if (selectedTestCategory) {
-      const problems = practiceProblems
-        .filter((p) => normalizeCodingTopic(p.category) === selectedTestCategory)
+      const inTopic = practiceProblems.filter((p) => normalizeCodingTopic(p.category) === selectedTestCategory);
+      const problems = inTopic
+        .filter((p) => problemMatchesQuery(p, practiceSearch))
         .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
-      const { total, solved, completed } = categoryProgress(problems);
+      const { total, solved, completed } = categoryProgress(inTopic);
       root.innerHTML = `
         <div class="pt-1">
           <div class="d-flex align-items-center gap-2 mb-3">
@@ -1857,15 +1875,29 @@
           </div>
           ${problems.length
             ? `<div class="apt-prob-list">${problems.map((p, i) => categoryProblemRowHtml(p, i)).join('')}</div>`
-            : '<p class="text-muted-2 mb-0">No problems in this topic yet.</p>'}
+            : `<p class="text-muted-2 mb-0">${searching ? 'No problems match your search.' : 'No problems in this topic yet.'}</p>`}
         </div>`;
       root.querySelector('[data-test-category-back]')?.addEventListener('click', () => {
         selectedTestCategory = null;
         renderTestList();
       });
-      root.querySelectorAll('[data-open-category-problem]').forEach((btn) => {
-        btn.addEventListener('click', () => openPracticeProblem(btn.getAttribute('data-open-category-problem')));
-      });
+      bindCategoryProblemOpens(root);
+      return;
+    }
+
+    if (searching) {
+      const problems = practiceProblems
+        .filter((p) => problemMatchesQuery(p, practiceSearch))
+        .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+      root.innerHTML = `
+        <div class="pt-1">
+          <h6 class="fw-bold mb-1">Matching problems</h6>
+          <p class="small text-muted-2 mb-3">${esc(problems.length)} result${problems.length === 1 ? '' : 's'} for “${esc(searching)}”.</p>
+          ${problems.length
+            ? `<div class="apt-prob-list">${problems.map((p, i) => categoryProblemRowHtml(p, i, { showTopic: true })).join('')}</div>`
+            : '<p class="text-muted-2 mb-0">No problems match your search.</p>'}
+        </div>`;
+      bindCategoryProblemOpens(root);
       return;
     }
 
@@ -1892,16 +1924,18 @@
     if (!root) return;
 
     if (selectedManageTestCategory) {
-      const problems = bank
-        .filter((p) => normalizeCodingTopic(p.category) === selectedManageTestCategory)
+      const inTopic = bank.filter((p) => normalizeCodingTopic(p.category) === selectedManageTestCategory);
+      const problems = inTopic
+        .filter((p) => problemMatchesQuery(p, managePracticeSearch))
         .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+      const searching = String(managePracticeSearch || '').trim();
       root.innerHTML = `
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
           <div class="d-flex align-items-center gap-2">
             <button type="button" class="btn btn-sm btn-outline-secondary" data-manage-test-category-back aria-label="Back to topics"><i class="bi bi-arrow-left"></i></button>
             <div>
               <h6 class="fw-bold mb-0">${esc(selectedManageTestCategory)}</h6>
-              <div class="small text-muted-2">${esc(problems.length)} problem${problems.length === 1 ? '' : 's'} in this test</div>
+              <div class="small text-muted-2">${esc(inTopic.length)} problem${inTopic.length === 1 ? '' : 's'} in this test</div>
             </div>
           </div>
           <button type="button" class="btn btn-sm btn-outline-primary" data-manage-open-bank="${esc(selectedManageTestCategory)}"><i class="bi bi-pencil me-1"></i>Edit in bank</button>
@@ -1913,7 +1947,7 @@
               <span class="apt-prob-pct">${esc(p.marks || 2)} m</span>
               <span class="apt-prob-diff ${difficultyListLabel(p.difficulty).cls}">${esc(difficultyListLabel(p.difficulty).text)}</span>
             </div>`).join('')}</div>`
-          : '<p class="text-muted-2 mb-0">No problems in this topic. Add them from the question bank.</p>'}`;
+          : `<p class="text-muted-2 mb-0">${searching ? 'No problems match your search.' : 'No problems in this topic. Add them from the question bank.'}</p>`}`;
       root.querySelector('[data-manage-test-category-back]')?.addEventListener('click', () => {
         selectedManageTestCategory = null;
         renderManageCategoryTests();
@@ -1923,6 +1957,25 @@
         applyManagePanel('bank');
         renderBank();
       });
+      return;
+    }
+
+    const searching = String(managePracticeSearch || '').trim();
+    if (searching) {
+      const problems = bank
+        .filter((p) => problemMatchesQuery(p, managePracticeSearch))
+        .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
+      root.innerHTML = `
+        <h6 class="fw-bold mb-1">Matching problems</h6>
+        <p class="small text-muted-2 mb-3">${esc(problems.length)} result${problems.length === 1 ? '' : 's'} in the bank.</p>
+        ${problems.length
+          ? `<div class="apt-prob-list">${problems.map((p, i) => `<div class="apt-prob-row">
+              <span class="apt-prob-check"></span>
+              <span class="apt-prob-title">${i + 1}. ${esc(p.title || 'Untitled')}<span class="small text-muted-2 fw-normal"> · ${esc(normalizeCodingTopic(p.category))}</span></span>
+              <span class="apt-prob-pct">${esc(p.marks || 2)} m</span>
+              <span class="apt-prob-diff ${difficultyListLabel(p.difficulty).cls}">${esc(difficultyListLabel(p.difficulty).text)}</span>
+            </div>`).join('')}</div>`
+          : '<p class="text-muted-2 mb-0">No problems match your search.</p>'}`;
       return;
     }
 
@@ -1949,12 +2002,8 @@
   }
 
   function filterPracticeProblems(list, { search, diffs, topics, statuses }) {
-    const q = String(search || '').trim().toLowerCase();
     return (list || []).filter((p) => {
-      if (q) {
-        const hay = `${p.title || ''} ${p.category || ''} ${p.difficulty || ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
+      if (!problemMatchesQuery(p, search)) return false;
       if (diffs.size && !diffs.has(String(p.difficulty || ''))) return false;
       if (topics.size && !topics.has(normalizeCodingTopic(p.category))) return false;
       if (statuses.size && !statuses.has(String(p.practiceStatus || 'unsolved'))) return false;
@@ -2057,6 +2106,7 @@
     });
     document.getElementById('takeContestTypeNav')?.classList.toggle('d-none', takeListPanel !== 'contests');
     document.getElementById('testList')?.classList.toggle('d-none', takeListPanel !== 'tests' && takeListPanel !== 'contests');
+    document.getElementById('takeProblemSearchWrap')?.classList.toggle('d-none', takeListPanel !== 'tests');
     document.getElementById('studentContestBoard')?.classList.toggle('d-none', takeListPanel !== 'contests');
     document.getElementById('studentJdBlockPanel')?.classList.toggle('d-none', takeListPanel !== 'jdblock');
     syncContestTypeNav('takeContestTypeNav', takeContestType, 'data-take-contest-type');
@@ -3246,7 +3296,9 @@
     if (managePanel === 'tests') renderManageCategoryTests();
     if (!rows.length) {
       bulkBar?.classList.add('d-none');
-      list.innerHTML = '<p class="text-muted-2 mb-0">No problems in the bank yet. Add one manually or generate with AI.</p>';
+      list.innerHTML = bank.length
+        ? '<p class="text-muted-2 mb-0">No problems match your search.</p>'
+        : '<p class="text-muted-2 mb-0">No problems in the bank yet. Add one manually or generate with AI.</p>';
       updateBankSelectionToolbar();
       return;
     }
@@ -5030,11 +5082,17 @@
     });
     document.getElementById('practiceSearch')?.addEventListener('input', (e) => {
       practiceSearch = e.target.value || '';
+      if (takeListPanel === 'tests') renderCategoryTestsView();
       renderPracticeProblemsList('student');
     });
     document.getElementById('managePracticeSearch')?.addEventListener('input', (e) => {
       managePracticeSearch = e.target.value || '';
+      renderManageCategoryTests();
       renderPracticeProblemsList('manage');
+    });
+    document.getElementById('bankProblemSearch')?.addEventListener('input', (e) => {
+      bankProblemSearch = e.target.value || '';
+      renderBank();
     });
     bindPracticeNav('takeContestTypeNav', (e) => {
       const link = e.target.closest('[data-take-contest-type]');

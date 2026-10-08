@@ -151,6 +151,12 @@
               <li class="nav-item"><a class="nav-link active py-1 px-2 small" href="#" data-take-contest-type="weekly">Weekly</a></li>
               <li class="nav-item"><a class="nav-link py-1 px-2 small" href="#" data-take-contest-type="monthly">Monthly</a></li>
             </ul>
+            <div class="mt-2" id="takeProblemSearchWrap">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="search" class="form-control" id="practiceSearch" placeholder="Search problems…" autocomplete="off"/>
+              </div>
+            </div>
           </div>
           <div id="testList" class="px-3 px-md-4 pb-3"></div>
           <div id="studentContestBoard" class="d-none px-3 px-md-4 pb-3 border-top"></div>
@@ -270,6 +276,10 @@
 
       <div id="manageTestsPanel">
         <p class="small text-muted-2 mb-3">Tests are grouped by topic from the question bank. Add or edit problems in the bank — each topic becomes a test for students.</p>
+        <div class="input-group input-group-sm mb-3" style="max-width:22rem">
+          <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+          <input type="search" class="form-control" id="managePracticeSearch" placeholder="Search problems…" autocomplete="off"/>
+        </div>
         <div id="manageTestsList"></div>
       </div>
 
@@ -327,12 +337,18 @@
           </div>
         </div>
         <div class="row g-2 mb-3" id="bankStats"></div>
-        <ul class="nav jd-block-tabs mb-3 flex-wrap" id="bankDifficultyNav">
-          <li class="nav-item"><a class="nav-link active" href="#" data-bank-difficulty="">All</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Easy">Easy</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Medium">Medium</a></li>
-          <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Hard">Hard</a></li>
-        </ul>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+          <ul class="nav jd-block-tabs mb-0 flex-wrap" id="bankDifficultyNav">
+            <li class="nav-item"><a class="nav-link active" href="#" data-bank-difficulty="">All</a></li>
+            <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Easy">Easy</a></li>
+            <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Medium">Medium</a></li>
+            <li class="nav-item"><a class="nav-link" href="#" data-bank-difficulty="Hard">Hard</a></li>
+          </ul>
+          <div class="input-group input-group-sm" style="max-width:22rem">
+            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+            <input type="search" class="form-control" id="bankProblemSearch" placeholder="Search problems…" autocomplete="off"/>
+          </div>
+        </div>
         <div id="bankBulkActions" class="d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 pb-2 border-bottom">
           <div class="form-check mb-0">
             <input class="form-check-input" type="checkbox" id="bankSelectAllVisible"/>
@@ -746,5 +762,5 @@
 <script src="js/coding-execution.js?v=20261005lang"></script>
 <script src="js/coding-service.js?v=20261007lang"></script>
 <script src="js/coding-exam.js?v=20261008judgeval"></script>
-<script src="js/coding-page.js?v=20261008bankdup"></script>
+<script src="js/coding-page.js?v=20261008probsearch"></script>
 </body></html>
