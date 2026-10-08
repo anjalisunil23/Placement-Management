@@ -4242,7 +4242,7 @@ final class OfficerDataService
             if (!is_array($record)) {
                 continue;
             }
-            if (AesApiService::normalizeStudRole($record) === 'student') {
+            if (AesApiService::normalizeStudRole($record) === 'student' && empty($record['noAdmno'])) {
                 continue;
             }
             $record['stud_role'] = 'Alumni';
@@ -4320,7 +4320,7 @@ final class OfficerDataService
     {
         $records = $this->alumniRecordsFromCampusDirectoryPayload($payload);
         if ($records !== []) {
-            return $records;
+            return $this->mergeMissingNoAdmnoAlumni($records, $payload);
         }
 
         $stored = (new \PMS\Models\StudentDetailsModel())->listStudRoleDirectoryRecords('alumni');
@@ -4329,6 +4329,83 @@ final class OfficerDataService
         }
 
         return $this->fetchAndStoreCampusAlumni();
+    }
+
+    /**
+     * The saved alumni file was built before rows with no admission number were kept.
+     * Pull those rows from AES once and append them.
+     *
+     * @param list<array<string, mixed>> $existing
+     * @param array<string, mixed> $payload
+     * @return list<array<string, mixed>>
+     */
+    private function mergeMissingNoAdmnoAlumni(array $existing, array $payload): array
+    {
+        $report = is_array($payload['lastSyncReport'] ?? null) ? $payload['lastSyncReport'] : [];
+        if (!empty($report['noAdmnoMergeAttempted'])) {
+            return $existing;
+        }
+        foreach ($existing as $record) {
+            if (is_array($record) && !empty($record['noAdmno'])) {
+                return $existing;
+            }
+        }
+
+        try {
+            $fresh = $this->aesApiForCampusDirectorySync()->fetchAllStudInfo4Placement(
+                ['stud_role' => 'alumni'],
+                true,
+                false,
+                true
+            );
+        } catch (\Throwable) {
+            return $existing;
+        }
+
+        $seen = [];
+        foreach ($existing as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+            $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            if ($key !== '') {
+                $seen[$key] = true;
+            }
+        }
+
+        $added = [];
+        foreach ($fresh as $record) {
+            if (!is_array($record) || empty($record['noAdmno'])) {
+                continue;
+            }
+            $key = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $record['stud_role'] = 'Alumni';
+            $record['studRole'] = 'alumni';
+            $added[] = $record;
+        }
+
+        $report['noAdmnoMergeAttempted'] = true;
+        $report['noAdmnoAdded'] = count($added);
+        $merged = array_merge($existing, $added);
+        try {
+            $studying = $this->studyingRecordsFromCampusDirectoryPayload($payload);
+            $this->writeCampusDirectorySnapshot(
+                $studying,
+                $this->stampAesAlumniRole($merged),
+                (string) ($payload['syncedBy'] ?? ''),
+                (string) ($payload['syncedAt'] ?? \PMS\Utils\DocumentHelper::now()),
+                (int) ($payload['studentAlumniOverlap'] ?? 0),
+                $report
+            );
+        } catch (\Throwable) {
+            return $merged;
+        }
+
+        return $merged;
     }
 
     /**

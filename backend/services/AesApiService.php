@@ -953,6 +953,9 @@ final class AesApiService
                 ?? $record['registerno']
                 ?? ''
             )));
+            if (in_array($key, ['0', 'NULL', '-', 'NA', 'N/A'], true)) {
+                $key = '';
+            }
             if ($key === '') {
                 if (!$keepRowsWithoutAdmno) {
                     continue;
@@ -3799,7 +3802,7 @@ final class AesApiService
      */
     private function isStudInfoRow(array $row): bool
     {
-        foreach (['stud_name', 'stud_class', 'stud_branch', 'stud_course', 'stud_cource_short', 'registerno', 'admno', 'stud_admno'] as $key) {
+        foreach (['stud_name', 'name', 'student_name', 'stud_class', 'stud_branch', 'stud_course', 'stud_cource_short', 'registerno', 'admno', 'stud_admno'] as $key) {
             if (!empty($row[$key]) && is_scalar($row[$key])) {
                 return true;
             }
