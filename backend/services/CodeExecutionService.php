@@ -365,6 +365,9 @@ final class CodeExecutionService
         if (($local['ok'] ?? false) === true || !$this->remoteFallbackEnabled()) {
             return false;
         }
+        if (!empty($local['timedOut']) || ($local['status'] ?? '') === 'Time Limit Exceeded') {
+            return false;
+        }
         if ($this->remoteOnly()) {
             return true;
         }
@@ -393,6 +396,9 @@ final class CodeExecutionService
         array $local
     ): array {
         if (($local['ok'] ?? false) === true) {
+            return $local;
+        }
+        if (!empty($local['timedOut']) || ($local['status'] ?? '') === 'Time Limit Exceeded') {
             return $local;
         }
         if (!$this->remoteFallbackEnabled()) {

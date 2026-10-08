@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace PMS\Services;
 
 use PMS\Utils\CodingDeployInfo;
+use PMS\Utils\CodingExpectedOracle;
+use PMS\Utils\CodingInputValidator;
 
 /**
  * Run student source against practice problem test cases (full inputs from DB).
@@ -36,7 +38,28 @@ final class CodingPracticeRunService
             'source' => $source,
             'stdin' => $stdinForCustom,
         ]);
-        $custom = $this->executeOnce($problem, $language, $source, $stdinForCustom, $timeLimitMs);
+
+        $inputCheck = CodingInputValidator::validate($problem, $stdinForCustom);
+        if (empty($inputCheck['ok'])) {
+            return $this->customInputErrorResult($problem, $stdinForCustom, $inputCheck);
+        }
+
+        $oracle = CodingExpectedOracle::resolve(
+            $problem,
+            $stdinForCustom,
+            is_array($inputCheck['parsed'] ?? null) ? $inputCheck['parsed'] : null,
+            $this->executor
+        );
+        $custom = $this->executeOnce(
+            $problem,
+            $language,
+            $source,
+            $stdinForCustom,
+            $timeLimitMs,
+            null,
+            $oracle['expected'],
+            $oracle['error']
+        );
 
         $all = array_values(array_filter(
             (array) ($problem['testCases'] ?? []),
@@ -70,8 +93,8 @@ final class CodingPracticeRunService
                 'revealed' => true,
                 'input' => $sample ? $input : '',
                 'expected' => $sample ? $ran['expected'] : '',
-                'output' => $ran['stdout'],
-                'stderr' => $ran['stderr'],
+                'output' => $sample ? $ran['stdout'] : '',
+                'stderr' => $sample ? $ran['stderr'] : '',
                 'stderrTrace' => $ran['stderrTrace'],
                 'errorSummary' => $ran['errorSummary'],
                 'errorDetail' => $ran['errorDetail'],
@@ -182,31 +205,123 @@ final class CodingPracticeRunService
      * @param array<string, mixed> $problem
      * @param array<string, mixed>|null $testCase when set, use this row's expected (hidden/sample grading)
      */
+    /**
+     * @param array<string, mixed> $problem
+     * @param array<string, mixed> $check
+     * @return array<string, mixed>
+     */
+    private function customInputErrorResult(array $problem, string $stdin, array $check): array
+    {
+        $all = array_values(array_filter(
+            (array) ($problem['testCases'] ?? []),
+            static fn ($tc): bool => is_array($tc)
+        ));
+        $summary = (string) ($check['summary'] ?? 'Custom Input Error');
+        $detail = (string) ($check['detail'] ?? '');
+        $cases = [];
+        foreach ($all as $i => $tc) {
+            if ($i > 0) {
+                break;
+            }
+            $sample = !empty($tc['sample']);
+            $label = trim((string) ($tc['label'] ?? ''));
+            if ($label === '') {
+                $label = $sample ? 'Sample Test Case' : 'Hidden Test Case 1';
+            }
+            $cases[] = [
+                'id' => (string) ($tc['id'] ?? 'tc-1'),
+                'label' => $label,
+                'sample' => $sample,
+                'hidden' => !$sample,
+                'revealed' => false,
+                'input' => '',
+                'expected' => '',
+                'output' => '',
+                'stderr' => '',
+                'status' => 'Not Run',
+                'passed' => false,
+                'index' => 1,
+            ];
+        }
+
+        return [
+            'overall' => 'Custom Input Error',
+            'custom' => [
+                'input' => $stdin,
+                'output' => '',
+                'expected' => '',
+                'stderr' => $detail !== '' ? $detail : $summary,
+                'stderrTrace' => $detail,
+                'errorSummary' => $summary,
+                'errorDetail' => $detail,
+                'status' => 'Custom Input Error',
+                'passed' => false,
+                'durationMs' => 0,
+                'execution' => [
+                    'exitCode' => 0,
+                    'engineStatus' => 'not_run',
+                    'stdout' => '',
+                    'stderr' => $detail,
+                    'timedOut' => false,
+                    'succeeded' => false,
+                    'execEngine' => '',
+                    'failureDetail' => $detail,
+                ],
+            ],
+            'results' => $cases,
+            'passedCount' => 0,
+            'totalCount' => count($all),
+            'visibleCount' => count($cases),
+            'at' => (int) round(microtime(true) * 1000),
+            'trace' => pms_coding_exec_debug_trace([
+                'source' => '',
+                'stdinCustom' => $stdin,
+                'customInputError' => $summary,
+            ]),
+            'meta' => CodingDeployInfo::meta(),
+        ];
+    }
+
     private function executeOnce(
         array $problem,
         string $language,
         string $source,
         string $stdin,
         int $timeLimitMs,
-        ?array $testCase = null
+        ?array $testCase = null,
+        mixed $expectedOverride = false,
+        string $oracleError = ''
     ): array {
         $stdin = str_replace("\r\n", "\n", str_replace("\r", "\n", $stdin));
         $exec = $this->executor->run($language, $source, $stdin, $timeLimitMs);
-        $expectedRaw = $this->resolveExpected($problem, $stdin, $testCase);
+        $expectedRaw = $expectedOverride !== false
+            ? ($expectedOverride === null ? null : (string) $expectedOverride)
+            : $this->resolveExpected($problem, $stdin, $testCase);
         $stdout = CodingTestCaseChecker::normalize((string) ($exec['stdout'] ?? ''));
         $expectedNorm = $expectedRaw === null ? '' : CodingTestCaseChecker::normalize($expectedRaw);
         $succeeded = CodingTestCaseChecker::executionSucceeded($exec);
-        $passed = CodingTestCaseChecker::passed($exec, $stdout, $expectedRaw);
+        $passed = $oracleError === '' && CodingTestCaseChecker::passed($exec, $stdout, $expectedRaw);
         $displayStatus = CodingTestCaseChecker::displayStatus($exec, $passed, $expectedRaw);
         $stderr = $succeeded ? '' : (string) ($exec['stderrTrace'] ?? $exec['stderr'] ?? '');
+        $errorSummary = $succeeded ? '' : (string) ($exec['errorSummary'] ?? '');
+        $errorDetail = $succeeded ? '' : (string) ($exec['errorDetail'] ?? '');
+        if ($oracleError !== '') {
+            $passed = false;
+            if ($succeeded) {
+                $displayStatus = 'Judge Error';
+                $stderr = $oracleError;
+                $errorSummary = $oracleError;
+                $errorDetail = $oracleError;
+            }
+        }
 
         return [
             'stdout' => $stdout,
             'expected' => $expectedRaw === null ? '' : $expectedNorm,
             'stderr' => $stderr,
             'stderrTrace' => $stderr,
-            'errorSummary' => $succeeded ? '' : (string) ($exec['errorSummary'] ?? ''),
-            'errorDetail' => $succeeded ? '' : (string) ($exec['errorDetail'] ?? ''),
+            'errorSummary' => $errorSummary,
+            'errorDetail' => $errorDetail,
             'status' => $displayStatus,
             'passed' => $passed,
             'durationMs' => (int) ($exec['durationMs'] ?? 0),

@@ -33,6 +33,8 @@ function pms_load_backend_utils(string $backendDir): void
         'CodingDeployInfo.php',
         'CodingExecutionErrorFormatter.php',
         'CodingLanguage.php',
+        'CodingInputValidator.php',
+        'CodingExpectedOracle.php',
     ] as $utilFile) {
         $path = $utilsDir . '/' . $utilFile;
         if (is_readable($path)) {

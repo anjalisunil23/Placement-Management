@@ -68,6 +68,18 @@ final class WandboxExecutionClient
 
         $response = $this->post($this->baseUrl . '/api/compile.json', $payload);
         if ($response === null) {
+            if (stripos($this->lastError, 'timed out') !== false) {
+                return [
+                    'ok' => false,
+                    'status' => 'Time Limit Exceeded',
+                    'stdout' => '',
+                    'stderr' => 'Time Limit Exceeded',
+                    'timedOut' => true,
+                    'durationMs' => (int) round((microtime(true) - $started) * 1000),
+                    'exit_code' => 124,
+                ];
+            }
+
             return null;
         }
 

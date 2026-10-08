@@ -192,6 +192,7 @@
     let timerId = null;
     let editor = null;
     let running = false;
+    let runSeq = 0;
     let submitting = false;
     let beforeUnloadBound = false;
     let examLockdown = false;
@@ -543,6 +544,8 @@
       const s = String(status || '');
       if (s === 'Passed' || s === 'Accepted') return { cls: 'success', text: '✓ Test Case Passed' };
       if (s === 'Execution Successful') return { cls: 'danger', text: '✕ Wrong Answer' };
+      if (s === 'Custom Input Error') return { cls: 'danger', text: '✕ Custom Input Error' };
+      if (s === 'Judge Error') return { cls: 'warning', text: '⚠ Judge Error' };
       if (s === 'Wrong Answer') return { cls: 'danger', text: '✕ Wrong Answer' };
       if (s === 'Syntax Error') return { cls: 'danger', text: '✕ Syntax Error' };
       if (s === 'Runtime Error') return { cls: 'danger', text: '✕ Runtime Error' };
@@ -556,6 +559,7 @@
     function caseBadge(status) {
       const s = String(status || '');
       if (s === 'Passed' || s === 'Accepted') return { cls: 'success', text: '✓ Passed' };
+      if (s === 'Custom Input Error') return { cls: 'danger', text: '✕ Custom Input Error' };
       if (s === 'Execution Successful' || s === 'Wrong Answer' || s === 'Failed') return { cls: 'danger', text: '✕ Failed' };
       if (s === 'Syntax Error' || s === 'Runtime Error' || s === 'Compilation Error') {
         return { cls: 'danger', text: '✕ ' + s };
@@ -570,7 +574,7 @@
       }
       const status = String(custom?.status || '');
       const stderr = String(custom?.stderr || '').trim();
-      const isError = ['Syntax Error', 'Runtime Error', 'Compilation Error', 'Time Limit Exceeded'].includes(status);
+      const isError = ['Syntax Error', 'Runtime Error', 'Compilation Error', 'Time Limit Exceeded', 'Custom Input Error', 'Judge Error'].includes(status);
       if (!isError && !stderr) return '';
       const parts = [];
       if (isError) parts.push(status);
@@ -597,9 +601,12 @@
       return example ? String(example.output ?? '') : '';
     }
 
-    function visibleExpectedOutput(runExpected, q) {
+    function visibleExpectedOutput(runExpected, q, runStatus) {
+      if (runStatus === 'Custom Input Error' || runStatus === 'Judge Error') return String(runExpected ?? '');
       const fromRun = String(runExpected ?? '');
-      return fromRun !== '' ? fromRun : sampleExpectedOutput(q);
+      if (fromRun !== '') return fromRun;
+      if (runStatus) return '';
+      return sampleExpectedOutput(q);
     }
 
     function renderRunPanel(run, runningNow) {
@@ -612,7 +619,7 @@
       if (runningNow) {
         if (status) status.innerHTML = '<span class="badge-soft info">Running code...</span>';
         if (out) out.textContent = '';
-        if (expected) expected.textContent = visibleExpectedOutput(null, q);
+        if (expected) expected.textContent = sampleExpectedOutput(q);
         if (stderr) {
           stderr.textContent = '';
           stderr.classList.add('d-none');
@@ -643,10 +650,19 @@
         const outText = String(custom.output ?? '');
         out.textContent = outText !== '' ? outText : ((runStatus === 'Wrong Answer' || runStatus === 'Execution Successful') ? 'No output' : '');
       }
-      if (expected) expected.textContent = visibleExpectedOutput(custom.expected, currentQ());
+      if (expected) expected.textContent = visibleExpectedOutput(custom.expected, currentQ(), runStatus);
       const detail = formatRunError(custom);
       if (stderr) {
-        if ((runStatus === 'Wrong Answer' || runStatus === 'Execution Successful') && String(custom.output ?? '').trim() === '') {
+        if (runStatus === 'Custom Input Error' || runStatus === 'Judge Error') {
+          if (detail) {
+            if (detail.includes('<')) stderr.innerHTML = detail;
+            else stderr.textContent = detail;
+            stderr.classList.remove('d-none');
+          } else {
+            stderr.textContent = String(custom.errorSummary || custom.stderr || runStatus);
+            stderr.classList.remove('d-none');
+          }
+        } else if ((runStatus === 'Wrong Answer' || runStatus === 'Execution Successful') && String(custom.output ?? '').trim() === '') {
           stderr.innerHTML = '<div class="small text-muted-2">The program ran, but the output did not match the expected output.</div>';
           stderr.classList.remove('d-none');
         } else if (detail) {
@@ -860,6 +876,7 @@
         normalized.customInput = stdin;
       }
       running = true;
+      const seq = ++runSeq;
       setBusy(true);
       el('run-state').textContent = 'Running code...';
       renderRunPanel(null, true);
@@ -878,6 +895,7 @@
             code: source,
             stdin,
           });
+        if (seq !== runSeq) return;
         const normalized = normalizeAnswer(q, state.answers[q.id] || createAnswerState(q));
         normalized.lastRuns[language] = result;
         normalized.lastRun = result;
@@ -886,6 +904,7 @@
         renderRunPanel(result, false);
         renderNav();
       } catch (err) {
+        if (seq !== runSeq) return;
         el('run-state').textContent = '';
         const raw = String(err?.message || '');
         const message = /unavailable|is not defined|failed to load|Failed to fetch|NetworkError/i.test(raw)
@@ -900,8 +919,10 @@
         }, false);
         toast(message, 'error');
       } finally {
-        running = false;
-        setBusy(false);
+        if (seq === runSeq) {
+          running = false;
+          setBusy(false);
+        }
       }
     }
 
@@ -1127,6 +1148,18 @@
         </div>`;
       }).join('') || '<p class="text-muted-2 mb-0">No question analysis available.</p>';
     }
+
+    el('stdin')?.addEventListener('input', () => {
+      const q = currentQ();
+      if (!q || running) return;
+      const ans = state.answers[q.id];
+      if (!ans?.lastRun) return;
+      const lang = ans.language || el('language')?.value || 'Python';
+      ans.lastRun = null;
+      if (ans.lastRuns) ans.lastRuns[lang] = null;
+      renderRunPanel(null, false);
+      updateSubmitVisibility(null);
+    });
 
     el('language')?.addEventListener('change', () => {
       const q = currentQ();

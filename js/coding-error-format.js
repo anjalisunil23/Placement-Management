@@ -8,6 +8,8 @@
     'Syntax Error',
     'Time Limit Exceeded',
     'Memory Limit Exceeded',
+    'Custom Input Error',
+    'Judge Error',
   ]);
 
   function coerceOkFlag(ok) {
@@ -182,16 +184,20 @@
    */
   function reconcilePracticeRunRow(row) {
     const r = row && typeof row === 'object' ? { ...row } : {};
+    const status = String(r.status || '');
+    if (status === 'Custom Input Error' || status === 'Judge Error') {
+      return r;
+    }
     const ex = r.execution;
     const failStatuses = ERROR_STATUSES;
     const procOk = executionSucceeded(apiExecutionRow(ex));
-    if (!procOk || !failStatuses.has(String(r.status || ''))) {
+    if (!procOk || !failStatuses.has(status)) {
       return r;
     }
-    const status = r.passed ? 'Passed' : 'Wrong Answer';
+    const nextStatus = r.passed ? 'Passed' : 'Wrong Answer';
     return {
       ...r,
-      status,
+      status: nextStatus,
       stderr: '',
       stderrTrace: '',
       errorSummary: '',
@@ -215,6 +221,7 @@
 
   function resolveRunStatus(custom) {
     const explicit = String(custom?.status || '');
+    if (explicit === 'Custom Input Error' || explicit === 'Judge Error') return explicit;
     if (ERROR_STATUSES.has(explicit)) return explicit;
     if (custom?.passed === true && explicit !== 'Execution Successful') {
       return explicit === 'Accepted' ? 'Passed' : (explicit || 'Passed');
