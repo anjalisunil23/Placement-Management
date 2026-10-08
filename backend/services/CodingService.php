@@ -260,7 +260,7 @@ final class CodingService
     public function listBank(array $user, ?string $category = null, ?string $difficulty = null): array
     {
         AptitudeAccessService::requireCodingManager($user);
-        return $this->bank->listProblems($category, $difficulty);
+        return $this->bank->listProblems($category, $difficulty, 2000);
     }
 
     /**
@@ -456,6 +456,19 @@ final class CodingService
         AptitudeAccessService::requireCodingManager($user);
         if (trim((string) ($data['title'] ?? '')) === '') {
             Response::error('Enter a problem title.', 422);
+        }
+        $exceptId = ($id && Security::isValidId($id)) ? $id : null;
+        $previous = $exceptId ? $this->bank->findById($exceptId) : null;
+        $similar = $this->bank->findFirstSimilar($data, $exceptId);
+        $previousTitle = CodingProblemBankModel::compareKey((string) ($previous['title'] ?? ''));
+        $nextTitle = CodingProblemBankModel::compareKey((string) ($data['title'] ?? ''));
+        $titleChanged = !$previous || $previousTitle !== $nextTitle;
+        if ($similar && $titleChanged) {
+            $existingTitle = trim((string) ($similar['title'] ?? 'an existing question'));
+            Response::error(
+                'A similar question already exists in the question bank: "' . $existingTitle . '". Choose it from the existing questions list instead of adding a duplicate.',
+                422
+            );
         }
         $savedId = $this->bank->saveProblem($data, $id);
         $doc = $this->bank->findById($savedId);

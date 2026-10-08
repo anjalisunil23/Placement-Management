@@ -3272,12 +3272,154 @@
     updateBankSelectionToolbar();
   }
 
-  function openBankProblemForm(q = null) {
+  const PROBLEM_TITLE_STOP = new Set(['the', 'and', 'for', 'with', 'from', 'that', 'this', 'into', 'your', 'you', 'are', 'was', 'were', 'problem', 'question', 'questions']);
+
+  function problemCompareKey(text) {
+    return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function extraTitleWordsAreFiller(longer, shorter) {
+    const extra = longer.replace(shorter, ' ').replace(/\s+/g, ' ').trim();
+    if (!extra) return true;
+    const filler = new Set(['problem', 'question', 'questions', 'using', 'with', 'and', 'the', 'for', 'from', 'into', 'version']);
+    return extra.split(' ').every((word) => word.length <= 2 || filler.has(word));
+  }
+
+  function problemTitleTokens(text) {
+    return problemCompareKey(text).split(' ').filter((word) => word.length > 2 && !PROBLEM_TITLE_STOP.has(word));
+  }
+
+  function titlesAreSimilar(left, right) {
+    const a = problemCompareKey(left);
+    const b = problemCompareKey(right);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const coreA = problemTitleTokens(left).join(' ');
+    const coreB = problemTitleTokens(right).join(' ');
+    if (coreA && coreA === coreB) return true;
+    const shorter = a.length <= b.length ? a : b;
+    const longer = a.length <= b.length ? b : a;
+    if (shorter.length >= 12 && longer.includes(shorter) && extraTitleWordsAreFiller(longer, shorter)) return true;
+    const tokensA = problemTitleTokens(left);
+    const tokensB = problemTitleTokens(right);
+    if (tokensA.length < 2 || tokensB.length < 2) return false;
+    const setB = new Set(tokensB);
+    let inter = 0;
+    tokensA.forEach((word) => { if (setB.has(word)) inter += 1; });
+    const union = new Set([...tokensA, ...tokensB]).size;
+    return union > 0 && inter / union >= 0.75;
+  }
+
+  function sameTopicScope(a, b) {
+    if (normalizeCodingTopic(a?.category) !== normalizeCodingTopic(b?.category)) return false;
+    const topicA = problemCompareKey(a?.topic);
+    const topicB = problemCompareKey(b?.topic);
+    if (!topicA || !topicB) return true;
+    return topicA === topicB;
+  }
+
+  function problemsAreSimilar(a, b) {
+    if (titlesAreSimilar(a?.title, b?.title)) return true;
+    if (!sameTopicScope(a, b)) return false;
+    const left = problemCompareKey(a?.description).slice(0, 80);
+    const right = problemCompareKey(b?.description).slice(0, 80);
+    return left.length >= 80 && left === right;
+  }
+
+  function bankProblemsForTopic(category, topic = '') {
+    const cat = normalizeCodingTopic(category);
+    const topicKey = problemCompareKey(topic);
+    return bank.filter((q) => {
+      if (normalizeCodingTopic(q.category) !== cat) return false;
+      if (!topicKey) return true;
+      const have = problemCompareKey(q.topic);
+      return !have || have === topicKey;
+    });
+  }
+
+  function findSimilarBankProblem(candidate, exceptId = '') {
+    const skip = String(exceptId || '');
+    return bank.find((q) => String(q.id || '') !== skip && problemsAreSimilar(candidate, q)) || null;
+  }
+
+  async function ensureBankLoaded() {
+    try {
+      const rows = await CodingService.listBank();
+      if (Array.isArray(rows)) bank = rows;
+    } catch (err) {
+      /* Keep questions already loaded for the dropdown. */
+    }
+  }
+
+  function currentBankEditorCategory() {
+    return document.getElementById('bpEditor')?.querySelector('[data-f="category"]')?.value || 'Algorithms';
+  }
+
+  function updateBankSimilarWarning() {
+    const warn = document.getElementById('bpSimilarWarning');
+    const host = document.getElementById('bpEditor')?.querySelector('[data-problem]');
+    if (!warn || !host) return;
+    const title = host.querySelector('[data-f="title"]')?.value || '';
+    const description = host.querySelector('[data-f="description"]')?.value || '';
+    const currentId = document.getElementById('bpId')?.value || '';
+    const original = bank.find((q) => String(q.id) === String(currentId));
+    if (original && problemCompareKey(original.title) === problemCompareKey(title)) {
+      warn.classList.add('d-none');
+      warn.textContent = '';
+      return;
+    }
+    const hit = findSimilarBankProblem({
+      title,
+      description,
+      category: currentBankEditorCategory(),
+      topic: original?.topic || '',
+    }, currentId);
+    if (!hit) {
+      warn.classList.add('d-none');
+      warn.textContent = '';
+      return;
+    }
+    warn.classList.remove('d-none');
+    warn.textContent = `A similar question already exists: "${hit.title || 'Untitled'}". Choose it above instead of saving a duplicate.`;
+  }
+
+  function refreshBankSimilarDropdown() {
+    const sel = document.getElementById('bpSimilarTopic');
+    const hint = document.getElementById('bpSimilarHint');
+    if (!sel) return;
+    const category = currentBankEditorCategory();
+    const currentId = document.getElementById('bpId')?.value || '';
+    const rows = bankProblemsForTopic(category, '').filter((q) => String(q.id || '') !== String(currentId));
+    const label = rows.length
+      ? `Write a new question (${rows.length} already in ${category})`
+      : `Write a new question (none in ${category} yet)`;
+    sel.innerHTML = `<option value="">${esc(label)}</option>${rows.map((q) =>
+      `<option value="${esc(q.id)}">${esc(q.title || 'Untitled')} · ${esc(q.difficulty || 'Medium')}</option>`
+    ).join('')}`;
+    if (hint) {
+      hint.textContent = rows.length
+        ? 'Choose a question already in this topic to edit it. A new question must be different from these.'
+        : 'No questions in this topic yet. The one you save will be added as new.';
+    }
+    updateBankSimilarWarning();
+  }
+
+  function bindBankProblemEditor() {
+    const host = document.getElementById('bpEditor');
+    host?.querySelector('[data-f="category"]')?.addEventListener('change', refreshBankSimilarDropdown);
+    host?.querySelector('[data-f="title"]')?.addEventListener('input', updateBankSimilarWarning);
+    host?.querySelector('[data-f="description"]')?.addEventListener('input', updateBankSimilarWarning);
+    refreshBankSimilarDropdown();
+  }
+
+  async function openBankProblemForm(q = null) {
+    await ensureBankLoaded();
     document.getElementById('bankProblemTitle').textContent = q ? 'Edit bank problem' : 'Add bank problem';
     document.getElementById('bpId').value = q?.id || '';
     const host = document.getElementById('bpEditor');
     host.innerHTML = problemEditorHtml(q || emptyProblem());
     host.querySelector('[data-remove-problem]')?.classList.add('d-none');
+    bindBankProblemEditor();
     bankProblemModal.show();
   }
 
@@ -4423,6 +4565,7 @@
         ? 'Generate JD-based coding problems with OpenAI. Review before saving to the Company Block — nothing is published automatically.'
         : 'Generate coding problems with OpenAI, then review and save them to the problem bank.';
     }
+    refreshCodAiExistingDropdown();
     const instr = document.getElementById('codAiInstructions');
     if (!instr) return;
     if (jd) {
@@ -4552,6 +4695,7 @@
       sel.innerHTML = '<option value="">Select category first…</option>';
       sel.disabled = true;
       sel.value = '';
+      refreshCodAiExistingDropdown();
       return;
     }
     sel.disabled = false;
@@ -4564,6 +4708,39 @@
       html += '</optgroup>';
     });
     sel.innerHTML = html;
+    refreshCodAiExistingDropdown();
+  }
+
+  function refreshCodAiExistingDropdown() {
+    const sel = document.getElementById('codAiExisting');
+    const hint = document.getElementById('codAiExistingHint');
+    const wrap = document.getElementById('codAiExistingWrap');
+    if (!sel) return;
+    if (getCodAiSourceMode() === 'jd') {
+      wrap?.classList.add('d-none');
+      return;
+    }
+    wrap?.classList.remove('d-none');
+    const category = (document.getElementById('codAiCategory')?.value || '').trim();
+    const topic = (document.getElementById('codAiTopic')?.value || '').trim();
+    if (!category || !topic) {
+      sel.disabled = true;
+      sel.innerHTML = '<option value="">Select a topic to see existing questions</option>';
+      if (hint) hint.textContent = 'Generated questions will be different from questions already in this topic.';
+      return;
+    }
+    const rows = bankProblemsForTopic(category, topic);
+    if (!rows.length) {
+      sel.disabled = true;
+      sel.innerHTML = '<option value="">No questions in this topic yet</option>';
+      if (hint) hint.textContent = 'Nothing similar is in the bank yet. New questions will be saved as originals.';
+      return;
+    }
+    sel.disabled = false;
+    sel.innerHTML = `<option value="">${rows.length} existing question${rows.length === 1 ? '' : 's'} in ${esc(topic)}</option>${rows.map((q) =>
+      `<option value="${esc(q.id)}">${esc(q.title || 'Untitled')} · ${esc(q.difficulty || 'Medium')}</option>`
+    ).join('')}`;
+    if (hint) hint.textContent = 'These stay in the bank. A new generated question will be different from them.';
   }
 
   async function openCodAiModal(opts = {}) {
@@ -4584,6 +4761,8 @@
       delete instr.dataset.userEdited;
     }
     updateCodAiSourceModeUI();
+    await ensureBankLoaded();
+    refreshCodAiExistingDropdown();
     bindCodAiJdDropzone();
     aiLastFormParams = { companyId: opts.companyId || '' };
     showCodAiForm();
@@ -4711,11 +4890,14 @@
       }
       const requested = Number(data.requested || params.count || 0);
       const received = Number(data.received || aiPreviewProblems.length);
-      if (requested > 0 && received >= requested) {
-        toastMsg(`Generated ${received} problem${received === 1 ? '' : 's'}.`, 'success');
-      } else if (requested > 0 && received < requested) {
-        toastMsg(`Generated ${received} of ${requested} requested problems.`, 'info');
+      const skipped = Number(data.skippedDuplicates || 0);
+      let msg = requested > 0 && received < requested
+        ? `Generated ${received} of ${requested} requested problems.`
+        : `Generated ${received} problem${received === 1 ? '' : 's'}.`;
+      if (skipped > 0) {
+        msg += ` ${skipped} matched questions already in this topic and ${skipped === 1 ? 'was' : 'were'} not used.`;
       }
+      toastMsg(msg, skipped > 0 || (requested > 0 && received < requested) ? 'info' : 'success');
       showCodAiPreviewPanel();
       renderCodAiPreview();
     } catch (err) {
@@ -4772,7 +4954,10 @@
         applyManagePanel('jd');
       } else {
       const data = await CodingService.saveAiProblems(selected);
-      toastMsg(`Saved ${data?.added ?? selected.length} problem(s) to the bank.`, 'success');
+      const skipped = Array.isArray(data?.skipped) ? data.skipped.length : 0;
+      const savedCount = data?.added ?? selected.length;
+      const savedMsg = `Saved ${savedCount} problem(s) to the bank.`;
+      toastMsg(skipped ? `${savedMsg} ${skipped} duplicate question(s) were left out.` : savedMsg, skipped ? 'info' : 'success');
       bank = await CodingService.listBank();
       applyManagePanel('bank');
       renderBank();
@@ -5070,6 +5255,32 @@
     document.getElementById('codAiCategory')?.addEventListener('change', (e) => {
       fillCodAiTopicSelect(e.target.value || '');
     });
+    document.getElementById('codAiTopic')?.addEventListener('change', () => refreshCodAiExistingDropdown());
+    document.getElementById('codAiExisting')?.addEventListener('change', (e) => {
+      const hint = document.getElementById('codAiExistingHint');
+      const picked = bank.find((q) => String(q.id) === String(e.target.value || ''));
+      if (!hint) return;
+      if (!picked) {
+        const topic = (document.getElementById('codAiTopic')?.value || '').trim();
+        const count = bankProblemsForTopic(document.getElementById('codAiCategory')?.value || '', topic).length;
+        hint.textContent = count
+          ? 'These stay in the bank. A new generated question will be different from them.'
+          : 'Nothing similar is in the bank yet. New questions will be saved as originals.';
+        return;
+      }
+      const blurb = String(picked.description || '').trim();
+      hint.textContent = blurb
+        ? `"${picked.title}" is already in the bank. ${blurb.slice(0, 180)}`
+        : `"${picked.title}" is already in the bank and will not be generated again.`;
+    });
+    document.getElementById('bpSimilarTopic')?.addEventListener('change', (e) => {
+      const id = e.target.value;
+      if (!id) return;
+      const q = bank.find((x) => String(x.id) === String(id));
+      if (!q) return;
+      openBankProblemForm(q);
+      toastMsg('This question already exists. Opened it so you can edit it instead of adding a duplicate.', 'info');
+    });
     document.getElementById('btnCodAiAddRow')?.addEventListener('click', () => addCodAiGenRow());
     document.getElementById('btnCodAiRun')?.addEventListener('click', () => runCodAiGenerate());
     document.getElementById('btnCodAiSave')?.addEventListener('click', () => saveCodAiSelected());
@@ -5156,8 +5367,17 @@
       const payload = collectProblem(host);
       payload.id = document.getElementById('bpId').value.trim() || payload.id;
       payload.category = payload.category || 'Algorithms';
+      const original = bank.find((q) => String(q.id) === String(payload.id));
+      payload.topic = original?.topic || '';
       if (!payload.title) {
         toastMsg('Enter a problem title.', 'error');
+        return;
+      }
+      const titleUnchanged = original && problemCompareKey(original.title) === problemCompareKey(payload.title);
+      const similar = titleUnchanged ? null : findSimilarBankProblem(payload, payload.id);
+      if (similar) {
+        updateBankSimilarWarning();
+        toastMsg(`A similar question already exists: "${similar.title || 'Untitled'}". Choose it from the existing questions list.`, 'error');
         return;
       }
       try {

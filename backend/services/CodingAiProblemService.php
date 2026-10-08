@@ -54,18 +54,30 @@ final class CodingAiProblemService
             throw new \InvalidArgumentException('Add at least one generation row with a problem count.');
         }
 
+        $avoid = $this->bankSnapshots($category, $topic);
         $merged = [];
+        $skippedDuplicates = 0;
         foreach ($batches as $batch) {
-            $result = $this->generate(
-                $category,
-                $topic,
-                (string) ($batch['difficulty'] ?? 'Medium'),
-                (int) ($batch['count'] ?? 0),
-                $instructions
-            );
+            try {
+                $result = $this->generate(
+                    $category,
+                    $topic,
+                    (string) ($batch['difficulty'] ?? 'Medium'),
+                    (int) ($batch['count'] ?? 0),
+                    $instructions,
+                    $avoid
+                );
+            } catch (\RuntimeException $e) {
+                if ($merged === []) {
+                    throw $e;
+                }
+                break;
+            }
+            $skippedDuplicates += (int) ($result['skippedDuplicates'] ?? 0);
             foreach ($result['problems'] ?? [] as $problem) {
                 if (is_array($problem)) {
                     $merged[] = $problem;
+                    $avoid[] = $problem;
                 }
             }
         }
@@ -90,13 +102,15 @@ final class CodingAiProblemService
             'requested' => $requested,
             'received' => count($preview),
             'partial' => count($preview) < $requested,
+            'skippedDuplicates' => $skippedDuplicates,
         ];
     }
 
     /**
+     * @param list<array<string, mixed>>|null $avoid problems already in the bank, plus any accepted earlier in this request
      * @return array<string, mixed>
      */
-    public function generate(string $category, string $topic, string $difficulty, int $count, string $instructions = ''): array
+    public function generate(string $category, string $topic, string $difficulty, int $count, string $instructions = '', ?array $avoid = null): array
     {
         $category = $this->normalizeCategory(trim($category));
         $difficulty = $this->normalizeDifficulty($difficulty);
@@ -109,40 +123,45 @@ final class CodingAiProblemService
             throw new \InvalidArgumentException('Topic is required.');
         }
 
-        $system = <<<'SYSTEM'
-You generate stdin/stdout coding problems for a university placement portal (HackerRank / CodeChef style).
-Students write a standalone Python program that reads from stdin and prints to stdout.
-NEVER generate LeetCode-style problems: no class stubs, no method signatures to fill in, no multithreading puzzles, no "modify the given code", no problem numbers like "1115.".
-Return ONLY valid JSON with no markdown or commentary.
-SYSTEM;
-        $user = $this->buildPrompt($category, $topic, $difficulty, $count, $instructions);
-
-        try {
-            $raw = $this->openai->generateJson($system, $user);
-        } catch (\RuntimeException $e) {
-            throw $e;
-        } catch (\Throwable $e) {
-            error_log('[PMS coding AI] generate failed: ' . $e->getMessage());
-            throw new \RuntimeException('AI generation is temporarily unavailable. Please try again.');
-        }
-
-        $problems = $this->extractProblems($raw);
-
-        $validated = [];
-        foreach ($problems as $i => $p) {
-            $mapped = $this->mapAiProblem(is_array($p) ? $p : [], $category, $difficulty);
-            if ($mapped !== null) {
-                $validated[] = $mapped;
+        $avoid = $avoid ?? $this->bankSnapshots($category, $topic);
+        $accepted = [];
+        $skippedDuplicates = 0;
+        $attempts = 0;
+        while (count($accepted) < $count && $attempts < 2) {
+            $need = $count - count($accepted);
+            try {
+                $batch = $this->requestAiProblems(
+                    $category,
+                    $topic,
+                    $difficulty,
+                    $need,
+                    $instructions,
+                    array_merge($avoid, $accepted)
+                );
+            } catch (\RuntimeException $e) {
+                if ($accepted === []) {
+                    throw $e;
+                }
+                break;
+            }
+            [$fresh, $batchSkipped] = $this->withoutSimilar($batch, array_merge($avoid, $accepted));
+            $skippedDuplicates += $batchSkipped;
+            foreach ($fresh as $problem) {
+                $accepted[] = $problem;
+            }
+            $attempts++;
+            if ($fresh === []) {
+                break;
             }
         }
-        if ($validated === []) {
+        if ($accepted === []) {
             throw new \RuntimeException(
-                'No valid stdin/stdout problems were generated. Avoid LeetCode-style class/threading templates and ensure 3 test cases per problem. Try again.'
+                'Every generated problem already exists in this topic. Try another topic or add extra instructions so the questions are different.'
             );
         }
 
         $preview = [];
-        foreach ($validated as $i => $q) {
+        foreach ($accepted as $i => $q) {
             $preview[] = array_merge($q, [
                 'tempId' => 'ai-' . ($i + 1) . '-' . bin2hex(random_bytes(4)),
                 'selected' => true,
@@ -154,6 +173,7 @@ SYSTEM;
             'questions' => $preview,
             'requested' => $count,
             'received' => count($preview),
+            'skippedDuplicates' => $skippedDuplicates,
         ];
     }
 
@@ -166,6 +186,7 @@ SYSTEM;
         $bank = new CodingProblemBankModel();
         $added = 0;
         $skipped = [];
+        $staged = [];
         foreach (array_values($problems) as $i => $q) {
             if (!is_array($q)) {
                 continue;
@@ -179,16 +200,40 @@ SYSTEM;
                     'JD-based problems must be saved to the Company Block, not the general question bank.'
                 );
             }
-            $mapped = $this->mapAiProblem($q, (string) ($q['category'] ?? 'Programming'), (string) ($q['difficulty'] ?? 'Medium'));
+            $mapped = $this->mapAiProblem(
+                $q,
+                (string) ($q['category'] ?? 'Programming'),
+                (string) ($q['difficulty'] ?? 'Medium'),
+                (string) ($q['topic'] ?? '')
+            );
             if ($mapped === null || trim((string) ($mapped['title'] ?? '')) === '') {
                 $skipped[] = 'Problem ' . ($i + 1) . ' was incomplete.';
                 continue;
             }
+            $duplicateTitle = '';
+            foreach ($staged as $prev) {
+                if (CodingProblemBankModel::problemsAreSimilar($mapped, $prev)) {
+                    $duplicateTitle = (string) ($prev['title'] ?? '');
+                    break;
+                }
+            }
+            if ($duplicateTitle === '') {
+                $existing = $bank->findFirstSimilar($mapped);
+                if ($existing) {
+                    $duplicateTitle = (string) ($existing['title'] ?? '');
+                }
+            }
+            if ($duplicateTitle !== '') {
+                $skipped[] = '"' . $mapped['title'] . '" matches an existing question: "' . $duplicateTitle . '".';
+                continue;
+            }
             $bank->saveProblem($mapped, null);
+            $staged[] = $mapped;
             $added++;
         }
         if ($added === 0) {
-            throw new \RuntimeException('No problems were saved. Select at least one complete problem.');
+            $detail = $skipped !== [] ? ' ' . implode(' ', array_slice($skipped, 0, 3)) : '';
+            throw new \RuntimeException('No problems were saved. Select at least one complete problem that is not already in the question bank.' . $detail);
         }
         return ['added' => $added, 'skipped' => $skipped];
     }
@@ -204,10 +249,156 @@ SYSTEM;
         return in_array($raw, CodingTestModel::DIFFICULTIES, true) ? $raw : 'Medium';
     }
 
-    private function buildPrompt(string $category, string $topic, string $difficulty, int $count, string $instructions): string
+    /**
+     * Bank problems, with the requested topic first so the prompt lists those titles.
+     *
+     * @return list<array{id:string,title:string,description:string,category:string,topic:string}>
+     */
+    private function bankSnapshots(string $category = '', string $topic = ''): array
+    {
+        $preferred = [];
+        $rest = [];
+        foreach ((new CodingProblemBankModel())->listProblems(null, null, 5000) as $row) {
+            $snap = [
+                'id' => (string) ($row['id'] ?? ''),
+                'title' => (string) ($row['title'] ?? ''),
+                'description' => (string) ($row['description'] ?? ''),
+                'category' => (string) ($row['category'] ?? ''),
+                'topic' => (string) ($row['topic'] ?? ''),
+            ];
+            if ($category !== '' && CodingProblemBankModel::inSimilarTopic($snap, $category, $topic)) {
+                $preferred[] = $snap;
+            } else {
+                $rest[] = $snap;
+            }
+        }
+
+        return array_merge($preferred, $rest);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $avoid
+     */
+    private function avoidPromptBlock(array $avoid): string
+    {
+        $lines = [];
+        foreach ($avoid as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $title = trim((string) ($row['title'] ?? ''));
+            if ($title === '') {
+                continue;
+            }
+            $desc = trim(preg_replace('/\s+/', ' ', (string) ($row['description'] ?? '')) ?? '');
+            if (strlen($desc) > 140) {
+                $desc = substr($desc, 0, 137) . '...';
+            }
+            $lines[] = $desc !== '' ? "- {$title}: {$desc}" : "- {$title}";
+            if (count($lines) >= 80) {
+                break;
+            }
+        }
+        if ($lines === []) {
+            return "No problems are stored for this topic yet. Create original problems.\n";
+        }
+        $list = implode("\n", $lines);
+        $more = count($avoid) > count($lines)
+            ? "\n(" . (count($avoid) - count($lines)) . " more problems are already stored. Do not repeat those either.)\n"
+            : '';
+
+        return <<<BLOCK
+These problems already exist. Do NOT generate them again, and do NOT rewrite the same question with a different title:
+{$list}
+{$more}
+Every problem you return must be a different question from the list above and from the other problems in this response.
+BLOCK;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $avoid
+     * @return list<array<string, mixed>>
+     */
+    private function requestAiProblems(
+        string $category,
+        string $topic,
+        string $difficulty,
+        int $count,
+        string $instructions,
+        array $avoid
+    ): array {
+        $system = <<<'SYSTEM'
+You generate stdin/stdout coding problems for a university placement portal (HackerRank / CodeChef style).
+Students write a standalone Python program that reads from stdin and prints to stdout.
+NEVER generate LeetCode-style problems: no class stubs, no method signatures to fill in, no multithreading puzzles, no "modify the given code", no problem numbers like "1115.".
+If existing problems are listed, every problem you return must be different from those.
+Return ONLY valid JSON with no markdown or commentary.
+SYSTEM;
+        $user = $this->buildPrompt($category, $topic, $difficulty, $count, $instructions, $avoid);
+
+        try {
+            $raw = $this->openai->generateJson($system, $user);
+        } catch (\RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            error_log('[PMS coding AI] generate failed: ' . $e->getMessage());
+            throw new \RuntimeException('AI generation is temporarily unavailable. Please try again.');
+        }
+
+        $validated = [];
+        foreach ($this->extractProblems($raw) as $p) {
+            $mapped = $this->mapAiProblem(is_array($p) ? $p : [], $category, $difficulty, $topic);
+            if ($mapped !== null) {
+                $validated[] = $mapped;
+            }
+        }
+        if ($validated === []) {
+            throw new \RuntimeException(
+                'No valid stdin/stdout problems were generated. Avoid LeetCode-style class/threading templates and ensure 3 test cases per problem. Try again.'
+            );
+        }
+
+        return $validated;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $candidates
+     * @param list<array<string, mixed>> $existing
+     * @return array{0:list<array<string, mixed>>,1:int}
+     */
+    private function withoutSimilar(array $candidates, array $existing): array
+    {
+        $accepted = [];
+        $skipped = 0;
+        foreach ($candidates as $candidate) {
+            $dup = false;
+            foreach (array_merge($existing, $accepted) as $other) {
+                if (!is_array($other)) {
+                    continue;
+                }
+                if (CodingProblemBankModel::problemsAreSimilar($candidate, $other)) {
+                    $dup = true;
+                    break;
+                }
+            }
+            if ($dup) {
+                $skipped++;
+                continue;
+            }
+            $accepted[] = $candidate;
+        }
+
+        return [$accepted, $skipped];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $avoid
+     */
+    private function buildPrompt(string $category, string $topic, string $difficulty, int $count, string $instructions, array $avoid = []): string
     {
         $extra = trim($instructions);
         $extraLine = $extra !== '' ? "Additional instructions: {$extra}\n" : '';
+        $avoidBlock = $this->avoidPromptBlock($avoid);
         return <<<PROMPT
 Generate campus-placement coding problems for college students.
 Category: {$category}
@@ -215,6 +406,7 @@ Topic: {$topic}
 Difficulty: {$difficulty}
 Count: {$count}
 {$extraLine}
+{$avoidBlock}
 
 FORMAT (mandatory for every problem):
 - Standalone stdin/stdout program — the student writes one Python script from scratch.
@@ -268,6 +460,8 @@ Return ONLY valid JSON:
 Rules:
 - Exactly {$count} problems.
 - Every problem must be about "{$topic}".
+- Every problem must be different from the existing problems listed above.
+- Do not reuse an existing title or write the same question in different words.
 - Every problem must have ALL 3 test cases filled with correct expected outputs.
 - Problems must be solvable by a single Python script using input() and print().
 - Do not wrap JSON in markdown.
@@ -295,7 +489,7 @@ PROMPT;
      * @param array<string, mixed> $q
      * @return array<string, mixed>|null
      */
-    private function mapAiProblem(array $q, string $fallbackCategory, string $fallbackDifficulty): ?array
+    private function mapAiProblem(array $q, string $fallbackCategory, string $fallbackDifficulty, string $topic = ''): ?array
     {
         $title = $this->sanitizeProblemTitle(trim((string) ($q['title'] ?? '')));
         $description = trim((string) ($q['description'] ?? $q['prompt'] ?? ''));
@@ -348,6 +542,7 @@ PROMPT;
             'marks' => max(1, (float) ($q['marks'] ?? 2)),
             'difficulty' => $this->normalizeDifficulty((string) ($q['difficulty'] ?? $fallbackDifficulty)),
             'category' => $this->normalizeCategory((string) ($q['category'] ?? $fallbackCategory)),
+            'topic' => trim($topic) !== '' ? trim($topic) : trim((string) ($q['topic'] ?? '')),
         ];
     }
 
