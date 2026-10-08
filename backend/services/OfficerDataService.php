@@ -2298,6 +2298,9 @@ final class OfficerDataService
             $admno = \PMS\Models\StudentDetailsModel::resolveAesAdmno($record);
             if ($admno === '' && $kind === 'alumni') {
                 $admno = $this->alumniFallbackIdentity($record);
+                if ($admno !== '') {
+                    $record['noAdmno'] = true;
+                }
             }
             if ($admno === '' || isset($seen[$admno])) {
                 continue;
@@ -2716,7 +2719,8 @@ final class OfficerDataService
                     $batch = $api->fetchAllStudInfo4Placement(
                         array_merge($baseParams, ['stud_role' => $role]),
                         $directoryList,
-                        false
+                        false,
+                        $directoryList
                     );
                     if ($batch === [] && !$directoryList) {
                         $batch = $api->fetchAllStudInfo4Placement(
@@ -2862,7 +2866,7 @@ final class OfficerDataService
             try {
                 $collect($api->fetchAllStudInfo4Placement([
                     'stud_role' => $role,
-                ], true, false));
+                ], true, false, true));
             } catch (\Throwable) {
                 continue;
             }
@@ -4226,7 +4230,8 @@ final class OfficerDataService
             $records = $this->aesApiForCampusDirectorySync()->fetchAllStudInfo4Placement(
                 ['stud_role' => 'alumni'],
                 true,
-                false
+                false,
+                true
             );
         } catch (\Throwable) {
             return [];
@@ -4362,6 +4367,8 @@ final class OfficerDataService
                 try {
                     $records = $api->fetchAllStudInfo4Placement(
                         array_merge($baseParams, ['stud_role' => $role]),
+                        true,
+                        true,
                         true
                     );
                     if ($records !== []) {
@@ -4528,6 +4535,8 @@ final class OfficerDataService
                 try {
                     $records = $api->fetchAllStudInfo4Placement(
                         array_merge($baseParams, ['stud_role' => $role]),
+                        true,
+                        true,
                         true
                     );
                     foreach ($records as $record) {
@@ -4986,6 +4995,9 @@ final class OfficerDataService
             ?? ''
         )));
         $regNo = strtoupper(trim((string) ($record['registerno'] ?? $record['registerNumber'] ?? '')));
+        if ($admno === '' && !empty($record['noAdmno'])) {
+            $admno = $this->alumniFallbackIdentity($record);
+        }
         if ($admno === '') {
             return null;
         }
@@ -5038,6 +5050,9 @@ final class OfficerDataService
 
         $row['registerNumber'] = $register;
         $row['admno'] = $admno;
+        if (!empty($record['noAdmno']) || str_starts_with($admno, 'ALUMNI:')) {
+            $row['noAdmno'] = true;
+        }
         if ($regNo !== '') {
             $row['registerno'] = $regNo;
         }

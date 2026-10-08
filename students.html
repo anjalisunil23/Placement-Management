@@ -2930,7 +2930,8 @@ let alumniLoaded = false;
 
 function alumniRowHtml(s) {
   const name = esc(s.displayName || s.name || '—');
-  const admno = esc(s.registerNumber || s.admno || '—');
+  const rawAdmno = String(s.registerNumber || s.admno || '');
+  const admno = (s.noAdmno || rawAdmno.startsWith('ALUMNI:')) ? '—' : esc(rawAdmno || '—');
   const dept = esc(typeof studentDepartmentLabel === 'function' ? studentDepartmentLabel(s) : (s.departmentName || s.department || '—'));
   const batch = esc(s.classBatch || '—');
   const regAttr = esc(s.registerNumber || s.admno || '');

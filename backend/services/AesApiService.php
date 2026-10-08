@@ -421,9 +421,10 @@ final class AesApiService
      * @param array<string, scalar|null> $params
      * @param bool $directoryList When true, skip full profile normalization (Students list / filters).
      * @param bool $useCache When false, always call AES live (admin Sync from AES).
+     * @param bool $keepRowsWithoutAdmno Keep AES rows that have no admission number.
      * @return list<array<string, mixed>>
      */
-    public function fetchAllStudInfo4Placement(array $params = [], bool $directoryList = false, bool $useCache = true): array
+    public function fetchAllStudInfo4Placement(array $params = [], bool $directoryList = false, bool $useCache = true, bool $keepRowsWithoutAdmno = false): array
     {
         ksort($params);
         $cacheKey = 'allstud_' . ($directoryList ? 'dir_' : '') . md5((string) json_encode($params));
@@ -444,7 +445,7 @@ final class AesApiService
             $out = $this->dedupeDirectoryRecords(array_map(
                 fn (array $record): array => $this->slimDirectoryRecord($record),
                 $records
-            ));
+            ), $keepRowsWithoutAdmno);
             if ($useCache) {
                 $this->writeSharedListCache($cacheKey, $out);
             }
@@ -506,6 +507,21 @@ final class AesApiService
                 ?? $normalized['registerno']
                 ?? ''
             )));
+            if ($key === '' && $keepRowsWithoutAdmno) {
+                $anonymous = count($seen) + 1;
+                $parts = [];
+                foreach (['stud_name', 'name', 'stud_class', 'classBatch', 'stud_course', 'stud_cource_short', 'stud_deptcode', 'stud_mobiles', 'phone'] as $field) {
+                    $value = strtoupper(trim((string) ($normalized[$field] ?? '')));
+                    if ($value !== '') {
+                        $parts[] = $value;
+                    }
+                }
+                $basis = $parts !== [] ? implode('|', $parts) : ('ROW' . $anonymous);
+                $key = 'A' . substr(md5($basis), 0, 31);
+                $normalized['admno'] = $key;
+                $normalized['stud_admno'] = $key;
+                $normalized['noAdmno'] = true;
+            }
             if ($key === '' || isset($seen[$key])) {
                 continue;
             }
@@ -921,10 +937,11 @@ final class AesApiService
      * @param list<array<string, mixed>> $records
      * @return list<array<string, mixed>>
      */
-    private function dedupeDirectoryRecords(array $records): array
+    private function dedupeDirectoryRecords(array $records, bool $keepRowsWithoutAdmno = false): array
     {
         $out = [];
         $seen = [];
+        $anonymous = 0;
         foreach ($records as $record) {
             if ($record === []) {
                 continue;
@@ -936,7 +953,28 @@ final class AesApiService
                 ?? $record['registerno']
                 ?? ''
             )));
-            if ($key === '' || isset($seen[$key])) {
+            if ($key === '') {
+                if (!$keepRowsWithoutAdmno) {
+                    continue;
+                }
+                $anonymous++;
+                $parts = [];
+                foreach (['stud_name', 'name', 'stud_class', 'classBatch', 'stud_course', 'stud_cource_short', 'stud_deptcode', 'stud_mobiles', 'phone'] as $field) {
+                    $value = strtoupper(trim((string) ($record[$field] ?? '')));
+                    if ($value !== '') {
+                        $parts[] = $value;
+                    }
+                }
+                $basis = $parts !== [] ? implode('|', $parts) : ('ROW' . $anonymous);
+                $key = 'A' . substr(md5($basis), 0, 31);
+                if (isset($seen[$key])) {
+                    $key = 'A' . substr(md5($basis . '#' . $anonymous), 0, 31);
+                }
+                $record['admno'] = $key;
+                $record['stud_admno'] = $key;
+                $record['noAdmno'] = true;
+            }
+            if (isset($seen[$key])) {
                 continue;
             }
             $seen[$key] = true;
