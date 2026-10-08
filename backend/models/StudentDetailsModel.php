@@ -212,6 +212,42 @@ class StudentDetailsModel extends BaseModel
     }
 
     /**
+     * Admission number → registration_status for one role. Columns only, no JSON payloads.
+     *
+     * @return array<string, string>
+     */
+    public function registrationStatusIndex(string $studRole): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $studRole = strtolower($studRole) === 'alumni' ? 'alumni' : 'student';
+        $index = [];
+        try {
+            $stmt = $this->db->prepare(
+                'SELECT aes_admno, registration_status FROM `student_details` WHERE stud_role = ? AND aes_admno IS NOT NULL'
+            );
+            $stmt->execute([$studRole]);
+            while ($row = $stmt->fetch()) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $key = strtoupper(trim((string) ($row['aes_admno'] ?? '')));
+                $status = strtolower(trim((string) ($row['registration_status'] ?? '')));
+                if ($key === '' || ($status !== 'registered' && $status !== 'non_registered')) {
+                    continue;
+                }
+                $index[$key] = $status;
+            }
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return $index;
+    }
+
+    /**
      * @return array<string, true>
      */
     public function indexAllStoredAdmnos(): array

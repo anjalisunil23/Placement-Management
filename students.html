@@ -2410,7 +2410,7 @@ let finalYearPendingDataTable = null;
 function finalYearPendingEmptyMessage() {
   return role === 'staff'
     ? 'All students in your class have registered the placement policy.'
-    : 'All listed final-year students have registered the placement policy.';
+    : 'All listed students have registered the placement policy.';
 }
 
 function finalYearPendingDataTableOptions() {
@@ -2853,9 +2853,9 @@ async function loadFinalYearStudents(force = false) {
     finalYearLoaded = true;
     destroyFinalYearPendingDataTable();
     const regErr = document.getElementById('finalYearRegisteredRows');
-    if (regErr) regErr.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load final-year students. Try again.</td></tr>';
+    if (regErr) regErr.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load students. Try again.</td></tr>';
     const pendingErr = document.getElementById('finalYearPendingRows');
-    if (pendingErr) pendingErr.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load final-year students. Try again.</td></tr>';
+    if (pendingErr) pendingErr.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load students. Try again.</td></tr>';
     document.getElementById('finalYearRegisteredCount').textContent = '0';
     document.getElementById('finalYearPendingCount').textContent = '0';
     return;

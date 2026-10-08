@@ -5814,6 +5814,8 @@ async function apiFetch(path, opts = {}) {
         const pathLower = String(path || '').toLowerCase();
         if (pathLower.includes('placements-higher-education') || pathLower.includes('placement-filters')) {
           message = `Request timed out (${res.status}). The placement grid should load from student_placements without live AES — deploy latest code and set STAFF_PLACEMENT_LIST_LITE_FILTERS=1 and STAFF_PLACEMENT_FILTERS_SKIP_AES=1 in .env. Use Sync from AES only when importing a class roster.`;
+        } else if (pathLower.includes('aes-directory-sync') || pathLower.includes('allfinal-year') || pathLower.includes('/students/alumni')) {
+          message = `Request timed out (${res.status}). Students and alumni are loaded from the last AES sync. Open Students again after the latest code is deployed. Use Sync from AES only when you want a fresh directory.`;
         } else if (pathLower.includes('upload-manual')) {
           message = `Upload timed out (${res.status}) while reading or parsing the PDF. Try again, paste the text instead of uploading, or ask the host to raise PHP/LiteSpeed timeouts (APTITUDE_MANUAL_UPLOAD_TIME_LIMIT). Answer inference runs in separate steps after the file is saved.`;
         } else if (pathLower.includes('analyze-answers')) {
