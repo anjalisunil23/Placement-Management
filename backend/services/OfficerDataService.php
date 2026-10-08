@@ -2248,13 +2248,104 @@ final class OfficerDataService
 
     /**
      * Campus studying students for admin Students → Registered / Non-Registered.
-     * Reads the AES sync snapshot. Does not call AES or scan full student_details payloads.
+     * Reads student_details. Does not call AES.
      *
      * @return array<int, array<string, mixed>>
      */
     public function listCampusFinalYearStudents(?string $query = null): array
     {
-        return $this->listCampusDirectoryFromSnapshot('student', $query);
+        return $this->listCampusDirectoryFromTable('student', $query);
+    }
+
+    /**
+     * Students page rows stored by Sync from AES.
+     *
+     * @param 'student'|'alumni' $kind
+     * @return list<array<string, mixed>>
+     */
+    private function listCampusDirectoryFromTable(string $kind, ?string $query = null): array
+    {
+        $rows = (new \PMS\Models\StudentDirectoryTable())->listByRole($kind);
+        if ($kind === 'student' && $rows !== []) {
+            $registered = $this->registeredAdmissionNumbers();
+            foreach ($rows as &$row) {
+                $key = strtoupper(trim((string) ($row['admno'] ?? $row['registerNumber'] ?? '')));
+                $local = $key !== '' ? ($registered[$key] ?? null) : null;
+                $isRegistered = is_array($local) && !empty($local['registered']);
+                $row['registrationStatus'] = $isRegistered ? 'registered' : 'non_registered';
+                $row['policyAccepted'] = $isRegistered;
+                if (is_array($local) && ($local['studentId'] ?? '') !== '') {
+                    $row['studentId'] = $local['studentId'];
+                }
+            }
+            unset($row);
+        }
+
+        return $this->filterStudentRows($rows, $query);
+    }
+
+    /**
+     * Local placement-policy registration, keyed by admission number.
+     * Does not read or write student_details.
+     *
+     * @return array<string, array{registered:bool,studentId:string}>
+     */
+    private function registeredAdmissionNumbers(): array
+    {
+        $index = [];
+        try {
+            $stmt = \PMS\Config\Database::pdo()->query(
+                'SELECT id,
+                    JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.registerNumber\')) AS register_number,
+                    JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.admno\')) AS admno,
+                    JSON_EXTRACT(payload, \'$.policyAccepted\') AS policy_accepted,
+                    JSON_EXTRACT(payload, \'$.placementPolicyAccepted\') AS placement_accepted,
+                    JSON_EXTRACT(payload, \'$.internshipPolicyAccepted\') AS internship_accepted,
+                    JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.placementPolicyVersion\')) AS placement_version,
+                    JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.internshipPolicyVersion\')) AS internship_version
+                 FROM `students`'
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $policy = new PlacementPolicySettingsModel();
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $profile = [
+                'policyAccepted'            => $this->jsonFlag($row['policy_accepted'] ?? null),
+                'placementPolicyAccepted'   => $this->jsonFlag($row['placement_accepted'] ?? null),
+                'internshipPolicyAccepted'  => $this->jsonFlag($row['internship_accepted'] ?? null),
+                'placementPolicyVersion'    => (string) ($row['placement_version'] ?? ''),
+                'internshipPolicyVersion'   => (string) ($row['internship_version'] ?? ''),
+            ];
+            $state = $policy->registrationState($profile);
+            $entry = [
+                'registered' => !empty($state['policyAccepted']),
+                'studentId'  => (string) ($row['id'] ?? ''),
+            ];
+            foreach (['register_number', 'admno'] as $field) {
+                $key = strtoupper(trim((string) ($row[$field] ?? '')));
+                if ($key === '' || strcasecmp($key, 'null') === 0) {
+                    continue;
+                }
+                $index[$key] = $entry;
+            }
+        }
+
+        return $index;
+    }
+
+    private function jsonFlag(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        $text = strtolower(trim((string) $value));
+
+        return $text === '1' || $text === 'true';
     }
 
     /**
@@ -2444,13 +2535,27 @@ final class OfficerDataService
      */
     public function getCampusStudyingDirectorySyncMeta(): array
     {
+        $directory = new \PMS\Models\StudentDirectoryTable();
+        if ($directory->isReady()) {
+            $counts = $directory->counts();
+
+            return [
+                'syncedAt'             => $this->syncTimestampIsoUtc($counts['syncedAt']),
+                'studentRecordCount'   => $counts['student'],
+                'alumniRecordCount'    => $counts['alumni'],
+                'fetchedStudents'      => $counts['student'],
+                'fetchedAlumni'        => $counts['alumni'],
+                'studentAlumniOverlap' => 0,
+                'recordCount'          => $counts['student'] + $counts['alumni'],
+                'hasStudentSnapshot'   => $counts['student'] > 0,
+                'hasAlumniSnapshot'    => $counts['alumni'] > 0,
+                'hasSnapshot'          => ($counts['student'] + $counts['alumni']) > 0,
+                'source'               => 'student_details',
+            ];
+        }
+
         $detailsModel = new \PMS\Models\StudentDetailsModel();
         $payload = $this->readCampusDirectorySnapshotPayload();
-        try {
-            (new \PMS\Models\StudentDirectoryTable())->storeSnapshotIfEmpty($payload);
-        } catch (\Throwable $e) {
-            error_log('student_details directory load failed: ' . $e->getMessage());
-        }
         $fetchedStudents = (int) ($payload['fetchedStudents'] ?? $payload['studentRecordCount'] ?? 0);
         $fetchedAlumni = (int) ($payload['fetchedAlumni'] ?? $payload['alumniRecordCount'] ?? 0);
         $studentAlumniOverlap = (int) ($payload['studentAlumniOverlap'] ?? 0);
@@ -2627,7 +2732,6 @@ final class OfficerDataService
             ),
         ];
 
-        // Snapshot is the alumni source after student_details was retired.
         $this->writeCampusDirectorySnapshot(
             $students,
             $alumniForSnapshot,
@@ -2636,6 +2740,13 @@ final class OfficerDataService
             $studentAlumniOverlap,
             $lastSyncReport
         );
+        $directoryTable = new \PMS\Models\StudentDirectoryTable();
+        if ($directoryTable->ensure()) {
+            $directoryTable->replaceFromAesRecords($students, $alumniForSnapshot, $syncedAt);
+            $directoryCounts = $directoryTable->counts();
+            $studentCount = $directoryCounts['student'];
+            $alumniCount = $directoryCounts['alumni'];
+        }
         unset(self::$aesDirectoryCache['campus:studRoleStudent']);
         self::$aesAlumniDirectoryCache = [];
 
@@ -3944,7 +4055,7 @@ final class OfficerDataService
      */
     public function listCampusAlumniStudents(?string $query = null): array
     {
-        return $this->listCampusDirectoryFromSnapshot('alumni', $query);
+        return $this->listCampusDirectoryFromTable('alumni', $query);
     }
 
     /**
@@ -4509,16 +4620,6 @@ final class OfficerDataService
 
         if (@file_put_contents($path, $json, LOCK_EX) === false) {
             throw new \RuntimeException('Could not save AES directory snapshot.');
-        }
-
-        try {
-            (new \PMS\Models\StudentDirectoryTable())->replaceFromAesRecords(
-                $studyingRecords,
-                $alumniRecords,
-                $syncedAt
-            );
-        } catch (\Throwable $e) {
-            error_log('student_details directory save failed: ' . $e->getMessage());
         }
     }
 

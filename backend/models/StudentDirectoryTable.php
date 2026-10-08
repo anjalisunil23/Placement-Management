@@ -72,6 +72,75 @@ class StudentDirectoryTable
     }
 
     /**
+     * @return array{student:int,alumni:int,syncedAt:?string}
+     */
+    public function counts(): array
+    {
+        $counts = ['student' => 0, 'alumni' => 0, 'syncedAt' => null];
+        if (!$this->isReady()) {
+            return $counts;
+        }
+        $stmt = $this->db->query('SELECT stud_role, COUNT(*) AS n FROM `student_details` GROUP BY stud_role');
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $role = strtolower(trim((string) ($row['stud_role'] ?? '')));
+            if ($role === 'student' || $role === 'alumni') {
+                $counts[$role] = (int) ($row['n'] ?? 0);
+            }
+        }
+        $synced = $this->db->query('SELECT MAX(synced_at) FROM `student_details`')->fetchColumn();
+        $counts['syncedAt'] = is_string($synced) && $synced !== '' ? $synced : null;
+
+        return $counts;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listByRole(string $role): array
+    {
+        if (!$this->isReady()) {
+            return [];
+        }
+        $role = strtolower($role) === 'alumni' ? 'alumni' : 'student';
+        $stmt = $this->db->prepare(
+            'SELECT student_name, adm_no, department, stud_role, batch, action
+             FROM `student_details`
+             WHERE stud_role = ?
+             ORDER BY student_name ASC, id ASC'
+        );
+        $stmt->execute([$role]);
+        $rows = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $name = trim((string) ($row['student_name'] ?? ''));
+            $admno = trim((string) ($row['adm_no'] ?? ''));
+            $action = trim((string) ($row['action'] ?? ''));
+            $department = trim((string) ($row['department'] ?? ''));
+            $noAdmno = $admno === '';
+            $rows[] = [
+                'id'             => $action !== '' ? $action : $admno,
+                'registerNumber' => $noAdmno ? $action : $admno,
+                'admno'          => $admno,
+                'noAdmno'        => $noAdmno,
+                'displayName'    => $name !== '' ? $name : '—',
+                'name'           => $name,
+                'departmentName' => $department,
+                'department'     => ['name' => $department, 'code' => ''],
+                'classBatch'     => trim((string) ($row['batch'] ?? '')),
+                'studRole'       => $role,
+                'stud_role'      => $role === 'alumni' ? 'Alumni' : 'Student',
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
      * Replace the directory with the AES sync snapshot already fetched.
      * Studying rows are stored as student. Alumni rows omit anyone already in the studying list.
      *

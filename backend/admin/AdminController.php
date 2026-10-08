@@ -1365,7 +1365,7 @@ final class AdminController
         ));
     }
 
-    /** GET /api/admin/students/allfinal-year — campus snapshot + local student table (no live AES) */
+    /** GET /api/admin/students/allfinal-year — student_details rows (no live AES) */
     public function listFinalYearStudents(): void
     {
         RBACMiddleware::requireAdmin();
@@ -1395,7 +1395,7 @@ final class AdminController
         Response::success($result, 'Student and alumni directories synced from AES.');
     }
 
-    /** GET /api/admin/students/alumni — campus alumni snapshot + local merge (no live AES) */
+    /** GET /api/admin/students/alumni — student_details rows with stud_role = alumni */
     public function listAlumniStudents(): void
     {
         RBACMiddleware::requireAdmin();
