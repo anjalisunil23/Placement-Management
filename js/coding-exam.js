@@ -589,29 +589,41 @@
       return reconcileRunCustom(run?.custom || {});
     }
 
+    function sampleExpectedOutput(q) {
+      const sample = (q?.testCases || []).find((t) => t.sample);
+      const fromSample = sample?.expected ?? sample?.output ?? sample?.expectedOutput;
+      if (fromSample != null && String(fromSample) !== '') return String(fromSample);
+      const example = (q?.examples || [])[0];
+      return example ? String(example.output ?? '') : '';
+    }
+
+    function visibleExpectedOutput(runExpected, q) {
+      const fromRun = String(runExpected ?? '');
+      return fromRun !== '' ? fromRun : sampleExpectedOutput(q);
+    }
+
     function renderRunPanel(run, runningNow) {
       const out = el('output');
       const expected = el('expected');
       const stderr = el('stderr');
       const status = el('run-status');
+      const q = currentQ();
 
       if (runningNow) {
         if (status) status.innerHTML = '<span class="badge-soft info">Running code...</span>';
         if (out) out.textContent = '';
-        if (expected) expected.textContent = '';
+        if (expected) expected.textContent = visibleExpectedOutput(null, q);
         if (stderr) {
           stderr.textContent = '';
           stderr.classList.add('d-none');
         }
-        renderCaseTable(null, currentQ());
+        renderCaseTable(null, q);
         return;
       }
 
       if (!run) {
-        const q = currentQ();
-        const sample = (q?.testCases || []).find((t) => t.sample);
         if (out) out.textContent = '';
-        if (expected) expected.textContent = sample ? sample.expected : '';
+        if (expected) expected.textContent = sampleExpectedOutput(q);
         if (stderr) {
           stderr.textContent = '';
           stderr.classList.add('d-none');
@@ -631,7 +643,7 @@
         const outText = String(custom.output ?? '');
         out.textContent = outText !== '' ? outText : ((runStatus === 'Wrong Answer' || runStatus === 'Execution Successful') ? 'No output' : '');
       }
-      if (expected) expected.textContent = custom.expected || '';
+      if (expected) expected.textContent = visibleExpectedOutput(custom.expected, currentQ());
       const detail = formatRunError(custom);
       if (stderr) {
         if ((runStatus === 'Wrong Answer' || runStatus === 'Execution Successful') && String(custom.output ?? '').trim() === '') {
