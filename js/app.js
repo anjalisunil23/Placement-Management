@@ -120,7 +120,7 @@ const NAV = [
   { href: "alumni-success-stories.html", icon: "bi-star-fill", label: "Success Stories", roles: ['alumni'], alumniEmployed: true },
 
   { section: "Staff", roles: ['staff'] },
-  { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['staff'] },
+  { href: "staff-placements.html", icon: "bi-mortarboard-fill", label: "Placements & Higher Ed", roles: ['admin', 'placement_officer', 'staff'] },
   { href: "staff-jobs.html", icon: "bi-megaphone-fill", label: "Job Posts", roles: ['staff'] },
   { href: "job-posts.html#internal", icon: "bi-megaphone-fill", label: "Internal Job Post", roles: ['staff'] },
   { href: "staff-recommend.html", icon: "bi-building-add", label: "Recommend Company", roles: ['staff'] },
@@ -822,43 +822,7 @@ document.addEventListener('error', (event) => {
   img.remove();
 }, true);
 
-function bootPageDataTables() {
-  if (document.body?.dataset?.page === 'students.html') return;
-  if (document.body?.dataset?.page === 'coding.html') return;
-  if (document.getElementById('pms-page-datatable')) return;
-  if (!document.querySelector('link[data-pms-dt]')) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://cdn.datatables.net/2.1.8/css/dataTables.bootstrap5.min.css';
-    link.dataset.pmsDt = '1';
-    document.head.appendChild(link);
-  }
-  const loadScript = (src) => new Promise((resolve, reject) => {
-    if (document.querySelector('script[src="' + src + '"]')) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(src));
-    document.body.appendChild(script);
-  });
-  const start = async () => {
-    if (typeof window.jQuery === 'undefined') {
-      await loadScript('https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
-    }
-    if (typeof window.DataTable === 'undefined') {
-      await loadScript('https://cdn.datatables.net/2.1.8/js/dataTables.min.js');
-      await loadScript('https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js');
-    }
-    await loadScript('js/page-datatable.js?v=20261008dt4');
-  };
-  start().catch(() => {});
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
-  bootPageDataTables();
   if (!document.querySelector('link[rel="icon"]')) {
     const link = document.createElement('link');
     link.rel = 'icon';

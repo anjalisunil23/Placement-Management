@@ -21,11 +21,8 @@
         <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">The grid reads <code>student_placements</code> for your filters (fast). Use <strong>Sync from AES</strong> to pull the full class roster and placement fields from live AES into that table, then the grid refreshes. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">The grid reads <code>student_placements</code> for your filters. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
-          <button type="button" class="btn btn-outline-primary btn-sm flex-shrink-0" id="btnSyncPlacementsFromAes" title="Fetch placement and higher-education data from AES into student_placements">
-            <i class="bi bi-cloud-arrow-down me-1" aria-hidden="true"></i>Sync from AES
-          </button>
         </div>
 
         <div id="classTeacherBanner" class="alert alert-warning py-2 px-3 mb-3 d-none" role="status"></div>
@@ -66,9 +63,23 @@
         </div>
 
         <div class="card-surface">
-          <div class="d-none" aria-hidden="true">
-            <select id="pageSize"><option value="25" selected>25</option></select>
-            <input type="search" id="tableSearch" value="" />
+          <div class="p-3 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between"
+            style="border-color:var(--border)!important">
+            <div class="d-flex align-items-center gap-2">
+              <label class="small text-muted-2 mb-0">Show</label>
+              <select class="form-select form-select-sm w-auto" id="pageSize">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span class="small text-muted-2">entries</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <label class="small text-muted-2 mb-0" for="tableSearch">Search</label>
+              <input type="search" class="form-control form-control-sm" id="tableSearch"
+                placeholder="Name, register no., company…" style="min-width:220px" />
+            </div>
           </div>
           <div class="table-wrap registry-table-wrap">
             <table class="registry-table registry-table-payload" id="registryTable">
@@ -80,7 +91,14 @@
               </tbody>
             </table>
           </div>
-          <div class="d-none" id="pageInfo"></div>
+          <div class="p-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2"
+            style="border-color:var(--border)!important">
+            <div class="small text-muted-2" id="pageInfo"></div>
+            <div class="btn-group btn-group-sm">
+              <button type="button" class="btn btn-outline-secondary" id="btnPrev">Previous</button>
+              <button type="button" class="btn btn-outline-secondary" id="btnNext">Next</button>
+            </div>
+          </div>
         </div>
 
         <!-- Edit placement modal (AES 5.2.1 layout) -->
@@ -445,10 +463,18 @@
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="js/staff-api.js?v=20261005aesync"></script>
-  <script src="js/api.js?v=20260724viewdept"></script>
-  <script src="js/app.js?v=20261001mcqroles"></script>
+  <script src="js/api.js?v=20261008phe"></script>
+  <script src="js/officer-api.js?v=20261008phe"></script>
+  <script src="js/app.js?v=20261008phe"></script>
   <script>
-    if (Auth.role() !== 'staff') {
+    function placementRegistryApi() {
+      const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
+      if (role === 'admin' || role === 'placement_officer') return OfficerApi;
+      return StaffApi;
+    }
+
+    const pageRole = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
+    if (pageRole !== 'staff' && pageRole !== 'admin' && pageRole !== 'placement_officer') {
       toast('You do not have access to this page.', 'warn');
       setTimeout(() => { window.location.href = 'dashboard.html'; }, 500);
     }
@@ -648,18 +674,6 @@
       };
     }
 
-    function departmentScopeLabel() {
-      syncDepartmentFilter();
-      if (filterDepartmentId) {
-        const el = document.getElementById('filterDepartment');
-        const opt = el?.selectedOptions?.[0];
-        return opt ? String(opt.textContent || '').trim() : 'Selected department';
-      }
-      if (scopeDepartmentName) return scopeDepartmentName;
-      if (scopeDepartmentId) return 'Your department (auto)';
-      return 'All departments';
-    }
-
     function applyScopeFromFiltersApi(data) {
       const scope = data?.scope;
       if (!scope || typeof scope !== 'object') return;
@@ -670,55 +684,6 @@
         if ([...deptEl.options].some(o => o.value === scopeDepartmentId)) {
           deptEl.value = scopeDepartmentId;
           syncDepartmentFilter();
-        }
-      }
-    }
-
-    async function prepareSyncFilters() {
-      syncDepartmentFilter();
-      if (!filterDepartmentId && scopeDepartmentId) {
-        const deptEl = document.getElementById('filterDepartment');
-        if (deptEl && [...deptEl.options].some(o => o.value === scopeDepartmentId)) {
-          deptEl.value = scopeDepartmentId;
-          syncDepartmentFilter();
-        }
-      }
-      if (!filterProgram) {
-        const picked = pickPreferredProgram(lastFilterPrograms);
-        if (picked) {
-          filterProgram = picked;
-          const programEl = document.getElementById('filterProgram');
-          if (programEl) programEl.value = picked;
-        }
-      }
-      if (!filterBatch) {
-        const picked = pickPreferredBatch(lastFilterBatches, filterProgram);
-        if (picked) {
-          filterBatch = picked;
-          const batchEl = document.getElementById('filterBatch');
-          if (batchEl) batchEl.value = picked;
-        }
-      }
-      if ((!filterProgram || !filterBatch) && typeof StaffApi.fetchPlacementFilters === 'function') {
-        const data = await StaffApi.fetchPlacementFilters({
-          departmentId: effectiveDepartmentId(),
-          program: filterProgram,
-          studRole: 'all',
-        });
-        if (data) {
-          applyScopeFromFiltersApi(data);
-          lastFilterPrograms = data.programs || lastFilterPrograms;
-          lastFilterBatches = data.batches || lastFilterBatches;
-          if (!filterProgram) {
-            filterProgram = pickPreferredProgram(lastFilterPrograms);
-            const programEl = document.getElementById('filterProgram');
-            if (programEl && filterProgram) programEl.value = filterProgram;
-          }
-          if (!filterBatch) {
-            filterBatch = pickPreferredBatch(lastFilterBatches, filterProgram);
-            const batchEl = document.getElementById('filterBatch');
-            if (batchEl && filterBatch) batchEl.value = filterBatch;
-          }
         }
       }
     }
@@ -829,51 +794,12 @@
       }
     }
 
-    function pickPreferredBatch(batches, program) {
-      const list = (batches || []).map(v => String(v || '').trim()).filter(Boolean);
-      const assigned = assignedBatches();
-      const pool = list.length
-        ? assigned.filter(b => list.some(x => x.toLowerCase() === b.toLowerCase()))
-        : assigned.slice();
-      const assignedForProgram = program
-        ? pool.filter(b => batchLooksLikeProgramme(b, program))
-        : pool;
-      if (assignedForProgram.length) return assignedForProgram[0];
-      if (pool.length) return pool[0];
-      const listForProgram = program
-        ? list.filter(b => batchLooksLikeProgramme(b, program))
-        : list;
-      if (listForProgram.length) return listForProgram[0];
-      if (list.length === 1) return list[0];
-      return '';
-    }
-
     function programFromBatch(batch) {
       const b = String(batch || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (!b) return '';
       if (b.includes('MCAINT') || b.includes('INMCA') || b.includes('INTMCA')) return 'INMCA';
       if (b.startsWith('MCA')) return 'MCA';
       if (b.includes('BCA')) return 'BCA';
-      return '';
-    }
-
-    function pickPreferredProgram(programs) {
-      const list = (programs || []).map(v => String(v || '').trim()).filter(Boolean);
-      const assigned = assignedBatches();
-      for (const batch of assigned) {
-        const inferred = programFromBatch(batch);
-        if (inferred && (list.length === 0 || list.some(p => p === inferred))) {
-          return inferred;
-        }
-      }
-      if (list.length) {
-        for (const batch of assigned) {
-          for (const program of list) {
-            if (batchLooksLikeProgramme(batch, program)) return program;
-          }
-        }
-        if (list.length === 1) return list[0];
-      }
       return '';
     }
 
@@ -897,11 +823,12 @@
     }
 
     async function loadPlacementFilters() {
-      if (typeof StaffApi === 'undefined' || !StaffApi.fetchPlacementFilters) return;
+      const registryApi = placementRegistryApi();
+      if (!registryApi || !registryApi.fetchPlacementFilters) return;
 
       syncDepartmentFilter();
       const initialProgram = filterProgram || '';
-      const data = await StaffApi.fetchPlacementFilters({
+      const data = await registryApi.fetchPlacementFilters({
         departmentId: filterDepartmentId,
         program: initialProgram || filterProgram,
         studRole: 'all',
@@ -928,7 +855,7 @@
       lastFilterBatches = batches;
       // Only re-fetch batches when programme just became known and first payload had none.
       if (filterProgram && !batches.length) {
-        const again = await StaffApi.fetchPlacementFilters({
+        const again = await registryApi.fetchPlacementFilters({
           departmentId: filterDepartmentId,
           program: filterProgram,
           studRole: 'all',
@@ -976,8 +903,8 @@
       const total = filteredRows.length;
       const pages = Math.max(1, Math.ceil(total / pageSize));
       if (page > pages) page = pages;
-      const start = 0;
-      const slice = filteredRows;
+      const start = (page - 1) * pageSize;
+      const slice = filteredRows.slice(start, start + pageSize);
 
       if (registryColumns.length) {
         updateSortHeaders();
@@ -992,11 +919,7 @@
 
       const colSpan = registryColspan();
       if (!slice.length) {
-        const batchSel = (document.getElementById('filterBatch')?.value || '').trim();
-        const hint = batchSel
-          ? ' No rows in <code>student_placements</code> for this class yet — use <strong>Sync from AES</strong> with the same filters.'
-          : '';
-        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students or alumni match the current filters.${hint}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-muted-2 p-4 text-center">No students or alumni match the current filters.</td></tr>`;
         return;
       }
 
@@ -1317,63 +1240,6 @@
       await loadRegistry();
     }
 
-    async function syncPlacementsFromAes() {
-      await prepareSyncFilters();
-      const deptLabel = departmentScopeLabel();
-      const programLabel = filterProgram
-        ? (typeof courseLevelProgrammeLabel === 'function' ? (courseLevelProgrammeLabel(filterProgram) || filterProgram) : filterProgram)
-        : 'All branches (slower — scans every programme batch via AES)';
-      const batchLabel = filterBatch || 'All batches (each class cohort via AES)';
-      const lines = [
-        'Pull roster data from live AES into student_placements for the scope below?',
-        '',
-        'This calls AES placement APIs (not a read of the grid only). Large scopes can take several minutes.',
-        '',
-        `Department: ${deptLabel}`,
-        `Branch: ${programLabel}`,
-        `Batch: ${batchLabel}`,
-      ];
-      if (!filterProgram && !filterBatch) {
-        lines.push('', 'Tip: for Integrated MCA, pick branch INMCA and one batch (e.g. MCAINT…-S8) if sync returns no rows.');
-      }
-      if (!window.confirm(lines.join('\n'))) {
-        return;
-      }
-      const btn = document.getElementById('btnSyncPlacementsFromAes');
-      const label = btn ? btn.innerHTML : '';
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Syncing…';
-      }
-      try {
-        if (typeof StaffApi.clearPlacementsCache === 'function') {
-          StaffApi.clearPlacementsCache();
-        }
-        const res = await StaffApi.syncPlacementsFromAes(currentFilters());
-        if (!res?.success) {
-          toast(res?.message || 'AES sync failed.', 'error');
-          return;
-        }
-        const aesN = res?.data?.aesRosterFetched;
-        const saved = res?.data?.studentsSynced;
-        const syncErr = String(res?.data?.syncError || '').trim();
-        const tone = syncErr ? 'error' : ((typeof aesN === 'number' && aesN > 0) ? 'success' : 'warn');
-        toast(res.message || syncErr || (typeof saved === 'number' ? `Saved ${saved} record(s) from AES.` : 'Sync complete.'), tone);
-        if (res?.data?.registry) {
-          applyRegistryPayload(res.data.registry);
-        } else {
-          await loadRegistry();
-        }
-      } catch (_) {
-        toast('AES sync failed.', 'error');
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = label;
-        }
-      }
-    }
-
     function applyRegistryPayload(data) {
       if (!data || typeof data !== 'object') return false;
       if (Array.isArray(data.columns) && data.columns.length) {
@@ -1402,12 +1268,13 @@
       const tbody = document.getElementById('registryRows');
       syncDepartmentFilter();
       tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-muted-2 p-4 text-center">Loading registry…</td></tr>`;
-      const data = await StaffApi.fetchPlacementsHigherEducation(currentFilters());
+      const registryApi = placementRegistryApi();
+      const data = await registryApi.fetchPlacementsHigherEducation(currentFilters());
       if (!data) {
-        const detail = (StaffApi._lastPlacementsFetchError || '').trim();
+        const detail = (registryApi._lastPlacementsFetchError || '').trim();
         const msg = detail
           ? esc(detail)
-          : 'Could not load registry. Sign in as staff and try again.';
+          : 'Could not load the placements registry. Refresh and try again.';
         tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-danger p-4 text-center">${msg}</td></tr>`;
         if (detail && typeof toast === 'function') toast(detail, 'error');
         return;
@@ -1416,8 +1283,9 @@
     }
 
     async function onScopeFilterChange(changed) {
-      if (typeof StaffApi.clearPlacementsCache === 'function') {
-        StaffApi.clearPlacementsCache();
+      const registryApi = placementRegistryApi();
+      if (typeof registryApi.clearPlacementsCache === 'function') {
+        registryApi.clearPlacementsCache();
       }
       if (changed === 'filterDepartment') {
         syncDepartmentFilter();
@@ -1458,10 +1326,6 @@
         toast('Could not download offer letter.', 'warn');
       }
     }
-
-    document.getElementById('btnSyncPlacementsFromAes')?.addEventListener('click', () => {
-      syncPlacementsFromAes().catch(() => toast('AES sync failed.', 'error'));
-    });
 
     ['filterDepartment', 'filterProgram', 'filterBatch'].forEach(id => {
       document.getElementById(id)?.addEventListener('change', () => {

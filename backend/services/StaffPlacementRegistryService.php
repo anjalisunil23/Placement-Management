@@ -79,7 +79,9 @@ final class StaffPlacementRegistryService
     public function list(array $staffCtx, array $filters = []): array
     {
         @set_time_limit(max(60, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 90)));
-        StaffContext::requireDepartmentScope($staffCtx);
+        if (empty($staffCtx['isAdmin'])) {
+            StaffContext::requireDepartmentScope($staffCtx);
+        }
         $filters = $this->normalizeRegistryScopeFilters($filters);
         $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
         $batch = trim((string) ($filters['batch'] ?? ''));
@@ -682,7 +684,8 @@ final class StaffPlacementRegistryService
         $batch = trim((string) ($filters['batch'] ?? ''));
 
         $tableLimit = max(100, min(5000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 2500)));
-        if ($departmentId === '' && $batch === '') {
+        $campusWide = $departmentId === '' && !empty($listCtx['campusWide']);
+        if ($departmentId === '' && $batch === '' && !$campusWide) {
             return [];
         }
 
@@ -691,7 +694,8 @@ final class StaffPlacementRegistryService
             $program,
             $batch,
             $tableLimit,
-            $batch !== ''
+            $batch !== '',
+            $campusWide
         );
         if (!$tableOnly) {
             $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);

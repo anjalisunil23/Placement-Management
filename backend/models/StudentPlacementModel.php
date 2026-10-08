@@ -510,7 +510,8 @@ class StudentPlacementModel extends BaseModel
         string $program,
         string $batch,
         int $limit = 5000,
-        bool $includeLegacyBlankDept = false
+        bool $includeLegacyBlankDept = false,
+        bool $allowUnscoped = false
     ): array {
         if (!$this->bootstrapTable()) {
             return [];
@@ -533,7 +534,7 @@ class StudentPlacementModel extends BaseModel
             }
         }
 
-        if ($filter === [] && $departmentId === '') {
+        if ($filter === [] && $departmentId === '' && !$allowUnscoped) {
             return [];
         }
 
