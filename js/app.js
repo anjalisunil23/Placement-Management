@@ -851,7 +851,7 @@ function bootPageDataTables() {
       await loadScript('https://cdn.datatables.net/2.1.8/js/dataTables.min.js');
       await loadScript('https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js');
     }
-    await loadScript('js/page-datatable.js?v=20261008dt');
+    await loadScript('js/page-datatable.js?v=20261008dt2');
   };
   start().catch(() => {});
 }

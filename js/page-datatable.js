@@ -2,6 +2,7 @@
 (function () {
   if (document.body?.dataset?.page === 'students.html') return;
   if (typeof DataTable === 'undefined') return;
+  if (DataTable.ext) DataTable.ext.errMode = 'throw';
 
   let silence = 0;
   const pending = new Set();
@@ -40,6 +41,7 @@
   function optionsFor(table) {
     const targets = actionTargets(table);
     return {
+      destroy: true,
       pageLength: 25,
       lengthMenu: [10, 25, 50, 100, 250],
       order: [],
@@ -68,22 +70,25 @@
     if (!tbody) return;
     if (table.dataset.dtDrawing === '1') return;
 
-    if (isPlaceholder(tbody)) {
-      if (DataTable.isDataTable(table)) {
-        silence += 1;
-        try { DataTable.api(table).destroy(); } catch (_) { /* ignore */ }
-        silence -= 1;
-      }
-      return;
-    }
-
-    const html = tbody.innerHTML;
     silence += 1;
+    const release = () => {
+      setTimeout(() => { silence = Math.max(0, silence - 1); }, 0);
+    };
     try {
+      if (isPlaceholder(tbody)) {
+        if (DataTable.isDataTable(table)) {
+          try { DataTable.api(table).destroy(); } catch (_) { /* ignore */ }
+        }
+        return;
+      }
+
+      const html = tbody.innerHTML;
       if (DataTable.isDataTable(table)) {
         try { DataTable.api(table).destroy(); } catch (_) { /* ignore */ }
         if (table.tBodies[0]) table.tBodies[0].innerHTML = html;
       }
+      if (DataTable.isDataTable(table)) return;
+
       const api = new DataTable(table, optionsFor(table));
       api.on('preDraw', () => { table.dataset.dtDrawing = '1'; });
       api.on('draw', () => {
@@ -93,7 +98,7 @@
     } catch (_) {
       /* leave the plain table if this layout cannot be paged */
     } finally {
-      silence -= 1;
+      release();
     }
   }
 
