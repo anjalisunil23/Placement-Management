@@ -66,23 +66,9 @@
         </div>
 
         <div class="card-surface">
-          <div class="p-3 border-bottom d-flex flex-wrap gap-2 align-items-center justify-content-between"
-            style="border-color:var(--border)!important">
-            <div class="d-flex align-items-center gap-2">
-              <label class="small text-muted-2 mb-0">Show</label>
-              <select class="form-select form-select-sm w-auto" id="pageSize">
-                <option value="10">10</option>
-                <option value="25" selected>25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-              <span class="small text-muted-2">entries</span>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              <label class="small text-muted-2 mb-0" for="tableSearch">Search</label>
-              <input type="search" class="form-control form-control-sm" id="tableSearch"
-                placeholder="Name, register no., company…" style="min-width:220px" />
-            </div>
+          <div class="d-none" aria-hidden="true">
+            <select id="pageSize"><option value="25" selected>25</option></select>
+            <input type="search" id="tableSearch" value="" />
           </div>
           <div class="table-wrap registry-table-wrap">
             <table class="registry-table registry-table-payload" id="registryTable">
@@ -94,14 +80,7 @@
               </tbody>
             </table>
           </div>
-          <div class="p-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2"
-            style="border-color:var(--border)!important">
-            <div class="small text-muted-2" id="pageInfo"></div>
-            <div class="btn-group btn-group-sm">
-              <button type="button" class="btn btn-outline-secondary" id="btnPrev">Previous</button>
-              <button type="button" class="btn btn-outline-secondary" id="btnNext">Next</button>
-            </div>
-          </div>
+          <div class="d-none" id="pageInfo"></div>
         </div>
 
         <!-- Edit placement modal (AES 5.2.1 layout) -->
@@ -997,8 +976,8 @@
       const total = filteredRows.length;
       const pages = Math.max(1, Math.ceil(total / pageSize));
       if (page > pages) page = pages;
-      const start = (page - 1) * pageSize;
-      const slice = filteredRows.slice(start, start + pageSize);
+      const start = 0;
+      const slice = filteredRows;
 
       if (registryColumns.length) {
         updateSortHeaders();

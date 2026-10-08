@@ -437,6 +437,14 @@ function bindUserDeleteSelection() {
   const root = document.querySelector('.tab-content');
   if (!root || root.dataset.deleteSelectWired === '1') return;
   root.dataset.deleteSelectWired = '1';
+  document.addEventListener('pms-table-draw', () => {
+    document.querySelectorAll('.user-delete-check[data-delete-key]').forEach((box) => {
+      box.checked = selectedDeleteKeys.has(box.dataset.deleteKey || '');
+    });
+    document.querySelectorAll('.volunteer-delete-check[data-volunteer-id]').forEach((box) => {
+      box.checked = selectedVolunteerIds.has(box.dataset.volunteerId || '');
+    });
+  });
   root.addEventListener('change', e => {
     const selectAll = e.target.closest('.user-delete-select-all');
     if (selectAll) {
