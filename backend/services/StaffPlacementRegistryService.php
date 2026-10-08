@@ -88,17 +88,19 @@ final class StaffPlacementRegistryService
 
         $filters['departmentId'] = trim((string) ($listCtx['departmentId'] ?? $filters['departmentId'] ?? ''));
 
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
         try {
-            (new \PMS\Models\StudentPlacementDetailsTable())->ensure();
+            $details->replaceFromStudentPlacements();
         } catch (\Throwable) {
-            // The grid still reads student_placements if the new table cannot be created.
+            // Show whatever is already stored if the copy from student_placements fails.
         }
+        $filters['placementDetails'] = '1';
 
         return $this->buildRegistryResponse(
             $staffCtx,
             $listCtx,
             $filters,
-            $this->listFromStudentPlacements($listCtx, $filters, !$this->registryListLiveRosterEnabled())
+            $this->listFromPlacementDetails($details)
         );
     }
 
@@ -682,6 +684,67 @@ final class StaffPlacementRegistryService
      * @param array<string, string> $filters
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function listFromPlacementDetails(\PMS\Models\StudentPlacementDetailsTable $details): array
+    {
+        $limit = max(100, min(10000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 5000)));
+        $rows = [];
+        foreach ($details->listRows($limit) as $row) {
+            $id = trim((string) ($row['id'] ?? ''));
+            $admno = trim((string) ($row['admno'] ?? ''));
+            $student = trim((string) ($row['student'] ?? ''));
+            $year = trim((string) ($row['year'] ?? ''));
+            $employer = trim((string) ($row['employer'] ?? ''));
+            $type = trim((string) ($row['type'] ?? ''));
+            $status = trim((string) ($row['status'] ?? ''));
+            $studentId = $admno !== '' ? $admno : $id;
+            $rows[] = [
+                'id' => $studentId,
+                'studentId' => $studentId,
+                'student' => $student,
+                'studentName' => $student,
+                'admno' => $admno,
+                'admissionNo' => $admno,
+                'registerNumber' => $admno,
+                'cno' => trim((string) ($row['cno'] ?? '')),
+                'phone' => trim((string) ($row['cno'] ?? '')),
+                'email' => trim((string) ($row['email'] ?? '')),
+                'year' => $year,
+                'classBatch' => $year,
+                'batch' => $year,
+                'courseid' => trim((string) ($row['courseid'] ?? '')),
+                'courseId' => trim((string) ($row['courseid'] ?? '')),
+                'branchid' => trim((string) ($row['branchid'] ?? '')),
+                'branchId' => trim((string) ($row['branchid'] ?? '')),
+                'employer' => $employer,
+                'company' => $employer,
+                'empcno' => trim((string) ($row['empcno'] ?? '')),
+                'employerContact' => trim((string) ($row['empcno'] ?? '')),
+                'empadr' => trim((string) ($row['empadr'] ?? '')),
+                'address' => trim((string) ($row['empadr'] ?? '')),
+                'payscale' => trim((string) ($row['payscale'] ?? '')),
+                'package' => trim((string) ($row['payscale'] ?? '')),
+                'status' => $status,
+                'placementStatus' => $status,
+                'createdBy' => trim((string) ($row['createdBy'] ?? '')),
+                'updatedBy' => trim((string) ($row['updatedBy'] ?? '')),
+                'updatedate' => trim((string) ($row['updatedate'] ?? '')),
+                'updatedAt' => trim((string) ($row['updatedate'] ?? '')),
+                'fordvv' => trim((string) ($row['fordvv'] ?? '')),
+                'type' => $type,
+                'recordType' => $type,
+                'includedvv' => trim((string) ($row['includedvv'] ?? '')),
+                'createdat' => trim((string) ($row['createdat'] ?? '')),
+                'createdAt' => trim((string) ($row['createdat'] ?? '')),
+                'source' => 'student_placement_details',
+            ];
+        }
+
+        return $rows;
+    }
+
     private function listFromStudentPlacements(array $listCtx, array $filters, bool $tableOnly = true): array
     {
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
@@ -2129,6 +2192,9 @@ final class StaffPlacementRegistryService
      */
     private function applyFilters(array $rows, array $filters): array
     {
+        if (!empty($filters['placementDetails'])) {
+            return $this->applyPlacementDetailsFilters($rows, $filters);
+        }
         if (!empty($filters['allFromTable'])) {
             $rows = $this->applyOptionalRegistrySearchFilters($rows, $filters);
             if ($this->hasRegistryScopeFilters($filters)) {
@@ -2160,10 +2226,82 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * Filters that exist on student_placement_details: year, type, and search.
+     * Programme is matched from the year label when that label contains a course code.
+     *
      * @param array<int, array<string, mixed>> $rows
      * @param array<string, string> $filters
      * @return array<int, array<string, mixed>>
      */
+    private function applyPlacementDetailsFilters(array $rows, array $filters): array
+    {
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+        $type = trim((string) ($filters['type'] ?? ''));
+        $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
+        $wantProgram = $program !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
+            : '';
+
+        return array_values(array_filter($rows, function (array $row) use ($program, $wantProgram, $batch, $type, $q): bool {
+            $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
+            if ($batch !== '' && !StudentPlacementModel::matchesClassBatchSelection($year, $batch)) {
+                return false;
+            }
+            if ($batch === '' && $program !== '') {
+                $fromYear = DepartmentProgrammeCatalog::resolveProgrammeCode($year);
+                if ($fromYear === '' && $year !== '') {
+                    $norm = DepartmentProgrammeCatalog::normalizeCode($year);
+                    if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
+                        $fromYear = 'INMCA';
+                    } elseif (str_starts_with($norm, 'MCA')) {
+                        $fromYear = 'MCA';
+                    } elseif (str_contains($norm, 'BCA')) {
+                        $fromYear = 'BCA';
+                    }
+                }
+                $courseId = trim((string) ($row['courseid'] ?? ''));
+                $match = strcasecmp($courseId, $program) === 0
+                    || ($wantProgram !== '' && $fromYear !== '' && strcasecmp($fromYear, $wantProgram) === 0)
+                    || strcasecmp(DepartmentProgrammeCatalog::normalizeCode($courseId), DepartmentProgrammeCatalog::normalizeCode($program)) === 0;
+                if (!$match) {
+                    return false;
+                }
+            }
+            if ($type !== '') {
+                $want = match ($type) {
+                    'higher_education' => 'Higher Education',
+                    'research' => 'Research',
+                    default => 'Placement',
+                };
+                $rowType = trim((string) ($row['type'] ?? ''));
+                if ($rowType !== '' && strcasecmp($rowType, $want) !== 0) {
+                    return false;
+                }
+            }
+            if ($q === '') {
+                return true;
+            }
+            $hay = strtolower(implode(' ', [
+                (string) ($row['student'] ?? ''),
+                (string) ($row['admno'] ?? ''),
+                (string) ($row['cno'] ?? ''),
+                (string) ($row['email'] ?? ''),
+                (string) ($row['year'] ?? ''),
+                (string) ($row['courseid'] ?? ''),
+                (string) ($row['branchid'] ?? ''),
+                (string) ($row['employer'] ?? ''),
+                (string) ($row['empcno'] ?? ''),
+                (string) ($row['empadr'] ?? ''),
+                (string) ($row['payscale'] ?? ''),
+                (string) ($row['status'] ?? ''),
+                (string) ($row['type'] ?? ''),
+            ]));
+
+            return str_contains($hay, $q);
+        }));
+    }
+
     private function applyScopedRegistryFilters(array $rows, array $filters): array
     {
         $program = trim((string) ($filters['program'] ?? ''));
