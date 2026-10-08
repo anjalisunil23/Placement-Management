@@ -2639,18 +2639,7 @@ final class OfficerDataService
         };
 
         if ($syncStudRole === 'alumni') {
-            // Campus-wide stud_role=Alumni first (often capped ~6500; dept/class passes fill the rest).
             $fetchParams([]);
-            foreach ($this->campusParentDeptAesIds() as $aesId) {
-                $fetchParams(['stud_deptcode' => $aesId]);
-                $this->fetchAlumniScopedByProgramme($api, $aesId, $roleValues, $appendBatch, $directoryList);
-            }
-            $this->supplementAlumniFromKnownClassBatches($api, $appendBatch, $authoritativeStudentAdmnos);
-            $this->supplementAlumniFromDeptPassOutRecords($api, $appendBatch);
-            $this->supplementAlumniFromClassBatchFetches($api, $appendBatch, $authoritativeStudentAdmnos);
-            $this->supplementAlumniResidualFromDeptDirectories($api, $appendBatch, $authoritativeStudentAdmnos);
-            $this->supplementAlumniFromUnfilteredDeptRosters($api, $appendBatch, $authoritativeStudentAdmnos);
-            $this->supplementAlumniByCalendarYear($api, $appendBatch);
 
             return $merged;
         }
@@ -2771,19 +2760,11 @@ final class OfficerDataService
             }
         };
 
-        foreach ($this->campusParentDeptAesIds() as $aesId) {
-            foreach ($this->aesAlumniStudRoleParamValues() as $role) {
-                try {
-                    $collect($api->fetchAllStudInfo4Placement([
-                        'stud_deptcode' => $aesId,
-                        'stud_role'      => $role,
-                    ], true, false));
-                } catch (\Throwable) {
-                    continue;
-                }
-            }
+        foreach ($this->aesAlumniStudRoleParamValues() as $role) {
             try {
-                $collect($api->fetchAllStudInfo4Placement(['stud_deptcode' => $aesId], true, false));
+                $collect($api->fetchAllStudInfo4Placement([
+                    'stud_role' => $role,
+                ], true, false));
             } catch (\Throwable) {
                 continue;
             }
@@ -4244,9 +4225,6 @@ final class OfficerDataService
         };
 
         $fetchWithRole([]);
-        foreach ($this->campusParentDeptAesIds() as $aesId) {
-            $fetchWithRole(['stud_deptcode' => $aesId]);
-        }
 
         return $merged;
     }
