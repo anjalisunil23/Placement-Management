@@ -3,8 +3,7 @@
   const page = document.body?.dataset?.page || '';
   if (page === 'students.html' || page === 'coding.html') return;
   if (typeof DataTable === 'undefined') return;
-
-  try { DataTable.ext.errMode = 'none'; } catch (_) { /* ignore */ }
+  if (DataTable.ext) DataTable.ext.errMode = 'throw';
 
   let silence = 0;
   const pending = new Set();
@@ -72,7 +71,7 @@
   function optionsFor(table) {
     const targets = actionTargets(table);
     return {
-      retrieve: false,
+      destroy: true,
       pageLength: 25,
       lengthMenu: [10, 25, 50, 100, 250],
       order: [],
@@ -101,24 +100,27 @@
     if (!tbody) return;
     if (table.dataset.dtDrawing === '1') return;
 
-    if (isPlaceholder(tbody)) {
-      if (isInited(table)) {
-        silence += 1;
-        try { destroyDt(table); } catch (_) { /* ignore */ }
-        silence -= 1;
-      }
-      return;
-    }
-
     busy.add(table);
-    const html = tbody.innerHTML;
     silence += 1;
+    const release = () => {
+      busy.delete(table);
+      setTimeout(() => { silence = Math.max(0, silence - 1); }, 0);
+    };
     try {
+      if (isPlaceholder(tbody)) {
+        if (isInited(table)) {
+          try { destroyDt(table); } catch (_) { /* ignore */ }
+        }
+        return;
+      }
+
+      const html = tbody.innerHTML;
       if (isInited(table)) {
-        destroyDt(table);
+        try { destroyDt(table); } catch (_) { /* ignore */ }
         if (table.tBodies[0]) table.tBodies[0].innerHTML = html;
       }
       if (isInited(table)) return;
+
       const api = new DataTable(table, optionsFor(table));
       api.on('preDraw', () => { table.dataset.dtDrawing = '1'; });
       api.on('draw', () => {
@@ -128,8 +130,7 @@
     } catch (_) {
       /* leave the plain table if this layout cannot be paged */
     } finally {
-      silence -= 1;
-      busy.delete(table);
+      release();
     }
   }
 
