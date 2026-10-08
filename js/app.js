@@ -824,6 +824,7 @@ document.addEventListener('error', (event) => {
 
 function bootPageDataTables() {
   if (document.body?.dataset?.page === 'students.html') return;
+  if (document.body?.dataset?.page === 'coding.html') return;
   if (document.getElementById('pms-page-datatable')) return;
   if (!document.querySelector('link[data-pms-dt]')) {
     const link = document.createElement('link');
@@ -851,7 +852,7 @@ function bootPageDataTables() {
       await loadScript('https://cdn.datatables.net/2.1.8/js/dataTables.min.js');
       await loadScript('https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js');
     }
-    await loadScript('js/page-datatable.js?v=20261008dt');
+    await loadScript('js/page-datatable.js?v=20261008dt3');
   };
   start().catch(() => {});
 }

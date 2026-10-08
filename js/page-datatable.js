@@ -1,10 +1,14 @@
 /* Turn list tables into DataTables after each module fills them. */
 (function () {
-  if (document.body?.dataset?.page === 'students.html') return;
+  const page = document.body?.dataset?.page || '';
+  if (page === 'students.html' || page === 'coding.html') return;
   if (typeof DataTable === 'undefined') return;
+
+  try { DataTable.ext.errMode = 'none'; } catch (_) { /* ignore */ }
 
   let silence = 0;
   const pending = new Set();
+  const busy = new WeakSet();
   let timer = 0;
 
   function isListTable(table) {
@@ -26,6 +30,34 @@
       && rows[0].cells[0].colSpan > 1;
   }
 
+  function dtInstance(table) {
+    try {
+      if (typeof DataTable.get === 'function') {
+        const api = DataTable.get(table);
+        if (api) return api;
+      }
+    } catch (_) { /* ignore */ }
+    try {
+      if (window.jQuery && jQuery.fn.dataTable && jQuery.fn.dataTable.isDataTable(table)) {
+        return jQuery(table).DataTable();
+      }
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  function isInited(table) {
+    try {
+      if (typeof DataTable.isDataTable === 'function' && DataTable.isDataTable(table)) return true;
+    } catch (_) { /* ignore */ }
+    return !!dtInstance(table);
+  }
+
+  function destroyDt(table) {
+    const api = dtInstance(table);
+    if (!api) return;
+    try { api.destroy(); } catch (_) { /* ignore */ }
+  }
+
   function actionTargets(table) {
     const targets = [];
     Array.from(table.tHead.rows[0].cells).forEach((th, index) => {
@@ -40,6 +72,7 @@
   function optionsFor(table) {
     const targets = actionTargets(table);
     return {
+      retrieve: false,
       pageLength: 25,
       lengthMenu: [10, 25, 50, 100, 250],
       order: [],
@@ -63,27 +96,29 @@
   }
 
   function upgrade(table) {
-    if (silence || !isListTable(table)) return;
+    if (silence || !isListTable(table) || busy.has(table)) return;
     const tbody = table.tBodies[0];
     if (!tbody) return;
     if (table.dataset.dtDrawing === '1') return;
 
     if (isPlaceholder(tbody)) {
-      if (DataTable.isDataTable(table)) {
+      if (isInited(table)) {
         silence += 1;
-        try { DataTable.api(table).destroy(); } catch (_) { /* ignore */ }
+        try { destroyDt(table); } catch (_) { /* ignore */ }
         silence -= 1;
       }
       return;
     }
 
+    busy.add(table);
     const html = tbody.innerHTML;
     silence += 1;
     try {
-      if (DataTable.isDataTable(table)) {
-        try { DataTable.api(table).destroy(); } catch (_) { /* ignore */ }
+      if (isInited(table)) {
+        destroyDt(table);
         if (table.tBodies[0]) table.tBodies[0].innerHTML = html;
       }
+      if (isInited(table)) return;
       const api = new DataTable(table, optionsFor(table));
       api.on('preDraw', () => { table.dataset.dtDrawing = '1'; });
       api.on('draw', () => {
@@ -94,6 +129,7 @@
       /* leave the plain table if this layout cannot be paged */
     } finally {
       silence -= 1;
+      busy.delete(table);
     }
   }
 
@@ -118,13 +154,24 @@
   const observer = new MutationObserver((records) => {
     if (silence) return;
     records.forEach((record) => {
-      const table = tableFromNode(record.target);
-      if (table) queue(table);
+      const targetTable = tableFromNode(record.target);
+      if (targetTable && targetTable.dataset.dtDrawing === '1') return;
+      if (targetTable && isInited(targetTable)) {
+        const tbodyChanged = record.target.tagName === 'TBODY'
+          || (record.target.closest && record.target.closest('tbody'));
+        if (tbodyChanged) queue(targetTable);
+      } else if (targetTable) {
+        queue(targetTable);
+      }
       record.addedNodes.forEach((node) => {
+        if (!node || node.nodeType !== 1) return;
+        if (node.classList?.contains('dt-container') || node.classList?.contains('dataTables_wrapper')) return;
         const added = tableFromNode(node);
-        if (added) queue(added);
+        if (added && !isInited(added)) queue(added);
         if (node.querySelectorAll) {
-          node.querySelectorAll('table').forEach((nested) => queue(nested));
+          node.querySelectorAll('table').forEach((nested) => {
+            if (!isInited(nested)) queue(nested);
+          });
         }
       });
     });
@@ -135,8 +182,8 @@
 
   document.addEventListener('shown.bs.tab', () => {
     document.querySelectorAll('table').forEach((table) => {
-      if (!DataTable.isDataTable(table)) return;
-      try { DataTable.api(table).columns.adjust(); } catch (_) { /* ignore */ }
+      if (!isInited(table)) return;
+      try { dtInstance(table)?.columns.adjust(); } catch (_) { /* ignore */ }
     });
   });
 })();
