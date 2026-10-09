@@ -633,32 +633,11 @@ final class CodingService
         $pending = (int) ($resp['pendingWarning'] ?? 0);
         if ($pending > 0) {
             $resp['warningMessage'] = ExamMalpracticeService::warningMessage($pending);
+            $resp['warningTitle'] = ExamMalpracticeService::warningTitle($pending);
         }
 
-        if (!empty($resp['shouldAutoSubmit']) && CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') === 'ACTIVE') {
-            $answers = $this->answersPayloadFromAttempt($attempt);
-            $started = (int) ($attempt['startedAt'] ?? 0);
-            $taken = $started > 0 ? max(0, (int) round((microtime(true) * 1000 - $started) / 1000)) : 0;
-            try {
-                $submitResult = $this->submit($user, $attemptId, [
-                    'answers' => $answers,
-                    'timeTakenSeconds' => $taken,
-                    'autoSubmitted' => true,
-                    'terminationReason' => ExamMalpracticeService::TERMINATION_MALPRACTICE,
-                ]);
-                $resp['submitResult'] = $submitResult;
-                $resp['terminated'] = true;
-                $resp['ackRequired'] = false;
-                $attempt = $this->attempts->findById($attemptId) ?? $attempt;
-            } catch (\Throwable $e) {
-                $this->attempts->update($attemptId, [
-                    'malpracticeState' => 'TERMINATING',
-                    'terminationReason' => ExamMalpracticeService::TERMINATION_MALPRACTICE,
-                ]);
-                $resp['submitError'] = $e->getMessage();
-                $resp['terminated'] = true;
-            }
-        }
+        $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
+        $attempt = $this->attempts->findById($attemptId) ?? $attempt;
 
         $resp['state'] = ExamMalpracticeService::publicState($attempt);
         return $resp;
@@ -671,12 +650,40 @@ final class CodingService
     public function acknowledgeMalpractice(array $user, string $attemptId, array $body = []): array
     {
         $attempt = $this->requireOwnedActiveAttempt($user, $attemptId);
-        $pausedMs = max(0, min(30 * 60 * 1000, (int) ($body['pausedMs'] ?? 0)));
-        ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::acknowledge($attempt, $pausedMs);
+        $reason = strtolower(trim((string) ($body['reason'] ?? 'ack')));
+        if (!in_array($reason, ['ack', 'timeout', 'expired'], true)) {
+            $reason = 'ack';
+        }
+
+        ['patch' => $expirePatch, 'response' => $expireResp] = ExamMalpracticeService::checkDeadlineExpired($attempt);
+        if (!empty($expireResp['shouldAutoSubmit']) && $expirePatch !== []) {
+            $this->attempts->update($attemptId, $expirePatch);
+            $attempt = array_merge($attempt, $expirePatch);
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $expireResp, $body);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $expireResp['state'] = ExamMalpracticeService::publicState($attempt);
+            return $expireResp;
+        }
+
+        ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::finalizeWarning($attempt, $reason);
         if ($patch !== []) {
             $this->attempts->update($attemptId, $patch);
             $attempt = array_merge($attempt, $patch);
+        } elseif (!empty($resp['alreadyFinalized'])) {
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $resp['state'] = ExamMalpracticeService::publicState($attempt);
+            if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+                $resp['terminated'] = true;
+                return $resp;
+            }
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $resp['state'] = ExamMalpracticeService::publicState($attempt);
+            return $resp;
         }
+
+        $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
+        $attempt = $this->attempts->findById($attemptId) ?? $attempt;
         $resp['state'] = ExamMalpracticeService::publicState($attempt);
         return $resp;
     }
@@ -688,7 +695,99 @@ final class CodingService
     public function malpracticeState(array $user, string $attemptId): array
     {
         $attempt = $this->requireOwnedAttempt($user, $attemptId);
-        return ExamMalpracticeService::publicState($attempt);
+        $resp = ['state' => ExamMalpracticeService::publicState($attempt)];
+
+        if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            $resp['terminated'] = true;
+            return $resp;
+        }
+
+        ['patch' => $expirePatch, 'response' => $expireResp] = ExamMalpracticeService::checkDeadlineExpired($attempt);
+        if (!empty($expireResp['shouldAutoSubmit']) && $expirePatch !== []) {
+            $this->attempts->update($attemptId, $expirePatch);
+            $attempt = array_merge($attempt, $expirePatch);
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $expireResp, []);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $resp = array_merge($expireResp, ['state' => ExamMalpracticeService::publicState($attempt)]);
+            return $resp;
+        }
+
+        if (!empty($attempt['malpracticeTerminationSubmitDone'])
+            && CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') === 'ACTIVE') {
+            $retry = ['shouldAutoSubmit' => true, 'terminationReason' => (string) ($attempt['terminationReason'] ?? '')];
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $retry, []);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $resp['submitResult'] = $retry['submitResult'] ?? null;
+            $resp['terminated'] = !empty($retry['terminated']);
+        }
+
+        $resp['state'] = ExamMalpracticeService::publicState($attempt);
+        return $resp;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $resp
+     * @param array<string, mixed> $body
+     */
+    private function applyMalpracticeAutoSubmit(array $user, string $attemptId, array $attempt, array &$resp, array $body): void
+    {
+        if (empty($resp['shouldAutoSubmit'])) {
+            return;
+        }
+        $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+        if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            $resp['terminated'] = true;
+            $resp['ackRequired'] = false;
+            $resp['shouldAutoSubmit'] = false;
+            return;
+        }
+
+        $terminationReason = (string) ($resp['terminationReason'] ?? $attempt['terminationReason'] ?? ExamMalpracticeService::TERMINATION_MALPRACTICE);
+        if ($terminationReason === '') {
+            $terminationReason = ExamMalpracticeService::TERMINATION_MALPRACTICE;
+        }
+
+        $answers = $this->answersForMalpracticeSubmit($attempt, $body);
+        $started = (int) ($attempt['startedAt'] ?? 0);
+        $taken = $started > 0 ? max(0, (int) round((microtime(true) * 1000 - $started) / 1000)) : 0;
+
+        try {
+            $submitResult = $this->submit($user, $attemptId, [
+                'answers' => $answers,
+                'timeTakenSeconds' => $taken,
+                'autoSubmitted' => true,
+                'terminationReason' => $terminationReason,
+            ]);
+            $resp['submitResult'] = $submitResult;
+            $resp['terminated'] = true;
+            $resp['ackRequired'] = false;
+            $resp['shouldAutoSubmit'] = false;
+        } catch (\Throwable $e) {
+            $this->attempts->update($attemptId, [
+                'malpracticeState' => 'TERMINATING',
+                'terminationReason' => $terminationReason,
+                'malpracticeTerminationSubmitDone' => true,
+            ]);
+            $resp['submitError'] = $e->getMessage();
+            $resp['terminated'] = true;
+            $resp['shouldAutoSubmit'] = false;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $body
+     * @return array<string, array{language: string, code: string}>
+     */
+    private function answersForMalpracticeSubmit(array $attempt, array $body): array
+    {
+        $fromClient = is_array($body['answers'] ?? null) ? $body['answers'] : [];
+        if ($fromClient !== []) {
+            return $this->mergeSubmitAnswers($attempt, ['answers' => $fromClient]);
+        }
+        return $this->answersPayloadFromAttempt($attempt);
     }
 
     /**

@@ -992,13 +992,32 @@
       if (!attempt) throw new Error('Attempt not found.');
       attempt.malpractice = attempt.malpractice || { violationCount: 0, ackRequired: false, pendingWarning: 0 };
       if (attempt.malpractice.ackRequired) {
+        const deadline = Number(attempt.malpractice.warningDeadlineAt) || 0;
+        const expired = deadline > 0 && Date.now() >= deadline;
+        if (expired) {
+          attempt.malpractice.ackRequired = false;
+          attempt.malpractice.terminationSubmitDone = true;
+          attempt.submitted = true;
+          return {
+            violationCount: attempt.malpractice.violationCount,
+            ackRequired: false,
+            shouldAutoSubmit: true,
+            terminated: true,
+            incremented: false,
+            state: { ...attempt.malpractice },
+          };
+        }
         return {
           violationCount: attempt.malpractice.violationCount,
           pendingWarning: attempt.malpractice.pendingWarning,
           ackRequired: true,
           incremented: false,
           terminated: false,
-          state: { ...attempt.malpractice },
+          state: {
+            ...attempt.malpractice,
+            warningDeadlineAt: deadline,
+            warningSecondsRemaining: Math.max(0, Math.ceil((deadline - Date.now()) / 1000)),
+          },
         };
       }
       attempt.malpractice.violationCount += 1;
@@ -1006,6 +1025,7 @@
       if (count >= 3) {
         attempt.malpractice.ackRequired = false;
         attempt.malpractice.pendingWarning = 0;
+        attempt.malpractice.terminationReason = 'MALPRACTICE_LIMIT_EXCEEDED';
         return {
           violationCount: 3,
           terminated: true,
@@ -1014,11 +1034,14 @@
           state: { ...attempt.malpractice, terminationReason: 'MALPRACTICE_LIMIT_EXCEEDED' },
         };
       }
+      const deadline = Date.now() + 5000;
       attempt.malpractice.pendingWarning = count;
       attempt.malpractice.ackRequired = true;
+      attempt.malpractice.warningDeadlineAt = deadline;
       const warningMessage = count === 1
         ? 'WARNING 1 OF 2: You have left the active examination window. Further violations may result in automatic submission.'
         : 'FINAL WARNING: This is your second malpractice violation. One more violation will automatically submit your examination and end your session.';
+      const warningTitle = count >= 2 ? 'FINAL MALPRACTICE WARNING' : 'MALPRACTICE WARNING';
       return {
         violationCount: count,
         pendingWarning: count,
@@ -1026,27 +1049,47 @@
         incremented: true,
         terminated: false,
         warningMessage,
-        state: { ...attempt.malpractice },
+        warningTitle,
+        state: {
+          ...attempt.malpractice,
+          warningDeadlineAt: deadline,
+          warningSecondsRemaining: 5,
+        },
       };
     },
 
-    async acknowledgeMalpractice(attemptId, { pausedMs = 0 } = {}) {
+    async acknowledgeMalpractice(attemptId, { reason = 'ack', answers = null } = {}) {
       if (liveApi()) {
+        const body = { reason: String(reason || 'ack') };
+        if (answers && typeof answers === 'object') body.answers = answers;
         const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/malpractice/ack`, {
           method: 'POST',
-          body: JSON.stringify({ pausedMs: Math.max(0, Number(pausedMs) || 0) }),
+          body: JSON.stringify(body),
         }).catch(() => null);
         if (!res?.success) throw new Error(res?.message || 'Could not acknowledge warning.');
-        const attempt = attempts.get(attemptId);
-        if (attempt && res.data?.endsAt) attempt.endsAt = res.data.endsAt;
         return res.data;
       }
       const attempt = attempts.get(attemptId);
-      if (!attempt?.malpractice) return { ackRequired: false };
+      if (!attempt?.malpractice?.ackRequired) {
+        return { ackRequired: false, shouldAutoSubmit: false, state: attempt?.malpractice || {} };
+      }
+      const deadline = Number(attempt.malpractice.warningDeadlineAt) || 0;
+      let finalReason = String(reason || 'ack');
+      if (finalReason === 'ack' && deadline > 0 && Date.now() > deadline) finalReason = 'expired';
       attempt.malpractice.ackRequired = false;
       attempt.malpractice.pendingWarning = 0;
-      if (pausedMs > 0 && attempt.endsAt) attempt.endsAt += pausedMs;
-      return { ackRequired: false, endsAt: attempt.endsAt, state: { ...attempt.malpractice } };
+      attempt.malpractice.terminationSubmitDone = true;
+      attempt.malpractice.terminationReason = finalReason === 'ack'
+        ? 'MALPRACTICE_WARNING_ACKNOWLEDGED'
+        : (finalReason === 'expired' ? 'MALPRACTICE_WARNING_EXPIRED' : 'MALPRACTICE_WARNING_TIMEOUT');
+      attempt.submitted = true;
+      return {
+        ackRequired: false,
+        shouldAutoSubmit: true,
+        terminated: true,
+        submitResult: { attemptId, status: 'Submitted', autoSubmitted: true },
+        state: { ...attempt.malpractice },
+      };
     },
 
     async fetchMalpracticeState(attemptId) {
@@ -1056,7 +1099,14 @@
         return res.data;
       }
       const attempt = attempts.get(attemptId);
-      return attempt?.malpractice || { violationCount: 0, ackRequired: false, pendingWarning: 0 };
+      const mal = attempt?.malpractice || { violationCount: 0, ackRequired: false, pendingWarning: 0 };
+      const deadline = Number(mal.warningDeadlineAt) || 0;
+      if (deadline > 0) {
+        mal.warningDeadlineAt = deadline;
+        mal.warningSecondsRemaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        mal.warningExpired = mal.ackRequired && Date.now() >= deadline;
+      }
+      return mal;
     },
 
     async startAttempt(testId) {
