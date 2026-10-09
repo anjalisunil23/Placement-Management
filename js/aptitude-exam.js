@@ -224,8 +224,8 @@
     let keydownGuardBound = false;
     let focusEnforceTimer = null;
     let hiddenViolationPending = false;
-    const MAX_FOCUS_VIOLATIONS = 3;
-    const TAB_SWITCH_PROHIBITED_MSG = 'You left the test tab. Tab switching is not allowed. Return to this tab immediately — a malpractice warning will be shown when you come back.';
+    const MAX_MALPRACTICE_WARNINGS = 2;
+    const TAB_SWITCH_PROHIBITED_MSG = 'You left the test tab. Tab switching is not allowed. Return here immediately to see your malpractice warning.';
 
     function el(id) {
       return root.querySelector(`[data-exam="${id}"]`);
@@ -289,7 +289,15 @@
     }
 
     function malpracticeWarningMessage() {
-      return `Malpractice warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}. Switching tabs or leaving this test is not allowed — your attempt was blocked. After ${MAX_FOCUS_VIOLATIONS} warnings your test will be submitted automatically and you will be signed out.`;
+      const n = Math.min(focusViolationCount, MAX_MALPRACTICE_WARNINGS);
+      const tail = n < MAX_MALPRACTICE_WARNINGS
+        ? 'One more warning is allowed before your test is auto-submitted and you are signed out.'
+        : 'The next blocked switch attempt will auto-submit your test and sign you out.';
+      return `Malpractice warning ${n} of ${MAX_MALPRACTICE_WARNINGS}. Switching tabs is not allowed — this attempt was blocked. ${tail}`;
+    }
+
+    function shouldFinalizeAfterViolation() {
+      return focusViolationCount > MAX_MALPRACTICE_WARNINGS;
     }
 
     function acknowledgeFocusViolation() {
@@ -307,7 +315,7 @@
       });
     }
 
-    function recordBlockedMalpracticeAttempt(source) {
+    function recordBlockedMalpracticeAttempt(source, opts = {}) {
       if (!focusLockActive() || finalizingViolation) return;
       const now = Date.now();
       if (now - lastFocusViolationAt < 800) return;
@@ -315,18 +323,22 @@
       focusViolationCount += 1;
       violationAckRequired = true;
       freezeExamInteractions();
-      if (focusViolationCount >= MAX_FOCUS_VIOLATIONS) {
+      if (shouldFinalizeAfterViolation()) {
         finalizeAfterMaxViolations();
         return;
       }
+      const n = Math.min(focusViolationCount, MAX_MALPRACTICE_WARNINGS);
       const blocked = source === 'keyboard';
-      toast(
-        blocked
-          ? `Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: that action is blocked — stay on this test tab.`
-          : `Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: tab switching is not allowed.`,
-        'warning'
-      );
-      showMalpracticeAckOverlay();
+      const deferOverlay = opts.deferOverlay === true || document.hidden;
+      if (!deferOverlay) {
+        toast(
+          blocked
+            ? `Warning ${n} of ${MAX_MALPRACTICE_WARNINGS}: switching is blocked — stay on this test tab.`
+            : `Warning ${n} of ${MAX_MALPRACTICE_WARNINGS}: tab switching is not allowed.`,
+          'warning'
+        );
+        showMalpracticeAckOverlay();
+      }
     }
 
     function isLeaveShortcut(e) {
@@ -448,6 +460,9 @@
     function onVisibilityChange() {
       if (!focusLockActive() || finalizingViolation) return;
       if (document.hidden) {
+        if (!hiddenViolationPending) {
+          recordBlockedMalpracticeAttempt('tab', { deferOverlay: true });
+        }
         hiddenViolationPending = true;
         freezeExamInteractions();
         showLockOverlay(TAB_SWITCH_PROHIBITED_MSG, { title: 'Tab switching prohibited', dismissible: false });
@@ -456,7 +471,11 @@
       if (hiddenViolationPending) {
         hiddenViolationPending = false;
         window.focus();
-        recordBlockedMalpracticeAttempt('tab');
+        if (violationAckRequired && !finalizingViolation) {
+          const n = Math.min(focusViolationCount, MAX_MALPRACTICE_WARNINGS);
+          toast(`Warning ${n} of ${MAX_MALPRACTICE_WARNINGS}: tab switching is not allowed.`, 'warning');
+          showMalpracticeAckOverlay();
+        }
         return;
       }
       if (violationAckRequired) {
@@ -556,7 +575,7 @@
         </div>
         <div class="alert alert-warning py-2 px-3 small mb-3">
           <strong>During the test:</strong> copying questions and pasting answers are disabled.
-          <strong>Tab switching is not allowed</strong> — stay on this test window. Keyboard shortcuts and links that leave the test are blocked; each blocked attempt is a malpractice warning (${MAX_FOCUS_VIOLATIONS} maximum), then auto-submit and sign-out.
+          <strong>Tab switching is not allowed</strong> — stay on this test window. Each blocked attempt gives a malpractice warning (${MAX_MALPRACTICE_WARNINGS} warnings allowed); the next attempt auto-submits your test and signs you out.
           ${isContestAttempt(test) ? ' Challenge rules apply for the full duration.' : ''}
         </div>
         <h6 class="fw-bold">Instructions</h6>
