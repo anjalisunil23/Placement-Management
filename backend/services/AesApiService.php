@@ -1443,6 +1443,9 @@ final class AesApiService
             if (DepartmentModel::isPlacementParentDepartment($code, $name)) {
                 continue;
             }
+            if ($this->isExcludedPlacementBranchDepartment($code, $name)) {
+                continue;
+            }
             $key = strtolower($aesId . '|' . $code . '|' . $name);
             if (isset($seen[$key])) {
                 continue;
@@ -1457,6 +1460,30 @@ final class AesApiService
         }
 
         return $out;
+    }
+
+    /**
+     * Non-programme AES rows that must not appear in the Branch dropdown (Exam Cell, other dept codes, …).
+     */
+    private function isExcludedPlacementBranchDepartment(string $code, string $name): bool
+    {
+        $code = strtoupper(trim($code));
+        $name = trim($name);
+        $blob = strtoupper($code . ' ' . $name);
+        static $blockCodes = [
+            'AIT', 'EXAMCELL', 'EXAM', 'ADM', 'ADMIN', 'ADMINISTRATION', 'OFFICE', 'LIBRARY', 'HOSTEL',
+        ];
+        if ($code !== '' && in_array($code, $blockCodes, true)) {
+            return true;
+        }
+        if (preg_match('/\bEXAM\s*CELL\b/i', $name) === 1 || preg_match('/\bEXAM\s*CELL\b/i', $code) === 1) {
+            return true;
+        }
+        if (preg_match('/\b(EXAMINATION|EXAM\s*CELL)\b/i', $blob) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

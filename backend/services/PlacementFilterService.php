@@ -249,15 +249,25 @@ final class PlacementFilterService
                 foreach ((new AesApiService())->fetchChildAcademicDepartments($deptAesId) as $row) {
                     foreach (['name', 'code', 'short'] as $key) {
                         $token = trim((string) ($row[$key] ?? ''));
-                        if ($token === '') {
+                        if ($token === '' || self::isExcludedPlacementBranchLabel($token)) {
                             continue;
                         }
-                        $allowed[DepartmentProgrammeCatalog::normalizeCode($token)] = true;
+                        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($token);
+                        $norm = $resolved !== ''
+                            ? DepartmentProgrammeCatalog::normalizeCode($resolved)
+                            : DepartmentProgrammeCatalog::normalizeCode($token);
+                        if ($norm === '' || !isset($allowed[$norm])) {
+                            continue;
+                        }
+                        $allowed[$norm] = true;
                         $allowed[strtolower($token)] = true;
                     }
                 }
             }
             $labels = array_values(array_filter($labels, static function (string $label) use ($allowed): bool {
+                if (self::isExcludedPlacementBranchLabel($label)) {
+                    return false;
+                }
                 $norm = DepartmentProgrammeCatalog::normalizeCode($label);
                 if ($norm !== '' && isset($allowed[$norm])) {
                     return true;
@@ -274,7 +284,7 @@ final class PlacementFilterService
             }));
         }
 
-        return array_values(array_unique($labels));
+        return $this->sortLabels($this->dedupeProgrammeBranchLabels($labels));
     }
 
     /**
@@ -784,7 +794,7 @@ final class PlacementFilterService
             $labels[] = $label;
         }
 
-        return $this->sortLabels(array_values(array_unique($labels)));
+        return $this->sortLabels($this->dedupeProgrammeBranchLabels($labels));
     }
 
     /**
@@ -798,10 +808,10 @@ final class PlacementFilterService
         foreach ($api->fetchChildAcademicDepartments($parentAesId) as $row) {
             $name = trim((string) ($row['name'] ?? ''));
             $code = trim((string) ($row['code'] ?? ''));
-            if ($name !== '') {
+            if ($name !== '' && !self::isExcludedPlacementBranchLabel($name)) {
                 $labels[] = $name;
             }
-            if ($code !== '' && strcasecmp($code, $name) !== 0) {
+            if ($code !== '' && strcasecmp($code, $name) !== 0 && !self::isExcludedPlacementBranchLabel($code)) {
                 $labels[] = $code;
             }
         }
@@ -2026,6 +2036,85 @@ final class PlacementFilterService
         }
 
         return '';
+    }
+
+    /**
+     * Exam Cell, AIT, and other non-programme rows must not appear under a department's branches.
+     */
+    private static function isExcludedPlacementBranchLabel(string $label): bool
+    {
+        $label = trim($label);
+        if ($label === '') {
+            return true;
+        }
+        $norm = DepartmentProgrammeCatalog::normalizeCode($label);
+        static $block = [
+            'AIT', 'EXAMCELL', 'EXAM', 'ADM', 'ADMIN', 'ADMINISTRATION', 'OFFICE', 'LIBRARY', 'HOSTEL',
+        ];
+        if ($norm !== '' && in_array($norm, $block, true)) {
+            return true;
+        }
+        if (preg_match('/\bexam\s*cell\b/i', $label) === 1) {
+            return true;
+        }
+        if (preg_match('/\b(examination\s*cell|exam\s*cell)\b/i', $label) === 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * One dropdown entry per programme (MCA, BCA, Integrated MCA / INMCA, …).
+     *
+     * @param list<string> $labels
+     * @return list<string>
+     */
+    private function dedupeProgrammeBranchLabels(array $labels): array
+    {
+        $byKey = [];
+        foreach ($labels as $label) {
+            $label = trim((string) $label);
+            if ($label === '' || self::isExcludedPlacementBranchLabel($label)) {
+                continue;
+            }
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode($label);
+            $key = $code !== ''
+                ? DepartmentProgrammeCatalog::normalizeCode($code)
+                : DepartmentProgrammeCatalog::normalizeCode($label);
+            if ($key === '') {
+                $key = strtolower($label);
+            }
+            $display = $this->preferredProgrammeBranchLabel($label);
+            if (!isset($byKey[$key]) || strlen($display) >= strlen($byKey[$key])) {
+                $byKey[$key] = $display;
+            }
+        }
+
+        return array_values($byKey);
+    }
+
+    private function preferredProgrammeBranchLabel(string $label): string
+    {
+        $label = trim($label);
+        $code = DepartmentProgrammeCatalog::resolveProgrammeCode($label);
+        if ($code === '') {
+            return $label;
+        }
+        $want = DepartmentProgrammeCatalog::normalizeCode($code);
+        foreach (DepartmentProgrammeCatalog::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                $pCode = DepartmentProgrammeCatalog::normalizeCode((string) ($programme['code'] ?? ''));
+                if ($pCode !== $want) {
+                    continue;
+                }
+                $catalogLabel = trim((string) ($programme['label'] ?? ''));
+
+                return $catalogLabel !== '' ? $catalogLabel : $label;
+            }
+        }
+
+        return $label;
     }
 
     /**
