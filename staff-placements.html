@@ -100,6 +100,24 @@
           </div>
         </div>
 
+        <!-- View student placement details -->
+        <div class="modal fade" id="viewPlacementModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="viewPlacementTitle">Student details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <div class="row g-3" id="viewPlacementBody"></div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Edit placement modal (AES 5.2.1 layout) -->
         <div class="modal fade" id="editPlacementModal" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
@@ -397,6 +415,23 @@
 
           .registry-action-btn.ed {
             background: #f59e0b
+          }
+
+          .registry-action-btn.view {
+            background: #2563eb
+          }
+
+          .view-field-label {
+            font-size: .75rem;
+            font-weight: 600;
+            color: #6c757d;
+            margin-bottom: .15rem
+          }
+
+          .view-field-value {
+            font-size: .95rem;
+            color: #212529;
+            word-break: break-word
           }
 
           .registry-action-btn:hover:not(:disabled) {
@@ -1070,6 +1105,8 @@
         const sid = esc(r.studentId || '');
         const hasDoc = !!(r.hasOfferLetter || r.hasJoiningLetter || r.hasCompanyIdDoc);
         const hasPlacement = rowHasPlacement(r);
+        const rowIndex = start + i;
+        const viewBtn = `<button type="button" class="registry-action-btn view" title="View student details" aria-label="View details for ${esc(r.studentName || r.student || 'student')}" onclick="openViewPlacement(${rowIndex})"><i class="bi bi-eye-fill"></i></button>`;
         const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
         const detailsBtn = !canEditSelectedBatch
           ? `<button type="button" class="registry-action-btn add" title="Only class incharge can add or edit" disabled><i class="bi bi-lock-fill"></i></button>`
@@ -1084,7 +1121,7 @@
           }
           return `<td${cls ? ` class="${cls}"` : ''}>${inner}</td>`;
         }).join('');
-        return `<tr>${cells}<td><div class="registry-actions">${downloadBtn}${detailsBtn}</div></td></tr>`;
+        return `<tr>${cells}<td><div class="registry-actions">${viewBtn}${downloadBtn}${detailsBtn}</div></td></tr>`;
       }).join('');
     }
 
@@ -1200,6 +1237,37 @@
           statusSel.value = '';
         }
       }
+    }
+
+    function viewPlacementColumns() {
+      if (registryColumns.length) {
+        return registryColumns.filter((col) => (col.key || '') !== '_sl');
+      }
+      return [
+        'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
+        'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy', 'updatedBy',
+        'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
+      ].map((key) => ({ key, label: key, payloadField: key }));
+    }
+
+    function openViewPlacement(rowIndex) {
+      const row = filteredRows[rowIndex];
+      if (!row) {
+        toast('Record not found.', 'warn');
+        return;
+      }
+      const name = String(row.student || row.studentName || 'Student').trim();
+      const title = document.getElementById('viewPlacementTitle');
+      if (title) title.textContent = name || 'Student details';
+      const body = document.getElementById('viewPlacementBody');
+      if (body) {
+        body.innerHTML = viewPlacementColumns().map((col) => {
+          const label = esc(col.label || col.key || '');
+          const value = registryCellValue(col, row, 0);
+          return `<div class="col-md-6"><div class="view-field-label">${label}</div><div class="view-field-value">${value}</div></div>`;
+        }).join('');
+      }
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('viewPlacementModal')).show();
     }
 
     function openEditPlacement(studentId) {
