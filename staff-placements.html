@@ -461,9 +461,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009filter"></script>
+  <script src="js/staff-api.js?v=20261009deptkeep"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009filter"></script>
+  <script src="js/officer-api.js?v=20261009deptkeep"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -495,6 +495,8 @@
     let canEditSelectedBatch = false;
     let apiAssignedBatches = [];
     let registryColumns = [];
+    /** Keeps department dropdown when registry API omits filter options (omitFilters=1). */
+    let cachedDepartmentOptions = [];
 
     const SORT_ICON = '<i class="bi bi-chevron-expand registry-sort-icon" aria-hidden="true"></i>';
 
@@ -830,19 +832,34 @@
       filterDepartmentId = document.getElementById('filterDepartment')?.value ?? '';
     }
 
+    function departmentSelectHasChoices() {
+      const el = document.getElementById('filterDepartment');
+      if (!el) return false;
+      return [...el.options].some(o => String(o.value || '').trim() !== '');
+    }
+
     function fillDepartmentSelect(departments, selected = '') {
       const el = document.getElementById('filterDepartment');
       if (!el) return;
+      const normalized = normalizeDepartmentOptions(departments);
+      if (!normalized.length) {
+        return;
+      }
+      cachedDepartmentOptions = normalized;
       const current = selected || el.value || '';
-      el.innerHTML = '<option value="">All departments</option>' + (departments || []).map(d => {
-        const id = String(d.id || d._id || '').trim();
+      el.innerHTML = '<option value="">All departments</option>' + normalized.map(d => {
+        const id = d.id;
         const label = String(d.name || d.code || id).trim();
-        if (!id) return '';
         return `<option value="${esc(id)}">${esc(label)}</option>`;
       }).join('');
       if (current && [...el.options].some(o => o.value === current)) el.value = current;
       else el.value = '';
       syncDepartmentFilter();
+    }
+
+    function restoreDepartmentSelectIfEmpty() {
+      if (departmentSelectHasChoices() || !cachedDepartmentOptions.length) return;
+      fillDepartmentSelect(cachedDepartmentOptions, filterDepartmentId || scopeDepartmentId);
     }
 
     function normalizeDepartmentOptions(rows) {
@@ -1315,9 +1332,11 @@
           }
         } catch (_) { /* ignore */ }
       }
-      if (data.filters && typeof data.filters === 'object' && Array.isArray(data.filters.departments)) {
-        fillDepartmentSelect(data.filters.departments, filterDepartmentId);
+      const registryDepts = data.filters?.departments;
+      if (Array.isArray(registryDepts) && registryDepts.length) {
+        fillDepartmentSelect(registryDepts, filterDepartmentId);
       }
+      restoreDepartmentSelectIfEmpty();
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
       applyClientFilter();
