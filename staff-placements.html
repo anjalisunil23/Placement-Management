@@ -461,9 +461,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009he"></script>
+  <script src="js/staff-api.js?v=20261009batch"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009he"></script>
+  <script src="js/officer-api.js?v=20261009batch"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -497,6 +497,8 @@
     let registryColumns = [];
     /** Keeps department dropdown when registry API omits filter options (omitFilters=1). */
     let cachedDepartmentOptions = [];
+    let cachedProgramOptions = [];
+    let cachedBatchOptions = [];
 
     const SORT_ICON = '<i class="bi bi-chevron-expand registry-sort-icon" aria-hidden="true"></i>';
 
@@ -706,6 +708,15 @@
     function fillSelect(id, values, allLabel, selected = '', autoPickSingle = false) {
       const el = document.getElementById(id);
       if (!el) return;
+      let list = (values || []).map(v => String(v || '').trim()).filter(Boolean);
+      if (id === 'filterProgram') {
+        if (list.length) cachedProgramOptions = list;
+        else if (cachedProgramOptions.length) list = cachedProgramOptions.slice();
+      }
+      if (id === 'filterBatch') {
+        if (list.length) cachedBatchOptions = list;
+        else if (cachedBatchOptions.length) list = cachedBatchOptions.slice();
+      }
       const current = selected || el.value;
       const labelFor = (v) => {
         const raw = String(v || '').trim();
@@ -720,12 +731,12 @@
         }
         return raw;
       };
-      el.innerHTML = `<option value="">${allLabel}</option>` + (values || []).map(v => {
+      el.innerHTML = `<option value="">${allLabel}</option>` + list.map(v => {
         const value = String(v || '').trim();
         return `<option value="${esc(value)}">${esc(labelFor(value))}</option>`;
       }).join('');
       if (current && [...el.options].some(o => o.value === current)) el.value = current;
-      else if (autoPickSingle && (values || []).length === 1) el.value = values[0];
+      else if (autoPickSingle && list.length === 1) el.value = list[0];
       else el.value = '';
     }
 
@@ -930,13 +941,16 @@
       lastFilterPrograms = programs;
       lastFilterBatches = batches;
       // Only re-fetch batches when programme just became known and first payload had none.
-      if (filterProgram && !batches.length) {
+      if (!batches.length && (filterDepartmentId || filterProgram)) {
         const again = await registryApi.fetchPlacementFilters({
           departmentId: filterDepartmentId,
           program: filterProgram,
           studRole: 'all',
         });
-        batches = again?.batches || [];
+        batches = again?.batches || batches;
+        if (!programs.length && again?.programs?.length) {
+          programs = again.programs;
+        }
         if (Array.isArray(again?.assignedClassBatches) && again.assignedClassBatches.length) {
           apiAssignedBatches = again.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
         }

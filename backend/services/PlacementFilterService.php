@@ -275,6 +275,22 @@ final class PlacementFilterService
         $branch = trim($branch);
         $program = trim($program);
 
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+            $batches = $this->distinctClassBatchesFromLocalRegistry($ctx, $program, $branch);
+            $batches = $this->normalizeBatchLabelsForFilters($batches, $ctx);
+            if (!$finalYearOnly) {
+                return $batches;
+            }
+            $hint = trim($program . ' ' . $branch);
+            $classifier = new OfficerDataService();
+            $batches = array_values(array_filter(
+                $batches,
+                static fn (string $batch): bool => $classifier->isFinalYearClassBatch($batch, $hint)
+            ));
+
+            return $this->preferSpecificFinalYearBatches($batches);
+        }
+
         if ($this->placementStudRole($ctx) === 'all') {
             if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
                 $studentCtx = array_merge($ctx, ['placementStudRole' => 'student']);
