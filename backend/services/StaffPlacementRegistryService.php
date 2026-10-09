@@ -79,6 +79,7 @@ final class StaffPlacementRegistryService
 
     public function list(array $staffCtx, array $filters = []): array
     {
+        @ini_set('memory_limit', '256M');
         @set_time_limit(max(120, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 120)));
         if (empty($staffCtx['isAdmin'])) {
             StaffContext::requireDepartmentScope($staffCtx);
@@ -699,8 +700,9 @@ final class StaffPlacementRegistryService
             return $this->listFromPlacementDetails($details);
         }
         $placements = $details->mapLatestByAdmno();
+        unset($directory);
         $rows = [];
-        foreach ($people as $person) {
+        foreach ($people as $index => $person) {
             $admno = $person['admno'];
             $placement = $admno !== '' ? ($placements[strtoupper($admno)] ?? []) : [];
             $placementYear = trim((string) ($placement['year'] ?? ''));
@@ -752,7 +754,9 @@ final class StaffPlacementRegistryService
                 'createdAt' => trim((string) ($placement['createdat'] ?? '')),
                 'source' => 'student_details',
             ];
+            unset($people[$index], $person, $placement);
         }
+        unset($people, $placements);
 
         return $rows;
     }
@@ -2312,6 +2316,9 @@ final class StaffPlacementRegistryService
         $batch = trim((string) ($filters['batch'] ?? ''));
         $type = trim((string) ($filters['type'] ?? ''));
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
+        if ($program === '' && $batch === '' && $type === '' && $q === '') {
+            return $rows;
+        }
         $wantProgram = $program !== ''
             ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
             : '';

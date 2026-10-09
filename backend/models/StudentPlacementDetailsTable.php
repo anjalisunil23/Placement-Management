@@ -124,20 +124,42 @@ class StudentPlacementDetailsTable
             return $this->count();
         }
 
-        $rows = $this->rowsFromStudentPlacements();
+        $columns = $this->sourceColumns();
+        if ($columns === []) {
+            return 0;
+        }
+        $select = implode(', ', array_map(static fn (string $column): string => '`' . $column . '`', $columns));
+        $chunkSize = 50;
+        $offset = 0;
+        $total = 0;
         $this->db->beginTransaction();
         try {
             $this->db->exec('DELETE FROM `student_placement_details`');
-            $chunk = [];
-            foreach ($rows as $row) {
-                $chunk[] = $row;
-                if (count($chunk) >= 200) {
-                    $this->insertChunk($chunk);
-                    $chunk = [];
+            while (true) {
+                $statement = $this->db->query(
+                    'SELECT ' . $select . ' FROM `student_placements` LIMIT ' . $chunkSize . ' OFFSET ' . $offset
+                );
+                $chunk = [];
+                $fetched = 0;
+                while ($source = $statement->fetch()) {
+                    $fetched++;
+                    if (!is_array($source)) {
+                        continue;
+                    }
+                    $chunk[] = $this->detailRowFromSource($source);
+                    unset($source);
                 }
-            }
-            if ($chunk !== []) {
-                $this->insertChunk($chunk);
+                $statement->closeCursor();
+                unset($statement);
+                if ($chunk !== []) {
+                    $this->insertChunk($chunk);
+                    $total += count($chunk);
+                }
+                unset($chunk);
+                if ($fetched < $chunkSize) {
+                    break;
+                }
+                $offset += $chunkSize;
             }
             $this->db->commit();
         } catch (\Throwable $e) {
@@ -147,7 +169,7 @@ class StudentPlacementDetailsTable
             throw $e;
         }
 
-        return count($rows);
+        return $total;
     }
 
     /**
@@ -241,28 +263,6 @@ class StudentPlacementDetailsTable
         $statement->execute([$name]);
 
         return (bool) $statement->fetch();
-    }
-
-    /**
-     * @return list<array<string, string|null>>
-     */
-    private function rowsFromStudentPlacements(): array
-    {
-        $columns = $this->sourceColumns();
-        if ($columns === []) {
-            return [];
-        }
-        $select = implode(', ', array_map(static fn (string $column): string => '`' . $column . '`', $columns));
-        $statement = $this->db->query('SELECT ' . $select . ' FROM `student_placements`');
-        $rows = [];
-        while ($source = $statement->fetch()) {
-            if (!is_array($source)) {
-                continue;
-            }
-            $rows[] = $this->detailRowFromSource($source);
-        }
-
-        return $rows;
     }
 
     /**
