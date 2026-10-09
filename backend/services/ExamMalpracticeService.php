@@ -125,6 +125,73 @@ final class ExamMalpracticeService
     }
 
     /**
+     * Timely acknowledgement within the deadline — resume the attempt (no auto-submit).
+     *
+     * @param array<string, mixed> $attempt
+     * @return array{patch: array<string, mixed>, response: array<string, mixed>}
+     */
+    public static function acknowledgeWithinDeadline(array $attempt, int $pausedMs): array
+    {
+        if (!empty($attempt['malpracticeTerminationSubmitDone'])) {
+            return [
+                'patch' => [],
+                'response' => [
+                    'shouldAutoSubmit' => false,
+                    'alreadyFinalized' => true,
+                    'terminated' => true,
+                    'ackRequired' => false,
+                ],
+            ];
+        }
+
+        if (empty($attempt['malpracticeAckRequired'])) {
+            return [
+                'patch' => [],
+                'response' => [
+                    'shouldAutoSubmit' => false,
+                    'ackRequired' => false,
+                    'resumed' => true,
+                    'endsAt' => $attempt['endsAt'] ?? null,
+                ],
+            ];
+        }
+
+        $deadline = (int) ($attempt['malpracticeWarningDeadlineAt'] ?? 0);
+        if ($deadline > 0 && self::nowMs() > $deadline) {
+            return self::finalizeWarning($attempt, 'expired');
+        }
+
+        $pausedMs = max(0, min(30 * 60 * 1000, $pausedMs));
+        $endsAt = (int) ($attempt['endsAt'] ?? 0);
+        $newEndsAt = $endsAt;
+        if ($pausedMs > 0 && $endsAt > 0) {
+            $newEndsAt = $endsAt + $pausedMs;
+        }
+
+        $patch = [
+            'malpracticeAckRequired' => false,
+            'malpracticePendingWarning' => 0,
+            'malpracticeState' => 'ACTIVE',
+            'malpracticeWarningDeadlineAt' => null,
+            'malpracticeWarningStartedAt' => null,
+        ];
+        if ($newEndsAt !== $endsAt && $newEndsAt > 0) {
+            $patch['endsAt'] = $newEndsAt;
+        }
+
+        return [
+            'patch' => $patch,
+            'response' => [
+                'shouldAutoSubmit' => false,
+                'ackRequired' => false,
+                'terminated' => false,
+                'resumed' => true,
+                'endsAt' => $newEndsAt > 0 ? $newEndsAt : null,
+            ],
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $attempt
      * @return array{patch: array<string, mixed>, response: array<string, mixed>}
      */
@@ -133,6 +200,9 @@ final class ExamMalpracticeService
         $reason = strtolower(trim($reason));
         if (!in_array($reason, ['ack', 'timeout', 'expired'], true)) {
             $reason = 'timeout';
+        }
+        if ($reason === 'ack') {
+            return self::acknowledgeWithinDeadline($attempt, 0);
         }
 
         if (!empty($attempt['malpracticeTerminationSubmitDone'])) {
@@ -158,14 +228,7 @@ final class ExamMalpracticeService
             ];
         }
 
-        $deadline = (int) ($attempt['malpracticeWarningDeadlineAt'] ?? 0);
-        $now = self::nowMs();
-        if ($reason === 'ack' && $deadline > 0 && $now > $deadline) {
-            $reason = 'expired';
-        }
-
         $terminationReason = match ($reason) {
-            'ack' => self::TERMINATION_WARNING_ACK,
             'expired' => self::TERMINATION_WARNING_EXPIRED,
             default => self::TERMINATION_WARNING_TIMEOUT,
         };

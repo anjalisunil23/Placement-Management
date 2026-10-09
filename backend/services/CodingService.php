@@ -665,7 +665,13 @@ final class CodingService
             return $expireResp;
         }
 
-        ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::finalizeWarning($attempt, $reason);
+        if ($reason === 'ack') {
+            $pausedMs = max(0, min(30 * 60 * 1000, (int) ($body['pausedMs'] ?? 0)));
+            ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::acknowledgeWithinDeadline($attempt, $pausedMs);
+        } else {
+            ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::finalizeWarning($attempt, $reason);
+        }
+
         if ($patch !== []) {
             $this->attempts->update($attemptId, $patch);
             $attempt = array_merge($attempt, $patch);
@@ -676,15 +682,23 @@ final class CodingService
                 $resp['terminated'] = true;
                 return $resp;
             }
-            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
-            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            if (!empty($resp['shouldAutoSubmit'])) {
+                $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
+                $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            }
             $resp['state'] = ExamMalpracticeService::publicState($attempt);
             return $resp;
         }
 
-        $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
-        $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+        if (!empty($resp['shouldAutoSubmit'])) {
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+        }
+
         $resp['state'] = ExamMalpracticeService::publicState($attempt);
+        if (!empty($resp['resumed']) && isset($attempt['endsAt'])) {
+            $resp['endsAt'] = (int) $attempt['endsAt'];
+        }
         return $resp;
     }
 

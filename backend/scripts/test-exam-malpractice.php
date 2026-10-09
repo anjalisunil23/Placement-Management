@@ -36,10 +36,10 @@ $r1b = ExamMalpracticeService::recordIncident($attempt);
 assertTrue($r1b['response']['incremented'] === false, 'no increment while ack pending');
 assertTrue($r1b['response']['violationCount'] === 1, 'count stays 1');
 
-// Ack within deadline → auto submit (not resume)
-$fin = ExamMalpracticeService::finalizeWarning($attempt, 'ack');
-assertTrue($fin['response']['shouldAutoSubmit'] === true, 'ack triggers submit');
-assertTrue($fin['response']['terminationReason'] === ExamMalpracticeService::TERMINATION_WARNING_ACK, 'ack termination reason');
+// Ack within deadline → resume (no submit)
+$fin = ExamMalpracticeService::acknowledgeWithinDeadline($attempt, 2000);
+assertTrue($fin['response']['shouldAutoSubmit'] === false, 'timely ack does not submit');
+assertTrue($fin['response']['resumed'] === true, 'timely ack resumes');
 $attempt = array_merge($attempt, $fin['patch']);
 assertTrue(empty($attempt['malpracticeAckRequired']), 'ack cleared');
 

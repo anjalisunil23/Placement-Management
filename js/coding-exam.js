@@ -578,10 +578,48 @@
       logoutAfterViolation();
     }
 
+    async function acknowledgeMalpracticeWarning() {
+      if (!state?.attemptId || finalizingViolation || malpracticeFinalizeInFlight) return;
+      if (malpracticeDeadlineAt > 0 && Date.now() >= malpracticeDeadlineAt) {
+        return finalizeMalpracticeFromClient('expired');
+      }
+      malpracticeFinalizeInFlight = true;
+      const dismiss = lockOverlay?.querySelector('[data-cod-lock-dismiss]');
+      if (dismiss) dismiss.disabled = true;
+      const pausedMs = timerPauseStartedAt ? Date.now() - timerPauseStartedAt : 0;
+      try {
+        const data = await CodingService.acknowledgeMalpractice(state.attemptId, {
+          reason: 'ack',
+          pausedMs,
+        });
+        applyMalpracticeServerPayload(data);
+        if (data?.terminated || data?.shouldAutoSubmit || data?.submitResult) {
+          await handleMalpracticeTermination(data);
+          return;
+        }
+        stopWarningCountdown();
+        stopMalpracticeStatePoll();
+        violationAckRequired = false;
+        malpracticeDeadlineAt = 0;
+        malpracticeFinalizeInFlight = false;
+        hideLockOverlay(true);
+        resumeTimerAfterAck(data?.endsAt ?? data?.state?.endsAt);
+        if (focusLockActive() && state?.status === 'ACTIVE' && !state?.submitted) {
+          restoreExamInteractions();
+        }
+        await tryEnterExamFullscreen();
+      } catch (err) {
+        malpracticeFinalizeInFlight = false;
+        if (dismiss) dismiss.disabled = false;
+        toast(err?.message || 'Could not acknowledge warning.', 'error');
+        if (violationAckRequired) showMalpracticeAckOverlay();
+      }
+    }
+
     async function finalizeMalpracticeFromClient(reason) {
       if (!state?.attemptId || finalizingViolation || malpracticeFinalizeInFlight) return;
-      if (malpracticeDeadlineAt > 0 && Date.now() > malpracticeDeadlineAt && reason === 'ack') {
-        reason = 'expired';
+      if (reason === 'ack') {
+        return acknowledgeMalpracticeWarning();
       }
       malpracticeFinalizeInFlight = true;
       stopWarningCountdown();
@@ -591,9 +629,6 @@
       const dismiss = lockOverlay?.querySelector('[data-cod-lock-dismiss]');
       if (dismiss) dismiss.disabled = true;
       try {
-        if (reason === 'ack') {
-          await new Promise((r) => window.setTimeout(r, 500));
-        }
         await persistAllAnswersForSubmit();
         const data = await CodingService.acknowledgeMalpractice(state.attemptId, {
           reason,
@@ -634,7 +669,7 @@
           dismissDisabled: malpracticeFinalizeInFlight,
           dismissText: 'I Understand — Continue Test',
           showCountdown: true,
-          onDismiss: () => { finalizeMalpracticeFromClient('ack'); },
+          onDismiss: () => { acknowledgeMalpracticeWarning(); },
         });
         startWarningCountdown();
         startMalpracticeStatePoll();

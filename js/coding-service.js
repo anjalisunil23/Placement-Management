@@ -1058,15 +1058,20 @@
       };
     },
 
-    async acknowledgeMalpractice(attemptId, { reason = 'ack', answers = null } = {}) {
+    async acknowledgeMalpractice(attemptId, { reason = 'ack', pausedMs = 0, answers = null } = {}) {
       if (liveApi()) {
-        const body = { reason: String(reason || 'ack') };
+        const body = {
+          reason: String(reason || 'ack'),
+          pausedMs: Math.max(0, Number(pausedMs) || 0),
+        };
         if (answers && typeof answers === 'object') body.answers = answers;
         const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/malpractice/ack`, {
           method: 'POST',
           body: JSON.stringify(body),
         }).catch(() => null);
         if (!res?.success) throw new Error(res?.message || 'Could not acknowledge warning.');
+        const attempt = attempts.get(attemptId);
+        if (attempt && res.data?.endsAt) attempt.endsAt = res.data.endsAt;
         return res.data;
       }
       const attempt = attempts.get(attemptId);
@@ -1076,12 +1081,26 @@
       const deadline = Number(attempt.malpractice.warningDeadlineAt) || 0;
       let finalReason = String(reason || 'ack');
       if (finalReason === 'ack' && deadline > 0 && Date.now() > deadline) finalReason = 'expired';
+      if (finalReason === 'ack') {
+        attempt.malpractice.ackRequired = false;
+        attempt.malpractice.pendingWarning = 0;
+        attempt.malpractice.warningDeadlineAt = null;
+        const pause = Math.max(0, Number(pausedMs) || 0);
+        if (pause > 0 && attempt.endsAt) attempt.endsAt += pause;
+        return {
+          ackRequired: false,
+          shouldAutoSubmit: false,
+          resumed: true,
+          endsAt: attempt.endsAt,
+          state: { ...attempt.malpractice },
+        };
+      }
       attempt.malpractice.ackRequired = false;
       attempt.malpractice.pendingWarning = 0;
       attempt.malpractice.terminationSubmitDone = true;
-      attempt.malpractice.terminationReason = finalReason === 'ack'
-        ? 'MALPRACTICE_WARNING_ACKNOWLEDGED'
-        : (finalReason === 'expired' ? 'MALPRACTICE_WARNING_EXPIRED' : 'MALPRACTICE_WARNING_TIMEOUT');
+      attempt.malpractice.terminationReason = finalReason === 'expired'
+        ? 'MALPRACTICE_WARNING_EXPIRED'
+        : 'MALPRACTICE_WARNING_TIMEOUT';
       attempt.submitted = true;
       return {
         ackRequired: false,
