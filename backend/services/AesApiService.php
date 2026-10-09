@@ -1338,6 +1338,12 @@ final class AesApiService
         }
 
         $rows = $this->normalizeDepartmentRows($this->getAcademicDepartments($params));
+        if ($rows === [] && $params === []) {
+            $rows = $this->normalizeDepartmentRows($this->callAESApi('get_departments', $params));
+        }
+        if ($rows === [] && $params === []) {
+            $rows = $this->normalizeDepartmentRows($this->callAESApi('getDepartments', $params));
+        }
         if ($params === []) {
             self::$departmentCache = $rows;
         }

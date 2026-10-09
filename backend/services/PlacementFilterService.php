@@ -82,14 +82,14 @@ final class PlacementFilterService
      */
     public function fetchProgramOptions(array $ctx): array
     {
-        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
             return $this->fetchProgramOptionsFromRegistryTable($ctx);
         }
 
         $programmes = $this->distinctFieldFromScopedRows($ctx, 'stud_course', '', '');
         $deptAesId = $this->resolveParentDeptAesId($ctx);
         $enrichFromAes = $deptAesId !== ''
-            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']));
+            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']) || !empty($ctx['placementStaffRegistryFilters']));
         if ($enrichFromAes) {
             try {
                 $programmes = array_merge(
@@ -240,11 +240,11 @@ final class PlacementFilterService
         }
 
         $branches = $this->distinctFieldFromScopedRows($ctx, 'stud_branch', $program, '');
-        $skipAes = !empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes();
+        $skipAes = !empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx);
         $deptAesId = $this->resolveParentDeptAesId($ctx);
         $enrichFromAes = !$skipAes
             && $deptAesId !== ''
-            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']));
+            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']) || !empty($ctx['placementStaffRegistryFilters']));
         if ($enrichFromAes) {
             try {
                 $branches = array_merge(
@@ -275,7 +275,7 @@ final class PlacementFilterService
         $branch = trim($branch);
         $program = trim($program);
 
-        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
             $batches = $this->distinctClassBatchesFromLocalRegistry($ctx, $program, $branch);
             $batches = $this->normalizeBatchLabelsForFilters($batches, $ctx);
             if (!$finalYearOnly) {
@@ -292,7 +292,7 @@ final class PlacementFilterService
         }
 
         if ($this->placementStudRole($ctx) === 'all') {
-            if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+            if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
                 $studentCtx = array_merge($ctx, ['placementStudRole' => 'student']);
 
                 return $this->fetchBatchOptions($studentCtx, $program, $branch, $finalYearOnly);
@@ -530,7 +530,7 @@ final class PlacementFilterService
      */
     private function mergeAesStudyingClassBatchesForFilterDropdown(array $ctx, string $program, string $branch): array
     {
-        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
             return [];
         }
         if (empty($ctx['filterMode']) || $this->placementStudRole($ctx) === 'alumni') {
@@ -538,7 +538,7 @@ final class PlacementFilterService
         }
 
         if ($program === '' && !empty($ctx['placementStaffRegistryFilters'])) {
-            if (!empty($ctx['campusWide'])) {
+            if (!empty($ctx['campusWide']) && trim((string) ($ctx['departmentId'] ?? '')) === '') {
                 return [];
             }
             $programmes = $this->departmentProgrammeCodesForFilterScope($ctx) ?? [];
@@ -616,11 +616,24 @@ final class PlacementFilterService
     /**
      * @param array<string, mixed> $ctx
      */
-    private function staffRegistryFiltersSkipLiveAes(): bool
+    /**
+     * @param array<string, mixed> $ctx
+     */
+    private function staffRegistryFiltersSkipLiveAes(array $ctx = []): bool
     {
         $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_FILTERS_SKIP_AES'] ?? '1')));
+        if (!in_array($v, ['0', 'false', 'no', 'off'], true)) {
+            if ($ctx !== [] && !empty($ctx['placementStaffRegistryFilters'])) {
+                $deptId = trim((string) ($ctx['departmentId'] ?? ''));
+                if ($deptId !== '' && $this->resolveParentDeptAesId($ctx) !== '') {
+                    return false;
+                }
+            }
 
-        return !in_array($v, ['0', 'false', 'no', 'off'], true);
+            return true;
+        }
+
+        return false;
     }
 
     private function placementStudRole(array $ctx): string
@@ -639,7 +652,7 @@ final class PlacementFilterService
      */
     private function distinctAlumniClassBatches(array $ctx, string $program, string $branch): array
     {
-        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
             return $this->distinctClassBatchesFromLocalRegistry($ctx, $program, $branch);
         }
 
@@ -1006,7 +1019,7 @@ final class PlacementFilterService
         if ($filterMode) {
             $this->appendFilterModeStudInfoRows($ctx, $rows, $seen);
             $role = $this->placementStudRole($ctx);
-            $skipAlumniAes = !empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes();
+            $skipAlumniAes = !empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx);
             if (!$skipAlumniAes && ($role === 'alumni' || $role === 'all')) {
                 $this->appendAlumniDirectoryFilterRows($ctx, $rows, $seen);
             }

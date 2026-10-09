@@ -43,18 +43,16 @@ final class StaffPlacementRegistryService
      */
     public function departmentFilterOptions(): array
     {
-        $localOnly = $this->placementFiltersSkipLiveAes();
-        $rows = $this->loadAllDepartments($localOnly);
-        if ($rows === [] && $localOnly) {
-            try {
-                (new AesApiService())->syncDepartmentsToLocal();
-            } catch (\Throwable) {
-                // Serve whatever is already stored locally.
+        try {
+            $rows = $this->loadAllDepartments(false);
+            if ($rows !== []) {
+                return $rows;
             }
-            $rows = $this->loadAllDepartments(true);
+        } catch (\Throwable) {
+            // Fall back to local catalog when AES is unreachable.
         }
 
-        return $rows;
+        return $this->loadAllDepartments(true);
     }
 
     /**
@@ -2300,7 +2298,11 @@ final class StaffPlacementRegistryService
                 if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
                     continue;
                 }
+                $aesId = trim((string) ($aesRow['aesId'] ?? ''));
                 $local = $model->findByCode($code);
+                if ($local === null && $aesId !== '') {
+                    $local = $model->findByAesId($aesId);
+                }
                 if ($local === null && $code !== '' && preg_match('/^\d+$/', $code) === 1) {
                     $local = $model->findByAesId($code);
                 }

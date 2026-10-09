@@ -461,9 +461,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009batch"></script>
+  <script src="js/staff-api.js?v=20261009cascade"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009batch"></script>
+  <script src="js/officer-api.js?v=20261009cascade"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -485,6 +485,7 @@
     let searchDebounce = null;
     let filterDepartmentId = '';
     let filterProgram = '';
+    let filterBranch = '';
     let filterBatch = '';
     let scopeDepartmentId = '';
     let scopeDepartmentName = '';
@@ -680,6 +681,7 @@
       return {
         departmentId: effectiveDepartmentId(),
         program: filterProgram,
+        branch: filterBranch,
         batch: filterBatch,
         studRole: 'all',
         type: document.getElementById('filterType')?.value || '',
@@ -873,6 +875,37 @@
       fillDepartmentSelect(cachedDepartmentOptions, filterDepartmentId || scopeDepartmentId);
     }
 
+    function placementFilterCascadeRequired() {
+      return isCampusPlacementViewer();
+    }
+
+    function updateFilterCascadeState() {
+      const needDept = placementFilterCascadeRequired();
+      const hasDept = !!String(document.getElementById('filterDepartment')?.value || '').trim();
+      const programEl = document.getElementById('filterProgram');
+      const batchEl = document.getElementById('filterBatch');
+      if (programEl) {
+        programEl.disabled = needDept && !hasDept;
+        if (needDept && !hasDept) programEl.title = 'Choose a department first';
+        else programEl.removeAttribute('title');
+      }
+      if (batchEl) {
+        batchEl.disabled = needDept && !hasDept;
+        if (needDept && !hasDept) batchEl.title = 'Choose a department first';
+        else batchEl.removeAttribute('title');
+      }
+    }
+
+    function resetBranchBatchFiltersForCascade() {
+      cachedProgramOptions = [];
+      cachedBatchOptions = [];
+      filterProgram = '';
+      filterBatch = '';
+      fillSelect('filterProgram', [], 'Select department first', '', false);
+      fillSelect('filterBatch', [], 'Select department first', '', false);
+      updateFilterCascadeState();
+    }
+
     function normalizeDepartmentOptions(rows) {
       return (rows || []).map(d => ({
         id: String(d.id || d._id || '').trim(),
@@ -906,10 +939,23 @@
       if (!registryApi || !registryApi.fetchPlacementFilters) return;
 
       syncDepartmentFilter();
+      updateFilterCascadeState();
+      if (placementFilterCascadeRequired() && !filterDepartmentId) {
+        resetBranchBatchFiltersForCascade();
+        const deptOnly = await registryApi.fetchPlacementFilters({ studRole: 'all' });
+        if (deptOnly && Array.isArray(deptOnly.departments) && deptOnly.departments.length) {
+          fillDepartmentSelect(deptOnly.departments, filterDepartmentId || scopeDepartmentId);
+        } else {
+          await loadDepartmentOptionsFallback();
+        }
+        updateClassTeacherBanner();
+        return;
+      }
       const initialProgram = filterProgram || '';
       const data = await registryApi.fetchPlacementFilters({
         departmentId: filterDepartmentId,
         program: initialProgram || filterProgram,
+        branch: filterBranch || '',
         studRole: 'all',
       });
       if (!data) {
@@ -945,6 +991,7 @@
         const again = await registryApi.fetchPlacementFilters({
           departmentId: filterDepartmentId,
           program: filterProgram,
+          branch: filterBranch,
           studRole: 'all',
         });
         batches = again?.batches || batches;
@@ -956,10 +1003,12 @@
         }
       }
 
-      fillSelect('filterProgram', programs, 'All branches', filterProgram, false);
+      const branchLabel = filterDepartmentId ? 'All branches' : 'Select department first';
+      const batchLabel = filterDepartmentId ? (filterProgram ? 'All batches' : 'Select branch first') : 'Select department first';
+      fillSelect('filterProgram', programs, branchLabel, filterProgram, false);
       filterProgram = document.getElementById('filterProgram')?.value || '';
 
-      fillSelect('filterBatch', batches, 'All batches', filterBatch, false);
+      fillSelect('filterBatch', batches, batchLabel, filterBatch, false);
       filterBatch = document.getElementById('filterBatch')?.value || '';
       alignProgramWithBatchSelection();
       // Do not clear canEditSelectedBatch here — loadRegistry() sets it from the
@@ -968,6 +1017,7 @@
         canEditSelectedBatch = batchIsAssigned(filterBatch);
       }
       updateClassTeacherBanner();
+      updateFilterCascadeState();
 
     }
 
@@ -1384,15 +1434,24 @@
       if (changed === 'filterDepartment') {
         syncDepartmentFilter();
         filterProgram = '';
+        filterBranch = '';
         filterBatch = '';
+        cachedProgramOptions = [];
+        cachedBatchOptions = [];
         const programEl = document.getElementById('filterProgram');
         const batchEl = document.getElementById('filterBatch');
         if (programEl) programEl.value = '';
         if (batchEl) batchEl.value = '';
-        await loadPlacementFilters();
+        if (!filterDepartmentId && placementFilterCascadeRequired()) {
+          resetBranchBatchFiltersForCascade();
+        } else {
+          await loadPlacementFilters();
+        }
       } else if (changed === 'filterProgram') {
         filterProgram = document.getElementById('filterProgram')?.value || '';
+        filterBranch = filterProgram;
         filterBatch = '';
+        cachedBatchOptions = [];
         const batchEl = document.getElementById('filterBatch');
         if (batchEl) batchEl.value = '';
         await loadPlacementFilters();
