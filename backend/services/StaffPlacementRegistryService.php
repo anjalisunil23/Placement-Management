@@ -3203,7 +3203,9 @@ final class StaffPlacementRegistryService
             $recordType = 'Placement';
         }
         $key = $this->detailsRowKey($existing);
-        $saved = $details->addAnotherEntry($key, [
+        $admno = (string) ($existing['admno'] ?? '');
+        $candidate = [
+            'type' => $recordType,
             'employer' => $employer,
             'empcno' => trim((string) ($input['employerContact'] ?? '')),
             'empadr' => trim((string) ($input['address'] ?? '')),
@@ -3211,14 +3213,36 @@ final class StaffPlacementRegistryService
             'status' => trim((string) ($input['placementStatus'] ?? '')),
             'fordvv' => trim((string) ($input['fordvv'] ?? '')),
             'includedvv' => trim((string) ($input['includedvv'] ?? '')),
-            'type' => $recordType,
+        ];
+        foreach ($details->listEntriesByAdmno($admno) as $entry) {
+            $same = true;
+            foreach ($candidate as $column => $value) {
+                if (strcasecmp(trim((string) ($entry[$column] ?? '')), $value) !== 0) {
+                    $same = false;
+                    break;
+                }
+            }
+            if ($same) {
+                Response::error('This entry is already in the list. Change the details to add another.', 422);
+            }
+        }
+        $entryId = $details->addAnotherEntry($key, [
+            'employer' => $candidate['employer'],
+            'empcno' => $candidate['empcno'],
+            'empadr' => $candidate['empadr'],
+            'payscale' => $candidate['payscale'],
+            'status' => $candidate['status'],
+            'fordvv' => $candidate['fordvv'],
+            'includedvv' => $candidate['includedvv'],
+            'type' => $candidate['type'],
         ]);
-        if (!$saved) {
+        if ($entryId <= 0) {
             Response::error('Could not add this entry.', 500);
         }
 
         return [
             'studentId' => $key,
+            'entryId' => $entryId,
             'entries' => $details->listEntriesByAdmno((string) ($existing['admno'] ?? '')),
         ];
     }
@@ -3271,7 +3295,11 @@ final class StaffPlacementRegistryService
         } catch (\Throwable $e) {
             Response::error('Failed to save offer letter: ' . $e->getMessage(), 500);
         }
-        if (!$details->saveOfferLetterPath($admno, $path)) {
+        $entryId = (int) ($_POST['entryId'] ?? 0);
+        $stored = $entryId > 0
+            ? $details->saveOfferLetterOnEntry((string) ($existing['admno'] ?? ''), $entryId, $path)
+            : $details->saveOfferLetterPath($admno, $path);
+        if (!$stored) {
             Response::error('Could not store the offer letter on this student.', 500);
         }
 

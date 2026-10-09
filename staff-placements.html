@@ -304,8 +304,8 @@
             padding: .65rem .75rem;
             border: 1px solid #dee2e6;
             text-align: left;
-            text-transform: none;
-            letter-spacing: normal;
+            text-transform: uppercase;
+            letter-spacing: .02em;
             white-space: nowrap;
             vertical-align: middle;
           }
@@ -470,7 +470,9 @@
           }
 
           .view-details-table th {
-            background: #f1f3f5
+            background: #f1f3f5;
+            text-transform: uppercase;
+            letter-spacing: .02em
           }
 
           .registry-action-btn:hover:not(:disabled) {
@@ -591,6 +593,12 @@
         const col = byKey.get(key) || { key, label: key, sortable: true, sortKey: key, payloadField: key };
         if (key === 'cno') {
           return Object.assign({}, col, { label: 'cno / email' });
+        }
+        if (key === 'stud_role') {
+          return Object.assign({}, col, { label: 'role' });
+        }
+        if (key === 'year') {
+          return Object.assign({}, col, { label: 'batch' });
         }
         return col;
       });
@@ -1386,7 +1394,7 @@
       }
     }
 
-    const ENTRY_VIEW_KEYS = ['type', 'employer', 'empcno', 'empadr', 'payscale', 'status', 'fordvv', 'includedvv'];
+    const ENTRY_VIEW_KEYS = ['type', 'employer', 'empcno', 'empadr', 'payscale', 'role', 'batch'];
 
     function placementEntryFromRow(row) {
       return {
@@ -1395,22 +1403,43 @@
         empcno: String(row.empcno || row.employerContact || '').trim(),
         empadr: String(row.empadr || row.address || '').trim(),
         payscale: String(row.payscale || row.package || '').trim(),
-        status: String(row.status || row.placementStatus || '').trim(),
-        fordvv: String(row.fordvv || '').trim(),
-        includedvv: String(row.includedvv || '').trim(),
+        role: String(row.stud_role || row.studRole || row.role || '').trim(),
+        batch: String(row.year || row.classBatch || row.batch || '').trim(),
       };
     }
 
-    function renderPlacementEntries(entries) {
+    function renderPlacementEntries(entries, fallback) {
       const head = document.getElementById('viewPlacementHead');
       const body = document.getElementById('viewPlacementBody');
       if (head) {
         head.innerHTML = ENTRY_VIEW_KEYS.map((key) => `<th>${esc(key)}</th>`).join('');
       }
       if (!body) return;
-      const rows = (entries || []).filter((entry) => ENTRY_VIEW_KEYS.some((key) => String(entry[key] || '').trim() !== ''));
+      const role = String(fallback?.role || '').trim();
+      const batch = String(fallback?.batch || '').trim();
+      const seen = new Set();
+      const rows = (entries || []).map((entry) => ({
+        type: String(entry.type || '').trim(),
+        employer: String(entry.employer || '').trim(),
+        empcno: String(entry.empcno || '').trim(),
+        empadr: String(entry.empadr || '').trim(),
+        payscale: String(entry.payscale || '').trim(),
+        status: String(entry.status || '').trim(),
+        fordvv: String(entry.fordvv || '').trim(),
+        includedvv: String(entry.includedvv || '').trim(),
+        role: String(entry.role || entry.stud_role || role).trim(),
+        batch: String(entry.batch || entry.year || batch).trim(),
+      })).filter((entry) => {
+        if (!['type', 'employer', 'empcno', 'empadr', 'payscale'].some((key) => entry[key] !== '')) return false;
+        const signature = ['type', 'employer', 'empcno', 'empadr', 'payscale', 'status', 'fordvv', 'includedvv']
+          .map((key) => entry[key].toLowerCase())
+          .join('\n');
+        if (seen.has(signature)) return false;
+        seen.add(signature);
+        return true;
+      });
       body.innerHTML = rows.length
-        ? rows.map((entry) => `<tr>${ENTRY_VIEW_KEYS.map((key) => `<td>${esc(String(entry[key] || '').trim() || '—')}</td>`).join('')}</tr>`).join('')
+        ? rows.map((entry) => `<tr>${ENTRY_VIEW_KEYS.map((key) => `<td>${esc(entry[key] || '—')}</td>`).join('')}</tr>`).join('')
         : `<tr><td colspan="${ENTRY_VIEW_KEYS.length}" class="text-muted-2">No placement entries for this student.</td></tr>`;
     }
 
@@ -1429,10 +1458,9 @@
       const title = document.getElementById('viewPlacementTitle');
       if (title) title.textContent = heading;
       const identity = document.getElementById('viewPlacementIdentity');
-      if (identity) {
-        identity.innerHTML = `<div class="col-md-4"><div class="view-field-label">year</div><div class="view-field-value">${esc(year || '—')}</div></div>`;
-      }
-      renderPlacementEntries([]);
+      if (identity) identity.innerHTML = '';
+      const entryFallback = { role, batch: year };
+      renderPlacementEntries([], entryFallback);
       const body = document.getElementById('viewPlacementBody');
       if (body) {
         body.innerHTML = `<tr><td colspan="${ENTRY_VIEW_KEYS.length}" class="text-muted-2">Loading entries…</td></tr>`;
@@ -1451,7 +1479,7 @@
       if (!entries.length) {
         entries = [placementEntryFromRow(row)];
       }
-      renderPlacementEntries(entries);
+      renderPlacementEntries(entries, entryFallback);
     }
 
     function openEditPlacement(studentId) {
@@ -1487,7 +1515,7 @@
       const offerWrap = document.getElementById('editOfferLetterWrap');
       const offerInput = document.getElementById('editOfferLetter');
       const deleteBtn = document.getElementById('editPlacementDeleteBtn');
-      if (offerWrap) offerWrap.hidden = !adding;
+      if (offerWrap) offerWrap.hidden = false;
       if (offerInput) offerInput.value = '';
       if (deleteBtn) deleteBtn.hidden = adding;
       const addAnotherBtn = document.getElementById('editPlacementAddAnotherBtn');
@@ -1599,18 +1627,36 @@
       const btn = document.getElementById('editPlacementAddAnotherBtn');
       if (btn) btn.disabled = true;
       const res = await placementRegistryApi().addPlacementEntry(studentId, payload);
-      if (btn) btn.disabled = false;
       if (!res?.success) {
+        if (btn) btn.disabled = false;
         toast(res?.message || 'Could not add this entry.', 'error');
         return;
       }
+      const offerFile = document.getElementById('editOfferLetter')?.files?.[0] || null;
+      let offerSaved = !offerFile;
+      if (offerFile) {
+        const fd = new FormData();
+        fd.append('offerLetter', offerFile, offerFile.name);
+        const entryId = res?.data?.entryId;
+        if (entryId) fd.append('entryId', String(entryId));
+        const up = await placementRegistryApi().uploadPlacementOfferLetter(studentId, fd);
+        offerSaved = !!up?.success;
+        if (!offerSaved) {
+          toast(up?.message || 'Entry saved, but the offer letter upload failed.', 'warn');
+        }
+      }
+      if (btn) btn.disabled = false;
       ['editEmployer', 'editEmployerContact', 'editAddress', 'editPackage', 'editFordvv', 'editIncludedvv'].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.value = '';
       });
+      const offerInput = document.getElementById('editOfferLetter');
+      if (offerInput) offerInput.value = '';
       const statusSel = document.getElementById('editPlacementStatus');
       if (statusSel) statusSel.value = '';
-      toast('Another entry saved. View shows every entry for this student.', 'success');
+      if (offerSaved) {
+        toast(offerFile ? 'Another entry and offer letter saved.' : 'Another entry saved. View shows every entry for this student.', 'success');
+      }
       await loadRegistry();
     }
 

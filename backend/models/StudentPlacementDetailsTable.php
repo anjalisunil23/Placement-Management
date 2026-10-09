@@ -536,15 +536,37 @@ class StudentPlacementDetailsTable
     }
 
     /**
+     * Store an offer letter on one entry that belongs to this admission number.
+     */
+    public function saveOfferLetterOnEntry(string $admno, int $entryId, string $path): bool
+    {
+        $admno = strtoupper(trim($admno));
+        if ($admno === '' || $entryId <= 0 || !$this->ensure()) {
+            return false;
+        }
+        $path = trim($path);
+        if (strlen($path) > 512) {
+            $path = substr($path, 0, 512);
+        }
+        $statement = $this->db->prepare(
+            'UPDATE `student_placement_details` SET `offer_letter` = ?, `updatedate` = NOW()
+             WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ?'
+        );
+        $statement->execute([$path, $entryId, $admno]);
+
+        return $statement->rowCount() > 0;
+    }
+
+    /**
      * Insert another placement, higher-education, or research row for the same admission number.
      *
      * @param array<string, mixed> $fields
      */
-    public function addAnotherEntry(string $key, array $fields): bool
+    public function addAnotherEntry(string $key, array $fields): int
     {
         $base = $this->findByAdmnoOrId($key);
         if ($base === null) {
-            return false;
+            return 0;
         }
         $limits = [
             'employer' => 512,
@@ -590,7 +612,7 @@ class StudentPlacementDetailsTable
             $values['includedvv'],
         ]);
 
-        return true;
+        return (int) $this->db->lastInsertId();
     }
 
     /**
@@ -612,6 +634,7 @@ class StudentPlacementDetailsTable
         );
         $statement->execute([$admno]);
         $entries = [];
+        $seen = [];
         while ($row = $statement->fetch()) {
             if (!is_array($row)) {
                 continue;
@@ -626,6 +649,20 @@ class StudentPlacementDetailsTable
                 }
             }
             if ($filled) {
+                $signature = strtolower(implode("\n", [
+                    $entry['type'],
+                    $entry['employer'],
+                    $entry['empcno'],
+                    $entry['empadr'],
+                    $entry['payscale'],
+                    $entry['status'],
+                    $entry['fordvv'],
+                    $entry['includedvv'],
+                ]));
+                if (isset($seen[$signature])) {
+                    continue;
+                }
+                $seen[$signature] = true;
                 $entries[] = $entry;
             }
         }
