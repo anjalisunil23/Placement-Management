@@ -211,6 +211,44 @@ final class DepartmentProgrammeCatalog
     }
 
     /**
+     * Programme / course rows (BCA, BT, …) — not parent AES departments from getDepartments.
+     */
+    public static function isProgrammeBranchDepartmentRow(string $code, string $name = ''): bool
+    {
+        $name = trim($name);
+        $codeNorm = self::normalizeCode($code);
+        $nameNorm = self::normalizeCode($name);
+
+        if ($name !== '' && self::findGroupByParentName($name) !== null) {
+            return false;
+        }
+
+        foreach ([$codeNorm, $nameNorm] as $token) {
+            if ($token !== '' && in_array($token, ['BT', 'MT', 'BTECH', 'MTECH'], true)) {
+                return true;
+            }
+        }
+
+        if ($codeNorm !== '' && self::findGroupByProgramme($codeNorm) !== null) {
+            if ($nameNorm === $codeNorm) {
+                return true;
+            }
+            if ($name !== '' && !preg_match(
+                '/engineering|technology|applications|sciences|school|humanities|business|metallurgical|materials|food|chemical|civil|mechanical|electrical|electronics|computer/i',
+                $name
+            )) {
+                return true;
+            }
+        }
+
+        if ($nameNorm !== '' && self::findGroupByProgramme($nameNorm) !== null) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * @return array{parent:string,programmes:list<array{code:string,label:string,aliases:list<string>}>}|null
      */
     public static function findGroupForDepartment(string $code, string $name = ''): ?array

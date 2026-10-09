@@ -496,9 +496,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009cascade"></script>
+  <script src="js/staff-api.js?v=20261009aesfb"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009cascade"></script>
+  <script src="js/officer-api.js?v=20261009aesfb"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -931,6 +931,20 @@
       }
     }
 
+    function applyAesBranchHintFromFiltersApi(data) {
+      const branches = Array.isArray(data?.branches)
+        ? data.branches.map(b => String(b || '').trim()).filter(Boolean)
+        : [];
+      if (filterBranch) return;
+      if (branches.length === 1) {
+        filterBranch = branches[0];
+        return;
+      }
+      if (branches.includes('Regular')) {
+        filterBranch = 'Regular';
+      }
+    }
+
     function resetBranchBatchFiltersForCascade() {
       cachedProgramOptions = [];
       cachedBatchOptions = [];
@@ -1019,16 +1033,17 @@
 
       let programs = data.programs || [];
       let batches = data.batches || [];
+      applyAesBranchHintFromFiltersApi(data);
       lastFilterPrograms = programs;
       lastFilterBatches = batches;
-      // Only re-fetch batches when programme just became known and first payload had none.
-      if (!batches.length && (filterDepartmentId || filterProgram)) {
+      if (!batches.length && filterDepartmentId && filterProgram) {
         const again = await registryApi.fetchPlacementFilters({
           departmentId: filterDepartmentId,
           program: filterProgram,
           branch: filterBranch,
           studRole: 'all',
         });
+        applyAesBranchHintFromFiltersApi(again);
         batches = again?.batches || batches;
         if (!programs.length && again?.programs?.length) {
           programs = again.programs;
@@ -1517,7 +1532,7 @@
         }
       } else if (changed === 'filterProgram') {
         filterProgram = document.getElementById('filterProgram')?.value || '';
-        filterBranch = filterProgram;
+        filterBranch = '';
         filterBatch = '';
         cachedBatchOptions = [];
         const batchEl = document.getElementById('filterBatch');

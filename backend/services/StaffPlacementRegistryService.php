@@ -2295,7 +2295,7 @@ final class StaffPlacementRegistryService
                 if ($name === '') {
                     continue;
                 }
-                if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+                if (!DepartmentModel::isPlacementParentDepartment($code, $name)) {
                     continue;
                 }
                 $aesId = trim((string) ($aesRow['aesId'] ?? ''));
@@ -2315,24 +2315,27 @@ final class StaffPlacementRegistryService
                 }
                 $localCode = strtoupper(trim((string) ($local['code'] ?? $code)));
                 $localName = trim((string) ($local['name'] ?? $name));
+                $displayName = $name !== '' ? $name : $localName;
                 $byId[$id] = [
                     'id'   => $id,
                     'code' => $localCode !== '' && preg_match('/^\d+$/', $localCode) !== 1 ? $localCode : $code,
-                    'name' => $localName !== '' ? $localName : $name,
+                    'name' => $displayName !== '' ? $displayName : $localName,
                 ];
             }
         }
 
-        foreach ($model->findAll([], 500) as $dept) {
-            $option = DepartmentModel::toPlacementFilterOption($dept);
-            if ($option === null) {
-                continue;
+        if ($catalog === []) {
+            foreach ($model->findAll([], 500) as $dept) {
+                $option = DepartmentModel::toPlacementFilterOption($dept);
+                if ($option === null) {
+                    continue;
+                }
+                $byId[$option['id']] = $option;
             }
-            $byId[$option['id']] = $option;
         }
 
         $rows = array_values($byId);
-        usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));
+        usort($rows, static fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']));
 
         return $rows;
     }

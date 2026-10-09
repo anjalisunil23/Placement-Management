@@ -82,6 +82,10 @@ final class PlacementFilterService
      */
     public function fetchProgramOptions(array $ctx): array
     {
+        if ($this->registryAesDepartmentActive($ctx)) {
+            return $this->fetchProgramOptionsFromAes($ctx);
+        }
+
         if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
             return $this->fetchProgramOptionsFromRegistryTable($ctx);
         }
@@ -274,6 +278,10 @@ final class PlacementFilterService
     {
         $branch = trim($branch);
         $program = trim($program);
+
+        if ($this->registryAesDepartmentActive($ctx)) {
+            return $this->fetchBatchOptionsFromAes($ctx, $program, $branch, $finalYearOnly);
+        }
 
         if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
             $batches = $this->distinctClassBatchesFromLocalRegistry($ctx, $program, $branch);
@@ -614,8 +622,129 @@ final class PlacementFilterService
     }
 
     /**
+     * Staff placements grid: department chosen and AES stud_deptcode is known.
+     *
      * @param array<string, mixed> $ctx
      */
+    private function registryAesDepartmentActive(array $ctx): bool
+    {
+        if (empty($ctx['placementStaffRegistryFilters'])) {
+            return false;
+        }
+
+        return trim((string) ($ctx['departmentId'] ?? '')) !== ''
+            && $this->resolveParentDeptAesId($ctx) !== '';
+    }
+
+    /**
+     * Branch / programme list from getCourses4Placement for the selected AES department.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function fetchProgramOptionsFromAes(array $ctx): array
+    {
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        try {
+            $courses = (new AesApiService())->fetchPlacementCourses($deptAesId);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $aesApi = new AesApiService();
+        $labels = [];
+        foreach ($courses as $raw) {
+            $raw = trim((string) $raw);
+            if ($raw === '') {
+                continue;
+            }
+            $code = $aesApi->isCourseLevelShort($raw)
+                ? strtoupper(preg_replace('/[^A-Z0-9]/', '', $raw) ?? '')
+                : DepartmentProgrammeCatalog::resolveProgrammeCode($raw);
+            if ($code === '') {
+                $code = $raw;
+            }
+            if ($this->departmentProgrammeCodesForFilterScope($ctx) !== null
+                && !$this->programmeMatchesDepartmentFilterScope($code, $ctx)) {
+                continue;
+            }
+            $labels[] = $raw;
+        }
+
+        return $this->sortLabels(array_values(array_unique($labels)));
+    }
+
+    /**
+     * Class batches from getStudInfo4Placement for dept + programme (+ AES stud_branch when needed).
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function fetchBatchOptionsFromAes(
+        array $ctx,
+        string $program,
+        string $branch,
+        bool $finalYearOnly
+    ): array {
+        $program = trim($program);
+        if ($program === '') {
+            return [];
+        }
+
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        $api = new AesApiService();
+        $branch = trim($branch);
+        $branchCandidates = $branch !== '' ? [$branch] : [];
+        if ($branchCandidates === []) {
+            try {
+                $branchCandidates = $api->fetchPlacementBranches($deptAesId, $program);
+            } catch (\Throwable) {
+                $branchCandidates = [];
+            }
+        }
+        if ($branchCandidates === []) {
+            $branchCandidates = [''];
+        }
+
+        $collected = [];
+        foreach ($this->resolveProgrammeList($program) as $prog) {
+            foreach ($branchCandidates as $br) {
+                $br = trim((string) $br);
+                try {
+                    $collected = array_merge(
+                        $collected,
+                        $api->fetchPlacementClassBatches($deptAesId, $prog, $br)
+                    );
+                } catch (\Throwable) {
+                    // Try other branch / programme variants.
+                }
+            }
+        }
+
+        $collected = $this->refineStaffRegistryBatchOptions($collected, $ctx, $program, $branch);
+        $collected = $this->normalizeBatchLabelsForFilters($collected, $ctx);
+        if (!$finalYearOnly) {
+            return $collected;
+        }
+
+        $hint = trim($program . ' ' . $branch);
+        $classifier = new OfficerDataService();
+        $collected = array_values(array_filter(
+            $collected,
+            static fn (string $batch): bool => $classifier->isFinalYearClassBatch($batch, $hint)
+        ));
+
+        return $this->preferSpecificFinalYearBatches($collected);
+    }
+
     /**
      * @param array<string, mixed> $ctx
      */
