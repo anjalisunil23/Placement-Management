@@ -218,6 +218,8 @@
     let malpracticeFinalizeInFlight = false;
     let warningCountdownTimer = null;
     let malpracticeStatePollTimer = null;
+    let lockOverlayDismissHandler = null;
+    let lockOverlayActionsBound = false;
     let timerPauseStartedAt = 0;
     const INCIDENT_DEBOUNCE_MS = 1500;
     /** Warnings shown as 1 of 2 and 2 of 2; the 3rd blocked switch attempt ends the test. */
@@ -282,15 +284,40 @@
       overlay.style.zIndex = '2147483000';
       overlay.style.pointerEvents = 'auto';
       overlay.innerHTML = `
-        <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
+        <div data-cod-lock-panel style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35);pointer-events:auto;position:relative;z-index:1">
           <div data-cod-lock-title style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
           <div data-cod-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">You left the test window. Submitting your answers and signing you out…</div>
           <div data-cod-lock-countdown class="small fw-semibold mt-2 d-none" style="color:#b45309"></div>
-          <button type="button" class="btn btn-primary btn-sm mt-3 d-none" data-cod-lock-dismiss>I understand — continue test</button>
+          <button type="button" class="btn btn-primary btn-sm mt-3 d-none" data-cod-lock-dismiss style="pointer-events:auto;cursor:pointer">I understand — continue test</button>
         </div>`;
       document.body.appendChild(overlay);
       lockOverlay = overlay;
+      bindLockOverlayActionsOnce();
       return lockOverlay;
+    }
+
+    function bindLockOverlayActionsOnce() {
+      const overlay = ensureLockOverlay();
+      if (lockOverlayActionsBound) return;
+      lockOverlayActionsBound = true;
+      overlay.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-cod-lock-dismiss]');
+        if (!btn || btn.classList.contains('d-none') || btn.disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        btn.disabled = true;
+        const handler = lockOverlayDismissHandler;
+        if (typeof handler === 'function') handler();
+      }, true);
+      overlay.addEventListener('mousedown', (e) => {
+        if (e.target.closest('[data-cod-lock-panel]')) e.stopPropagation();
+      }, true);
+    }
+
+    function malpracticeAckOverlayVisible() {
+      if (!lockOverlay || lockOverlay.style.display !== 'flex') return false;
+      const dismiss = lockOverlay.querySelector('[data-cod-lock-dismiss]');
+      return !!(dismiss && !dismiss.classList.contains('d-none') && violationAckRequired);
     }
 
     function showLockOverlay(message, opts = {}) {
@@ -314,18 +341,16 @@
       if (dismiss) {
         if (opts.dismissible) {
           dismiss.classList.remove('d-none');
-          dismiss.disabled = !!opts.dismissDisabled;
+          dismiss.disabled = false;
           dismiss.textContent = opts.dismissText || 'I understand — continue test';
-          dismiss.onclick = () => {
-            if (dismiss.disabled) return;
-            dismiss.disabled = true;
-            opts.onDismiss?.();
-          };
+          lockOverlayDismissHandler = () => { opts.onDismiss?.(); };
         } else {
           dismiss.classList.add('d-none');
           dismiss.disabled = false;
-          dismiss.onclick = null;
+          lockOverlayDismissHandler = null;
         }
+      } else {
+        lockOverlayDismissHandler = null;
       }
       overlay.style.display = 'flex';
     }
@@ -339,9 +364,8 @@
 
     function mountLockOverlayForExam() {
       const overlay = ensureLockOverlay();
-      const fsRoot = getFullscreenElement() || document.documentElement;
-      if (overlay.parentElement !== fsRoot) {
-        fsRoot.appendChild(overlay);
+      if (overlay.parentElement !== document.body) {
+        document.body.appendChild(overlay);
       }
     }
 
@@ -508,12 +532,14 @@
         return data;
       }
       const st = data?.state || data;
-      if (st?.warningExpired || (st?.ackRequired && Number(st.warningSecondsRemaining) <= 0 && malpracticeDeadlineAt && Date.now() >= malpracticeDeadlineAt)) {
+      const clientPastDeadline = malpracticeDeadlineAt > 0 && Date.now() >= malpracticeDeadlineAt;
+      if (clientPastDeadline || (st?.warningExpired && clientPastDeadline)) {
         return finalizeMalpracticeFromClient('expired');
       }
       applyMalpracticeServerPayload({ state: st, ...data });
       if (st?.ackRequired || data?.ackRequired) {
-        showMalpracticeAckOverlay();
+        if (!malpracticeAckOverlayVisible()) showMalpracticeAckOverlay();
+        else syncWarningCountdownUi();
       }
       return data;
     }
@@ -652,28 +678,30 @@
     }
 
     function showMalpracticeAckOverlay() {
-      if (!violationAckRequired || finalizingViolation) return;
+      if (!violationAckRequired || finalizingViolation || malpracticeFinalizeInFlight) return;
       if (malpracticeDeadlineAt > 0 && Date.now() >= malpracticeDeadlineAt) {
         finalizeMalpracticeFromClient('expired');
         return;
       }
+      if (malpracticeAckOverlayVisible()) {
+        syncWarningCountdownUi();
+        return;
+      }
       freezeExamInteractions();
       pauseTimerForWarning();
-      tryEnterExamFullscreen().finally(() => {
-        mountLockOverlayForExam();
-        const title = lastServerWarningTitle
-          || (focusViolationCount >= 2 ? 'FINAL MALPRACTICE WARNING' : 'MALPRACTICE WARNING');
-        showLockOverlay(malpracticeWarningMessage(), {
-          title,
-          dismissible: true,
-          dismissDisabled: malpracticeFinalizeInFlight,
-          dismissText: 'I Understand — Continue Test',
-          showCountdown: true,
-          onDismiss: () => { acknowledgeMalpracticeWarning(); },
-        });
-        startWarningCountdown();
-        startMalpracticeStatePoll();
+      mountLockOverlayForExam();
+      const title = lastServerWarningTitle
+        || (focusViolationCount >= 2 ? 'FINAL MALPRACTICE WARNING' : 'MALPRACTICE WARNING');
+      showLockOverlay(malpracticeWarningMessage(), {
+        title,
+        dismissible: true,
+        dismissText: 'I Understand — Continue Test',
+        showCountdown: true,
+        onDismiss: () => { acknowledgeMalpracticeWarning(); },
       });
+      startWarningCountdown();
+      startMalpracticeStatePoll();
+      tryEnterExamFullscreen().catch(() => {});
     }
 
     async function reportUnifiedMalpracticeIncident(source) {
@@ -757,9 +785,8 @@
           if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
             window.focus();
           }
-          if (violationAckRequired && !document.hidden) {
-            mountLockOverlayForExam();
-            if (lockOverlay?.style.display !== 'flex') showMalpracticeAckOverlay();
+          if (violationAckRequired && !document.hidden && !malpracticeAckOverlayVisible()) {
+            showMalpracticeAckOverlay();
           }
         } catch (_) { /* ignore */ }
       }, 350);
