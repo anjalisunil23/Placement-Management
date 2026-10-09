@@ -1388,41 +1388,75 @@ final class AesApiService
             ['parentDeptCode' => $parentAesId],
         ];
 
-        $merged = [];
-        $seen = [];
+        $best = [];
         foreach ($paramSets as $params) {
             try {
                 $rows = $this->loadDepartmentsFromApi($params);
             } catch (\Throwable) {
                 continue;
             }
-            foreach ($rows as $row) {
-                $aesId = trim((string) ($row['aesId'] ?? ''));
-                if ($aesId !== '' && $aesId === $parentAesId) {
-                    continue;
-                }
-                $code = strtoupper(trim((string) ($row['code'] ?? '')));
-                $name = trim((string) ($row['name'] ?? ''));
-                if ($name === '' && $code === '') {
-                    continue;
-                }
-                $key = strtolower($aesId . '|' . $code . '|' . $name);
-                if (isset($seen[$key])) {
-                    continue;
-                }
-                $seen[$key] = true;
-                $merged[] = [
-                    'code'  => $code,
-                    'name'  => $name,
-                    'short' => trim((string) ($row['short'] ?? $code)),
-                    'aesId' => $aesId,
-                ];
+            $filtered = $this->filterBranchDepartmentRows($rows, $parentAesId);
+            if ($filtered === []) {
+                continue;
+            }
+            if ($best === [] || count($filtered) < count($best)) {
+                $best = $filtered;
+            }
+            if (count($best) > 0 && count($best) <= 12) {
+                break;
             }
         }
 
-        usort($merged, static fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']));
+        // AES sometimes returns the full campus catalog when a scope param is ignored.
+        if (count($best) > 15) {
+            return [];
+        }
 
-        return $merged;
+        usort($best, static fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']));
+
+        return $best;
+    }
+
+    /**
+     * Programme rows under a parent — exclude parent centres (Computer Applications, CSE, …).
+     *
+     * @param list<array{code:string,name:string,short:string,aesId?:string}> $rows
+     * @return list<array{code:string,name:string,short:string,aesId:string}>
+     */
+    private function filterBranchDepartmentRows(array $rows, string $parentAesId): array
+    {
+        $out = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            $aesId = trim((string) ($row['aesId'] ?? ''));
+            if ($aesId !== '' && $aesId === $parentAesId) {
+                continue;
+            }
+            $code = strtoupper(trim((string) ($row['code'] ?? '')));
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name === '' && $code === '') {
+                continue;
+            }
+            if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+                continue;
+            }
+            if (DepartmentModel::isPlacementParentDepartment($code, $name)) {
+                continue;
+            }
+            $key = strtolower($aesId . '|' . $code . '|' . $name);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = [
+                'code'  => $code,
+                'name'  => $name,
+                'short' => trim((string) ($row['short'] ?? $code)),
+                'aesId' => $aesId,
+            ];
+        }
+
+        return $out;
     }
 
     /**

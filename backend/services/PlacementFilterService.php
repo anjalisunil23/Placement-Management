@@ -87,6 +87,11 @@ final class PlacementFilterService
             return [];
         }
 
+        if (!empty($ctx['placementStaffRegistryFilters'])
+            && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+            return $this->sortLabels($this->fetchDepartmentBranchOptionsOnly($ctx));
+        }
+
         $aesPrograms = [];
         if ($this->registryAesDepartmentActive($ctx)) {
             $aesPrograms = $this->fetchProgramOptionsFromAes($ctx);
@@ -184,6 +189,95 @@ final class PlacementFilterService
     }
 
     /**
+     * Staff placements Branch dropdown — scoped to one selected department only.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function fetchDepartmentBranchOptionsOnly(array $ctx): array
+    {
+        $labels = [];
+        $skipLiveAes = $this->staffRegistryFiltersSkipLiveAes($ctx);
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+
+        if (!$skipLiveAes && $deptAesId !== '') {
+            $labels = array_merge($labels, $this->fetchProgramOptionsFromAes($ctx));
+        }
+
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
+            (string) ($dept['code'] ?? ''),
+            (string) ($dept['name'] ?? '')
+        );
+        if ($group !== null) {
+            foreach ($group['programmes'] as $programme) {
+                $label = trim((string) ($programme['label'] ?? ''));
+                $code = trim((string) ($programme['code'] ?? ''));
+                if ($label !== '') {
+                    $labels[] = $label;
+                }
+                if ($code !== '' && strcasecmp($code, $label) !== 0) {
+                    $labels[] = $code;
+                }
+            }
+        }
+
+        if ($labels === [] || $skipLiveAes) {
+            $labels = array_values(array_unique(array_merge(
+                $labels,
+                $this->fetchProgramOptionsFromRegistryTable($ctx)
+            )));
+        }
+
+        $labels = array_values(array_filter(array_map(
+            static fn ($v): string => trim((string) $v),
+            $labels
+        ), static fn (string $v): bool => $v !== ''));
+
+        if ($group !== null && $labels !== []) {
+            $allowed = [];
+            foreach ($group['programmes'] as $programme) {
+                foreach ([$programme['code'], $programme['label'], ...($programme['aliases'] ?? [])] as $token) {
+                    $token = trim((string) $token);
+                    if ($token !== '') {
+                        $allowed[DepartmentProgrammeCatalog::normalizeCode($token)] = true;
+                        $allowed[strtolower($token)] = true;
+                    }
+                }
+            }
+            if ($deptAesId !== '') {
+                foreach ((new AesApiService())->fetchChildAcademicDepartments($deptAesId) as $row) {
+                    foreach (['name', 'code', 'short'] as $key) {
+                        $token = trim((string) ($row[$key] ?? ''));
+                        if ($token === '') {
+                            continue;
+                        }
+                        $allowed[DepartmentProgrammeCatalog::normalizeCode($token)] = true;
+                        $allowed[strtolower($token)] = true;
+                    }
+                }
+            }
+            $labels = array_values(array_filter($labels, static function (string $label) use ($allowed): bool {
+                $norm = DepartmentProgrammeCatalog::normalizeCode($label);
+                if ($norm !== '' && isset($allowed[$norm])) {
+                    return true;
+                }
+                if (isset($allowed[strtolower($label)])) {
+                    return true;
+                }
+                $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($label);
+                if ($resolved !== '' && isset($allowed[DepartmentProgrammeCatalog::normalizeCode($resolved)])) {
+                    return true;
+                }
+
+                return false;
+            }));
+        }
+
+        return array_values(array_unique($labels));
+    }
+
+    /**
      * Staff Placements dropdown — programmes from catalog + student_placements (no AES).
      *
      * @param array<string, mixed> $ctx
@@ -218,11 +312,7 @@ final class PlacementFilterService
         if ($deptId !== '') {
             try {
                 $model = new StudentPlacementModel();
-                $deptFilter = ['$or' => [
-                    ['departmentId' => $deptId],
-                    ['departmentId' => ''],
-                ]];
-                foreach ($model->pluckField('programme', $deptFilter, 800) as $raw) {
+                foreach ($model->pluckField('programme', ['departmentId' => $deptId], 800) as $raw) {
                     $code = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($raw));
                     if ($code !== '') {
                         $canonical[] = $code;
