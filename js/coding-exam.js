@@ -197,13 +197,19 @@
     let beforeUnloadBound = false;
     let examLockdown = false;
     let lockdownGuardsBound = false;
+    let navigationGuardBound = false;
     let clipboardGuardsEnabled = false;
     let focusGuardsEnabled = false;
     let focusViolationCount = 0;
-    let pendingFocusViolation = false;
+    let violationAckRequired = false;
     let finalizingViolation = false;
     let lastFocusViolationAt = 0;
+    let fullscreenListenerBound = false;
+    let keydownGuardBound = false;
+    let focusEnforceTimer = null;
+    let hiddenViolationPending = false;
     const MAX_FOCUS_VIOLATIONS = 3;
+    const TAB_SWITCH_PROHIBITED_MSG = 'You left the contest tab. Tab switching is not allowed. Return to this tab immediately — a malpractice warning will be shown when you come back.';
     let remainingMs = 0;
     let timerDeadline = 0;
     let lockOverlay = null;
@@ -282,7 +288,11 @@
       if (dismiss) {
         if (opts.dismissible) {
           dismiss.classList.remove('d-none');
-          dismiss.onclick = () => hideLockOverlay();
+          dismiss.textContent = opts.dismissText || 'I understand — continue test';
+          dismiss.onclick = () => {
+            hideLockOverlay();
+            opts.onDismiss?.();
+          };
         } else {
           dismiss.classList.add('d-none');
           dismiss.onclick = null;
@@ -340,6 +350,7 @@
     }
 
     function restoreExamInteractions() {
+      if (violationAckRequired) return;
       const locked = !!state?.submitted;
       if (editor) editor.setReadOnly(locked);
       if (el('stdin')) el('stdin').readOnly = locked;
@@ -387,34 +398,206 @@
       logoutAfterViolation();
     }
 
-    function onVisibilityChange() {
+    function malpracticeWarningMessage() {
+      return `Malpractice warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}. Switching tabs or leaving this contest is not allowed — your attempt was blocked. After ${MAX_FOCUS_VIOLATIONS} warnings your test will be submitted automatically and you will be signed out.`;
+    }
+
+    function acknowledgeFocusViolation() {
+      violationAckRequired = false;
+      if (focusLockActive() && state?.status === 'ACTIVE' && !state?.submitted) {
+        restoreExamInteractions();
+      }
+    }
+
+    function showMalpracticeAckOverlay() {
+      showLockOverlay(malpracticeWarningMessage(), {
+        title: 'Malpractice warning',
+        dismissible: true,
+        onDismiss: acknowledgeFocusViolation,
+      });
+    }
+
+    function recordBlockedMalpracticeAttempt(source) {
       if (!focusLockActive() || finalizingViolation) return;
-      if (document.hidden) {
-        pendingFocusViolation = true;
-        showLockOverlay(
-          'You left the test window. Tab switching, minimizing, and opening other windows are prohibited during contests and tests.',
-          { title: 'Return to the test', dismissible: false }
-        );
-        return;
-      }
-      if (!pendingFocusViolation) {
-        hideLockOverlay();
-        return;
-      }
-      pendingFocusViolation = false;
       const now = Date.now();
       if (now - lastFocusViolationAt < 800) return;
       lastFocusViolationAt = now;
       focusViolationCount += 1;
+      violationAckRequired = true;
+      freezeExamInteractions();
       if (focusViolationCount >= MAX_FOCUS_VIOLATIONS) {
         finalizeAfterMaxViolations();
         return;
       }
-      showLockOverlay(
-        `Malpractice warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}. Do not switch tabs, minimize this window, or open other applications. After ${MAX_FOCUS_VIOLATIONS} warnings your test will be submitted automatically and you will be signed out.`,
-        { title: 'Malpractice warning', dismissible: true }
+      const blocked = source === 'keyboard' || source === 'nav' || source === 'fullscreen';
+      toast(
+        blocked
+          ? `Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: that action is blocked — stay on this contest tab.`
+          : `Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: tab switching is not allowed.`,
+        'warning'
       );
-      toast(`Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: stay on this test tab.`, 'warning');
+      showMalpracticeAckOverlay();
+    }
+
+    function registerFocusViolation() {
+      recordBlockedMalpracticeAttempt('nav');
+    }
+
+    function isLeaveShortcut(e) {
+      const key = e.key;
+      const ctrl = e.ctrlKey || e.metaKey;
+      const alt = e.altKey;
+      if (key === 'F6' || key === 'F11') return true;
+      if (ctrl && (key === 'Tab' || key === 'PageUp' || key === 'PageDown'
+        || key === 't' || key === 'T' || key === 'n' || key === 'N'
+        || key === 'w' || key === 'W')) return true;
+      if (alt && (key === 'Tab' || key === 'F4')) return true;
+      return false;
+    }
+
+    function onExamKeydown(e) {
+      if (!focusLockActive() || finalizingViolation) return;
+      if (!isLeaveShortcut(e)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      recordBlockedMalpracticeAttempt('keyboard');
+    }
+
+    function startFocusEnforce() {
+      stopFocusEnforce();
+      focusEnforceTimer = window.setInterval(() => {
+        if (!focusLockActive() || finalizingViolation || document.hidden || violationAckRequired) return;
+        try {
+          if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
+            window.focus();
+          }
+        } catch (_) { /* ignore */ }
+      }, 350);
+    }
+
+    function stopFocusEnforce() {
+      if (focusEnforceTimer) {
+        clearInterval(focusEnforceTimer);
+        focusEnforceTimer = null;
+      }
+    }
+
+    function bindKeydownGuard(on) {
+      if (on && !keydownGuardBound) {
+        document.addEventListener('keydown', onExamKeydown, true);
+        keydownGuardBound = true;
+      }
+      if (!on && keydownGuardBound) {
+        document.removeEventListener('keydown', onExamKeydown, true);
+        keydownGuardBound = false;
+      }
+    }
+
+    async function tryEnterExamFullscreen() {
+      if (isPracticeMode() || !focusLockActive()) return;
+      const node = document.documentElement;
+      try {
+        if (node.requestFullscreen) await node.requestFullscreen();
+        else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
+      } catch (_) { /* browser may block without user gesture — attempt after Start click */ }
+    }
+
+    function exitExamFullscreen() {
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } catch (_) { /* ignore */ }
+    }
+
+    function onFullscreenChange() {
+      if (!focusLockActive() || isPracticeMode() || finalizingViolation) return;
+      if (document.fullscreenElement || document.webkitFullscreenElement) return;
+      recordBlockedMalpracticeAttempt('fullscreen');
+      tryEnterExamFullscreen();
+    }
+
+    function bindFullscreenGuard(on) {
+      if (on && !fullscreenListenerBound) {
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+        fullscreenListenerBound = true;
+      }
+      if (!on && fullscreenListenerBound) {
+        document.removeEventListener('fullscreenchange', onFullscreenChange);
+        document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+        fullscreenListenerBound = false;
+      }
+    }
+
+    function setDocumentFocusLockFlag(on) {
+      if (on) document.documentElement.setAttribute('data-ph-exam-focus-lock', 'coding');
+      else document.documentElement.removeAttribute('data-ph-exam-focus-lock');
+    }
+
+    function syncTimedExamChrome() {
+      const stayOnPage = focusLockActive() && !isPracticeMode() && state?.status === 'ACTIVE';
+      root.querySelectorAll('[data-cod-action="back"], [data-cod-action="cancel"]').forEach((btn) => {
+        btn.disabled = stayOnPage;
+        if (stayOnPage) {
+          btn.setAttribute('title', 'Stay on this contest until you submit or time runs out.');
+        } else {
+          btn.removeAttribute('title');
+        }
+      });
+    }
+
+    function onVisibilityChange() {
+      if (!focusLockActive() || finalizingViolation) return;
+      if (document.hidden) {
+        hiddenViolationPending = true;
+        freezeExamInteractions();
+        showLockOverlay(TAB_SWITCH_PROHIBITED_MSG, { title: 'Tab switching prohibited', dismissible: false });
+        return;
+      }
+      if (hiddenViolationPending) {
+        hiddenViolationPending = false;
+        window.focus();
+        tryEnterExamFullscreen();
+        recordBlockedMalpracticeAttempt('tab');
+        return;
+      }
+      if (violationAckRequired) {
+        showMalpracticeAckOverlay();
+        return;
+      }
+      hideLockOverlay();
+      if (state?.status === 'ACTIVE' && !state?.submitted) restoreExamInteractions();
+    }
+
+    function onDocumentLeaveAttempt(e) {
+      if (!focusLockActive() || finalizingViolation) return;
+      if (e.target.closest('[data-cod-lock-overlay]')) return;
+      const inExam = root.contains(e.target);
+      const sidebarLink = e.target.closest('#sidebar a[href]');
+      const topLogout = e.target.closest('#logoutBtn, #topbarLogoutBtn');
+      const crumbHome = e.target.closest('.ph-crumb-home');
+      const viewNav = e.target.closest('#codViewNav [data-view]');
+      const externalLink = e.target.closest('a[href]');
+      let block = sidebarLink || topLogout || crumbHome || viewNav;
+      if (!block && externalLink && !inExam) {
+        const href = String(externalLink.getAttribute('href') || '');
+        if (href && href !== '#' && !href.startsWith('javascript:')) block = externalLink;
+      }
+      if (!block) return;
+      e.preventDefault();
+      e.stopPropagation();
+      registerFocusViolation();
+    }
+
+    function bindNavigationGuards(on) {
+      if (on && !navigationGuardBound) {
+        document.addEventListener('click', onDocumentLeaveAttempt, true);
+        navigationGuardBound = true;
+      }
+      if (!on && navigationGuardBound) {
+        document.removeEventListener('click', onDocumentLeaveAttempt, true);
+        navigationGuardBound = false;
+      }
     }
 
     function onClipboardBlock(e) {
@@ -457,13 +640,25 @@
         document.removeEventListener('visibilitychange', onVisibilityChange);
         if (useFocus) {
           document.addEventListener('visibilitychange', onVisibilityChange);
+          bindNavigationGuards(true);
+          bindFullscreenGuard(true);
+          bindKeydownGuard(true);
+          startFocusEnforce();
+          setDocumentFocusLockFlag(true);
         }
         clipboardGuardsEnabled = useClipboard;
         focusGuardsEnabled = useFocus;
+        syncTimedExamChrome();
         return;
       }
       if (lockdownGuardsBound) {
         document.removeEventListener('visibilitychange', onVisibilityChange);
+        bindNavigationGuards(false);
+        bindFullscreenGuard(false);
+        bindKeydownGuard(false);
+        stopFocusEnforce();
+        hiddenViolationPending = false;
+        setDocumentFocusLockFlag(false);
         root.removeEventListener('copy', onClipboardBlock, true);
         root.removeEventListener('cut', onClipboardBlock, true);
         root.removeEventListener('paste', onClipboardBlock, true);
@@ -474,18 +669,23 @@
       clipboardGuardsEnabled = false;
       focusGuardsEnabled = false;
       hideLockOverlay();
-      pendingFocusViolation = false;
+      violationAckRequired = false;
+      syncTimedExamChrome();
     }
 
     function teardownLockdown() {
       examLockdown = false;
       focusViolationCount = 0;
-      pendingFocusViolation = false;
+      violationAckRequired = false;
+      hiddenViolationPending = false;
       finalizingViolation = false;
       lastFocusViolationAt = 0;
       bindLockdownGuards(false);
       bindUnload(false);
+      stopFocusEnforce();
+      exitExamFullscreen();
       root.removeAttribute('data-cod-locked');
+      syncTimedExamChrome();
     }
 
     function answeredCount() {
@@ -552,8 +752,8 @@
       const lines = test.instructions || [];
       const lockdownNote = `
         <div class="alert alert-warning py-2 px-3 small mb-3">
-          <strong>During the test:</strong> copying questions and pasting answers are disabled. Tab switching, minimizing, and opening other windows are prohibited.
-          You get ${MAX_FOCUS_VIOLATIONS} malpractice warnings; after that the test is submitted automatically and you are signed out.
+          <strong>During the test:</strong> copying questions and pasting answers are disabled.
+          <strong>Tab switching is not allowed</strong> — stay on this contest window. Keyboard shortcuts and menu links that leave the test are blocked; each blocked attempt is a malpractice warning (${MAX_FOCUS_VIOLATIONS} maximum), then auto-submit and sign-out.
         </div>`;
       el('instr-list').innerHTML = `${lockdownNote}<ul class="text-muted-2 mb-0 ps-3">${lines.length ? lines.map((line) => `<li>${esc(line)}</li>`).join('') : '<li>Read each problem carefully. Write and run your code before submitting.</li>'}</ul>`;
     }
@@ -896,7 +1096,7 @@
         state.status = 'ACTIVE';
         state.answers = {};
         focusViolationCount = 0;
-        pendingFocusViolation = false;
+        violationAckRequired = false;
         finalizingViolation = false;
         examLockdown = true;
         clipboardGuardsEnabled = true;
@@ -921,8 +1121,10 @@
         bindLockdownGuards(true, { clipboard: true, focus: true });
         renderQuestion();
         restoreExamInteractions();
+        syncTimedExamChrome();
         startTimer(remainingMs);
         editor.focus();
+        tryEnterExamFullscreen();
       } catch (err) {
         toast(err?.message || 'Could not start test.', 'error');
       }
@@ -1275,6 +1477,10 @@
       if (action === 'start-practice') beginPractice();
       if (action === 'submit-practice') submitPracticeSolution();
       if (action === 'cancel' || action === 'back') {
+        if (focusLockActive() && !isPracticeMode() && state.status === 'ACTIVE') {
+          recordBlockedMalpracticeAttempt('nav');
+          return;
+        }
         if (state.test && !state.submitted && state.status === 'ACTIVE') {
           const msg = isPracticeMode()
             ? 'Leave this problem? Your draft is not submitted yet.'
@@ -1316,6 +1522,12 @@
     });
 
     return {
+      isFocusLocked() {
+        return focusLockActive();
+      },
+      registerFocusViolation() {
+        registerFocusViolation();
+      },
       open(testMeta) {
         stopTimer();
         teardownLockdown();

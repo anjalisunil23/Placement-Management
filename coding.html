@@ -26,6 +26,10 @@
   #examShell[data-cod-locked="1"] [data-cod="q-title"]{
     user-select:none;-webkit-user-select:none;
   }
+  html[data-ph-exam-focus-lock="coding"] #sidebar a.nav-item,
+  html[data-ph-exam-focus-lock="coding"] #sidebar .nav-sub-item{
+    cursor:not-allowed;
+  }
   .cod-editor{display:flex;min-height:22rem;border:1px solid #1e293b;border-radius:.7rem;overflow:hidden;background:#0f172a;color:#e2e8f0}
   .cod-gutter{
     flex:0 0 2.6rem;padding:.75rem .35rem;text-align:right;background:#0b1220;color:#64748b;
@@ -761,6 +765,6 @@
 <script src="js/coding-error-format.js?v=20261008judgeval2"></script>
 <script src="js/coding-execution.js?v=20261005lang"></script>
 <script src="js/coding-service.js?v=20261009conteststart"></script>
-<script src="js/coding-exam.js?v=20261009lock"></script>
-<script src="js/coding-page.js?v=20261009conteststart"></script>
+<script src="js/coding-exam.js?v=20261009blockswitch"></script>
+<script src="js/coding-page.js?v=20261009contestlock"></script>
 </body></html>

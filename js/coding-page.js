@@ -5500,6 +5500,11 @@
       }
     });
     window.addEventListener('hashchange', () => {
+      if (exam?.isFocusLocked?.()) {
+        history.replaceState(null, '', '#take');
+        exam.registerFocusViolation?.();
+        return;
+      }
       const view = String(location.hash || '').replace('#', '');
       applyView(view);
     });

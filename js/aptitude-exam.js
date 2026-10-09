@@ -218,10 +218,14 @@
     let lockdownGuardsBound = false;
     let beforeUnloadBound = false;
     let focusViolationCount = 0;
-    let pendingFocusViolation = false;
+    let violationAckRequired = false;
     let finalizingViolation = false;
     let lastFocusViolationAt = 0;
+    let keydownGuardBound = false;
+    let focusEnforceTimer = null;
+    let hiddenViolationPending = false;
     const MAX_FOCUS_VIOLATIONS = 3;
+    const TAB_SWITCH_PROHIBITED_MSG = 'You left the test tab. Tab switching is not allowed. Return to this tab immediately — a malpractice warning will be shown when you come back.';
 
     function el(id) {
       return root.querySelector(`[data-exam="${id}"]`);
@@ -267,7 +271,11 @@
       if (dismiss) {
         if (opts.dismissible) {
           dismiss.classList.remove('d-none');
-          dismiss.onclick = () => hideLockOverlay();
+          dismiss.textContent = opts.dismissText || 'I understand — continue test';
+          dismiss.onclick = () => {
+            hideLockOverlay();
+            opts.onDismiss?.();
+          };
         } else {
           dismiss.classList.add('d-none');
           dismiss.onclick = null;
@@ -278,6 +286,97 @@
 
     function hideLockOverlay() {
       if (lockOverlay) lockOverlay.style.display = 'none';
+    }
+
+    function malpracticeWarningMessage() {
+      return `Malpractice warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}. Switching tabs or leaving this test is not allowed — your attempt was blocked. After ${MAX_FOCUS_VIOLATIONS} warnings your test will be submitted automatically and you will be signed out.`;
+    }
+
+    function acknowledgeFocusViolation() {
+      violationAckRequired = false;
+      if (focusLockActive() && state?.started && !state?.submitted) {
+        restoreExamInteractions();
+      }
+    }
+
+    function showMalpracticeAckOverlay() {
+      showLockOverlay(malpracticeWarningMessage(), {
+        title: 'Malpractice warning',
+        dismissible: true,
+        onDismiss: acknowledgeFocusViolation,
+      });
+    }
+
+    function recordBlockedMalpracticeAttempt(source) {
+      if (!focusLockActive() || finalizingViolation) return;
+      const now = Date.now();
+      if (now - lastFocusViolationAt < 800) return;
+      lastFocusViolationAt = now;
+      focusViolationCount += 1;
+      violationAckRequired = true;
+      freezeExamInteractions();
+      if (focusViolationCount >= MAX_FOCUS_VIOLATIONS) {
+        finalizeAfterMaxViolations();
+        return;
+      }
+      const blocked = source === 'keyboard';
+      toast(
+        blocked
+          ? `Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: that action is blocked — stay on this test tab.`
+          : `Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: tab switching is not allowed.`,
+        'warning'
+      );
+      showMalpracticeAckOverlay();
+    }
+
+    function isLeaveShortcut(e) {
+      const key = e.key;
+      const ctrl = e.ctrlKey || e.metaKey;
+      const alt = e.altKey;
+      if (key === 'F6' || key === 'F11') return true;
+      if (ctrl && (key === 'Tab' || key === 'PageUp' || key === 'PageDown'
+        || key === 't' || key === 'T' || key === 'n' || key === 'N'
+        || key === 'w' || key === 'W')) return true;
+      if (alt && (key === 'Tab' || key === 'F4')) return true;
+      return false;
+    }
+
+    function onExamKeydown(e) {
+      if (!focusLockActive() || finalizingViolation) return;
+      if (!isLeaveShortcut(e)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      recordBlockedMalpracticeAttempt('keyboard');
+    }
+
+    function startFocusEnforce() {
+      stopFocusEnforce();
+      focusEnforceTimer = window.setInterval(() => {
+        if (!focusLockActive() || finalizingViolation || document.hidden || violationAckRequired) return;
+        try {
+          if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
+            window.focus();
+          }
+        } catch (_) { /* ignore */ }
+      }, 350);
+    }
+
+    function stopFocusEnforce() {
+      if (focusEnforceTimer) {
+        clearInterval(focusEnforceTimer);
+        focusEnforceTimer = null;
+      }
+    }
+
+    function bindKeydownGuard(on) {
+      if (on && !keydownGuardBound) {
+        document.addEventListener('keydown', onExamKeydown, true);
+        keydownGuardBound = true;
+      }
+      if (!on && keydownGuardBound) {
+        document.removeEventListener('keydown', onExamKeydown, true);
+        keydownGuardBound = false;
+      }
     }
 
     function bindUnload(on) {
@@ -304,6 +403,7 @@
     }
 
     function restoreExamInteractions() {
+      if (violationAckRequired) return;
       const locked = !!state?.submitted;
       root.querySelectorAll('[data-opt-select]').forEach((btn) => { btn.disabled = locked; });
       root.querySelectorAll('[data-goto]').forEach((btn) => { btn.disabled = locked; });
@@ -348,31 +448,23 @@
     function onVisibilityChange() {
       if (!focusLockActive() || finalizingViolation) return;
       if (document.hidden) {
-        pendingFocusViolation = true;
-        showLockOverlay(
-          'You left the test window. Tab switching, minimizing, and opening other windows are prohibited during contests and tests.',
-          { title: 'Return to the test', dismissible: false }
-        );
+        hiddenViolationPending = true;
+        freezeExamInteractions();
+        showLockOverlay(TAB_SWITCH_PROHIBITED_MSG, { title: 'Tab switching prohibited', dismissible: false });
         return;
       }
-      if (!pendingFocusViolation) {
-        hideLockOverlay();
+      if (hiddenViolationPending) {
+        hiddenViolationPending = false;
+        window.focus();
+        recordBlockedMalpracticeAttempt('tab');
         return;
       }
-      pendingFocusViolation = false;
-      const now = Date.now();
-      if (now - lastFocusViolationAt < 800) return;
-      lastFocusViolationAt = now;
-      focusViolationCount += 1;
-      if (focusViolationCount >= MAX_FOCUS_VIOLATIONS) {
-        finalizeAfterMaxViolations();
+      if (violationAckRequired) {
+        showMalpracticeAckOverlay();
         return;
       }
-      showLockOverlay(
-        `Malpractice warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}. Do not switch tabs, minimize this window, or open other applications. After ${MAX_FOCUS_VIOLATIONS} warnings your test will be submitted automatically and you will be signed out.`,
-        { title: 'Malpractice warning', dismissible: true }
-      );
-      toast(`Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: stay on this test tab.`, 'warning');
+      hideLockOverlay();
+      if (state?.started && !state?.submitted) restoreExamInteractions();
     }
 
     function onClipboardBlock(e) {
@@ -397,6 +489,8 @@
     function bindLockdownGuards(on) {
       if (on && !lockdownGuardsBound) {
         document.addEventListener('visibilitychange', onVisibilityChange);
+        bindKeydownGuard(true);
+        startFocusEnforce();
         root.addEventListener('copy', onClipboardBlock, true);
         root.addEventListener('cut', onClipboardBlock, true);
         root.addEventListener('paste', onClipboardBlock, true);
@@ -406,6 +500,9 @@
       }
       if (!on && lockdownGuardsBound) {
         document.removeEventListener('visibilitychange', onVisibilityChange);
+        bindKeydownGuard(false);
+        stopFocusEnforce();
+        hiddenViolationPending = false;
         root.removeEventListener('copy', onClipboardBlock, true);
         root.removeEventListener('cut', onClipboardBlock, true);
         root.removeEventListener('paste', onClipboardBlock, true);
@@ -415,18 +512,20 @@
       }
       if (!on) {
         hideLockOverlay();
-        pendingFocusViolation = false;
+        violationAckRequired = false;
       }
     }
 
     function teardownLockdown() {
       examLockdown = false;
       focusViolationCount = 0;
-      pendingFocusViolation = false;
+      violationAckRequired = false;
+      hiddenViolationPending = false;
       finalizingViolation = false;
       lastFocusViolationAt = 0;
       bindLockdownGuards(false);
       bindUnload(false);
+      stopFocusEnforce();
       root.removeAttribute('data-exam-locked');
     }
 
@@ -456,8 +555,8 @@
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Difficulty</div><strong>${esc(test.difficulty || '—')}</strong></div></div>
         </div>
         <div class="alert alert-warning py-2 px-3 small mb-3">
-          <strong>During the test:</strong> copying questions and pasting answers are disabled. Tab switching, minimizing, and opening other windows are prohibited.
-          You get ${MAX_FOCUS_VIOLATIONS} malpractice warnings; after that the test is submitted automatically and you are signed out.
+          <strong>During the test:</strong> copying questions and pasting answers are disabled.
+          <strong>Tab switching is not allowed</strong> — stay on this test window. Keyboard shortcuts and links that leave the test are blocked; each blocked attempt is a malpractice warning (${MAX_FOCUS_VIOLATIONS} maximum), then auto-submit and sign-out.
           ${isContestAttempt(test) ? ' Challenge rules apply for the full duration.' : ''}
         </div>
         <h6 class="fw-bold">Instructions</h6>
@@ -640,7 +739,7 @@
       state.submitted = false;
       state.status = 'ACTIVE';
       focusViolationCount = 0;
-      pendingFocusViolation = false;
+      violationAckRequired = false;
       finalizingViolation = false;
       examLockdown = true;
       timerDeadline = state.endsAt;
