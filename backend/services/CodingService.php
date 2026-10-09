@@ -597,12 +597,102 @@ final class CodingService
             'answers' => $answers,
             'startedAt' => $startedAt,
             'endsAt' => $endsAt,
+            'malpractice' => ExamMalpracticeService::publicState([
+                'malpracticeViolationCount' => 0,
+                'malpracticePendingWarning' => 0,
+                'malpracticeAckRequired' => false,
+                'malpracticeState' => 'ACTIVE',
+                'terminationReason' => '',
+            ]),
         ];
     }
 
     /**
      * @param array<string, mixed> $user
-     * @param array<string, mixed> $result
+     * @return array<string, mixed>
+     */
+    public function reportMalpracticeIncident(array $user, string $attemptId, array $body = []): array
+    {
+        $attempt = $this->requireOwnedActiveAttempt($user, $attemptId);
+        if ((string) ($attempt['terminationReason'] ?? '') === ExamMalpracticeService::TERMINATION_MALPRACTICE
+            && CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            return [
+                'terminated' => true,
+                'ackRequired' => false,
+                'violationCount' => (int) ($attempt['malpracticeViolationCount'] ?? ExamMalpracticeService::TERMINATE_AT_COUNT),
+                'state' => ExamMalpracticeService::publicState($attempt),
+            ];
+        }
+
+        ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::recordIncident($attempt);
+        if ($patch !== []) {
+            $this->attempts->update($attemptId, $patch);
+            $attempt = array_merge($attempt, $patch);
+        }
+
+        $pending = (int) ($resp['pendingWarning'] ?? 0);
+        if ($pending > 0) {
+            $resp['warningMessage'] = ExamMalpracticeService::warningMessage($pending);
+        }
+
+        if (!empty($resp['shouldAutoSubmit']) && CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') === 'ACTIVE') {
+            $answers = $this->answersPayloadFromAttempt($attempt);
+            $started = (int) ($attempt['startedAt'] ?? 0);
+            $taken = $started > 0 ? max(0, (int) round((microtime(true) * 1000 - $started) / 1000)) : 0;
+            try {
+                $submitResult = $this->submit($user, $attemptId, [
+                    'answers' => $answers,
+                    'timeTakenSeconds' => $taken,
+                    'autoSubmitted' => true,
+                    'terminationReason' => ExamMalpracticeService::TERMINATION_MALPRACTICE,
+                ]);
+                $resp['submitResult'] = $submitResult;
+                $resp['terminated'] = true;
+                $resp['ackRequired'] = false;
+                $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            } catch (\Throwable $e) {
+                $this->attempts->update($attemptId, [
+                    'malpracticeState' => 'TERMINATING',
+                    'terminationReason' => ExamMalpracticeService::TERMINATION_MALPRACTICE,
+                ]);
+                $resp['submitError'] = $e->getMessage();
+                $resp['terminated'] = true;
+            }
+        }
+
+        $resp['state'] = ExamMalpracticeService::publicState($attempt);
+        return $resp;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function acknowledgeMalpractice(array $user, string $attemptId, array $body = []): array
+    {
+        $attempt = $this->requireOwnedActiveAttempt($user, $attemptId);
+        $pausedMs = max(0, min(30 * 60 * 1000, (int) ($body['pausedMs'] ?? 0)));
+        ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::acknowledge($attempt, $pausedMs);
+        if ($patch !== []) {
+            $this->attempts->update($attemptId, $patch);
+            $attempt = array_merge($attempt, $patch);
+        }
+        $resp['state'] = ExamMalpracticeService::publicState($attempt);
+        return $resp;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function malpracticeState(array $user, string $attemptId): array
+    {
+        $attempt = $this->requireOwnedAttempt($user, $attemptId);
+        return ExamMalpracticeService::publicState($attempt);
+    }
+
+    /**
+     * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
     public function submit(array $user, string $attemptId, array $body): array
@@ -690,6 +780,11 @@ final class CodingService
             ? CodingTestModel::composeProblemTestId($testId, $problemItemId)
             : $testId;
 
+        $terminationReason = trim((string) ($body['terminationReason'] ?? ''));
+        if ($terminationReason === '') {
+            $terminationReason = trim((string) ($attempt['terminationReason'] ?? ''));
+        }
+
         return array_merge($graded, [
             'testId' => $testId,
             'listTestId' => $listTestId,
@@ -698,7 +793,61 @@ final class CodingService
             'timeTakenSeconds' => $taken,
             'timeTakenLabel' => sprintf('%02d:%02d', $minutes, $taken % 60),
             'autoSubmitted' => !empty($body['autoSubmitted']),
+            'terminationReason' => $terminationReason !== '' ? $terminationReason : null,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @return array<string, array{language: string, code: string}>
+     */
+    private function answersPayloadFromAttempt(array $attempt): array
+    {
+        $answers = [];
+        $stored = is_array($attempt['answers'] ?? null) ? $attempt['answers'] : [];
+        foreach ($stored as $qid => $row) {
+            if (!is_string($qid) || !is_array($row)) {
+                continue;
+            }
+            $answers[$qid] = [
+                'language' => (string) ($row['language'] ?? 'Python'),
+                'code' => (string) ($row['code'] ?? ''),
+            ];
+        }
+        return $answers;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireOwnedActiveAttempt(array $user, string $attemptId): array
+    {
+        $attempt = $this->requireOwnedAttempt($user, $attemptId);
+        if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            Response::error('This attempt is no longer active.', 422);
+        }
+        return $attempt;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireOwnedAttempt(array $user, string $attemptId): array
+    {
+        if (!Security::isValidId($attemptId)) {
+            Response::notFound('Attempt not found.');
+        }
+        $attempt = $this->attempts->findById($attemptId);
+        if (!$attempt) {
+            Response::notFound('Attempt not found.');
+        }
+        $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
+        if ((string) ($attempt['userId'] ?? '') !== $uid) {
+            Response::forbidden('This attempt does not belong to you.');
+        }
+        return $attempt;
     }
 
     /**

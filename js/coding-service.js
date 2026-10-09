@@ -979,6 +979,86 @@
       return payload;
     },
 
+    async reportMalpracticeIncident(attemptId, { source = '' } = {}) {
+      if (liveApi()) {
+        const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/malpractice/incident`, {
+          method: 'POST',
+          body: JSON.stringify({ source: String(source || '') }),
+        }).catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not record malpractice incident.');
+        return res.data;
+      }
+      const attempt = attempts.get(attemptId);
+      if (!attempt) throw new Error('Attempt not found.');
+      attempt.malpractice = attempt.malpractice || { violationCount: 0, ackRequired: false, pendingWarning: 0 };
+      if (attempt.malpractice.ackRequired) {
+        return {
+          violationCount: attempt.malpractice.violationCount,
+          pendingWarning: attempt.malpractice.pendingWarning,
+          ackRequired: true,
+          incremented: false,
+          terminated: false,
+          state: { ...attempt.malpractice },
+        };
+      }
+      attempt.malpractice.violationCount += 1;
+      const count = attempt.malpractice.violationCount;
+      if (count >= 3) {
+        attempt.malpractice.ackRequired = false;
+        attempt.malpractice.pendingWarning = 0;
+        return {
+          violationCount: 3,
+          terminated: true,
+          shouldAutoSubmit: true,
+          ackRequired: false,
+          state: { ...attempt.malpractice, terminationReason: 'MALPRACTICE_LIMIT_EXCEEDED' },
+        };
+      }
+      attempt.malpractice.pendingWarning = count;
+      attempt.malpractice.ackRequired = true;
+      const warningMessage = count === 1
+        ? 'WARNING 1 OF 2: You have left the active examination window. Further violations may result in automatic submission.'
+        : 'FINAL WARNING: This is your second malpractice violation. One more violation will automatically submit your examination and end your session.';
+      return {
+        violationCount: count,
+        pendingWarning: count,
+        ackRequired: true,
+        incremented: true,
+        terminated: false,
+        warningMessage,
+        state: { ...attempt.malpractice },
+      };
+    },
+
+    async acknowledgeMalpractice(attemptId, { pausedMs = 0 } = {}) {
+      if (liveApi()) {
+        const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/malpractice/ack`, {
+          method: 'POST',
+          body: JSON.stringify({ pausedMs: Math.max(0, Number(pausedMs) || 0) }),
+        }).catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not acknowledge warning.');
+        const attempt = attempts.get(attemptId);
+        if (attempt && res.data?.endsAt) attempt.endsAt = res.data.endsAt;
+        return res.data;
+      }
+      const attempt = attempts.get(attemptId);
+      if (!attempt?.malpractice) return { ackRequired: false };
+      attempt.malpractice.ackRequired = false;
+      attempt.malpractice.pendingWarning = 0;
+      if (pausedMs > 0 && attempt.endsAt) attempt.endsAt += pausedMs;
+      return { ackRequired: false, endsAt: attempt.endsAt, state: { ...attempt.malpractice } };
+    },
+
+    async fetchMalpracticeState(attemptId) {
+      if (liveApi()) {
+        const res = await api(`/coding/attempts/${encodeURIComponent(attemptId)}/malpractice/state`).catch(() => null);
+        if (!res?.success) throw new Error(res?.message || 'Could not load malpractice state.');
+        return res.data;
+      }
+      const attempt = attempts.get(attemptId);
+      return attempt?.malpractice || { violationCount: 0, ackRequired: false, pendingWarning: 0 };
+    },
+
     async startAttempt(testId) {
       if (liveApi()) {
         const res = await api(`/coding/tests/${encodeURIComponent(testId)}/start`, { method: 'POST' }).catch(() => null);

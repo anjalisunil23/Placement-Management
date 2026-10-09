@@ -227,8 +227,10 @@
     let fullscreenListenerBound = false;
     let allowFullscreenExit = false;
     let fullscreenEnforceTimer = null;
+    let windowBlurGuardBound = false;
     const MAX_MALPRACTICE_WARNINGS = 2;
     const TAB_SWITCH_PROHIBITED_MSG = 'You left the test tab. Tab switching is not allowed. Return here immediately to see your malpractice warning.';
+    const ACK_REQUIRED_MSG = 'You must return to this tab and tap "I understand — continue test" before the test can continue. Tab switching and minimizing are not allowed.';
 
     function el(id) {
       return root.querySelector(`[data-exam="${id}"]`);
@@ -251,7 +253,7 @@
       overlay.style.padding = '1rem';
       overlay.style.background = 'rgba(15, 23, 42, 0.78)';
       overlay.style.backdropFilter = 'blur(4px)';
-      overlay.style.zIndex = '1080';
+      overlay.style.zIndex = '2147483000';
       overlay.style.pointerEvents = 'auto';
       overlay.innerHTML = `
         <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
@@ -265,6 +267,7 @@
     }
 
     function showLockOverlay(message, opts = {}) {
+      mountLockOverlayForExam();
       const overlay = ensureLockOverlay();
       const title = overlay.querySelector('[data-exam-lock-title]');
       const msg = overlay.querySelector('[data-exam-lock-message]');
@@ -276,8 +279,8 @@
           dismiss.classList.remove('d-none');
           dismiss.textContent = opts.dismissText || 'I understand — continue test';
           dismiss.onclick = () => {
-            hideLockOverlay();
             opts.onDismiss?.();
+            hideLockOverlay(true);
           };
         } else {
           dismiss.classList.add('d-none');
@@ -287,8 +290,17 @@
       overlay.style.display = 'flex';
     }
 
-    function hideLockOverlay() {
+    function hideLockOverlay(force = false) {
+      if (violationAckRequired && !force) return;
       if (lockOverlay) lockOverlay.style.display = 'none';
+    }
+
+    function mountLockOverlayForExam() {
+      const overlay = ensureLockOverlay();
+      const fsRoot = getFullscreenElement() || document.documentElement;
+      if (overlay.parentElement !== fsRoot) {
+        fsRoot.appendChild(overlay);
+      }
     }
 
     function malpracticeWarningMessage() {
@@ -311,10 +323,15 @@
     }
 
     function showMalpracticeAckOverlay() {
-      showLockOverlay(malpracticeWarningMessage(), {
-        title: 'Malpractice warning',
-        dismissible: true,
-        onDismiss: acknowledgeFocusViolation,
+      if (!violationAckRequired || finalizingViolation) return;
+      freezeExamInteractions();
+      tryEnterExamFullscreen().finally(() => {
+        mountLockOverlayForExam();
+        showLockOverlay(malpracticeWarningMessage(), {
+          title: 'Malpractice warning',
+          dismissible: true,
+          onDismiss: acknowledgeFocusViolation,
+        });
       });
     }
 
@@ -430,10 +447,15 @@
     function startFocusEnforce() {
       stopFocusEnforce();
       focusEnforceTimer = window.setInterval(() => {
-        if (!focusLockActive() || finalizingViolation || document.hidden || violationAckRequired) return;
+        if (!focusLockActive() || finalizingViolation || document.hidden) return;
         try {
+          if (!getFullscreenElement()) tryEnterExamFullscreen();
           if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
             window.focus();
+          }
+          if (violationAckRequired && !document.hidden) {
+            mountLockOverlayForExam();
+            if (lockOverlay?.style.display !== 'flex') showMalpracticeAckOverlay();
           }
         } catch (_) { /* ignore */ }
       }, 350);
@@ -526,31 +548,49 @@
     function onVisibilityChange() {
       if (!focusLockActive() || finalizingViolation) return;
       if (document.hidden) {
-        if (!hiddenViolationPending) {
-          recordBlockedMalpracticeAttempt('tab', { deferOverlay: true });
-        }
+        const wasPending = hiddenViolationPending;
         hiddenViolationPending = true;
         freezeExamInteractions();
+        if (violationAckRequired) {
+          showLockOverlay(ACK_REQUIRED_MSG, { title: 'Acknowledgement required', dismissible: false });
+          return;
+        }
+        if (!wasPending) {
+          recordBlockedMalpracticeAttempt('tab', { deferOverlay: true });
+        }
         showLockOverlay(TAB_SWITCH_PROHIBITED_MSG, { title: 'Tab switching prohibited', dismissible: false });
         return;
       }
-      if (hiddenViolationPending) {
-        hiddenViolationPending = false;
-        window.focus();
-        tryEnterExamFullscreen();
-        if (violationAckRequired && !finalizingViolation) {
-          const n = Math.min(focusViolationCount, MAX_MALPRACTICE_WARNINGS);
-          toast(`Warning ${n} of ${MAX_MALPRACTICE_WARNINGS}: tab switching is not allowed.`, 'warning');
-          showMalpracticeAckOverlay();
-        }
-        return;
-      }
+      hiddenViolationPending = false;
+      window.focus();
+      tryEnterExamFullscreen();
       if (violationAckRequired) {
         showMalpracticeAckOverlay();
         return;
       }
       hideLockOverlay();
       if (state?.started && !state?.submitted) restoreExamInteractions();
+    }
+
+    function onExamWindowBlur() {
+      if (!focusLockActive() || finalizingViolation || document.hidden) return;
+      window.setTimeout(() => {
+        if (!focusLockActive() || finalizingViolation || document.hidden) return;
+        window.focus();
+        tryEnterExamFullscreen();
+        if (violationAckRequired) showMalpracticeAckOverlay();
+      }, 0);
+    }
+
+    function bindWindowBlurGuard(on) {
+      if (on && !windowBlurGuardBound) {
+        window.addEventListener('blur', onExamWindowBlur);
+        windowBlurGuardBound = true;
+      }
+      if (!on && windowBlurGuardBound) {
+        window.removeEventListener('blur', onExamWindowBlur);
+        windowBlurGuardBound = false;
+      }
     }
 
     function onClipboardBlock(e) {
@@ -576,6 +616,7 @@
       if (on && !lockdownGuardsBound) {
         document.addEventListener('visibilitychange', onVisibilityChange);
         bindKeydownGuard(true);
+        bindWindowBlurGuard(true);
         startFocusEnforce();
         bindFullscreenGuard(true);
         startFullscreenEnforce();
@@ -589,6 +630,7 @@
       if (!on && lockdownGuardsBound) {
         document.removeEventListener('visibilitychange', onVisibilityChange);
         bindKeydownGuard(false);
+        bindWindowBlurGuard(false);
         stopFocusEnforce();
         bindFullscreenGuard(false);
         stopFullscreenEnforce();

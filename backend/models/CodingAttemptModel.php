@@ -71,6 +71,11 @@ class CodingAttemptModel extends BaseModel
             'endsAt' => $data['endsAt'] ?? null,
             'lastSavedAt' => DocumentHelper::now(),
             'answers' => is_array($data['answers'] ?? null) ? $data['answers'] : [],
+            'malpracticeViolationCount' => 0,
+            'malpracticePendingWarning' => 0,
+            'malpracticeAckRequired' => false,
+            'malpracticeState' => 'ACTIVE',
+            'terminationReason' => '',
         ]);
     }
 
