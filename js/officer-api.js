@@ -512,6 +512,14 @@ const OfficerApi = {
     return data;
   },
 
+  async updateStudentPlacement(studentId, body) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement`, {
+      method: 'PUT',
+      body,
+    });
+  },
+
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
     ['departmentId', 'program', 'branch', 'batch', 'type', 'q'].forEach(k => {

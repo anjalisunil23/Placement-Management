@@ -3042,33 +3042,29 @@ final class StaffPlacementRegistryService
      */
     public function updatePlacement(array $staffCtx, string $studentId, array $input): array
     {
-        $student = $this->officerData->resolveStudentRef($studentId);
-        if (!$student) {
-            Response::notFound('Student not found.');
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $details->findByAdmnoOrId($studentId);
+        if ($existing === null) {
+            Response::notFound('This student is not in student_placement_details.');
         }
-        $this->assertRegistryStudentInDepartment($student, $staffCtx);
-        StaffContext::assertCanEditClassPlacement($student, $staffCtx);
-        $student = $this->ensureLocalStudentForStaffEdit($student, $staffCtx);
+        $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+        $batch = trim((string) ($existing['year'] ?? ''));
+        if (empty($staffCtx['isAdmin'])) {
+            StaffContext::assertCanEditClassPlacement([
+                'classBatch' => $batch,
+                'batch' => $batch,
+                'admno' => $admno,
+                'registerNumber' => $admno,
+            ], $staffCtx);
+        }
 
         $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
-        $role = trim((string) ($input['role'] ?? ''));
         $package = trim((string) ($input['package'] ?? ''));
         $address = trim((string) ($input['address'] ?? $input['companyAddress'] ?? ''));
         $employerContact = trim((string) ($input['employerContact'] ?? ''));
-        $joinDate = trim((string) ($input['joinDate'] ?? ''));
-        $endDate = trim((string) ($input['endDate'] ?? ''));
-        $academicDuration = trim((string) ($input['academicDuration'] ?? ''));
-        $internshipDetails = trim((string) ($input['internshipDetails'] ?? ''));
-        $natureOfJob = trim((string) ($input['natureOfJob'] ?? ''));
-        $monthlySalary = trim((string) ($input['monthlySalary'] ?? ''));
         $placementStatus = trim((string) ($input['placementStatus'] ?? ''));
-        $offerLetterVerified = filter_var(
-            $input['offerLetterVerified'] ?? false,
-            FILTER_VALIDATE_BOOL
-        );
-        $verificationDate = trim((string) ($input['verificationDate'] ?? ''));
-        $fordvv = $this->normalizeVvValue($input['fordvv'] ?? '1');
-        $includedvv = $this->normalizeVvValue($input['includedvv'] ?? '1');
+        $fordvv = trim((string) ($input['fordvv'] ?? ($existing['fordvv'] ?? '')));
+        $includedvv = trim((string) ($input['includedvv'] ?? ($existing['includedvv'] ?? '')));
         $typeRaw = trim((string) ($input['type'] ?? 'Placement'));
         $typeKey = strtolower($typeRaw);
         if (str_contains($typeKey, 'higher') || str_contains($typeKey, 'education')) {
@@ -3083,58 +3079,37 @@ final class StaffPlacementRegistryService
             Response::error('Employer / institution name is required.', 422);
         }
 
-        $register = strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? '')));
-        $placementModel = new StudentPlacementModel();
-        $placement = $placementModel->findPlacementByStudent((string) $student['_id']);
-        if ($placement === null && $register !== '') {
-            $fromReg = $placementModel->findPlacementMapByRegisterNumbers([$register]);
-            $placement = $fromReg[$register] ?? null;
-        }
-        if (!is_array($placement)) {
-            $placement = [];
-        }
-        $placement = array_merge($placement, [
-            'company'         => $employer,
-            'role'            => $role,
-            'package'         => $package,
-            'address'         => $address,
-            'employerContact' => $employerContact,
-            'joinDate'        => $joinDate,
-            'endDate'         => $endDate,
-            'academicDuration'=> $academicDuration,
-            'internshipDetails' => $internshipDetails,
-            'natureOfJob'     => $natureOfJob,
-            'monthlySalary'   => $monthlySalary,
-            'placementStatus' => $placementStatus,
-            'offerLetterVerified' => $offerLetterVerified,
-            'verificationDate'=> $verificationDate,
-            'fordvv'          => $fordvv,
-            'includedvv'      => $includedvv,
-            'recordType'      => $recordType,
-            'updatedAt'       => DocumentHelper::now(),
-        ]);
-
-        $scopeDeptId = trim((string) ($staffCtx['departmentId'] ?? ''));
-        $registryId = $this->registryStudentId($student);
+        $saveKey = $admno !== '' ? $admno : (string) ($existing['id'] ?? '');
         try {
-            $savedId = (new StudentPlacementModel())->upsertForStudent(
-                $registryId,
-                strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
-                $placement,
-                $scopeDeptId !== '' ? $scopeDeptId : null,
-                $this->rosterMetaForStudentPlacement($student)
-            );
+            $saved = $details->saveFieldsForAdmno($saveKey, [
+                'employer'    => $employer,
+                'empcno'      => $employerContact,
+                'empadr'      => $address,
+                'payscale'    => $package,
+                'status'      => $placementStatus,
+                'fordvv'      => $fordvv,
+                'includedvv'  => $includedvv,
+                'type'        => $recordType,
+            ]);
         } catch (\Throwable $e) {
-            Response::error('Could not save placement registry: ' . $e->getMessage(), 500);
+            Response::error('Could not save placement details: ' . $e->getMessage(), 500);
         }
-
-        if ($savedId === '') {
-            Response::error('Could not save placement registry. Ensure student_placements table exists.', 500);
+        if (!$saved) {
+            Response::error('Could not save this row in student_placement_details.', 500);
         }
 
         return [
-            'studentId' => (string) ($student['_id'] ?? $registryId),
-            'placement' => DocumentHelper::serialize($placement),
+            'studentId' => $saveKey,
+            'placement' => [
+                'employer' => $employer,
+                'empcno' => $employerContact,
+                'empadr' => $address,
+                'payscale' => $package,
+                'status' => $placementStatus,
+                'fordvv' => $fordvv,
+                'includedvv' => $includedvv,
+                'type' => $recordType,
+            ],
         ];
     }
 

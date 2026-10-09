@@ -1293,6 +1293,20 @@ final class OfficerController
         ));
     }
 
+    /** PUT /api/officer/students/{id}/placement — save into student_placement_details */
+    public function updateStudentPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->updatePlacement($ctx, $studentId, $input)
+        ), 'Placement details updated.');
+    }
+
     /**
      * Staff-shaped read context. Admin is campus-wide; a placement officer stays on their department.
      *

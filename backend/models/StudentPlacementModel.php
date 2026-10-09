@@ -41,6 +41,11 @@ class StudentPlacementModel extends BaseModel
         if (self::$tableReady && $this->hasValidSchema()) {
             return true;
         }
+        if (!$this->tableExists() && $this->archivedIntoPlacementDetails()) {
+            self::$tableUnavailable = true;
+
+            return false;
+        }
 
         try {
             $this->execCreateStudentPlacementsTable();
@@ -92,6 +97,24 @@ class StudentPlacementModel extends BaseModel
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    /**
+     * student_placement_details is the permanent store. Do not recreate student_placements after it is dropped.
+     */
+    private function archivedIntoPlacementDetails(): bool
+    {
+        try {
+            $row = $this->db->query(
+                'SELECT 1 FROM `student_placement_details`
+                 WHERE TRIM(`employer`) <> \'\' OR TRIM(`type`) <> \'\'
+                 LIMIT 1'
+            )->fetch();
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return (bool) $row;
     }
 
     private function hasValidSchema(): bool

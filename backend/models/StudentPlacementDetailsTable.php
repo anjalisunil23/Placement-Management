@@ -366,8 +366,8 @@ class StudentPlacementDetailsTable
     }
 
     /**
-     * Make sure the grid table has one row per student_details person.
-     * Does not read student_placements payloads and does not call AES.
+     * Keep student_placement_details as the permanent grid store.
+     * Copy from student_placements only while this table has no placement values, then drop that table.
      */
     public function ensureDirectoryShell(): int
     {
@@ -379,13 +379,133 @@ class StudentPlacementDetailsTable
             $this->replaceRowsFromDirectory();
             $this->writeSyncSignature('');
         }
-        try {
-            $this->fillEmptyColumnsFromPlacements();
-        } catch (\Throwable) {
-            // Keep the rows already stored. The next placements load retries the copy.
+        if (!$this->sourceTableExists()) {
+            return $this->count();
+        }
+        if (!$this->detailsHoldCopiedPlacements()) {
+            try {
+                $this->fillEmptyColumnsFromPlacements();
+            } catch (\Throwable) {
+                // Keep student_placements until the copy has landed in this table.
+                return $this->count();
+            }
+        }
+        if ($this->detailsHoldCopiedPlacements()) {
+            $this->dropSourceTable();
         }
 
         return $this->count();
+    }
+
+    /**
+     * True when this table already holds placement or higher-education values.
+     */
+    public function detailsHoldCopiedPlacements(): bool
+    {
+        if (!$this->isReady()) {
+            return false;
+        }
+        try {
+            $row = $this->db->query(
+                'SELECT 1 FROM `student_placement_details`
+                 WHERE TRIM(`employer`) <> \'\' OR TRIM(`type`) <> \'\'
+                 LIMIT 1'
+            )->fetch();
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return (bool) $row;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findByAdmnoOrId(string $key): ?array
+    {
+        $key = trim($key);
+        if ($key === '' || !$this->ensure()) {
+            return null;
+        }
+        $statement = $this->db->prepare(
+            'SELECT * FROM `student_placement_details` WHERE UPPER(TRIM(`admno`)) = ? LIMIT 1'
+        );
+        $statement->execute([strtoupper($key)]);
+        $row = $statement->fetch();
+        if (is_array($row)) {
+            return $row;
+        }
+        if (preg_match('/^\d+$/', $key) !== 1) {
+            return null;
+        }
+        $byId = $this->db->prepare(
+            'SELECT * FROM `student_placement_details` WHERE `id` = ? LIMIT 1'
+        );
+        $byId->execute([(int) $key]);
+        $row = $byId->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * Write an edit onto the permanent row for this admission number.
+     *
+     * @param array<string, mixed> $fields
+     */
+    public function saveFieldsForAdmno(string $admno, array $fields): bool
+    {
+        $row = $this->findByAdmnoOrId($admno);
+        if ($row === null) {
+            return false;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        if ($id <= 0) {
+            return false;
+        }
+        $allowed = [
+            'employer' => 512,
+            'empcno' => 255,
+            'empadr' => 512,
+            'payscale' => 255,
+            'status' => 128,
+            'fordvv' => 16,
+            'type' => 64,
+            'includedvv' => 16,
+        ];
+        $sets = [];
+        $params = [];
+        foreach ($allowed as $column => $limit) {
+            if (!array_key_exists($column, $fields)) {
+                continue;
+            }
+            $value = trim((string) $fields[$column]);
+            if (strlen($value) > $limit) {
+                $value = substr($value, 0, $limit);
+            }
+            $sets[] = '`' . $column . '` = ?';
+            $params[] = $value;
+        }
+        if ($sets === []) {
+            return false;
+        }
+        $sets[] = '`updatedate` = NOW()';
+        $params[] = $id;
+        $statement = $this->db->prepare(
+            'UPDATE `student_placement_details` SET ' . implode(', ', $sets)
+            . ' WHERE `id` = ?'
+        );
+        $statement->execute($params);
+
+        return true;
+    }
+
+    private function dropSourceTable(): void
+    {
+        try {
+            $this->db->exec('DROP TABLE `student_placements`');
+        } catch (\Throwable) {
+            // Another request may already have dropped it.
+        }
     }
 
     /**
