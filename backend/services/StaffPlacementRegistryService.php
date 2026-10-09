@@ -868,6 +868,7 @@ final class StaffPlacementRegistryService
     {
         $limit = max(100, min(30000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 30000)));
         $rows = [];
+        $contacts = (new StudentDirectoryTable())->contactByAdmno();
         foreach ($details->listRows($limit) as $row) {
             $id = trim((string) ($row['id'] ?? ''));
             $admno = trim((string) ($row['admno'] ?? ''));
@@ -878,6 +879,13 @@ final class StaffPlacementRegistryService
             $status = trim((string) ($row['status'] ?? ''));
             $studentId = $admno !== '' ? $admno : $id;
             $role = strtolower(trim((string) ($row['stud_role'] ?? '')));
+            $directoryContact = $contacts[strtoupper($admno)] ?? null;
+            $cno = is_array($directoryContact) && trim((string) ($directoryContact['cno'] ?? '')) !== ''
+                ? trim((string) $directoryContact['cno'])
+                : trim((string) ($row['cno'] ?? ''));
+            $email = is_array($directoryContact) && trim((string) ($directoryContact['email'] ?? '')) !== ''
+                ? trim((string) $directoryContact['email'])
+                : trim((string) ($row['email'] ?? ''));
             $rows[] = [
                 'id' => $studentId,
                 'studentId' => $studentId,
@@ -888,9 +896,9 @@ final class StaffPlacementRegistryService
                 'registerNumber' => $admno,
                 'stud_role' => $role,
                 'studRole' => $role,
-                'cno' => trim((string) ($row['cno'] ?? '')),
-                'phone' => trim((string) ($row['cno'] ?? '')),
-                'email' => trim((string) ($row['email'] ?? '')),
+                'cno' => $cno,
+                'phone' => $cno,
+                'email' => $email,
                 'year' => $year,
                 'classBatch' => $year,
                 'batch' => $year,
@@ -918,6 +926,8 @@ final class StaffPlacementRegistryService
                 'includedvv' => trim((string) ($row['includedvv'] ?? '')),
                 'createdate' => trim((string) ($row['createdate'] ?? '')),
                 'createdAt' => trim((string) ($row['createdate'] ?? '')),
+                'offerLetter' => trim((string) ($row['offer_letter'] ?? '')),
+                'hasOfferLetter' => trim((string) ($row['offer_letter'] ?? '')) !== '',
                 'source' => 'student_placement_details',
             ];
         }
@@ -927,7 +937,20 @@ final class StaffPlacementRegistryService
             return $byName !== 0 ? $byName : strcasecmp((string) ($a['admno'] ?? ''), (string) ($b['admno'] ?? ''));
         });
 
-        return $rows;
+        $seen = [];
+        $unique = [];
+        foreach ($rows as $row) {
+            $key = strtoupper(trim((string) ($row['admno'] ?? '')));
+            if ($key !== '') {
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+            }
+            $unique[] = $row;
+        }
+
+        return $unique;
     }
 
     private function listFromStudentPlacements(array $listCtx, array $filters, bool $tableOnly = true): array
@@ -3136,6 +3159,177 @@ final class StaffPlacementRegistryService
             'studentId' => (string) ($student['_id'] ?? $registryId),
             'placement' => DocumentHelper::serialize($placement),
         ];
+    }
+
+    /**
+     * Clear placement columns for this admission number. The student row stays.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    public function deletePlacement(array $staffCtx, string $studentId): array
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $this->editableDetailsRow($staffCtx, $studentId, $details);
+        $key = $this->detailsRowKey($existing);
+        if (!$details->clearPlacementFields($key)) {
+            Response::error('Could not delete this placement.', 500);
+        }
+
+        return ['studentId' => $key];
+    }
+
+    /**
+     * Store one more placement, higher-education, or research entry for this student.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function addPlacementEntry(array $staffCtx, string $studentId, array $input): array
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $this->editableDetailsRow($staffCtx, $studentId, $details);
+        $employer = trim((string) ($input['employer'] ?? ''));
+        if ($employer === '') {
+            Response::error('Employer / institution name is required.', 422);
+        }
+        $typeRaw = strtolower(trim((string) ($input['type'] ?? 'Placement')));
+        if (str_contains($typeRaw, 'higher') || str_contains($typeRaw, 'education')) {
+            $recordType = 'Higher Education';
+        } elseif (str_contains($typeRaw, 'research')) {
+            $recordType = 'Research';
+        } else {
+            $recordType = 'Placement';
+        }
+        $key = $this->detailsRowKey($existing);
+        $saved = $details->addAnotherEntry($key, [
+            'employer' => $employer,
+            'empcno' => trim((string) ($input['employerContact'] ?? '')),
+            'empadr' => trim((string) ($input['address'] ?? '')),
+            'payscale' => trim((string) ($input['package'] ?? '')),
+            'status' => trim((string) ($input['placementStatus'] ?? '')),
+            'fordvv' => trim((string) ($input['fordvv'] ?? '')),
+            'includedvv' => trim((string) ($input['includedvv'] ?? '')),
+            'type' => $recordType,
+        ]);
+        if (!$saved) {
+            Response::error('Could not add this entry.', 500);
+        }
+
+        return [
+            'studentId' => $key,
+            'entries' => $details->listEntriesByAdmno((string) ($existing['admno'] ?? '')),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listPlacementEntries(string $studentId): array
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $details->findByAdmnoOrId($studentId);
+        if ($existing === null) {
+            Response::notFound('This student is not in student_placement_details.');
+        }
+
+        return [
+            'studentId' => $this->detailsRowKey($existing),
+            'entries' => $details->listEntriesByAdmno((string) ($existing['admno'] ?? '')),
+        ];
+    }
+
+    /**
+     * Store an offer-letter PDF on the student_placement_details row.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    public function uploadOfferLetter(array $staffCtx, string $studentId): array
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $this->editableDetailsRow($staffCtx, $studentId, $details);
+        $file = $_FILES['offerLetter'] ?? null;
+        if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            Response::error('Choose an offer letter PDF.', 400);
+        }
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $error = Security::validateUploadedFile($file, $config['uploads']['max_resume'], ['pdf']);
+        if ($error) {
+            Response::error($error, 400);
+        }
+        $admno = $this->detailsRowKey($existing);
+        $safe = preg_replace('/[^A-Za-z0-9_-]+/', '_', $admno) ?: 'student';
+        $storedName = $safe . '_offer_' . time() . '.pdf';
+        try {
+            $path = (new ObjectStorageService($config))->putUploadedFile(
+                ObjectStorageService::FOLDER_OFFER_LETTERS,
+                $storedName,
+                $file
+            );
+        } catch (\Throwable $e) {
+            Response::error('Failed to save offer letter: ' . $e->getMessage(), 500);
+        }
+        if (!$details->saveOfferLetterPath($admno, $path)) {
+            Response::error('Could not store the offer letter on this student.', 500);
+        }
+
+        return [
+            'studentId' => $admno,
+            'hasOfferLetter' => true,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     */
+    public function downloadOfferLetter(array $staffCtx, string $studentId): void
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $details->findByAdmnoOrId($studentId);
+        if ($existing === null) {
+            Response::notFound('This student is not in student_placement_details.');
+        }
+        $path = trim((string) ($existing['offer_letter'] ?? ''));
+        if ($path === '') {
+            Response::notFound('No offer letter uploaded.');
+        }
+        (new ObjectStorageService())->stream($path, 'offer-letter.pdf', 'application/pdf', false);
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    private function editableDetailsRow(array $staffCtx, string $studentId, \PMS\Models\StudentPlacementDetailsTable $details): array
+    {
+        $existing = $details->findByAdmnoOrId($studentId);
+        if ($existing === null) {
+            Response::notFound('This student is not in student_placement_details.');
+        }
+        if (empty($staffCtx['isAdmin'])) {
+            $batch = trim((string) ($existing['year'] ?? ''));
+            $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+            StaffContext::assertCanEditClassPlacement([
+                'classBatch' => $batch,
+                'batch' => $batch,
+                'admno' => $admno,
+                'registerNumber' => $admno,
+            ], $staffCtx);
+        }
+
+        return $existing;
+    }
+
+    /**
+     * @param array<string, mixed> $existing
+     */
+    private function detailsRowKey(array $existing): string
+    {
+        $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+
+        return $admno !== '' ? $admno : (string) ($existing['id'] ?? '');
     }
 
     /**

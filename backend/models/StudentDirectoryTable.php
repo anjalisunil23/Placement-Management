@@ -50,6 +50,8 @@ class StudentDirectoryTable
               stud_role VARCHAR(16) NOT NULL,
               batch VARCHAR(128) NOT NULL DEFAULT \'\',
               action VARCHAR(191) NOT NULL,
+              cno VARCHAR(64) NOT NULL DEFAULT \'\',
+              email VARCHAR(255) NOT NULL DEFAULT \'\',
               synced_at DATETIME NULL,
               PRIMARY KEY (id),
               UNIQUE KEY uniq_student_details_action (action),
@@ -57,8 +59,68 @@ class StudentDirectoryTable
               KEY idx_student_details_adm_no (adm_no)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+        $this->ensureContactColumns();
 
         return $this->isReady();
+    }
+
+    public function ensureContactColumns(): void
+    {
+        if (!$this->isReady()) {
+            return;
+        }
+        $missing = [
+            'cno' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            'email' => "VARCHAR(255) NOT NULL DEFAULT ''",
+        ];
+        foreach ($missing as $name => $definition) {
+            if ($this->hasColumn($name)) {
+                continue;
+            }
+            $this->db->exec(
+                'ALTER TABLE `student_details` ADD COLUMN `' . $name . '` ' . $definition
+            );
+        }
+    }
+
+    /**
+     * Mobile number and email stored on the directory, keyed by admission number.
+     *
+     * @return array<string, array{cno:string,email:string}>
+     */
+    public function contactByAdmno(): array
+    {
+        if (!$this->isReady()) {
+            return [];
+        }
+        $this->ensureContactColumns();
+        $map = [];
+        $statement = $this->db->query(
+            'SELECT `adm_no`, `cno`, `email` FROM `student_details` WHERE TRIM(`adm_no`) <> \'\''
+        );
+        while ($row = $statement->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $admno = strtoupper(trim((string) ($row['adm_no'] ?? '')));
+            if ($admno === '') {
+                continue;
+            }
+            $map[$admno] = [
+                'cno' => trim((string) ($row['cno'] ?? '')),
+                'email' => trim((string) ($row['email'] ?? '')),
+            ];
+        }
+
+        return $map;
+    }
+
+    private function hasColumn(string $name): bool
+    {
+        $statement = $this->db->prepare('SHOW COLUMNS FROM `student_details` WHERE Field = ?');
+        $statement->execute([$name]);
+
+        return (bool) $statement->fetch();
     }
 
     public function count(): int
@@ -188,6 +250,7 @@ class StudentDirectoryTable
         if (!$this->ensure()) {
             return 0;
         }
+        $this->ensureContactColumns();
 
         $rows = [];
         $studyingKeys = [];
@@ -309,6 +372,8 @@ class StudentDirectoryTable
                 'stud_role'    => $role,
                 'batch'        => $batch,
                 'action'       => $action,
+                'cno'          => self::recordContact($record, ['cno', 'stud_mobiles', 'phone', 'mobile', 'stud_mobile']),
+                'email'        => self::recordContact($record, ['email', 'stud_ajce_mails', 'collegeEmail', 'stud_email', 'personalEmail']),
             ];
         }
 
@@ -323,16 +388,18 @@ class StudentDirectoryTable
         $placeholders = [];
         $values = [];
         foreach ($rows as $row) {
-            $placeholders[] = '(?, ?, ?, ?, ?, ?, ?)';
+            $placeholders[] = '(?, ?, ?, ?, ?, ?, ?, ?, ?)';
             $values[] = $row['student_name'];
             $values[] = $row['adm_no'];
             $values[] = $row['department'];
             $values[] = $row['stud_role'];
             $values[] = $row['batch'];
             $values[] = $row['action'];
+            $values[] = $row['cno'] ?? '';
+            $values[] = $row['email'] ?? '';
             $values[] = $syncedAt;
         }
-        $sql = 'INSERT INTO `student_details` (student_name, adm_no, department, stud_role, batch, action, synced_at) VALUES '
+        $sql = 'INSERT INTO `student_details` (student_name, adm_no, department, stud_role, batch, action, cno, email, synced_at) VALUES '
             . implode(', ', $placeholders);
         $stmt = $this->db->prepare($sql);
         $stmt->execute($values);
@@ -341,6 +408,22 @@ class StudentDirectoryTable
     private static function blankRoleWord(string $value): string
     {
         return in_array(strtolower($value), ['student', 'stud', 'alumni', 'alumnus'], true) ? '' : $value;
+    }
+
+    /**
+     * @param array<string, mixed> $record
+     * @param list<string> $keys
+     */
+    private static function recordContact(array $record, array $keys): string
+    {
+        foreach ($keys as $key) {
+            $value = trim((string) ($record[$key] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     private function sqlDateTime(string $value): ?string

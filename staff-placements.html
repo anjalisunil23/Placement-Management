@@ -204,19 +204,20 @@
                       <label class="form-label small fw-semibold" for="editIncludedvv">includedvv</label>
                       <input class="form-control" id="editIncludedvv" type="text" placeholder="includedvv" />
                     </div>
-                    <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editEvidenceFile" id="editEvidenceFileLabel">Offer letter (PDF only)</label>
-                      <div class="file-picker">
-                        <input type="file" id="editEvidenceFile" accept=".pdf,application/pdf" hidden />
-                        <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn"
-                          data-file-picker="editEvidenceFile"><i class="bi bi-upload me-1"></i>Choose file</button>
-                        <span class="file-picker-name text-muted-2 small" data-file-picker-name="editEvidenceFile">No
-                          file chosen</span>
-                      </div>
+                    <div class="col-12" id="editOfferLetterWrap" hidden>
+                      <label class="form-label small fw-semibold" for="editOfferLetter">Offer letter (PDF only)</label>
+                      <input class="form-control" id="editOfferLetter" type="file" accept=".pdf,application/pdf" />
+                    </div>
                     </div>
                   </div>
                 </div>
                 <div class="modal-footer registry-edit-footer">
+                  <button type="button" class="btn btn-outline-danger me-auto" id="editPlacementDeleteBtn" hidden>
+                    <i class="bi bi-trash me-1"></i>Delete
+                  </button>
+                  <button type="button" class="btn btn-primary px-4" id="editPlacementAddAnotherBtn" hidden>
+                    Add another
+                  </button>
                   <button type="button" class="btn btn-danger px-4" data-bs-dismiss="modal">Cancel</button>
                   <button type="submit" class="btn btn-success px-4" id="editPlacementSaveBtn">
                     <i class="bi bi-check2 me-1"></i>Submit
@@ -533,9 +534,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009batchfast"></script>
+  <script src="js/staff-api.js?v=20261009entries"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009batchfast"></script>
+  <script src="js/officer-api.js?v=20261009entries"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -581,21 +582,17 @@
     const SORT_ICON = '<i class="bi bi-chevron-expand registry-sort-icon" aria-hidden="true"></i>';
 
     const GRID_COLUMN_KEYS = ['student', 'admno', 'stud_role', 'cno', 'year'];
-    const VIEW_TABLE_SKIP = new Set([
-      '_sl', 'student', 'admno', 'stud_role', 'year',
-      'courseid', 'branchid', 'status', 'createdBy', 'updatedBy',
-      'updatedate', 'fordvv', 'includedvv', 'createdate',
-    ]);
 
     function gridColumns() {
       const byKey = new Map(registryColumns.map((col) => [col.key, col]));
-      return GRID_COLUMN_KEYS.map((key) => {
+      const columns = GRID_COLUMN_KEYS.map((key) => {
         const col = byKey.get(key) || { key, label: key, sortable: true, sortKey: key, payloadField: key };
         if (key === 'cno') {
           return Object.assign({}, col, { label: 'cno / email' });
         }
         return col;
       });
+      return [{ key: '_sl', label: 'si.no', sortable: false, payloadField: '_sl' }].concat(columns);
     }
 
     function registryColspan() {
@@ -1388,24 +1385,40 @@
       }
     }
 
-    function viewPlacementColumns() {
-      const source = registryColumns.length
-        ? registryColumns
-        : [
-          'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
-          'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy', 'updatedBy',
-          'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
-        ].map((key) => ({ key, label: key, payloadField: key }));
-      return source.filter((col) => !VIEW_TABLE_SKIP.has(col.key || ''));
+    const ENTRY_VIEW_KEYS = ['type', 'employer', 'empcno', 'empadr', 'payscale', 'status', 'fordvv', 'includedvv'];
+
+    function placementEntryFromRow(row) {
+      return {
+        type: String(row.type || row.recordType || '').trim(),
+        employer: String(row.employer || row.company || '').trim(),
+        empcno: String(row.empcno || row.employerContact || '').trim(),
+        empadr: String(row.empadr || row.address || '').trim(),
+        payscale: String(row.payscale || row.package || '').trim(),
+        status: String(row.status || row.placementStatus || '').trim(),
+        fordvv: String(row.fordvv || '').trim(),
+        includedvv: String(row.includedvv || '').trim(),
+      };
     }
 
-    function openViewPlacement(rowIndex) {
+    function renderPlacementEntries(entries) {
+      const head = document.getElementById('viewPlacementHead');
+      const body = document.getElementById('viewPlacementBody');
+      if (head) {
+        head.innerHTML = ENTRY_VIEW_KEYS.map((key) => `<th>${esc(key)}</th>`).join('');
+      }
+      if (!body) return;
+      const rows = (entries || []).filter((entry) => ENTRY_VIEW_KEYS.some((key) => String(entry[key] || '').trim() !== ''));
+      body.innerHTML = rows.length
+        ? rows.map((entry) => `<tr>${ENTRY_VIEW_KEYS.map((key) => `<td>${esc(String(entry[key] || '').trim() || '—')}</td>`).join('')}</tr>`).join('')
+        : `<tr><td colspan="${ENTRY_VIEW_KEYS.length}" class="text-muted-2">No placement entries for this student.</td></tr>`;
+    }
+
+    async function openViewPlacement(rowIndex) {
       const row = filteredRows[rowIndex];
       if (!row) {
         toast('Record not found.', 'warn');
         return;
       }
-      const columns = viewPlacementColumns();
       const name = String(row.student || row.studentName || 'Student').trim().toUpperCase();
       const admno = String(row.admno || row.admissionNo || row.registerNumber || '').trim();
       const role = String(row.stud_role || row.studRole || '').trim();
@@ -1418,20 +1431,26 @@
       if (identity) {
         identity.innerHTML = `<div class="col-md-4"><div class="view-field-label">year</div><div class="view-field-value">${esc(year || '—')}</div></div>`;
       }
-      const detailCols = columns;
-      const head = document.getElementById('viewPlacementHead');
+      renderPlacementEntries([]);
       const body = document.getElementById('viewPlacementBody');
-      if (head) {
-        head.innerHTML = detailCols.length
-          ? detailCols.map((col) => `<th>${esc(col.label || col.key || '')}</th>`).join('')
-          : '<th>Details</th>';
-      }
       if (body) {
-        body.innerHTML = detailCols.length
-          ? `<tr>${detailCols.map((col) => `<td>${registryCellValue(col, row, 0)}</td>`).join('')}</tr>`
-          : '<tr><td class="text-muted-2">No other details for this student.</td></tr>';
+        body.innerHTML = `<tr><td colspan="${ENTRY_VIEW_KEYS.length}" class="text-muted-2">Loading entries…</td></tr>`;
       }
       bootstrap.Modal.getOrCreateInstance(document.getElementById('viewPlacementModal')).show();
+      const studentId = row.studentId || admno;
+      let entries = [];
+      try {
+        const res = await placementRegistryApi().listPlacementEntries(studentId);
+        if (res?.success && Array.isArray(res.data?.entries)) {
+          entries = res.data.entries;
+        }
+      } catch (_) {
+        entries = [];
+      }
+      if (!entries.length) {
+        entries = [placementEntryFromRow(row)];
+      }
+      renderPlacementEntries(entries);
     }
 
     function openEditPlacement(studentId) {
@@ -1463,12 +1482,15 @@
       document.getElementById('editVerificationDate').value = row.verificationDate || '';
       document.getElementById('editFordvv').value = row.fordvv ?? '';
       document.getElementById('editIncludedvv').value = row.includedvv ?? '';
-      if (typeof resetFilePickers === 'function') {
-        resetFilePickers(['editEvidenceFile']);
-      } else {
-        const ev = document.getElementById('editEvidenceFile');
-        if (ev) ev.value = '';
-      }
+      const adding = !rowHasPlacement(row);
+      const offerWrap = document.getElementById('editOfferLetterWrap');
+      const offerInput = document.getElementById('editOfferLetter');
+      const deleteBtn = document.getElementById('editPlacementDeleteBtn');
+      if (offerWrap) offerWrap.hidden = !adding;
+      if (offerInput) offerInput.value = '';
+      if (deleteBtn) deleteBtn.hidden = adding;
+      const addAnotherBtn = document.getElementById('editPlacementAddAnotherBtn');
+      if (addAnotherBtn) addAnotherBtn.hidden = adding;
       syncEditTypeFields();
       bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).show();
     }
@@ -1517,12 +1539,11 @@
         toast(window.__editTypeRequiredMsg || 'Employer / institution name is required.', 'warn');
         return;
       }
-      const evidence = document.getElementById('editEvidenceFile')?.files?.[0] || null;
       const btn = document.getElementById('editPlacementSaveBtn');
       const label = btn.innerHTML;
       btn.disabled = true;
       btn.innerHTML = 'Submitting…';
-      const res = await StaffApi.updateStudentPlacement(studentId, payload);
+      const res = await placementRegistryApi().updateStudentPlacement(studentId, payload);
       if (!res?.success) {
         btn.disabled = false;
         btn.innerHTML = label;
@@ -1530,15 +1551,16 @@
         return;
       }
       const savedId = String(res?.data?.studentId || studentId);
-      if (evidence) {
+      const offerFile = document.getElementById('editOfferLetter')?.files?.[0] || null;
+      if (offerFile) {
         const fd = new FormData();
-        fd.append('offerLetter', evidence, evidence.name);
-        const up = await StaffApi.uploadStudentPlacementDocuments(savedId, fd);
+        fd.append('offerLetter', offerFile, offerFile.name);
+        const up = await placementRegistryApi().uploadPlacementOfferLetter(savedId, fd);
         if (!up?.success) {
           btn.disabled = false;
           btn.innerHTML = label;
           applySubmittedRow(studentId, savedId, payload, false);
-          toast(up?.message || 'Details saved, but evidence upload failed.', 'warn');
+          toast(up?.message || 'Details saved, but the offer letter upload failed.', 'warn');
           await loadRegistry();
           return;
         }
@@ -1549,7 +1571,66 @@
       btn.disabled = false;
       btn.innerHTML = label;
       bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).hide();
-      toast(evidence ? 'Placement details and evidence submitted.' : 'Placement details submitted.', 'success');
+      toast(offerFile ? 'Placement details and offer letter saved.' : 'Placement details saved.', 'success');
+      await loadRegistry();
+    }
+
+    async function addAnotherPlacement() {
+      if (!canEditSelectedBatch) {
+        toast('Only the class incharge can add another entry for this batch.', 'warn');
+        return;
+      }
+      const studentId = document.getElementById('editStudentId').value;
+      const payload = {
+        employer: document.getElementById('editEmployer').value.trim(),
+        type: document.getElementById('editType').value,
+        package: document.getElementById('editPackage').value.trim(),
+        employerContact: document.getElementById('editEmployerContact').value.trim(),
+        address: document.getElementById('editAddress').value.trim(),
+        placementStatus: document.getElementById('editPlacementStatus').value,
+        fordvv: document.getElementById('editFordvv').value.trim(),
+        includedvv: document.getElementById('editIncludedvv').value.trim(),
+      };
+      if (!payload.employer) {
+        toast(window.__editTypeRequiredMsg || 'Employer / institution name is required.', 'warn');
+        return;
+      }
+      const btn = document.getElementById('editPlacementAddAnotherBtn');
+      if (btn) btn.disabled = true;
+      const res = await placementRegistryApi().addPlacementEntry(studentId, payload);
+      if (btn) btn.disabled = false;
+      if (!res?.success) {
+        toast(res?.message || 'Could not add this entry.', 'error');
+        return;
+      }
+      ['editEmployer', 'editEmployerContact', 'editAddress', 'editPackage', 'editFordvv', 'editIncludedvv'].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+      });
+      const statusSel = document.getElementById('editPlacementStatus');
+      if (statusSel) statusSel.value = '';
+      toast('Another entry saved. View shows every entry for this student.', 'success');
+      await loadRegistry();
+    }
+
+    async function deleteEditPlacement() {
+      if (!canEditSelectedBatch) {
+        toast('Only the class incharge can delete placement details for this batch.', 'warn');
+        return;
+      }
+      const studentId = document.getElementById('editStudentId').value;
+      if (!studentId) return;
+      if (!window.confirm('Delete this student\'s placement details? The student row stays in the list.')) return;
+      const btn = document.getElementById('editPlacementDeleteBtn');
+      if (btn) btn.disabled = true;
+      const res = await placementRegistryApi().deleteStudentPlacement(studentId);
+      if (btn) btn.disabled = false;
+      if (!res?.success) {
+        toast(res?.message || 'Could not delete placement details.', 'error');
+        return;
+      }
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).hide();
+      toast('Placement details deleted.', 'success');
       await loadRegistry();
     }
 
@@ -1708,7 +1789,9 @@
 
     async function downloadOffer(studentId) {
       const token = localStorage.getItem('ph-token') || '';
-      const url = `/backend/api/staff/students/${encodeURIComponent(studentId)}/self-placement/offer-letter`;
+      const role = (typeof Auth !== 'undefined' && Auth.role) ? Auth.role() : '';
+      const scope = (role === 'admin' || role === 'placement_officer') ? 'officer' : 'staff';
+      const url = `/backend/api/${scope}/students/${encodeURIComponent(studentId)}/placement/offer-letter`;
       try {
         const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
         if (!res.ok) throw new Error('Download failed');
@@ -1750,6 +1833,8 @@
       if (page < pages) { page++; renderTable(); }
     });
     document.getElementById('editPlacementForm')?.addEventListener('submit', saveEditPlacement);
+    document.getElementById('editPlacementDeleteBtn')?.addEventListener('click', deleteEditPlacement);
+    document.getElementById('editPlacementAddAnotherBtn')?.addEventListener('click', addAnotherPlacement);
     document.getElementById('editType')?.addEventListener('change', syncEditTypeFields);
     document.getElementById('uploadPlacementForm')?.addEventListener('submit', saveUploadPlacement);
     document.getElementById('registryTable')?.addEventListener('click', (e) => {

@@ -498,6 +498,8 @@ CREATE TABLE IF NOT EXISTS student_details (
   stud_role VARCHAR(16) NOT NULL,
   batch VARCHAR(128) NOT NULL DEFAULT '',
   action VARCHAR(191) NOT NULL,
+  cno VARCHAR(64) NOT NULL DEFAULT '',
+  email VARCHAR(255) NOT NULL DEFAULT '',
   synced_at DATETIME NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uniq_student_details_action (action),

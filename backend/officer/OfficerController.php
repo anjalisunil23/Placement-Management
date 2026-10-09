@@ -1305,6 +1305,71 @@ final class OfficerController
         ));
     }
 
+    /** PUT /api/officer/students/{id}/placement — save into student_placement_details */
+    public function updateStudentPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->updatePlacement($ctx, $studentId, $input)
+        ), 'Placement details updated.');
+    }
+
+    /** DELETE /api/officer/students/{id}/placement */
+    public function deleteStudentPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->deletePlacement($ctx, $studentId)
+        ), 'Placement details deleted.');
+    }
+
+    /** POST /api/officer/students/{id}/placement/entries */
+    public function addStudentPlacementEntry(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->addPlacementEntry($ctx, $studentId, $input)
+        ), 'Placement entry added.');
+    }
+
+    /** GET /api/officer/students/{id}/placement/entries */
+    public function listStudentPlacementEntries(string $studentId): void
+    {
+        (new OfficerDataService())->requireScope();
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->listPlacementEntries($studentId)
+        ));
+    }
+
+    /** POST /api/officer/students/{id}/placement/offer-letter */
+    public function uploadPlacementOfferLetter(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->uploadOfferLetter($ctx, $studentId)
+        ), 'Offer letter uploaded.');
+    }
+
+    /** GET /api/officer/students/{id}/placement/offer-letter */
+    public function downloadPlacementOfferLetter(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        (new \PMS\Services\StaffPlacementRegistryService())->downloadOfferLetter($ctx, $studentId);
+    }
+
     /**
      * Staff-shaped read context. Admin is campus-wide; a placement officer stays on their department.
      *

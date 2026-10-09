@@ -97,6 +97,7 @@ class StudentPlacementDetailsTable
             'includedvv' => "VARCHAR(16) NOT NULL DEFAULT ''",
             'createdate' => 'DATETIME NULL',
             'source_id' => 'VARCHAR(64) NULL DEFAULT NULL',
+            'offer_letter' => "VARCHAR(512) NOT NULL DEFAULT ''",
         ];
         foreach ($missing as $name => $definition) {
             if ($this->hasColumn($name)) {
@@ -386,6 +387,259 @@ class StudentPlacementDetailsTable
         }
 
         return $this->count();
+    }
+
+    /**
+     * True when this table already holds placement or higher-education values.
+     */
+    public function detailsHoldCopiedPlacements(): bool
+    {
+        if (!$this->isReady()) {
+            return false;
+        }
+        try {
+            $row = $this->db->query(
+                'SELECT 1 FROM `student_placement_details`
+                 WHERE TRIM(`employer`) <> \'\' OR TRIM(`type`) <> \'\'
+                 LIMIT 1'
+            )->fetch();
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return (bool) $row;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function findByAdmnoOrId(string $key): ?array
+    {
+        $key = trim($key);
+        if ($key === '' || !$this->ensure()) {
+            return null;
+        }
+        $statement = $this->db->prepare(
+            'SELECT * FROM `student_placement_details` WHERE UPPER(TRIM(`admno`)) = ? ORDER BY `id` ASC LIMIT 1'
+        );
+        $statement->execute([strtoupper($key)]);
+        $row = $statement->fetch();
+        if (is_array($row)) {
+            return $row;
+        }
+        if (preg_match('/^\d+$/', $key) !== 1) {
+            return null;
+        }
+        $byId = $this->db->prepare(
+            'SELECT * FROM `student_placement_details` WHERE `id` = ? LIMIT 1'
+        );
+        $byId->execute([(int) $key]);
+        $row = $byId->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * Write an edit onto the permanent row for this admission number.
+     *
+     * @param array<string, mixed> $fields
+     */
+    public function saveFieldsForAdmno(string $admno, array $fields): bool
+    {
+        $row = $this->findByAdmnoOrId($admno);
+        if ($row === null) {
+            return false;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        if ($id <= 0) {
+            return false;
+        }
+        $allowed = [
+            'employer' => 512,
+            'empcno' => 255,
+            'empadr' => 512,
+            'payscale' => 255,
+            'status' => 128,
+            'fordvv' => 16,
+            'type' => 64,
+            'includedvv' => 16,
+        ];
+        $sets = [];
+        $params = [];
+        foreach ($allowed as $column => $limit) {
+            if (!array_key_exists($column, $fields)) {
+                continue;
+            }
+            $value = trim((string) $fields[$column]);
+            if (strlen($value) > $limit) {
+                $value = substr($value, 0, $limit);
+            }
+            $sets[] = '`' . $column . '` = ?';
+            $params[] = $value;
+        }
+        if ($sets === []) {
+            return false;
+        }
+        $sets[] = '`updatedate` = NOW()';
+        $params[] = $id;
+        $statement = $this->db->prepare(
+            'UPDATE `student_placement_details` SET ' . implode(', ', $sets)
+            . ' WHERE `id` = ?'
+        );
+        $statement->execute($params);
+
+        return true;
+    }
+
+    public function saveOfferLetterPath(string $key, string $path): bool
+    {
+        $row = $this->findByAdmnoOrId($key);
+        if ($row === null) {
+            return false;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        if ($id <= 0) {
+            return false;
+        }
+        $path = trim($path);
+        if (strlen($path) > 512) {
+            $path = substr($path, 0, 512);
+        }
+        $statement = $this->db->prepare(
+            'UPDATE `student_placement_details` SET `offer_letter` = ?, `updatedate` = NOW() WHERE `id` = ?'
+        );
+        $statement->execute([$path, $id]);
+
+        return true;
+    }
+
+    public function clearPlacementFields(string $key): bool
+    {
+        $row = $this->findByAdmnoOrId($key);
+        if ($row === null) {
+            return false;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        if ($id <= 0) {
+            return false;
+        }
+        $statement = $this->db->prepare(
+            'UPDATE `student_placement_details` SET
+                `employer` = \'\', `empcno` = \'\', `empadr` = \'\', `payscale` = \'\',
+                `status` = \'\', `type` = \'\', `fordvv` = \'\', `includedvv` = \'\',
+                `offer_letter` = \'\', `updatedate` = NOW()
+             WHERE `id` = ?'
+        );
+        $statement->execute([$id]);
+
+        return true;
+    }
+
+    /**
+     * Insert another placement, higher-education, or research row for the same admission number.
+     *
+     * @param array<string, mixed> $fields
+     */
+    public function addAnotherEntry(string $key, array $fields): bool
+    {
+        $base = $this->findByAdmnoOrId($key);
+        if ($base === null) {
+            return false;
+        }
+        $limits = [
+            'employer' => 512,
+            'empcno' => 255,
+            'empadr' => 512,
+            'payscale' => 255,
+            'status' => 128,
+            'fordvv' => 16,
+            'type' => 64,
+            'includedvv' => 16,
+        ];
+        $values = [];
+        foreach ($limits as $column => $limit) {
+            $value = trim((string) ($fields[$column] ?? ''));
+            if (strlen($value) > $limit) {
+                $value = substr($value, 0, $limit);
+            }
+            $values[$column] = $value;
+        }
+        $statement = $this->db->prepare(
+            'INSERT INTO `student_placement_details`
+                (`student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`,
+                 `employer`, `empcno`, `empadr`, `payscale`, `status`, `fordvv`, `type`, `includedvv`,
+                 `createdate`, `updatedate`)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())'
+        );
+        $statement->execute([
+            (string) ($base['student'] ?? ''),
+            (string) ($base['admno'] ?? ''),
+            (string) ($base['stud_role'] ?? ''),
+            (string) ($base['cno'] ?? ''),
+            (string) ($base['email'] ?? ''),
+            (string) ($base['year'] ?? ''),
+            (string) ($base['courseid'] ?? ''),
+            (string) ($base['branchid'] ?? ''),
+            $values['employer'],
+            $values['empcno'],
+            $values['empadr'],
+            $values['payscale'],
+            $values['status'],
+            $values['fordvv'],
+            $values['type'],
+            $values['includedvv'],
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Every stored placement entry for one admission number.
+     *
+     * @return list<array<string, string>>
+     */
+    public function listEntriesByAdmno(string $admno): array
+    {
+        $admno = strtoupper(trim($admno));
+        if ($admno === '' || !$this->ensure()) {
+            return [];
+        }
+        $statement = $this->db->prepare(
+            'SELECT `type`, `employer`, `empcno`, `empadr`, `payscale`, `status`, `fordvv`, `includedvv`
+             FROM `student_placement_details`
+             WHERE UPPER(TRIM(`admno`)) = ?
+             ORDER BY `id` ASC'
+        );
+        $statement->execute([$admno]);
+        $entries = [];
+        while ($row = $statement->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $entry = [];
+            $filled = false;
+            foreach (['type', 'employer', 'empcno', 'empadr', 'payscale', 'status', 'fordvv', 'includedvv'] as $column) {
+                $value = trim((string) ($row[$column] ?? ''));
+                $entry[$column] = $value;
+                if ($value !== '') {
+                    $filled = true;
+                }
+            }
+            if ($filled) {
+                $entries[] = $entry;
+            }
+        }
+
+        return $entries;
+    }
+
+    private function dropSourceTable(): void
+    {
+        try {
+            $this->db->exec('DROP TABLE `student_placements`');
+        } catch (\Throwable) {
+            // Another request may already have dropped it.
+        }
     }
 
     /**

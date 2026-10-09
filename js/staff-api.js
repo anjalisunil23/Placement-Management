@@ -389,6 +389,31 @@ const StaffApi = {
     return res;
   },
 
+  async deleteStudentPlacement(studentId) {
+    if (typeof StaffApi.clearPlacementsCache === 'function') StaffApi.clearPlacementsCache();
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement`, { method: 'DELETE' });
+  },
+
+  async addPlacementEntry(studentId, body) {
+    if (typeof StaffApi.clearPlacementsCache === 'function') StaffApi.clearPlacementsCache();
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement/entries`, {
+      method: 'POST',
+      body,
+    });
+  },
+
+  async listPlacementEntries(studentId) {
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement/entries`);
+  },
+
+  async uploadPlacementOfferLetter(studentId, formData) {
+    if (typeof StaffApi.clearPlacementsCache === 'function') StaffApi.clearPlacementsCache();
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement/offer-letter`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
   async updateStudentProfile(studentId, body) {
     const res = await api(`/staff/students/${encodeURIComponent(studentId)}/profile`, {
       method: 'PUT',

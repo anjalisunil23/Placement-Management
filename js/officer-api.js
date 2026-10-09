@@ -541,6 +541,39 @@ const OfficerApi = {
     return data;
   },
 
+  async updateStudentPlacement(studentId, body) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement`, {
+      method: 'PUT',
+      body,
+    });
+  },
+
+  async deleteStudentPlacement(studentId) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement`, { method: 'DELETE' });
+  },
+
+  async addPlacementEntry(studentId, body) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement/entries`, {
+      method: 'POST',
+      body,
+    });
+  },
+
+  async listPlacementEntries(studentId) {
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement/entries`);
+  },
+
+  async uploadPlacementOfferLetter(studentId, formData) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement/offer-letter`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
     ['departmentId', 'program', 'branch', 'batch', 'type', 'q'].forEach(k => {

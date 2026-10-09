@@ -516,6 +516,60 @@ final class StaffController
         ), 'Placement details updated.');
     }
 
+    /** DELETE /api/staff/students/{id}/placement */
+    public function deleteStudentPlacement(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->deletePlacement($ctx, $studentId)
+        ), 'Placement details deleted.');
+    }
+
+    /** POST /api/staff/students/{id}/placement/entries */
+    public function addStudentPlacementEntry(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->addPlacementEntry($ctx, $studentId, $input)
+        ), 'Placement entry added.');
+    }
+
+    /** GET /api/staff/students/{id}/placement/entries */
+    public function listStudentPlacementEntries(string $studentId): void
+    {
+        RBACMiddleware::requireStaff();
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->listPlacementEntries($studentId)
+        ));
+    }
+
+    /** POST /api/staff/students/{id}/placement/offer-letter */
+    public function uploadPlacementOfferLetter(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->uploadOfferLetter($ctx, $studentId)
+        ), 'Offer letter uploaded.');
+    }
+
+    /** GET /api/staff/students/{id}/placement/offer-letter */
+    public function downloadPlacementOfferLetter(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        (new StaffPlacementRegistryService())->downloadOfferLetter($ctx, $studentId);
+    }
+
     /** POST /api/staff/students/{id}/placement/documents */
     public function uploadStudentPlacementDocuments(string $studentId): void
     {
