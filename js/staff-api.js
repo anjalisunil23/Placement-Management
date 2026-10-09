@@ -258,16 +258,14 @@ const StaffApi = {
     if (params.program) qs.set('program', params.program);
     if (params.branch) qs.set('branch', params.branch);
     qs.set('studRole', params.studRole || 'all');
-    if (params.lite) qs.set('lite', '1');
     const q = qs.toString();
-    const cacheKey = 'ph_staff_placement_filters_v6_' + q;
+    const cacheKey = 'ph_staff_placement_filters_v5_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
         const depts = parsed?.data?.departments;
-        const lite = !!params.lite;
-        const deptOk = lite || (Array.isArray(depts) && depts.length > 0);
+        const deptOk = Array.isArray(depts) && depts.length > 0;
         const deptScoped = !!String(params.departmentId || '').trim();
         const programScoped = !!String(params.program || '').trim();
         const programs = parsed?.data?.programs;
@@ -285,8 +283,7 @@ const StaffApi = {
     const programScoped = !!String(params.program || '').trim();
     const programsOk = !deptScoped || Array.isArray(data?.programs);
     const batchesOk = !programScoped || Array.isArray(data?.batches);
-    const lite = !!params.lite;
-    if (data && (lite || (Array.isArray(data.departments) && data.departments.length)) && programsOk && batchesOk) {
+    if (data && Array.isArray(data.departments) && data.departments.length && programsOk && batchesOk) {
       try {
         sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
       } catch (_) { /* ignore */ }

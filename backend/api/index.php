@@ -510,7 +510,6 @@ $routes = [
     ['GET',  '/officer/recruiting',                  [OfficerController::class, 'recruitingOverview']],
     ['GET',  '/officer/placement-filters',            [OfficerController::class, 'placementFilters']],
     ['GET',  '/officer/placements-higher-education',  [OfficerController::class, 'placementsHigherEducation']],
-    ['PUT',  '/officer/students/{id}/placement',      [OfficerController::class, 'updateStudentPlacement']],
     ['GET',  '/officer/notifications',               [OfficerController::class, 'notifications']],
     ['POST', '/officer/notifications/read-all',      [OfficerController::class, 'markAllNotificationsRead']],
     ['POST', '/officer/notifications/delete-selected', [OfficerController::class, 'deleteSelectedNotifications']],

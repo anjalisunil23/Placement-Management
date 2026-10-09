@@ -3427,12 +3427,6 @@ final class AesApiService
 
         $programmeCode = trim($programmeCode);
         $branch = trim($branch);
-        $cacheKey = 'placement_class_batches_' . md5($deptAesId . '|' . $programmeCode . '|' . $branch);
-        $cached = $this->readSharedListCache($cacheKey, 900);
-        if (is_array($cached) && $cached !== []) {
-            return $cached;
-        }
-
         $courseVariants = $programmeCode !== ''
             ? $this->placementCourseParamVariants($programmeCode)
             : [[]];
@@ -3463,17 +3457,10 @@ final class AesApiService
             $collected
         ), static fn (string $v): bool => $v !== '')));
         if ($collected !== []) {
-            $this->writeSharedListCache($cacheKey, $collected);
-
             return $collected;
         }
 
-        $legacy = $this->fetchLegacyPlacementClassBatches($deptAesId, $programmeCode, $branch);
-        if ($legacy !== []) {
-            $this->writeSharedListCache($cacheKey, $legacy);
-        }
-
-        return $legacy;
+        return $this->fetchLegacyPlacementClassBatches($deptAesId, $programmeCode, $branch);
     }
 
     /**

@@ -137,17 +137,16 @@
                 </div>
                 <div class="modal-body">
                   <input type="hidden" id="editStudentId" />
+                  <input type="hidden" id="editRole" />
+                  <input type="hidden" id="editJoinDate" />
+                  <input type="hidden" id="editEndDate" />
                   <div class="row g-3">
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editStudentName">student</label>
+                      <label class="form-label small fw-semibold" for="editStudentName">Name of student</label>
                       <input class="form-control" id="editStudentName" readonly />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editAdmno">admno</label>
-                      <input class="form-control" id="editAdmno" readonly />
-                    </div>
-                    <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editType">type</label>
+                      <label class="form-label small fw-semibold" for="editType">Type</label>
                       <select class="form-select" id="editType">
                         <option value="Placement">Placement</option>
                         <option value="Higher Education">Higher Education</option>
@@ -155,23 +154,26 @@
                       </select>
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editEmployer" id="editEmployerLabel">employer</label>
+                      <label class="form-label small fw-semibold" for="editEmployer" id="editEmployerLabel">Name of the Employer/Higher
+                        Education Institution</label>
                       <input class="form-control" id="editEmployer" placeholder="Name of the Employer" required />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editEmployerContact" id="editEmployerContactLabel">empcno</label>
+                      <label class="form-label small fw-semibold" for="editEmployerContact" id="editEmployerContactLabel">Contact Number of
+                        Employer/Higher Education Institution</label>
                       <input class="form-control" id="editEmployerContact" placeholder="Contact Number of Employer" />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editAddress" id="editAddressLabel">empadr</label>
+                      <label class="form-label small fw-semibold" for="editAddress" id="editAddressLabel">Address of the Employer/Higher
+                        Education Institution</label>
                       <input class="form-control" id="editAddress" placeholder="Address of the Employer" />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editPackage" id="editPackageLabel">payscale</label>
+                      <label class="form-label small fw-semibold" for="editPackage" id="editPackageLabel">Package</label>
                       <input class="form-control" id="editPackage" placeholder="Package" />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editPlacementStatus" id="editPlacementStatusLabel">status</label>
+                      <label class="form-label small fw-semibold" for="editPlacementStatus" id="editPlacementStatusLabel">Placement status</label>
                       <select class="form-select" id="editPlacementStatus">
                         <option value="">Select status</option>
                         <option value="Offered">Offered</option>
@@ -182,12 +184,35 @@
                       </select>
                     </div>
                     <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editOfferLetterVerified" id="editOfferVerifiedLabel">Is offer letter
+                        verified?</label>
+                      <select class="form-select" id="editOfferLetterVerified">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                      </select>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editVerificationDate">Date of
+                        verification</label>
+                      <input type="date" class="form-control" id="editVerificationDate" />
+                    </div>
+                    <div class="col-md-6">
                       <label class="form-label small fw-semibold" for="editFordvv">fordvv</label>
                       <input class="form-control" id="editFordvv" type="text" placeholder="fordvv" />
                     </div>
                     <div class="col-md-6">
                       <label class="form-label small fw-semibold" for="editIncludedvv">includedvv</label>
                       <input class="form-control" id="editIncludedvv" type="text" placeholder="includedvv" />
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small fw-semibold" for="editEvidenceFile" id="editEvidenceFileLabel">Offer letter (PDF only)</label>
+                      <div class="file-picker">
+                        <input type="file" id="editEvidenceFile" accept=".pdf,application/pdf" hidden />
+                        <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn"
+                          data-file-picker="editEvidenceFile"><i class="bi bi-upload me-1"></i>Choose file</button>
+                        <span class="file-picker-name text-muted-2 small" data-file-picker-name="editEvidenceFile">No
+                          file chosen</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -363,14 +388,13 @@
           }
 
           .registry-actions-col {
-            width: 8.5rem;
-            min-width: 8.5rem
+            width: 52px;
+            min-width: 52px
           }
 
           .registry-actions {
             display: flex;
-            flex-direction: row;
-            flex-wrap: nowrap;
+            flex-direction: column;
             gap: 4px;
             align-items: center;
             justify-content: center
@@ -509,9 +533,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009batchfast"></script>
+  <script src="js/staff-api.js?v=20261009branchclean"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009batchfast"></script>
+  <script src="js/officer-api.js?v=20261009branchclean"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -1037,61 +1061,6 @@
       return false;
     }
 
-    function setBatchSelectLoading(loading) {
-      const batchEl = document.getElementById('filterBatch');
-      if (!batchEl) return;
-      if (loading) {
-        batchEl.disabled = true;
-        batchEl.innerHTML = '<option value="">Loading batches…</option>';
-        return;
-      }
-      updateFilterCascadeState();
-    }
-
-    async function loadBatchesForSelectedBranch(parentSeq = null) {
-      const registryApi = placementRegistryApi();
-      if (!registryApi?.fetchPlacementFilters) return;
-
-      const seq = parentSeq ?? ++filterCascadeSeq;
-      syncDepartmentFilter();
-      const deptId = String(filterDepartmentId || '').trim();
-      const branchKey = String(
-        filterProgram || document.getElementById('filterProgram')?.value || ''
-      ).trim();
-      if (!deptId || !branchKey) {
-        fillSelect('filterBatch', [], 'Select branch first', '', false);
-        return;
-      }
-
-      setBatchSelectLoading(true);
-      try {
-        const batchData = await registryApi.fetchPlacementFilters({
-          departmentId: deptId,
-          program: branchKey,
-          branch: filterBranch || '',
-          studRole: 'all',
-          lite: true,
-        });
-        if (seq !== filterCascadeSeq) return;
-
-        if (batchData) {
-          applyAesBranchHintFromFiltersApi(batchData);
-        }
-        const batches = batchData && Array.isArray(batchData.batches) ? batchData.batches : [];
-        lastFilterBatches = batches;
-        fillSelect('filterBatch', batches, 'All batches', filterBatch, false);
-        filterBatch = document.getElementById('filterBatch')?.value || '';
-        alignProgramWithBatchSelection();
-        if (!canEditSelectedBatch && filterBatch) {
-          canEditSelectedBatch = batchIsAssigned(filterBatch);
-        }
-      } finally {
-        if (seq === filterCascadeSeq) {
-          setBatchSelectLoading(false);
-        }
-      }
-    }
-
     function applyFilterMetaFromApi(data) {
       if (!data) return;
       if (Array.isArray(data.assignedClassBatches) && data.assignedClassBatches.length) {
@@ -1154,7 +1123,6 @@
       const branchData = await registryApi.fetchPlacementFilters({
         departmentId: deptId,
         studRole: 'all',
-        lite: true,
       });
       if (seq !== filterCascadeSeq) return;
       if (!branchData) {
@@ -1192,9 +1160,31 @@
         return;
       }
 
-      filterProgram = branchKey;
-      await loadBatchesForSelectedBranch(seq);
+      // Step 2 — Branch → Batch (program = selected branch/programme under the department).
+      const batchData = await registryApi.fetchPlacementFilters({
+        departmentId: deptId,
+        program: branchKey,
+        branch: filterBranch || '',
+        studRole: 'all',
+      });
       if (seq !== filterCascadeSeq) return;
+
+      if (batchData) {
+        applyAesBranchHintFromFiltersApi(batchData);
+        if (Array.isArray(batchData.assignedClassBatches) && batchData.assignedClassBatches.length) {
+          apiAssignedBatches = batchData.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
+        }
+      }
+
+      const batches = batchData && Array.isArray(batchData.batches) ? batchData.batches : [];
+      lastFilterBatches = batches;
+      fillSelect('filterBatch', batches, 'All batches', filterBatch, false);
+      filterBatch = document.getElementById('filterBatch')?.value || '';
+      alignProgramWithBatchSelection();
+
+      if (!canEditSelectedBatch && filterBatch) {
+        canEditSelectedBatch = batchIsAssigned(filterBatch);
+      }
       updateClassTeacherBanner();
       updateFilterCascadeState();
     }
@@ -1362,15 +1352,17 @@
       const profile = profiles[type] || profiles.Placement;
       window.__editTypeRequiredMsg = profile.requiredMsg;
 
-      setText('editEmployerLabel', 'employer');
+      setText('editEmployerLabel', profile.employer);
       setPlaceholder('editEmployer', profile.employerPh);
-      setText('editEmployerContactLabel', 'empcno');
+      setText('editEmployerContactLabel', profile.contact);
       setPlaceholder('editEmployerContact', profile.contactPh);
-      setText('editAddressLabel', 'empadr');
+      setText('editAddressLabel', profile.address);
       setPlaceholder('editAddress', profile.addressPh);
-      setText('editPackageLabel', 'payscale');
+      setText('editPackageLabel', profile.package);
       setPlaceholder('editPackage', profile.packagePh);
-      setText('editPlacementStatusLabel', 'status');
+      setText('editPlacementStatusLabel', profile.status);
+      setText('editOfferVerifiedLabel', profile.verified);
+      setText('editEvidenceFileLabel', profile.evidence);
 
       if (statusSel) {
         statusSel.innerHTML = profile.statusOptions
@@ -1445,26 +1437,32 @@
         toast('Record not found.', 'warn');
         return;
       }
-      document.getElementById('editStudentId').value = row.studentId || row.admno || '';
-      document.getElementById('editStudentName').value = row.student || row.studentName || '';
-      document.getElementById('editAdmno').value = row.admno || row.admissionNo || row.registerNumber || '';
-      document.getElementById('editEmployer').value = row.employer || row.company || '';
-      const rawType = String(row.type || row.recordType || '').toLowerCase();
-      document.getElementById('editType').value = rawType.includes('research')
-        ? 'Research'
-        : (rawType.includes('higher') ? 'Higher Education' : 'Placement');
-      document.getElementById('editPackage').value = row.payscale || row.package || '';
-      document.getElementById('editEmployerContact').value = row.empcno || row.employerContact || '';
-      document.getElementById('editAddress').value = row.empadr || row.address || '';
-      const statusValue = String(row.status || row.placementStatus || '');
+      document.getElementById('editStudentId').value = row.studentId || '';
+      document.getElementById('editStudentName').value = row.studentName || '';
+      document.getElementById('editEmployer').value = row.employer || '';
+      document.getElementById('editRole').value = row.role || '';
+      document.getElementById('editType').value = (
+        row.type === 'Higher Education' || row.type === 'Research'
+          ? row.type
+          : 'Placement'
+      );
+      document.getElementById('editPackage').value = row.package || '';
+      document.getElementById('editEmployerContact').value = row.employerContact || '';
+      document.getElementById('editAddress').value = row.address || '';
+      document.getElementById('editJoinDate').value = row.joinDate || '';
+      document.getElementById('editEndDate').value = row.endDate || '';
+      document.getElementById('editPlacementStatus').value = row.placementStatus || '';
+      document.getElementById('editOfferLetterVerified').value = row.offerLetterVerified ? 'true' : 'false';
+      document.getElementById('editVerificationDate').value = row.verificationDate || '';
       document.getElementById('editFordvv').value = row.fordvv ?? '';
       document.getElementById('editIncludedvv').value = row.includedvv ?? '';
-      syncEditTypeFields();
-      const statusSel = document.getElementById('editPlacementStatus');
-      if (statusSel && statusValue && !Array.from(statusSel.options).some((opt) => opt.value === statusValue)) {
-        statusSel.add(new Option(statusValue, statusValue));
+      if (typeof resetFilePickers === 'function') {
+        resetFilePickers(['editEvidenceFile']);
+      } else {
+        const ev = document.getElementById('editEvidenceFile');
+        if (ev) ev.value = '';
       }
-      if (statusSel) statusSel.value = statusValue;
+      syncEditTypeFields();
       bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).show();
     }
 
@@ -1495,11 +1493,16 @@
       const studentId = document.getElementById('editStudentId').value;
       const payload = {
         employer: document.getElementById('editEmployer').value.trim(),
+        role: document.getElementById('editRole').value.trim(),
         type: document.getElementById('editType').value,
         package: document.getElementById('editPackage').value.trim(),
         employerContact: document.getElementById('editEmployerContact').value.trim(),
         address: document.getElementById('editAddress').value.trim(),
+        joinDate: document.getElementById('editJoinDate').value,
+        endDate: document.getElementById('editEndDate').value,
         placementStatus: document.getElementById('editPlacementStatus').value,
+        offerLetterVerified: document.getElementById('editOfferLetterVerified').value === 'true',
+        verificationDate: document.getElementById('editVerificationDate').value,
         fordvv: document.getElementById('editFordvv').value.trim(),
         includedvv: document.getElementById('editIncludedvv').value.trim(),
       };
@@ -1507,21 +1510,39 @@
         toast(window.__editTypeRequiredMsg || 'Employer / institution name is required.', 'warn');
         return;
       }
+      const evidence = document.getElementById('editEvidenceFile')?.files?.[0] || null;
       const btn = document.getElementById('editPlacementSaveBtn');
       const label = btn.innerHTML;
       btn.disabled = true;
       btn.innerHTML = 'Submitting…';
-      const res = await placementRegistryApi().updateStudentPlacement(studentId, payload);
-      btn.disabled = false;
-      btn.innerHTML = label;
+      const res = await StaffApi.updateStudentPlacement(studentId, payload);
       if (!res?.success) {
+        btn.disabled = false;
+        btn.innerHTML = label;
         toast(res?.message || 'Could not update placement.', 'error');
         return;
       }
       const savedId = String(res?.data?.studentId || studentId);
-      applySubmittedRow(studentId, savedId, payload, false);
+      if (evidence) {
+        const fd = new FormData();
+        fd.append('offerLetter', evidence, evidence.name);
+        const up = await StaffApi.uploadStudentPlacementDocuments(savedId, fd);
+        if (!up?.success) {
+          btn.disabled = false;
+          btn.innerHTML = label;
+          applySubmittedRow(studentId, savedId, payload, false);
+          toast(up?.message || 'Details saved, but evidence upload failed.', 'warn');
+          await loadRegistry();
+          return;
+        }
+        applySubmittedRow(studentId, savedId, payload, true);
+      } else {
+        applySubmittedRow(studentId, savedId, payload, false);
+      }
+      btn.disabled = false;
+      btn.innerHTML = label;
       bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).hide();
-      toast('Placement details saved.', 'success');
+      toast(evidence ? 'Placement details and evidence submitted.' : 'Placement details submitted.', 'success');
       await loadRegistry();
     }
 
@@ -1534,17 +1555,16 @@
           ...row,
           studentId: savedStudentId || row.studentId,
           employer: payload.employer,
-          company: payload.employer,
+          role: payload.role || row.role || '',
           type: payload.type || row.type || 'Placement',
-          recordType: payload.type || row.type || 'Placement',
-          payscale: payload.package || '',
           package: payload.package || '',
-          empcno: payload.employerContact || '',
           employerContact: payload.employerContact || '',
-          empadr: payload.address || '',
           address: payload.address || '',
-          status: payload.placementStatus || '',
+          joinDate: payload.joinDate || '',
+          endDate: payload.endDate || '',
           placementStatus: payload.placementStatus || '',
+          offerLetterVerified: !!payload.offerLetterVerified,
+          verificationDate: payload.verificationDate || '',
           fordvv: payload.fordvv ?? '',
           includedvv: payload.includedvv ?? '',
           hasOfferLetter: hasOfferLetter || !!row.hasOfferLetter,
@@ -1662,7 +1682,7 @@
         cachedBatchOptionsKey = '';
         const batchEl = document.getElementById('filterBatch');
         if (batchEl) batchEl.value = '';
-        await loadBatchesForSelectedBranch();
+        await loadPlacementFilters();
       } else if (changed === 'filterBatch') {
         filterBatch = document.getElementById('filterBatch')?.value || '';
         alignProgramWithBatchSelection();

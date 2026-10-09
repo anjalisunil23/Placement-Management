@@ -99,7 +99,7 @@ final class StaffPlacementRegistryService
         @ini_set('memory_limit', '256M');
         @set_time_limit(max(120, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 120)));
         if (empty($staffCtx['isAdmin'])) {
-            StaffContext::requireDepartmentScope($staffCtx);
+        StaffContext::requireDepartmentScope($staffCtx);
         }
         $filters = $this->normalizeRegistryScopeFilters($filters);
         $requestedDept = trim((string) ($filters['departmentId'] ?? ''));
@@ -299,8 +299,8 @@ final class StaffPlacementRegistryService
                 $aesClassRows = $this->syncRosterRowsForExpandedBatch(
                     $classCtx,
                     $deptAesId,
-                    $program,
-                    $batch,
+                $program,
+                $batch,
                     $isAlumni
                 );
             }
@@ -327,8 +327,8 @@ final class StaffPlacementRegistryService
         }
 
         return $isAlumni
-            ? $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx)
-            : $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
+                        ? $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx)
+                        : $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
     }
 
     private function registryListMergeAesEnabled(): bool
@@ -792,10 +792,10 @@ final class StaffPlacementRegistryService
         foreach ($details->listAlumniRows(10000) as $placement) {
             $admno = strtoupper(trim((string) ($placement['admno'] ?? '')));
             if ($admno !== '' && isset($matchedAdmnos[$admno])) {
-                continue;
-            }
+                    continue;
+                }
             $rows[] = $this->placementDetailGridRow($placement);
-        }
+            }
         unset($matchedAdmnos);
 
         return $rows;
@@ -933,9 +933,9 @@ final class StaffPlacementRegistryService
     private function listFromStudentPlacements(array $listCtx, array $filters, bool $tableOnly = true): array
     {
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
-        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
-        $program = trim((string) ($filters['program'] ?? ''));
-        $batch = trim((string) ($filters['batch'] ?? ''));
+            $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+            $program = trim((string) ($filters['program'] ?? ''));
+            $batch = trim((string) ($filters['batch'] ?? ''));
 
         $tableLimit = max(100, min(5000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 2500)));
         $campusWide = $departmentId === '' && !empty($listCtx['campusWide']);
@@ -944,9 +944,9 @@ final class StaffPlacementRegistryService
         }
 
         $tableRows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
-            $departmentId,
-            $program,
-            $batch,
+                $departmentId,
+                $program,
+                $batch,
             $tableLimit,
             $batch !== '',
             $campusWide
@@ -998,38 +998,38 @@ final class StaffPlacementRegistryService
             if ($id !== '' && Security::isValidId($id)) {
                 $needIds[$id][] = $idx;
             }
-        }
+            }
         if ($needIds === []) {
             return $rows;
         }
 
-        $students = (new StudentModel())->findByIds(array_keys($needIds));
-        foreach ($needIds as $id => $indexes) {
-            $student = $students[$id] ?? null;
-            if (!is_array($student)) {
-                continue;
-            }
-            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
-            $patch = [
-                'displayName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
-                'studentName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
-                'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
-                'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
-                'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
-                'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
-                'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
-            ];
-            foreach ($indexes as $idx) {
-                foreach ($patch as $key => $value) {
-                    if ($value === '') {
-                        continue;
-                    }
-                    $existing = trim((string) ($rows[$idx][$key] ?? ''));
-                    if ($existing === '') {
-                        $rows[$idx][$key] = $value;
-                    }
+            $students = (new StudentModel())->findByIds(array_keys($needIds));
+            foreach ($needIds as $id => $indexes) {
+                $student = $students[$id] ?? null;
+                if (!is_array($student)) {
+                    continue;
+                }
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $patch = [
+            'displayName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+            'studentName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+            'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
+            'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
+            'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
+            'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+            'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+        ];
+        foreach ($indexes as $idx) {
+            foreach ($patch as $key => $value) {
+                if ($value === '') {
+                    continue;
+                }
+                $existing = trim((string) ($rows[$idx][$key] ?? ''));
+                if ($existing === '') {
+                    $rows[$idx][$key] = $value;
                 }
             }
+        }
         }
 
         return $rows;
@@ -2271,15 +2271,15 @@ final class StaffPlacementRegistryService
         $api = new AesApiService();
         $catalog = [];
         if (!$localOnly) {
-            try {
-                $api->syncDepartmentsToLocal();
-            } catch (\Throwable) {
-                // Serve local departments when AES is unreachable.
-            }
-            try {
-                $catalog = $api->listDepartments();
-            } catch (\Throwable) {
-                $catalog = [];
+        try {
+            $api->syncDepartmentsToLocal();
+        } catch (\Throwable) {
+            // Serve local departments when AES is unreachable.
+        }
+        try {
+            $catalog = $api->listDepartments();
+        } catch (\Throwable) {
+            $catalog = [];
             }
         }
 
@@ -2411,8 +2411,8 @@ final class StaffPlacementRegistryService
         foreach ($codes as $code) {
             $code = DepartmentProgrammeCatalog::resolveProgrammeCode($code);
             if ($code === '') {
-                continue;
-            }
+                    continue;
+                }
             if ($fromCourse !== '' && strcasecmp($fromCourse, $code) === 0) {
                 return true;
             }
@@ -2651,8 +2651,8 @@ final class StaffPlacementRegistryService
 
         return array_values(array_filter($rows, function (array $row) use ($departmentId, $program, $batch, $type, $q): bool {
             if ($departmentId !== '' && !$this->placementDetailRowMatchesDepartment($row, $departmentId)) {
-                return false;
-            }
+                    return false;
+                }
             $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
             if ($batch !== '' && !StudentPlacementModel::matchesClassBatchSelection($year, $batch)) {
                 return false;
@@ -3042,29 +3042,33 @@ final class StaffPlacementRegistryService
      */
     public function updatePlacement(array $staffCtx, string $studentId, array $input): array
     {
-        $details = new \PMS\Models\StudentPlacementDetailsTable();
-        $existing = $details->findByAdmnoOrId($studentId);
-        if ($existing === null) {
-            Response::notFound('This student is not in student_placement_details.');
+        $student = $this->officerData->resolveStudentRef($studentId);
+        if (!$student) {
+            Response::notFound('Student not found.');
         }
-        $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
-        $batch = trim((string) ($existing['year'] ?? ''));
-        if (empty($staffCtx['isAdmin'])) {
-            StaffContext::assertCanEditClassPlacement([
-                'classBatch' => $batch,
-                'batch' => $batch,
-                'admno' => $admno,
-                'registerNumber' => $admno,
-            ], $staffCtx);
-        }
+        $this->assertRegistryStudentInDepartment($student, $staffCtx);
+        StaffContext::assertCanEditClassPlacement($student, $staffCtx);
+        $student = $this->ensureLocalStudentForStaffEdit($student, $staffCtx);
 
         $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
+        $role = trim((string) ($input['role'] ?? ''));
         $package = trim((string) ($input['package'] ?? ''));
         $address = trim((string) ($input['address'] ?? $input['companyAddress'] ?? ''));
         $employerContact = trim((string) ($input['employerContact'] ?? ''));
+        $joinDate = trim((string) ($input['joinDate'] ?? ''));
+        $endDate = trim((string) ($input['endDate'] ?? ''));
+        $academicDuration = trim((string) ($input['academicDuration'] ?? ''));
+        $internshipDetails = trim((string) ($input['internshipDetails'] ?? ''));
+        $natureOfJob = trim((string) ($input['natureOfJob'] ?? ''));
+        $monthlySalary = trim((string) ($input['monthlySalary'] ?? ''));
         $placementStatus = trim((string) ($input['placementStatus'] ?? ''));
-        $fordvv = trim((string) ($input['fordvv'] ?? ($existing['fordvv'] ?? '')));
-        $includedvv = trim((string) ($input['includedvv'] ?? ($existing['includedvv'] ?? '')));
+        $offerLetterVerified = filter_var(
+            $input['offerLetterVerified'] ?? false,
+            FILTER_VALIDATE_BOOL
+        );
+        $verificationDate = trim((string) ($input['verificationDate'] ?? ''));
+        $fordvv = $this->normalizeVvValue($input['fordvv'] ?? '1');
+        $includedvv = $this->normalizeVvValue($input['includedvv'] ?? '1');
         $typeRaw = trim((string) ($input['type'] ?? 'Placement'));
         $typeKey = strtolower($typeRaw);
         if (str_contains($typeKey, 'higher') || str_contains($typeKey, 'education')) {
@@ -3079,37 +3083,58 @@ final class StaffPlacementRegistryService
             Response::error('Employer / institution name is required.', 422);
         }
 
-        $saveKey = $admno !== '' ? $admno : (string) ($existing['id'] ?? '');
-        try {
-            $saved = $details->saveFieldsForAdmno($saveKey, [
-                'employer'    => $employer,
-                'empcno'      => $employerContact,
-                'empadr'      => $address,
-                'payscale'    => $package,
-                'status'      => $placementStatus,
-                'fordvv'      => $fordvv,
-                'includedvv'  => $includedvv,
-                'type'        => $recordType,
-            ]);
-        } catch (\Throwable $e) {
-            Response::error('Could not save placement details: ' . $e->getMessage(), 500);
+        $register = strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? '')));
+        $placementModel = new StudentPlacementModel();
+        $placement = $placementModel->findPlacementByStudent((string) $student['_id']);
+        if ($placement === null && $register !== '') {
+            $fromReg = $placementModel->findPlacementMapByRegisterNumbers([$register]);
+            $placement = $fromReg[$register] ?? null;
         }
-        if (!$saved) {
-            Response::error('Could not save this row in student_placement_details.', 500);
+        if (!is_array($placement)) {
+            $placement = [];
+        }
+        $placement = array_merge($placement, [
+            'company'         => $employer,
+            'role'            => $role,
+            'package'         => $package,
+            'address'         => $address,
+            'employerContact' => $employerContact,
+            'joinDate'        => $joinDate,
+            'endDate'         => $endDate,
+            'academicDuration'=> $academicDuration,
+            'internshipDetails' => $internshipDetails,
+            'natureOfJob'     => $natureOfJob,
+            'monthlySalary'   => $monthlySalary,
+            'placementStatus' => $placementStatus,
+            'offerLetterVerified' => $offerLetterVerified,
+            'verificationDate'=> $verificationDate,
+            'fordvv'          => $fordvv,
+            'includedvv'      => $includedvv,
+            'recordType'      => $recordType,
+            'updatedAt'       => DocumentHelper::now(),
+        ]);
+
+        $scopeDeptId = trim((string) ($staffCtx['departmentId'] ?? ''));
+        $registryId = $this->registryStudentId($student);
+        try {
+            $savedId = (new StudentPlacementModel())->upsertForStudent(
+                $registryId,
+                strtoupper(trim((string) ($student['registerNumber'] ?? $student['admno'] ?? ''))),
+                $placement,
+                $scopeDeptId !== '' ? $scopeDeptId : null,
+                $this->rosterMetaForStudentPlacement($student)
+            );
+        } catch (\Throwable $e) {
+            Response::error('Could not save placement registry: ' . $e->getMessage(), 500);
+        }
+
+        if ($savedId === '') {
+            Response::error('Could not save placement registry. Ensure student_placements table exists.', 500);
         }
 
         return [
-            'studentId' => $saveKey,
-            'placement' => [
-                'employer' => $employer,
-                'empcno' => $employerContact,
-                'empadr' => $address,
-                'payscale' => $package,
-                'status' => $placementStatus,
-                'fordvv' => $fordvv,
-                'includedvv' => $includedvv,
-                'type' => $recordType,
-            ],
+            'studentId' => (string) ($student['_id'] ?? $registryId),
+            'placement' => DocumentHelper::serialize($placement),
         ];
     }
 
