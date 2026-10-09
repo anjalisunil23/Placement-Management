@@ -526,7 +526,7 @@ CREATE TABLE IF NOT EXISTS student_placement_details (
   fordvv VARCHAR(16) NOT NULL DEFAULT '',
   `type` VARCHAR(64) NOT NULL DEFAULT '',
   includedvv VARCHAR(16) NOT NULL DEFAULT '',
-  createdat DATETIME NULL,
+  createdate DATETIME NULL,
   PRIMARY KEY (id),
   KEY idx_student_placement_details_admno (admno),
   KEY idx_student_placement_details_year (`year`),

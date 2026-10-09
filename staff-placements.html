@@ -462,9 +462,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261008names"></script>
+  <script src="js/staff-api.js?v=20261009alumni"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261008names"></script>
+  <script src="js/officer-api.js?v=20261009alumni"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -566,8 +566,8 @@
           return r.status || r.placementStatus || '';
         case 'type':
           return r.type || r.recordType || '';
-        case 'createdat':
-          return r.createdat || r.createdAt || '';
+        case 'createdate':
+          return r.createdate || r.createdAt || '';
         case 'updatedate':
           return r.updatedate || r.updatedAt || '';
         default:
@@ -1374,7 +1374,7 @@
       setRegistryColumns([
         'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
         'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy',
-        'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdat',
+        'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
       ].map((key) => ({
         key,
         label: key,

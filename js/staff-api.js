@@ -303,7 +303,7 @@ const StaffApi = {
     qs.set('studRole', params.studRole || 'all');
     qs.set('omitFilters', params.omitFilters !== false ? '1' : '0');
     const q = qs.toString();
-    const cacheKey = 'ph_staff_placements_v11_' + q;
+    const cacheKey = 'ph_staff_placements_v13_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {

@@ -38,10 +38,10 @@ class StudentPlacementDetailsTable
         if (!$this->isReady()) {
             return false;
         }
+        $this->renameCreatedatColumn();
         $this->ensureColumns();
-        $this->backfillStudRole();
 
-        return $this->hasColumn('createdat') && $this->hasColumn('stud_role');
+        return $this->hasColumn('createdate') && $this->hasColumn('stud_role');
     }
 
     private function createTable(): void
@@ -68,7 +68,7 @@ class StudentPlacementDetailsTable
               fordvv VARCHAR(16) NOT NULL DEFAULT \'\',
               `type` VARCHAR(64) NOT NULL DEFAULT \'\',
               includedvv VARCHAR(16) NOT NULL DEFAULT \'\',
-              createdat DATETIME NULL,
+              createdate DATETIME NULL,
               PRIMARY KEY (id),
               KEY idx_student_placement_details_admno (admno),
               KEY idx_student_placement_details_year (`year`),
@@ -93,7 +93,7 @@ class StudentPlacementDetailsTable
             'fordvv' => "VARCHAR(16) NOT NULL DEFAULT ''",
             'type' => "VARCHAR(64) NOT NULL DEFAULT ''",
             'includedvv' => "VARCHAR(16) NOT NULL DEFAULT ''",
-            'createdat' => 'DATETIME NULL',
+            'createdate' => 'DATETIME NULL',
         ];
         foreach ($missing as $name => $definition) {
             if ($this->hasColumn($name)) {
@@ -176,6 +176,97 @@ class StudentPlacementDetailsTable
     }
 
     /**
+     * Copy alumni placement rows from student_placements into this table.
+     * Existing admission numbers are updated in place so the name list is not duplicated.
+     */
+    public function importAlumniFromStudentPlacements(): int
+    {
+        if (!$this->ensure() || !$this->sourceTableExists()) {
+            return 0;
+        }
+        $sourceAlumni = $this->countAlumniSource();
+        $storedAlumni = $this->countStudRole('alumni');
+        if ($sourceAlumni > 0 && $storedAlumni >= $sourceAlumni) {
+            $this->backfillStudRole();
+
+            return $storedAlumni;
+        }
+
+        $columns = $this->sourceColumns();
+        if ($columns === []) {
+            return $storedAlumni;
+        }
+        $select = implode(', ', array_map(static fn (string $column): string => '`' . $column . '`', $columns));
+        $byAdmno = $this->db->prepare(
+            'SELECT `id` FROM `student_placement_details` WHERE `admno` = ? AND `admno` <> \'\' LIMIT 1'
+        );
+        $byName = $this->db->prepare(
+            'SELECT `id` FROM `student_placement_details` WHERE `admno` = \'\' AND `student` = ? AND `year` = ? LIMIT 1'
+        );
+        $update = $this->db->prepare(
+            'UPDATE `student_placement_details` SET
+                `student` = ?, `stud_role` = ?, `cno` = ?, `email` = ?, `year` = ?,
+                `courseid` = ?, `branchid` = ?, `employer` = ?, `empcno` = ?, `empadr` = ?,
+                `payscale` = ?, `status` = ?, `createdBy` = ?, `updatedBy` = ?,
+                `updatedate` = ?, `fordvv` = ?, `type` = ?, `includedvv` = ?, `createdate` = ?
+             WHERE `id` = ?'
+        );
+        $where = $this->alumniSourceWhere();
+        $order = $this->sourceHasColumn('id') ? ' ORDER BY `id` ASC' : '';
+        $chunkSize = 50;
+        $offset = 0;
+        while (true) {
+            $sql = 'SELECT ' . $select . ' FROM `student_placements`';
+            if ($where !== '') {
+                $sql .= ' WHERE ' . $where;
+            }
+            $statement = $this->db->query($sql . $order . ' LIMIT ' . $chunkSize . ' OFFSET ' . $offset);
+            $fetched = 0;
+            $inserts = [];
+            while ($source = $statement->fetch()) {
+                $fetched++;
+                if (!is_array($source) || !$this->sourceRowIsAlumni($source)) {
+                    unset($source);
+                    continue;
+                }
+                $row = $this->detailRowFromSource($source);
+                $row['stud_role'] = 'alumni';
+                unset($source);
+                $existingId = $this->existingDetailId($byAdmno, $byName, $row);
+                if ($existingId !== null) {
+                    $update->execute([
+                        $row['student'], $row['stud_role'], $row['cno'], $row['email'], $row['year'],
+                        $row['courseid'], $row['branchid'], $row['employer'], $row['empcno'], $row['empadr'],
+                        $row['payscale'], $row['status'], $row['createdBy'], $row['updatedBy'],
+                        $row['updatedate'], $row['fordvv'], $row['type'], $row['includedvv'], $row['createdate'],
+                        $existingId,
+                    ]);
+                    continue;
+                }
+                $inserts[] = $row;
+                if (count($inserts) >= 50) {
+                    $this->insertChunk($inserts);
+                    $inserts = [];
+                }
+            }
+            $statement->closeCursor();
+            unset($statement);
+            if ($inserts !== []) {
+                $this->insertChunk($inserts);
+            }
+            unset($inserts);
+            if ($fetched < $chunkSize) {
+                break;
+            }
+            $offset += $chunkSize;
+        }
+
+        $this->backfillStudRole();
+
+        return $this->countStudRole('alumni');
+    }
+
+    /**
      * Rows for the placements grid, newest update first.
      *
      * @return list<array<string, mixed>>
@@ -189,9 +280,39 @@ class StudentPlacementDetailsTable
         $statement = $this->db->query(
             'SELECT `id`, `student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`,
                     `employer`, `empcno`, `empadr`, `payscale`, `status`, `createdBy`, `updatedBy`,
-                    `updatedate`, `fordvv`, `type`, `includedvv`, `createdat`
+                    `updatedate`, `fordvv`, `type`, `includedvv`, `createdate`
              FROM `student_placement_details`
              ORDER BY `updatedate` DESC, `id` DESC
+             LIMIT ' . $limit
+        );
+        $rows = [];
+        while ($row = $statement->fetch()) {
+            if (is_array($row)) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Alumni placement rows copied from student_placements.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listAlumniRows(int $limit = 10000): array
+    {
+        if (!$this->ensure()) {
+            return [];
+        }
+        $limit = max(1, min($limit, 20000));
+        $statement = $this->db->query(
+            'SELECT `id`, `student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`,
+                    `employer`, `empcno`, `empadr`, `payscale`, `status`, `createdBy`, `updatedBy`,
+                    `updatedate`, `fordvv`, `type`, `includedvv`, `createdate`
+             FROM `student_placement_details`
+             WHERE `stud_role` = \'alumni\'
+             ORDER BY `student` ASC, `id` ASC
              LIMIT ' . $limit
         );
         $rows = [];
@@ -324,7 +445,7 @@ class StudentPlacementDetailsTable
         return [
             'student' => $this->clip((string) ($roster['studentName'] ?? ''), 255),
             'admno' => $this->clip((string) ($roster['admno'] ?? $roster['registerNumber'] ?? ''), 64),
-            'stud_role' => $this->normalizeStudRole((string) ($roster['studRole'] ?? $payload['stud_role'] ?? '')),
+            'stud_role' => $this->alumniRoleFromPayload($payload, (string) ($roster['studRole'] ?? '')),
             'cno' => $this->clip((string) ($roster['phone'] ?? ''), 64),
             'email' => $this->clip((string) ($roster['email'] ?? ''), 255),
             'year' => $this->clip((string) ($roster['classBatch'] ?? ''), 64),
@@ -341,7 +462,7 @@ class StudentPlacementDetailsTable
             'fordvv' => $this->clip((string) ($placement['fordvv'] ?? ''), 16),
             'type' => $this->clip($type, 64),
             'includedvv' => $this->clip((string) ($placement['includedvv'] ?? ''), 16),
-            'createdat' => $this->sqlDateTime($roster['createdAt'] ?? null),
+            'createdate' => $this->sqlDateTime($roster['createdAt'] ?? null),
         ];
     }
 
@@ -355,7 +476,7 @@ class StudentPlacementDetailsTable
         $fields = [
             'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
             'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy',
-            'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdat',
+            'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
         ];
         foreach ($rows as $row) {
             $placeholders[] = '(' . implode(', ', array_fill(0, count($fields), '?')) . ')';
@@ -368,6 +489,15 @@ class StudentPlacementDetailsTable
             . implode(', ', $placeholders);
         $statement = $this->db->prepare($sql);
         $statement->execute($values);
+    }
+
+    private function renameCreatedatColumn(): void
+    {
+        if ($this->hasColumn('createdat') && !$this->hasColumn('createdate')) {
+            $this->db->exec(
+                'ALTER TABLE `student_placement_details` CHANGE `createdat` `createdate` DATETIME NULL'
+            );
+        }
     }
 
     private function backfillStudRole(): void
@@ -430,5 +560,127 @@ class StudentPlacementDetailsTable
         $timestamp = strtotime($text);
 
         return $timestamp === false ? null : date('Y-m-d H:i:s', $timestamp);
+    }
+
+    private function countStudRole(string $role): int
+    {
+        $statement = $this->db->prepare(
+            'SELECT COUNT(*) FROM `student_placement_details` WHERE `stud_role` = ?'
+        );
+        $statement->execute([$role]);
+
+        return (int) $statement->fetchColumn();
+    }
+
+    private function countAlumniSource(): int
+    {
+        $where = $this->alumniSourceWhere();
+        if ($where === '') {
+            return 0;
+        }
+        try {
+            return (int) $this->db->query(
+                'SELECT COUNT(*) FROM `student_placements` WHERE ' . $where
+            )->fetchColumn();
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
+    private function alumniSourceWhere(): string
+    {
+        $parts = [];
+        if ($this->sourceHasColumn('payload')) {
+            $parts[] = "LOWER(JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.stud_role'))) LIKE '%alumni%'";
+            $parts[] = "LOWER(JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.studRole'))) LIKE '%alumni%'";
+            $parts[] = "LOWER(JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.placementStudRole'))) LIKE '%alumni%'";
+            $parts[] = "LOWER(JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.roster.studRole'))) LIKE '%alumni%'";
+            $parts[] = "LOWER(JSON_UNQUOTE(JSON_EXTRACT(`payload`, '$.roster.stud_role'))) LIKE '%alumni%'";
+        }
+        if ($this->sourceHasColumn('stud_role')) {
+            $parts[] = "LOWER(`stud_role`) LIKE '%alumni%'";
+        }
+
+        return implode(' OR ', $parts);
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     */
+    private function sourceRowIsAlumni(array $source): bool
+    {
+        return $this->alumniRoleFromPayload($this->payloadFromSource($source), '') === 'alumni';
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function alumniRoleFromPayload(array $payload, string $rosterRole): string
+    {
+        $role = $this->normalizeStudRole($rosterRole);
+        if ($role === '') {
+            $detected = \PMS\Services\AesApiService::normalizeStudRole($payload);
+            $role = $detected === 'alumni' || $detected === 'student' ? $detected : '';
+        }
+        if ($role === '' && is_array($payload['roster'] ?? null)) {
+            $detected = \PMS\Services\AesApiService::normalizeStudRole($payload['roster']);
+            $role = $detected === 'alumni' || $detected === 'student' ? $detected : '';
+        }
+        if ($role === '') {
+            $placementRole = strtolower(trim((string) ($payload['placementStudRole'] ?? '')));
+            if ($placementRole === 'alumni' || str_contains($placementRole, 'alumni')) {
+                $role = 'alumni';
+            } elseif ($placementRole === 'student' || str_contains($placementRole, 'student')) {
+                $role = 'student';
+            }
+        }
+
+        return $role;
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     * @return array<string, mixed>
+     */
+    private function payloadFromSource(array $source): array
+    {
+        $payload = [];
+        if (array_key_exists('payload', $source)) {
+            $decoded = json_decode((string) ($source['payload'] ?? ''), true);
+            if (is_array($decoded)) {
+                $payload = $decoded;
+            }
+        }
+        foreach ($source as $key => $value) {
+            if (in_array($key, ['id', 'payload', 'student_id', 'pair_key', 'created_at', 'updated_at'], true)) {
+                continue;
+            }
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $payload[$key] = $value;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param array<string, string|null> $row
+     */
+    private function existingDetailId(\PDOStatement $byAdmno, \PDOStatement $byName, array $row): ?string
+    {
+        $admno = (string) ($row['admno'] ?? '');
+        if ($admno !== '') {
+            $byAdmno->execute([$admno]);
+            $id = $byAdmno->fetchColumn();
+            $byAdmno->closeCursor();
+
+            return $id === false || $id === null || (string) $id === '' ? null : (string) $id;
+        }
+        $byName->execute([(string) ($row['student'] ?? ''), (string) ($row['year'] ?? '')]);
+        $id = $byName->fetchColumn();
+        $byName->closeCursor();
+
+        return $id === false || $id === null || (string) $id === '' ? null : (string) $id;
     }
 }

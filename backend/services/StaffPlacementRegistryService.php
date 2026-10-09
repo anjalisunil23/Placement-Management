@@ -93,6 +93,7 @@ final class StaffPlacementRegistryService
         $details = new \PMS\Models\StudentPlacementDetailsTable();
         try {
             $details->replaceFromStudentPlacements();
+            $details->importAlumniFromStudentPlacements();
         } catch (\Throwable) {
             // Show whatever is already stored if the copy from student_placements fails.
         }
@@ -702,9 +703,17 @@ final class StaffPlacementRegistryService
         $placements = $details->mapLatestByAdmno();
         unset($directory);
         $rows = [];
+        $matchedAdmnos = [];
         foreach ($people as $index => $person) {
             $admno = $person['admno'];
             $placement = $admno !== '' ? ($placements[strtoupper($admno)] ?? []) : [];
+            if ($admno !== '' && $placement !== []) {
+                $matchedAdmnos[strtoupper($admno)] = true;
+            }
+            $role = $person['studRole'];
+            if (strtolower(trim((string) ($placement['stud_role'] ?? ''))) === 'alumni') {
+                $role = 'alumni';
+            }
             $placementYear = trim((string) ($placement['year'] ?? ''));
             $year = $person['batch'] !== '' ? $person['batch'] : $placementYear;
             $student = $person['name'];
@@ -721,8 +730,8 @@ final class StaffPlacementRegistryService
                 'admissionNo' => $admno,
                 'registerNumber' => $admno,
                 'department' => $person['department'],
-                'stud_role' => $person['studRole'],
-                'studRole' => $person['studRole'],
+                'stud_role' => $role,
+                'studRole' => $role,
                 'cno' => trim((string) ($placement['cno'] ?? '')),
                 'phone' => trim((string) ($placement['cno'] ?? '')),
                 'email' => trim((string) ($placement['email'] ?? '')),
@@ -751,15 +760,83 @@ final class StaffPlacementRegistryService
                 'type' => $type,
                 'recordType' => $type,
                 'includedvv' => trim((string) ($placement['includedvv'] ?? '')),
-                'createdat' => trim((string) ($placement['createdat'] ?? '')),
-                'createdAt' => trim((string) ($placement['createdat'] ?? '')),
+                'createdate' => trim((string) ($placement['createdate'] ?? '')),
+                'createdAt' => trim((string) ($placement['createdate'] ?? '')),
                 'source' => 'student_details',
             ];
             unset($people[$index], $person, $placement);
         }
         unset($people, $placements);
+        foreach ($details->listAlumniRows(10000) as $placement) {
+            $admno = strtoupper(trim((string) ($placement['admno'] ?? '')));
+            if ($admno !== '' && isset($matchedAdmnos[$admno])) {
+                continue;
+            }
+            $rows[] = $this->placementDetailGridRow($placement);
+        }
+        unset($matchedAdmnos);
 
         return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $placement
+     * @return array<string, mixed>
+     */
+    private function placementDetailGridRow(array $placement): array
+    {
+        $id = trim((string) ($placement['id'] ?? ''));
+        $admno = trim((string) ($placement['admno'] ?? ''));
+        $student = trim((string) ($placement['student'] ?? ''));
+        $year = trim((string) ($placement['year'] ?? ''));
+        $employer = trim((string) ($placement['employer'] ?? ''));
+        $type = trim((string) ($placement['type'] ?? ''));
+        $status = trim((string) ($placement['status'] ?? ''));
+        $studentId = $admno !== '' ? $admno : ($id !== '' ? $id : $student);
+
+        return [
+            'id' => $studentId,
+            'studentId' => $studentId,
+            'student' => $student,
+            'studentName' => $student,
+            'admno' => $admno,
+            'admissionNo' => $admno,
+            'registerNumber' => $admno,
+            'department' => '',
+            'stud_role' => 'alumni',
+            'studRole' => 'alumni',
+            'cno' => trim((string) ($placement['cno'] ?? '')),
+            'phone' => trim((string) ($placement['cno'] ?? '')),
+            'email' => trim((string) ($placement['email'] ?? '')),
+            'year' => $year,
+            'classBatch' => $year,
+            'batch' => $year,
+            'courseid' => trim((string) ($placement['courseid'] ?? '')),
+            'courseId' => trim((string) ($placement['courseid'] ?? '')),
+            'branchid' => trim((string) ($placement['branchid'] ?? '')),
+            'branchId' => trim((string) ($placement['branchid'] ?? '')),
+            'employer' => $employer,
+            'company' => $employer,
+            'empcno' => trim((string) ($placement['empcno'] ?? '')),
+            'employerContact' => trim((string) ($placement['empcno'] ?? '')),
+            'empadr' => trim((string) ($placement['empadr'] ?? '')),
+            'address' => trim((string) ($placement['empadr'] ?? '')),
+            'payscale' => trim((string) ($placement['payscale'] ?? '')),
+            'package' => trim((string) ($placement['payscale'] ?? '')),
+            'status' => $status,
+            'placementStatus' => $status,
+            'createdBy' => trim((string) ($placement['createdBy'] ?? '')),
+            'updatedBy' => trim((string) ($placement['updatedBy'] ?? '')),
+            'updatedate' => trim((string) ($placement['updatedate'] ?? '')),
+            'updatedAt' => trim((string) ($placement['updatedate'] ?? '')),
+            'fordvv' => trim((string) ($placement['fordvv'] ?? '')),
+            'type' => $type,
+            'recordType' => $type,
+            'includedvv' => trim((string) ($placement['includedvv'] ?? '')),
+            'createdate' => trim((string) ($placement['createdate'] ?? '')),
+            'createdAt' => trim((string) ($placement['createdate'] ?? '')),
+            'source' => 'student_placement_details',
+        ];
     }
 
     /**
@@ -767,7 +844,7 @@ final class StaffPlacementRegistryService
      */
     private function listFromPlacementDetails(\PMS\Models\StudentPlacementDetailsTable $details): array
     {
-        $limit = max(100, min(10000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 5000)));
+        $limit = max(100, min(20000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 20000)));
         $rows = [];
         foreach ($details->listRows($limit) as $row) {
             $id = trim((string) ($row['id'] ?? ''));
@@ -814,8 +891,8 @@ final class StaffPlacementRegistryService
                 'type' => $type,
                 'recordType' => $type,
                 'includedvv' => trim((string) ($row['includedvv'] ?? '')),
-                'createdat' => trim((string) ($row['createdat'] ?? '')),
-                'createdAt' => trim((string) ($row['createdat'] ?? '')),
+                'createdate' => trim((string) ($row['createdate'] ?? '')),
+                'createdAt' => trim((string) ($row['createdate'] ?? '')),
                 'source' => 'student_placement_details',
             ];
         }
@@ -1015,7 +1092,7 @@ final class StaffPlacementRegistryService
         $keys = [
             'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
             'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy',
-            'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdat',
+            'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
         ];
         $columns = [];
         foreach ($keys as $key) {
@@ -1619,7 +1696,7 @@ final class StaffPlacementRegistryService
         $row['status'] = trim((string) ($row['status'] ?? $row['placementStatus'] ?? ''));
         $row['createdBy'] = trim((string) ($row['createdBy'] ?? ''));
         $row['updatedBy'] = trim((string) ($row['updatedBy'] ?? ''));
-        $row['createdat'] = $this->registryDateText($row['createdat'] ?? $row['createdAt'] ?? $row['createdDate'] ?? '');
+        $row['createdate'] = $this->registryDateText($row['createdate'] ?? $row['createdAt'] ?? $row['createdDate'] ?? '');
         $row['updatedate'] = $this->registryDateText($row['updatedate'] ?? $row['updatedAt'] ?? $row['updatedDate'] ?? '');
 
         return $row;
