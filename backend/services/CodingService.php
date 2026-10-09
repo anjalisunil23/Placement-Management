@@ -834,7 +834,7 @@ final class CodingService
             $test = $this->tests->findById((string) ($attempt['testId'] ?? ''));
             $open = is_array($test) && CodingTestModel::isContestOpen($test);
             $result['contestClosed'] = !$open;
-            $result['winnersPublished'] = !$open;
+            $result['winnersPublished'] = is_array($test) && CodingTestModel::resultsPublished($test);
             if (is_array($test)) {
                 $result['contestStartTime'] = (string) ($attempt['contestStartTime'] ?? $test['contestStartTime'] ?? '09:00');
                 $result['periodKey'] = (string) ($attempt['periodKey'] ?? CodingTestModel::periodKey($test, $attempt['submittedAt'] ?? null));
@@ -853,6 +853,12 @@ final class CodingService
         $isContest = in_array($contestType, ['weekly', 'monthly'], true);
         $rankInfo = $this->computePeerRanks($testId, $uid, $percentage, $timeTaken, $isContest);
         $this->attempts->update($attemptId, $rankInfo);
+        if ($isContest && $testId !== '') {
+            $this->recomputeContestRanks($testId);
+            $rankInfo = array_merge($rankInfo, $this->peerRankFieldsFromAttempt(
+                $this->attempts->findById($attemptId) ?? array_merge($attempt, $rankInfo)
+            ));
+        }
 
         return array_merge($result, $rankInfo);
     }
@@ -1042,9 +1048,20 @@ final class CodingService
             );
         }
 
+        $testId = (string) ($attempt['testId'] ?? '');
+        $test = $testId !== '' ? ($this->tests->findById($testId) ?: []) : [];
+        $contestType = CodingTestModel::normalizeContestType((string) ($attempt['contestType'] ?? $test['contestType'] ?? 'none'));
+        $isContest = in_array($contestType, ['weekly', 'monthly'], true);
+        $contestClosed = $isContest && is_array($test) && $test !== []
+            ? !CodingTestModel::isContestOpen($test)
+            : !empty($attempt['contestClosed']);
+        $winnersPublished = $isContest && is_array($test) && $test !== []
+            ? (CodingTestModel::resultsPublished($test) && $contestClosed)
+            : true;
+
         return array_merge([
             'attemptId' => $attemptId,
-            'testId' => (string) ($attempt['testId'] ?? ''),
+            'testId' => $testId,
             'testTitle' => (string) ($attempt['testTitle'] ?? ''),
             'score' => $score,
             'totalMarks' => $totalMarks,
@@ -1060,9 +1077,11 @@ final class CodingService
             'timeTakenSeconds' => $seconds,
             'timeTakenLabel' => $timeTakenLabel,
             'questionResults' => array_values((array) ($attempt['questionResults'] ?? [])),
-            'contestType' => (string) ($attempt['contestType'] ?? 'none'),
-            'winnersPublished' => !empty($attempt['winnersPublished']),
-            'contestClosed' => !empty($attempt['contestClosed']),
+            'contestType' => $contestType,
+            'winnersPublished' => $winnersPublished,
+            'contestClosed' => $contestClosed,
+            'resultsPublished' => is_array($test) && $test !== [] ? CodingTestModel::resultsPublished($test) : false,
+            'resultStatus' => is_array($test) && $test !== [] ? CodingTestModel::resultStatus($test) : 'PUBLISHED',
             'submittedAt' => $attempt['submittedAt'] ?? '',
         ], $rankFields);
     }
@@ -1077,6 +1096,8 @@ final class CodingService
         $rows = $this->attempts->findAll(['userId' => $uid, 'status' => 'submitted'], 50, 0, ['submittedAt' => -1]);
         $history = [];
         $solved = [];
+        /** @var array<string, array<string, mixed>> $testCache */
+        $testCache = [];
         foreach ($rows as $row) {
             foreach ((array) ($row['questionResults'] ?? []) as $qr) {
                 if (!is_array($qr)) {
@@ -1091,8 +1112,14 @@ final class CodingService
             $listTestId = $problemItemId !== ''
                 ? CodingTestModel::composeProblemTestId($parentTestId, $problemItemId)
                 : $parentTestId;
+            if ($parentTestId !== '' && !isset($testCache[$parentTestId])) {
+                $testCache[$parentTestId] = $this->tests->findById($parentTestId) ?: [];
+            }
+            $testDoc = $testCache[$parentTestId] ?? [];
+            $contestType = CodingTestModel::normalizeContestType((string) ($row['contestType'] ?? $testDoc['contestType'] ?? 'none'));
             $history[] = [
                 'id' => (string) ($row['_id'] ?? ''),
+                'attemptId' => (string) ($row['_id'] ?? ''),
                 'testId' => $parentTestId,
                 'listTestId' => $listTestId,
                 'problemItemId' => $problemItemId !== '' ? $problemItemId : null,
@@ -1102,10 +1129,17 @@ final class CodingService
                 'totalMarks' => $row['totalMarks'] ?? 0,
                 'percentage' => $row['percentage'] ?? 0,
                 'status' => $row['resultStatus'] ?? $row['status'] ?? '',
-                'contestType' => $row['contestType'] ?? 'none',
+                'contestType' => $contestType,
                 'testKind' => $row['testKind'] ?? 'regular',
                 'companyId' => $row['companyId'] ?? null,
                 'dateLabel' => self::formatDateLabel($row['submittedAt'] ?? ''),
+                'timeTakenSeconds' => (int) ($row['timeTakenSeconds'] ?? 0),
+                'timeTakenLabel' => (string) ($row['timeTakenLabel'] ?? ''),
+                'rank' => isset($row['rank']) ? (int) $row['rank'] : null,
+                'departmentRank' => isset($row['departmentRank']) ? (int) $row['departmentRank'] : null,
+                'resultsPublished' => $testDoc !== [] ? CodingTestModel::resultsPublished($testDoc) : false,
+                'resultStatus' => $testDoc !== [] ? CodingTestModel::resultStatus($testDoc) : 'PUBLISHED',
+                'contestScheduleLabel' => $testDoc !== [] ? CodingTestModel::contestScheduleLabel($testDoc) : '',
             ];
         }
         $percents = array_map(static fn($h) => (float) ($h['percentage'] ?? 0), $history);
@@ -1293,6 +1327,7 @@ final class CodingService
             if (CodingTestModel::resultsPublished($test)) {
                 Response::error('Contest results are already published.', 422);
             }
+            $this->recomputeContestRanks($id);
             $patch = [
                 'resultsPublished' => true,
                 'resultPublishedAt' => DocumentHelper::now(),
@@ -1333,6 +1368,7 @@ final class CodingService
             Response::error('Results preview is available only after the contest has ended.', 422);
         }
 
+        $this->recomputeContestRanks($id);
         $participants = $this->contestLeaderboardRows($test);
         $window = CodingTestModel::contestWindow($test);
         $view = CodingTestModel::publicView($test, true);
@@ -1798,6 +1834,7 @@ final class CodingService
      */
     public function contestBoard(array $user): array
     {
+        $this->syncCompletedContestLeaderboards();
         $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
         $officerView = AptitudeAccessService::canViewDirectory($user);
         $allowed = $officerView ? AptitudeAccessService::authorizedSubjectUserIds($user) : null;
@@ -1822,7 +1859,8 @@ final class CodingService
                 $mine = null;
                 $pool = array_merge(
                     (array) ($contest['liveParticipants'] ?? []),
-                    (array) ($contest['participants'] ?? [])
+                    (array) ($contest['participants'] ?? []),
+                    (array) ($contest['closedPeriodParticipants'] ?? [])
                 );
                 foreach ($pool as $p) {
                     if ((string) ($p['userId'] ?? '') === $uid) {
@@ -1924,7 +1962,20 @@ final class CodingService
             $current = self::rankContestParticipants($current);
             $previous = self::rankContestParticipants($previous);
             $open = $test !== [] ? CodingTestModel::isContestOpen($test) : true;
-            $winnersPublished = $previous !== [];
+            $resultsPublished = $test !== [] && CodingTestModel::resultsPublished($test);
+            if ($open) {
+                $liveParticipants = $current;
+                $publishedParticipants = $resultsPublished ? $previous : [];
+                $winnersPublished = $resultsPublished && $publishedParticipants !== [];
+                $closedPeriodParticipants = [];
+                $participantCount = count($current);
+            } else {
+                $liveParticipants = [];
+                $publishedParticipants = $current;
+                $winnersPublished = $resultsPublished;
+                $closedPeriodParticipants = $resultsPublished ? [] : $current;
+                $participantCount = count($current);
+            }
             $out[] = [
                 'id' => $tid,
                 'title' => $title !== '' ? $title : 'Contest',
@@ -1934,11 +1985,13 @@ final class CodingService
                 'contestStartTime' => $test !== [] ? (string) ($test['contestStartTime'] ?? '09:00') : '09:00',
                 'contestScheduleLabel' => $test !== [] ? CodingTestModel::contestScheduleLabel($test) : '',
                 'contestWindowBounds' => $test !== [] ? CodingTestModel::contestWindowBounds($test) : [],
+                'resultsPublished' => $resultsPublished,
                 'winnersPublished' => $winnersPublished,
-                'winners' => $winnersPublished ? array_slice($previous, 0, 3) : [],
-                'participants' => $winnersPublished ? $previous : [],
-                'liveParticipants' => $current,
-                'participantCount' => count($current),
+                'winners' => $winnersPublished ? array_slice($publishedParticipants, 0, 3) : [],
+                'participants' => $winnersPublished ? $publishedParticipants : [],
+                'liveParticipants' => $liveParticipants,
+                'closedPeriodParticipants' => $closedPeriodParticipants,
+                'participantCount' => $participantCount,
                 'periodKey' => $currentKey,
                 'currentPeriodKey' => $currentKey,
                 'previousPeriodKey' => $previousKey,
@@ -2274,6 +2327,7 @@ final class CodingService
      */
     private function contestResultsDirectory(array $user, array $filters): array
     {
+        $this->syncCompletedContestLeaderboards();
         $allowed = AptitudeAccessService::authorizedSubjectUserIds($user);
         if (is_array($allowed) && $allowed === []) {
             return $this->emptyContestDirectory($user);
@@ -2415,6 +2469,7 @@ final class CodingService
             return [];
         }
         $attempts = $this->attempts->findAll(['testId' => $testId, 'status' => 'submitted'], 5000, 0, ['submittedAt' => -1]);
+        $attempts = $this->filterAttemptsForContestPeriod($test, $attempts);
         if ($attempts === []) {
             return [];
         }
@@ -2436,8 +2491,9 @@ final class CodingService
                 'totalMarks' => (float) ($attempt['totalMarks'] ?? $test['totalMarks'] ?? 0),
                 'score' => (float) ($attempt['score'] ?? 0),
                 'percentage' => (float) ($attempt['percentage'] ?? 0),
-                'timeTakenLabel' => '—',
-                'timeTakenSeconds' => 0,
+                'timeTakenLabel' => (string) ($attempt['timeTakenLabel'] ?? '—'),
+                'timeTakenSeconds' => (int) ($attempt['timeTakenSeconds'] ?? 0),
+                'rank' => isset($attempt['rank']) ? (int) $attempt['rank'] : null,
             ];
         }
 
@@ -2959,6 +3015,10 @@ final class CodingService
             return $empty;
         }
         $peers = $this->attempts->findAll(['testId' => $testId, 'status' => 'submitted'], 2000, 0, ['submittedAt' => -1]);
+        $test = $this->tests->findById($testId);
+        if ($useTimeTiebreak && is_array($test) && CodingTestModel::isContest($test)) {
+            $peers = $this->filterAttemptsForContestPeriod($test, $peers);
+        }
         $overall = $this->rankAmongAttempts($peers, $percentage, $timeTakenSeconds, $useTimeTiebreak);
         $dept = $this->computeDepartmentPeerRanks($testId, $userId, $percentage, $timeTakenSeconds, $useTimeTiebreak, $peers);
 
@@ -3088,5 +3148,93 @@ final class CodingService
         $percentile = $total > 0 ? round(($better / $total) * 100, 1) : null;
 
         return ['rank' => $rank, 'percentile' => $percentile, 'total' => $total];
+    }
+
+    private function syncCompletedContestLeaderboards(): void
+    {
+        foreach ($this->tests->findAll(['status' => 'published'], 500, 0, ['createdAt' => -1]) as $test) {
+            if (!CodingTestModel::isContest($test)) {
+                continue;
+            }
+            if (CodingTestModel::contestStatus($test) !== 'COMPLETED') {
+                continue;
+            }
+            $testId = (string) ($test['_id'] ?? $test['id'] ?? '');
+            if ($testId === '') {
+                continue;
+            }
+            $this->recomputeContestRanks($testId);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @param array<int, array<string, mixed>> $attempts
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterAttemptsForContestPeriod(array $test, array $attempts, ?string $periodKey = null): array
+    {
+        if (!CodingTestModel::isContest($test)) {
+            return $attempts;
+        }
+        if ($periodKey === null || $periodKey === '') {
+            $periodKey = CodingTestModel::periodKey($test);
+        }
+        $out = [];
+        foreach ($attempts as $attempt) {
+            $key = trim((string) ($attempt['periodKey'] ?? ''));
+            if ($key === '') {
+                $key = CodingTestModel::periodKey($test, $attempt['submittedAt'] ?? '');
+            }
+            if ($key === $periodKey) {
+                $out[] = $attempt;
+            }
+        }
+
+        return $out;
+    }
+
+    private function recomputeContestRanks(string $testId): void
+    {
+        if (!Security::isValidId($testId)) {
+            return;
+        }
+        $test = $this->tests->findById($testId);
+        if (!$test || !CodingTestModel::isContest($test)) {
+            return;
+        }
+        $attempts = $this->attempts->findAll(['testId' => $testId, 'status' => 'submitted'], 5000, 0, ['submittedAt' => -1]);
+        $attempts = $this->filterAttemptsForContestPeriod($test, $attempts);
+        if ($attempts === []) {
+            return;
+        }
+
+        /** @var array<string, array<string, mixed>> $bestByUser */
+        $bestByUser = [];
+        foreach ($attempts as $attempt) {
+            $uid = (string) ($attempt['userId'] ?? '');
+            if ($uid === '') {
+                continue;
+            }
+            $pct = (float) ($attempt['percentage'] ?? 0);
+            if (!isset($bestByUser[$uid]) || $pct > (float) ($bestByUser[$uid]['percentage'] ?? 0)) {
+                $bestByUser[$uid] = $attempt;
+            }
+        }
+
+        foreach ($bestByUser as $uid => $attempt) {
+            $attemptId = (string) ($attempt['_id'] ?? '');
+            if ($attemptId === '') {
+                continue;
+            }
+            $rankInfo = $this->computePeerRanks(
+                $testId,
+                $uid,
+                (float) ($attempt['percentage'] ?? 0),
+                (int) ($attempt['timeTakenSeconds'] ?? 0),
+                true
+            );
+            $this->attempts->update($attemptId, $rankInfo);
+        }
     }
 }
