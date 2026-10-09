@@ -87,6 +87,14 @@ final class DepartmentProgrammeCatalog
                     ['code' => 'MG', 'label' => 'MG — Metallurgical & Materials Engineering', 'aliases' => ['MET', 'MME']],
                 ],
             ],
+            [
+                'parent' => 'Media Technology',
+                'programmes' => [
+                    ['code' => 'BAJ', 'label' => 'BA Journalism & Mass Communication', 'aliases' => ['BAJMC', 'JOURNALISM']],
+                    ['code' => 'BSCVC', 'label' => 'B.Sc Visual Communication', 'aliases' => ['VISCOM', 'BSCVISCOM', 'VC']],
+                    ['code' => 'BSCMMT', 'label' => 'B.Sc Multimedia Technology', 'aliases' => ['MULTIMEDIA', 'MMT']],
+                ],
+            ],
         ];
     }
 

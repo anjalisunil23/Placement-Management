@@ -1350,13 +1350,79 @@ final class AesApiService
                 }
             }
         } else {
-            $rows = $this->normalizeDepartmentRows($this->getDepartments($params));
+            foreach ([
+                fn (): array => $this->callAESApi('getDepartments', $params),
+                fn (): array => $this->getAcademicDepartments($params),
+                fn (): array => $this->callAESApi('getAcademicDepartments', $params),
+            ] as $fetch) {
+                $rows = $this->normalizeDepartmentRows($fetch());
+                if ($rows !== []) {
+                    break;
+                }
+            }
         }
         if ($params === []) {
             self::$departmentCache = $rows;
         }
 
         return $rows;
+    }
+
+    /**
+     * Programme / branch rows under a parent AES department (getDepartments with stud_deptcode).
+     *
+     * @return list<array{code:string,name:string,short:string,aesId:string}>
+     */
+    public function fetchChildAcademicDepartments(string $parentAesId): array
+    {
+        $parentAesId = trim($parentAesId);
+        if ($parentAesId === '' || !ctype_digit($parentAesId)) {
+            return [];
+        }
+
+        $paramSets = [
+            ['stud_deptcode' => $parentAesId],
+            ['deptCode' => $parentAesId],
+            ['dept_code' => $parentAesId],
+            ['deptId' => $parentAesId],
+            ['parentDeptCode' => $parentAesId],
+        ];
+
+        $merged = [];
+        $seen = [];
+        foreach ($paramSets as $params) {
+            try {
+                $rows = $this->loadDepartmentsFromApi($params);
+            } catch (\Throwable) {
+                continue;
+            }
+            foreach ($rows as $row) {
+                $aesId = trim((string) ($row['aesId'] ?? ''));
+                if ($aesId !== '' && $aesId === $parentAesId) {
+                    continue;
+                }
+                $code = strtoupper(trim((string) ($row['code'] ?? '')));
+                $name = trim((string) ($row['name'] ?? ''));
+                if ($name === '' && $code === '') {
+                    continue;
+                }
+                $key = strtolower($aesId . '|' . $code . '|' . $name);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $merged[] = [
+                    'code'  => $code,
+                    'name'  => $name,
+                    'short' => trim((string) ($row['short'] ?? $code)),
+                    'aesId' => $aesId,
+                ];
+            }
+        }
+
+        usort($merged, static fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']));
+
+        return $merged;
     }
 
     /**
