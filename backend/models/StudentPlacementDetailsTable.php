@@ -176,34 +176,6 @@ class StudentPlacementDetailsTable
     }
 
     /**
-     * One details row per student_details person, then alumni placement columns
-     * from student_placements where the admission number matches.
-     */
-    public function syncDirectoryWithAlumniPlacements(): int
-    {
-        if (!$this->ensure()) {
-            return 0;
-        }
-        @set_time_limit(180);
-        $directory = new StudentDirectoryTable();
-        if (!$directory->isReady() || $directory->count() === 0) {
-            $this->replaceFromStudentPlacements();
-            $this->importAlumniFromStudentPlacements();
-
-            return $this->count();
-        }
-        $directoryCount = $directory->count();
-        if ($this->count() !== $directoryCount) {
-            $this->replaceRowsFromDirectory();
-        }
-        if (!$this->alumniOverlayIsCurrent()) {
-            $this->overlayAlumniPlacementsByAdmno();
-        }
-
-        return $this->count();
-    }
-
-    /**
      * Copy alumni placement rows from student_placements into this table.
      * Existing admission numbers are updated in place so the name list is not duplicated.
      */
@@ -295,25 +267,71 @@ class StudentPlacementDetailsTable
     }
 
     /**
+     * One student_placement_details row per student_details person.
+     * Placement columns are filled only when admno matches an alumni row in student_placements.
+     */
+    public function syncDirectoryWithAlumniPlacements(): int
+    {
+        if (!$this->ensure()) {
+            return 0;
+        }
+        $directory = new StudentDirectoryTable();
+        if (!$directory->isReady()) {
+            return $this->count();
+        }
+        $directoryCount = $directory->count();
+        if ($directoryCount === 0) {
+            return $this->count();
+        }
+
+        $signature = $this->directorySyncSignature($directoryCount);
+        if ($this->count() === $directoryCount && $this->readSyncSignature() === $signature) {
+            $this->refreshStudentNamesFromDirectory();
+
+            return $directoryCount;
+        }
+
+        $directoryPart = strstr($signature, '|alumni:', true);
+        $storedPart = strstr($this->readSyncSignature(), '|alumni:', true);
+        $rebuildDirectory = $this->count() !== $directoryCount || $directoryPart === false || $directoryPart !== $storedPart;
+        if ($rebuildDirectory) {
+            $this->replaceRowsFromDirectory();
+        } else {
+            $this->clearPlacementColumns();
+        }
+        $alumniSeen = 0;
+        if ($this->sourceTableExists()) {
+            $alumniSeen = $this->overlayAlumniPlacementsByAdmno();
+        }
+        $alumniCount = 0;
+        if (preg_match('/\|alumni:(\d+):/', $signature, $match) === 1) {
+            $alumniCount = (int) $match[1];
+        }
+        if (!($alumniCount > 0 && $alumniSeen === 0)) {
+            $this->writeSyncSignature($signature);
+        }
+        $this->refreshStudentNamesFromDirectory();
+
+        return $this->count();
+    }
+
+    /**
      * Rows for the placements grid, newest update first.
      *
      * @return list<array<string, mixed>>
      */
-    public function listRows(int $limit = 5000, string $order = 'updated'): array
+    public function listRows(int $limit = 5000): array
     {
         if (!$this->ensure()) {
             return [];
         }
         $limit = max(1, min($limit, 20000));
-        $orderSql = $order === 'name'
-            ? 'ORDER BY `student` ASC, `id` ASC'
-            : 'ORDER BY `updatedate` DESC, `id` DESC';
         $statement = $this->db->query(
             'SELECT `id`, `student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`,
                     `employer`, `empcno`, `empadr`, `payscale`, `status`, `createdBy`, `updatedBy`,
                     `updatedate`, `fordvv`, `type`, `includedvv`, `createdate`
              FROM `student_placement_details`
-             ' . $orderSql . '
+             ORDER BY `updatedate` DESC, `id` DESC
              LIMIT ' . $limit
         );
         $rows = [];
@@ -593,153 +611,6 @@ class StudentPlacementDetailsTable
         return $timestamp === false ? null : date('Y-m-d H:i:s', $timestamp);
     }
 
-    private function replaceRowsFromDirectory(): void
-    {
-        $this->db->beginTransaction();
-        try {
-            $this->db->exec('DELETE FROM `student_placement_details`');
-            $this->db->exec(
-                'INSERT INTO `student_placement_details`
-                    (`student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`,
-                     `employer`, `empcno`, `empadr`, `payscale`, `status`, `createdBy`, `updatedBy`,
-                     `fordvv`, `type`, `includedvv`)
-                 SELECT
-                    LEFT(`student_name`, 255),
-                    LEFT(`adm_no`, 64),
-                    LEFT(LOWER(`stud_role`), 16),
-                    \'\', \'\',
-                    LEFT(`batch`, 64),
-                    \'\', \'\', \'\', \'\', \'\', \'\', \'\', \'\', \'\', \'\', \'\', \'\'
-                 FROM `student_details`'
-            );
-            $this->db->commit();
-        } catch (\Throwable $e) {
-            if ($this->db->inTransaction()) {
-                $this->db->rollBack();
-            }
-            throw $e;
-        }
-    }
-
-    /**
-     * Write alumni employer, contact, pay, and status onto the directory row with the same admno.
-     */
-    private function overlayAlumniPlacementsByAdmno(): void
-    {
-        if (!$this->sourceTableExists()) {
-            return;
-        }
-        $columns = $this->sourceColumns();
-        if ($columns === []) {
-            return;
-        }
-        $select = implode(', ', array_map(static fn (string $column): string => '`' . $column . '`', $columns));
-        $update = $this->db->prepare(
-            'UPDATE `student_placement_details` SET
-                `cno` = ?, `email` = ?, `courseid` = ?, `branchid` = ?,
-                `employer` = ?, `empcno` = ?, `empadr` = ?, `payscale` = ?, `status` = ?,
-                `createdBy` = ?, `updatedBy` = ?, `updatedate` = ?, `fordvv` = ?, `type` = ?,
-                `includedvv` = ?, `createdate` = ?
-             WHERE `admno` = ? AND `admno` <> \'\''
-        );
-        $where = $this->alumniSourceWhere();
-        $order = '';
-        if ($this->sourceHasColumn('updated_at')) {
-            $order = ' ORDER BY `updated_at` ASC';
-            if ($this->sourceHasColumn('id')) {
-                $order .= ', `id` ASC';
-            }
-        } elseif ($this->sourceHasColumn('id')) {
-            $order = ' ORDER BY `id` ASC';
-        }
-        $chunkSize = 50;
-        $offset = 0;
-        while (true) {
-            $sql = 'SELECT ' . $select . ' FROM `student_placements`';
-            if ($where !== '') {
-                $sql .= ' WHERE ' . $where;
-            }
-            $statement = $this->db->query($sql . $order . ' LIMIT ' . $chunkSize . ' OFFSET ' . $offset);
-            $fetched = 0;
-            while ($source = $statement->fetch()) {
-                $fetched++;
-                if (!is_array($source) || !$this->sourceRowIsAlumni($source)) {
-                    unset($source);
-                    continue;
-                }
-                $row = $this->detailRowFromSource($source);
-                unset($source);
-                $admno = (string) ($row['admno'] ?? '');
-                if ($admno === '') {
-                    continue;
-                }
-                $update->execute([
-                    $row['cno'], $row['email'], $row['courseid'], $row['branchid'],
-                    $row['employer'], $row['empcno'], $row['empadr'], $row['payscale'], $row['status'],
-                    $row['createdBy'], $row['updatedBy'], $row['updatedate'], $row['fordvv'], $row['type'],
-                    $row['includedvv'], $row['createdate'], $admno,
-                ]);
-            }
-            $statement->closeCursor();
-            unset($statement);
-            if ($fetched < $chunkSize) {
-                break;
-            }
-            $offset += $chunkSize;
-        }
-        $this->markAlumniOverlayCurrent();
-    }
-
-    private function alumniOverlayIsCurrent(): bool
-    {
-        $path = $this->alumniOverlayStampPath();
-        if (!is_file($path)) {
-            return false;
-        }
-        $saved = trim((string) file_get_contents($path));
-
-        return $saved !== '' && $saved === $this->alumniOverlayStamp();
-    }
-
-    private function markAlumniOverlayCurrent(): void
-    {
-        $path = $this->alumniOverlayStampPath();
-        try {
-            file_put_contents($path, $this->alumniOverlayStamp());
-        } catch (\Throwable) {
-            // The next placements load fills any rows the stamp could not record.
-        }
-    }
-
-    private function alumniOverlayStamp(): string
-    {
-        return $this->countAlumniSource()
-            . '|' . (string) $this->sqlDateTime($this->alumniSourceMaxUpdated())
-            . '|' . $this->count();
-    }
-
-    private function alumniOverlayStampPath(): string
-    {
-        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_alumni_placement_overlay.txt';
-    }
-
-    private function alumniSourceMaxUpdated(): mixed
-    {
-        if (!$this->sourceHasColumn('updated_at')) {
-            return null;
-        }
-        $sql = 'SELECT MAX(`updated_at`) FROM `student_placements`';
-        $where = $this->alumniSourceWhere();
-        if ($where !== '') {
-            $sql .= ' WHERE ' . $where;
-        }
-        try {
-            return $this->db->query($sql)->fetchColumn();
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
     private function countStudRole(string $role): int
     {
         $statement = $this->db->prepare(
@@ -860,5 +731,179 @@ class StudentPlacementDetailsTable
         $byName->closeCursor();
 
         return $id === false || $id === null || (string) $id === '' ? null : (string) $id;
+    }
+
+    private function directorySyncSignature(int $directoryCount): string
+    {
+        $synced = '';
+        try {
+            $synced = (string) $this->db->query('SELECT MAX(`synced_at`) FROM `student_details`')->fetchColumn();
+        } catch (\Throwable) {
+            $synced = '';
+        }
+        $alumniCount = 0;
+        $alumniTouched = '';
+        if ($this->sourceTableExists()) {
+            $alumniCount = $this->countAlumniSource();
+            if ($this->sourceHasColumn('updated_at')) {
+                try {
+                    $sql = 'SELECT MAX(`updated_at`) FROM `student_placements`';
+                    $where = $this->alumniSourceWhere();
+                    if ($alumniCount > 0 && $where !== '') {
+                        $sql .= ' WHERE ' . $where;
+                    }
+                    $alumniTouched = (string) $this->db->query($sql)->fetchColumn();
+                } catch (\Throwable) {
+                    $alumniTouched = '';
+                }
+            }
+        }
+
+        return 'dir:' . $directoryCount . ':' . ($this->sqlDateTime($synced) ?? $synced)
+            . '|alumni:' . $alumniCount . ':' . ($this->sqlDateTime($alumniTouched) ?? $alumniTouched);
+    }
+
+    private function replaceRowsFromDirectory(): void
+    {
+        $this->db->beginTransaction();
+        try {
+            $this->db->exec('DELETE FROM `student_placement_details`');
+            $this->db->exec(
+                'INSERT INTO `student_placement_details` (`student`, `admno`, `stud_role`, `year`)
+                 SELECT TRIM(`student_name`), TRIM(`adm_no`),
+                        CASE
+                          WHEN LOWER(`stud_role`) LIKE \'%alumni%\' THEN \'alumni\'
+                          WHEN LOWER(`stud_role`) LIKE \'%student%\' THEN \'student\'
+                          ELSE LOWER(LEFT(`stud_role`, 16))
+                        END,
+                        TRIM(`batch`)
+                 FROM `student_details`
+                 ORDER BY `student_name` ASC, `id` ASC'
+            );
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    private function refreshStudentNamesFromDirectory(): void
+    {
+        try {
+            $this->db->exec(
+                'UPDATE `student_placement_details` p
+                 INNER JOIN `student_details` d
+                   ON d.adm_no <> \'\' AND TRIM(d.adm_no) = TRIM(p.admno)
+                 SET p.`student` = TRIM(d.student_name)
+                 WHERE TRIM(d.student_name) <> \'\''
+            );
+        } catch (\Throwable) {
+            // student_details may not be ready yet; the next placements load retries.
+        }
+    }
+
+    private function clearPlacementColumns(): void
+    {
+        $this->db->exec(
+            'UPDATE `student_placement_details` SET
+                `cno` = \'\', `email` = \'\', `courseid` = \'\', `branchid` = \'\',
+                `employer` = \'\', `empcno` = \'\', `empadr` = \'\', `payscale` = \'\',
+                `status` = \'\', `createdBy` = \'\', `updatedBy` = \'\', `updatedate` = NULL,
+                `fordvv` = \'\', `type` = \'\', `includedvv` = \'\', `createdate` = NULL'
+        );
+    }
+
+    private function overlayAlumniPlacementsByAdmno(): int
+    {
+        $columns = $this->sourceColumns();
+        if ($columns === []) {
+            return 0;
+        }
+        $select = implode(', ', array_map(static fn (string $column): string => '`' . $column . '`', $columns));
+        $update = $this->db->prepare(
+            'UPDATE `student_placement_details` SET
+                `cno` = ?, `email` = ?, `courseid` = ?, `branchid` = ?,
+                `employer` = ?, `empcno` = ?, `empadr` = ?, `payscale` = ?,
+                `status` = ?, `createdBy` = ?, `updatedBy` = ?, `updatedate` = ?,
+                `fordvv` = ?, `type` = ?, `includedvv` = ?, `createdate` = ?
+             WHERE `admno` <> \'\' AND `admno` = ?'
+        );
+        $where = $this->alumniSourceWhere();
+        $order = '';
+        if ($this->sourceHasColumn('updated_at')) {
+            $order = ' ORDER BY `updated_at` ASC';
+            if ($this->sourceHasColumn('id')) {
+                $order .= ', `id` ASC';
+            }
+        } elseif ($this->sourceHasColumn('id')) {
+            $order = ' ORDER BY `id` ASC';
+        }
+        $chunkSize = 50;
+        $offset = 0;
+        $seen = 0;
+        while (true) {
+            $sql = 'SELECT ' . $select . ' FROM `student_placements`';
+            if ($where !== '') {
+                $sql .= ' WHERE ' . $where;
+            }
+            $statement = $this->db->query($sql . $order . ' LIMIT ' . $chunkSize . ' OFFSET ' . $offset);
+            $fetched = 0;
+            while ($source = $statement->fetch()) {
+                $fetched++;
+                if (!is_array($source) || !$this->sourceRowIsAlumni($source)) {
+                    unset($source);
+                    continue;
+                }
+                $row = $this->detailRowFromSource($source);
+                unset($source);
+                $seen++;
+                $admno = (string) ($row['admno'] ?? '');
+                if ($admno === '') {
+                    continue;
+                }
+                $update->execute([
+                    $row['cno'], $row['email'], $row['courseid'], $row['branchid'],
+                    $row['employer'], $row['empcno'], $row['empadr'], $row['payscale'],
+                    $row['status'], $row['createdBy'], $row['updatedBy'], $row['updatedate'],
+                    $row['fordvv'], $row['type'], $row['includedvv'], $row['createdate'],
+                    $admno,
+                ]);
+            }
+            $statement->closeCursor();
+            unset($statement);
+            if ($fetched < $chunkSize) {
+                break;
+            }
+            $offset += $chunkSize;
+        }
+
+        return $seen;
+    }
+
+    private function syncSignaturePath(): string
+    {
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pms_student_placement_details_sync.txt';
+    }
+
+    private function readSyncSignature(): string
+    {
+        $path = $this->syncSignaturePath();
+        if (!is_file($path)) {
+            return '';
+        }
+        $text = file_get_contents($path);
+
+        return is_string($text) ? trim($text) : '';
+    }
+
+    private function writeSyncSignature(string $signature): void
+    {
+        try {
+            file_put_contents($this->syncSignaturePath(), $signature);
+        } catch (\Throwable) {
+            // The next placements load repeats the copy if the signature cannot be saved.
+        }
     }
 }

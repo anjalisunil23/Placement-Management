@@ -94,7 +94,7 @@ final class StaffPlacementRegistryService
         try {
             $details->syncDirectoryWithAlumniPlacements();
         } catch (\Throwable) {
-            // Show whatever is already stored if the directory or alumni copy fails.
+            // Show whatever is already stored if the directory copy or alumni match fails.
         }
         $filters['placementDetails'] = '1';
 
@@ -845,7 +845,7 @@ final class StaffPlacementRegistryService
     {
         $limit = max(100, min(20000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 20000)));
         $rows = [];
-        foreach ($details->listRows($limit, 'name') as $row) {
+        foreach ($details->listRows($limit) as $row) {
             $id = trim((string) ($row['id'] ?? ''));
             $admno = trim((string) ($row['admno'] ?? ''));
             $student = trim((string) ($row['student'] ?? ''));
@@ -854,6 +854,7 @@ final class StaffPlacementRegistryService
             $type = trim((string) ($row['type'] ?? ''));
             $status = trim((string) ($row['status'] ?? ''));
             $studentId = $admno !== '' ? $admno : $id;
+            $role = strtolower(trim((string) ($row['stud_role'] ?? '')));
             $rows[] = [
                 'id' => $studentId,
                 'studentId' => $studentId,
@@ -862,8 +863,8 @@ final class StaffPlacementRegistryService
                 'admno' => $admno,
                 'admissionNo' => $admno,
                 'registerNumber' => $admno,
-                'stud_role' => trim((string) ($row['stud_role'] ?? '')),
-                'studRole' => trim((string) ($row['stud_role'] ?? '')),
+                'stud_role' => $role,
+                'studRole' => $role,
                 'cno' => trim((string) ($row['cno'] ?? '')),
                 'phone' => trim((string) ($row['cno'] ?? '')),
                 'email' => trim((string) ($row['email'] ?? '')),
@@ -897,6 +898,11 @@ final class StaffPlacementRegistryService
                 'source' => 'student_placement_details',
             ];
         }
+        usort($rows, static function (array $a, array $b): int {
+            $byName = strcasecmp((string) ($a['student'] ?? ''), (string) ($b['student'] ?? ''));
+
+            return $byName !== 0 ? $byName : strcasecmp((string) ($a['admno'] ?? ''), (string) ($b['admno'] ?? ''));
+        });
 
         return $rows;
     }
