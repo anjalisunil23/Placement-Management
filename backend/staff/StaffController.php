@@ -385,11 +385,23 @@ final class StaffController
         ];
         $filterCtx = $registrySvc->placementFilterContext($ctx, $filterPayload);
         $svc = new PlacementFilterService();
+        $departmentSelected = $departmentId !== '';
+        $lite = filter_var($_GET['lite'] ?? '0', FILTER_VALIDATE_BOOLEAN);
+        if ($lite) {
+            $payload = [];
+            if ($program !== '') {
+                $payload['batches'] = $svc->fetchBatchOptions($filterCtx, $program, $branch, false);
+            } elseif ($departmentSelected) {
+                $payload['programs'] = $svc->fetchProgramOptions($filterCtx);
+            }
+            Response::success(DocumentHelper::jsonSafe($payload));
+
+            return;
+        }
         $assigned = StaffContext::assignedClassBatches($filterCtx);
         if ($assigned === [] && $this->staffPlacementRefreshCtFromAesEnabled()) {
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
-        $departmentSelected = $departmentId !== '';
         Response::success(DocumentHelper::jsonSafe([
             'departments' => $registrySvc->departmentFilterOptions(),
             'programs' => $departmentSelected ? $svc->fetchProgramOptions($filterCtx) : [],

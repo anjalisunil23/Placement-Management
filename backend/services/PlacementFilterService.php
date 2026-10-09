@@ -918,22 +918,56 @@ final class PlacementFilterService
             return [];
         }
 
+        if (!empty($ctx['placementStaffRegistryFilters'])) {
+            $local = $this->batchLabelsFromPlacementDetailsTable($ctx, $program);
+            $local = $this->refineStaffRegistryBatchOptions($local, $ctx, $program, $branch);
+            $local = $this->normalizeBatchLabelsForFilters($local, $ctx);
+            if ($local !== []) {
+                return $local;
+            }
+        }
+
         $api = new AesApiService();
         $branch = trim($branch);
-        $branchCandidates = $branch !== '' ? [$branch] : [];
-        if ($branchCandidates === []) {
+        $programmes = $this->resolveProgrammeList($program);
+        $collected = [];
+        foreach ($programmes as $prog) {
             try {
-                foreach ($this->resolveProgrammeList($program) as $prog) {
+                $collected = array_merge(
+                    $collected,
+                    $api->fetchPlacementClassBatches($deptAesId, $prog, $branch)
+                );
+            } catch (\Throwable) {
+                // Try other programme variants.
+            }
+            if ($collected !== []) {
+                break;
+            }
+        }
+
+        $branchCandidates = $branch !== '' ? [$branch] : [];
+        if ($collected === [] && $branchCandidates === []) {
+            foreach ($programmes as $prog) {
+                try {
+                    $collected = array_merge(
+                        $collected,
+                        $api->fetchPlacementClassBatches($deptAesId, $prog, 'Regular')
+                    );
+                } catch (\Throwable) {
+                    // Try other programme variants.
+                }
+                if ($collected !== []) {
+                    break;
+                }
+            }
+        }
+        if ($collected === [] && $branchCandidates === []) {
+            try {
+                foreach ($programmes as $prog) {
                     $branchCandidates = array_merge(
                         $branchCandidates,
                         $api->fetchPlacementBranches($deptAesId, $prog)
                     );
-                    if ($deptAesId !== $parentAesId && $parentAesId !== '') {
-                        $branchCandidates = array_merge(
-                            $branchCandidates,
-                            $api->fetchPlacementBranches($parentAesId, $prog)
-                        );
-                    }
                 }
                 $branchCandidates = array_values(array_unique(array_filter(array_map(
                     static fn (string $v): string => trim($v),
@@ -943,21 +977,24 @@ final class PlacementFilterService
                 $branchCandidates = [];
             }
         }
-        if ($branchCandidates === []) {
-            $branchCandidates = [''];
-        }
-
-        $collected = [];
-        foreach ($this->resolveProgrammeList($program) as $prog) {
-            foreach ($branchCandidates as $br) {
-                $br = trim((string) $br);
-                try {
-                    $collected = array_merge(
-                        $collected,
-                        $api->fetchPlacementClassBatches($deptAesId, $prog, $br)
-                    );
-                } catch (\Throwable) {
-                    // Try other branch / programme variants.
+        if ($collected === []) {
+            if ($branchCandidates === []) {
+                $branchCandidates = [''];
+            }
+            foreach ($programmes as $prog) {
+                foreach ($branchCandidates as $br) {
+                    $br = trim((string) $br);
+                    try {
+                        $collected = array_merge(
+                            $collected,
+                            $api->fetchPlacementClassBatches($deptAesId, $prog, $br)
+                        );
+                    } catch (\Throwable) {
+                        // Try other branch / programme variants.
+                    }
+                }
+                if ($collected !== []) {
+                    break;
                 }
             }
         }

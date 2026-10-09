@@ -479,27 +479,56 @@ const OfficerApi = {
     if (params.program) qs.set('program', params.program);
     if (params.branch) qs.set('branch', params.branch);
     qs.set('studRole', params.studRole || 'all');
+    const lite = params.lite === true || params.lite === 1 || params.lite === '1';
+    if (lite) qs.set('lite', '1');
     const q = qs.toString();
-    const cacheKey = 'ph_officer_placement_filters_v6_' + q;
+    const cacheKey = lite
+      ? ('ph_officer_placement_filters_lite_v1_' + q)
+      : ('ph_officer_placement_filters_v6_' + q);
+    const cacheTtl = lite && String(params.program || '').trim() ? 600000 : 300000;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
-        const depts = parsed?.data?.departments;
-        const deptOk = Array.isArray(depts) && depts.length > 0;
-        const deptScoped = !!String(params.departmentId || '').trim();
-        const programScoped = !!String(params.program || '').trim();
-        const programs = parsed?.data?.programs;
-        const programsOk = !deptScoped || Array.isArray(programs);
-        const batches = parsed?.data?.batches;
-        const batchesOk = !programScoped || Array.isArray(batches);
-        if (parsed && parsed._at && (Date.now() - parsed._at) < 300000 && parsed.data && deptOk && programsOk && batchesOk) {
-          return parsed.data;
+        if (lite) {
+          const programScoped = !!String(params.program || '').trim();
+          const batches = parsed?.data?.batches;
+          const programs = parsed?.data?.programs;
+          const ok = programScoped
+            ? Array.isArray(batches)
+            : Array.isArray(programs);
+          if (parsed && parsed._at && (Date.now() - parsed._at) < cacheTtl && parsed.data && ok) {
+            return parsed.data;
+          }
+        } else {
+          const depts = parsed?.data?.departments;
+          const deptOk = Array.isArray(depts) && depts.length > 0;
+          const deptScoped = !!String(params.departmentId || '').trim();
+          const programScoped = !!String(params.program || '').trim();
+          const programs = parsed?.data?.programs;
+          const programsOk = !deptScoped || Array.isArray(programs);
+          const batches = parsed?.data?.batches;
+          const batchesOk = !programScoped || Array.isArray(batches);
+          if (parsed && parsed._at && (Date.now() - parsed._at) < cacheTtl && parsed.data && deptOk && programsOk && batchesOk) {
+            return parsed.data;
+          }
         }
       }
     } catch (_) { /* ignore */ }
     const res = await api('/officer/placement-filters' + (q ? `?${q}` : ''));
     const data = res.success && res.data ? res.data : null;
+    if (lite) {
+      const programScoped = !!String(params.program || '').trim();
+      const ok = programScoped
+        ? Array.isArray(data?.batches)
+        : Array.isArray(data?.programs);
+      if (data && ok) {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
+        } catch (_) { /* ignore */ }
+      }
+      return data;
+    }
     const deptScoped = !!String(params.departmentId || '').trim();
     const programScoped = !!String(params.program || '').trim();
     const programsOk = !deptScoped || Array.isArray(data?.programs);

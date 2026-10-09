@@ -533,9 +533,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009branchclean"></script>
+  <script src="js/staff-api.js?v=20261009batchfast"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009branchclean"></script>
+  <script src="js/officer-api.js?v=20261009batchfast"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -1119,10 +1119,11 @@
         return;
       }
 
-      // Step 1 — Department → Branch (no program/batch params; backend scopes by departmentId).
+      // Step 1 — Department → Branch (lite: skip reloading full department catalog).
       const branchData = await registryApi.fetchPlacementFilters({
         departmentId: deptId,
         studRole: 'all',
+        lite: true,
       });
       if (seq !== filterCascadeSeq) return;
       if (!branchData) {
@@ -1160,12 +1161,18 @@
         return;
       }
 
-      // Step 2 — Branch → Batch (program = selected branch/programme under the department).
+      // Step 2 — Branch → Batch (lite: batches only, no department list / AES CT refresh).
+      const batchEl = document.getElementById('filterBatch');
+      if (batchEl) {
+        batchEl.disabled = true;
+        fillSelect('filterBatch', [], 'Loading batches…', '', false);
+      }
       const batchData = await registryApi.fetchPlacementFilters({
         departmentId: deptId,
         program: branchKey,
         branch: filterBranch || '',
         studRole: 'all',
+        lite: true,
       });
       if (seq !== filterCascadeSeq) return;
 
