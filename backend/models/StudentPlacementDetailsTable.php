@@ -322,15 +322,19 @@ class StudentPlacementDetailsTable
             return 0;
         }
         $directory = new StudentDirectoryTable();
-        if (!$directory->isReady()) {
-            return $this->count();
+        if ($directory->isReady()) {
+            $directoryCount = $directory->count();
+            if ($directoryCount > 0 && $this->count() !== $directoryCount) {
+                $this->replaceRowsFromDirectory();
+                $this->refreshStudentNamesFromDirectory();
+                $this->writeSyncSignature('');
+            }
         }
-        $directoryCount = $directory->count();
-        if ($directoryCount === 0 || $this->count() === $directoryCount) {
-            return $this->count();
+        try {
+            $this->fillEmptyColumnsFromPlacements();
+        } catch (\Throwable) {
+            // Keep the name list even if a placement batch fails.
         }
-        $this->replaceRowsFromDirectory();
-        $this->refreshStudentNamesFromDirectory();
 
         return $this->count();
     }
@@ -1007,5 +1011,164 @@ class StudentPlacementDetailsTable
         } catch (\Throwable) {
             // The next placements load repeats the copy if the signature cannot be saved.
         }
+    }
+
+    /**
+     * Copy cno, employer, and the other placement columns from student_placements
+     * into blank cells, matched by admission number. Stops before the page times out
+     * and continues on the next load.
+     */
+    private function fillEmptyColumnsFromPlacements(): void
+    {
+        if (!$this->sourceTableExists() || !$this->sourceHasColumn('id')) {
+            return;
+        }
+        $signature = $this->placementSourceSignature();
+        $state = $this->readSyncSignature();
+        if ($state === 'filled:' . $signature) {
+            return;
+        }
+        $afterId = '';
+        $prefix = 'fillprog:' . $signature . ':';
+        if (str_starts_with($state, $prefix)) {
+            $afterId = substr($state, strlen($prefix));
+        }
+        $deadline = microtime(true) + 18;
+        while (microtime(true) < $deadline) {
+            $nextId = $this->fillPlacementIdChunk($afterId);
+            if ($nextId === null) {
+                $this->db->exec(
+                    'UPDATE `student_placement_details`
+                     SET `type` = \'Placement\'
+                     WHERE `type` = \'\' AND `employer` <> \'\''
+                );
+                $this->writeSyncSignature('filled:' . $signature);
+
+                return;
+            }
+            $afterId = $nextId;
+            $this->writeSyncSignature($prefix . $afterId);
+        }
+    }
+
+    private function fillPlacementIdChunk(string $afterId): ?string
+    {
+        $statement = $this->db->prepare(
+            'SELECT `id` FROM `student_placements` WHERE (? = \'\' OR `id` > ?) ORDER BY `id` ASC LIMIT 250'
+        );
+        $statement->execute([$afterId, $afterId]);
+        $ids = [];
+        while ($id = $statement->fetchColumn()) {
+            $ids[] = (string) $id;
+        }
+        $statement->closeCursor();
+        if ($ids === []) {
+            return null;
+        }
+        $marks = implode(', ', array_fill(0, count($ids), '?'));
+        if ($this->sourceHasColumn('payload')) {
+            $admno = $this->jsonCoalesce([
+                '$.admno', '$.admissionNo', '$.stud_admno', '$.registerNumber', '$.registerno',
+                '$.roster.admno', '$.roster.admissionNo', '$.roster.stud_admno',
+                '$.personal.admno', '$.personal.admissionNo',
+                '$.placement.admno', '$.placement.admissionNo',
+            ]);
+            $sets = [
+                $this->fillIfBlank('cno', $this->jsonCoalesce(['$.cno', '$.phone', '$.mobile', '$.stud_mobile', '$.placement.cno', '$.placement.phone', '$.roster.phone']), 64),
+                $this->fillIfBlank('email', $this->jsonCoalesce(['$.email', '$.collegeEmail', '$.personalEmail', '$.stud_email', '$.placement.email', '$.roster.email']), 255),
+                $this->fillIfBlank('courseid', $this->jsonCoalesce(['$.courseid', '$.courseId', '$.course_id', '$.stud_courseid', '$.roster.courseId']), 64),
+                $this->fillIfBlank('branchid', $this->jsonCoalesce(['$.branchid', '$.branchId', '$.branch_id', '$.stud_branchid', '$.roster.branchId']), 64),
+                $this->fillIfBlank('employer', $this->jsonCoalesce(['$.employer', '$.company', '$.companyName', '$.placement.employer', '$.placement.company', '$.placement.companyName']), 255),
+                $this->fillIfBlank('empcno', $this->jsonCoalesce(['$.empcno', '$.empco', '$.employerContact', '$.contact', '$.placement.empcno', '$.placement.employerContact', '$.placement.contact']), 128),
+                $this->fillIfBlank('empadr', $this->jsonCoalesce(['$.empadr', '$.address', '$.placement.empadr', '$.placement.address']), 512),
+                $this->fillIfBlank('payscale', $this->jsonCoalesce(['$.payscale', '$.package', '$.salary', '$.placement.payscale', '$.placement.package']), 128),
+                $this->fillIfBlank('status', $this->jsonCoalesce(['$.status', '$.placementStatus', '$.placement.status', '$.placement.placementStatus']), 64),
+                $this->fillIfBlank('createdBy', $this->jsonCoalesce(['$.createdBy', '$.placement.createdBy']), 128),
+                $this->fillIfBlank('updatedBy', $this->jsonCoalesce(['$.updatedBy', '$.placement.updatedBy']), 128),
+                $this->fillIfBlank('fordvv', $this->jsonCoalesce(['$.fordvv', '$.placement.fordvv']), 16),
+                $this->fillIfBlank('type', $this->jsonCoalesce(['$.type', '$.recordType', '$.placement.type', '$.placement.recordType']), 64),
+                $this->fillIfBlank('includedvv', $this->jsonCoalesce(['$.includedvv', '$.placement.includedvv']), 16),
+            ];
+            $sql = 'UPDATE `student_placement_details` d
+                    INNER JOIN `student_placements` s ON s.`id` IN (' . $marks . ')
+                      AND d.`admno` <> \'\'
+                      AND TRIM(d.`admno`) = TRIM(' . $admno . ')
+                      AND TRIM(' . $admno . ') <> \'\'
+                    SET ' . implode(', ', $sets);
+            $update = $this->db->prepare($sql);
+            $update->execute($ids);
+        }
+        $this->fillFlatPlacementChunk($ids, $marks);
+
+        return $ids[count($ids) - 1];
+    }
+
+    /**
+     * @param list<string> $ids
+     */
+    private function fillFlatPlacementChunk(array $ids, string $marks): void
+    {
+        if (!$this->sourceHasColumn('admno')) {
+            return;
+        }
+        $map = [
+            'cno' => ['cno'],
+            'email' => ['email'],
+            'courseid' => ['courseid', 'courseId'],
+            'branchid' => ['branchid', 'branchId'],
+            'employer' => ['employer'],
+            'empcno' => ['empcno', 'empco'],
+            'empadr' => ['empadr'],
+            'payscale' => ['payscale'],
+            'status' => ['status'],
+            'createdBy' => ['createdBy'],
+            'updatedBy' => ['updatedBy'],
+            'fordvv' => ['fordvv'],
+            'type' => ['type'],
+            'includedvv' => ['includedvv'],
+        ];
+        $limits = [
+            'cno' => 64, 'email' => 255, 'courseid' => 64, 'branchid' => 64, 'employer' => 255,
+            'empcno' => 128, 'empadr' => 512, 'payscale' => 128, 'status' => 64,
+            'createdBy' => 128, 'updatedBy' => 128, 'fordvv' => 16, 'type' => 64, 'includedvv' => 16,
+        ];
+        $sets = [];
+        foreach ($map as $dest => $sources) {
+            foreach ($sources as $source) {
+                if (!$this->sourceHasColumn($source)) {
+                    continue;
+                }
+                $sets[] = 'd.`' . $dest . '` = IF(d.`' . $dest . '` = \'\' AND TRIM(s.`' . $source . '`) <> \'\', LEFT(TRIM(s.`' . $source . '`), ' . $limits[$dest] . '), d.`' . $dest . '`)';
+                break;
+            }
+        }
+        if ($sets === []) {
+            return;
+        }
+        $sql = 'UPDATE `student_placement_details` d
+                INNER JOIN `student_placements` s ON s.`id` IN (' . $marks . ')
+                  AND d.`admno` <> \'\'
+                  AND TRIM(d.`admno`) = TRIM(s.`admno`)
+                SET ' . implode(', ', $sets);
+        $update = $this->db->prepare($sql);
+        $update->execute($ids);
+    }
+
+    /**
+     * @param list<string> $paths
+     */
+    private function jsonCoalesce(array $paths): string
+    {
+        $parts = [];
+        foreach ($paths as $path) {
+            $parts[] = "NULLIF(JSON_UNQUOTE(JSON_EXTRACT(s.`payload`, '" . $path . "')), 'null')";
+        }
+
+        return 'COALESCE(' . implode(', ', $parts) . ", '')";
+    }
+
+    private function fillIfBlank(string $column, string $expression, int $length): string
+    {
+        return 'd.`' . $column . '` = IF(d.`' . $column . '` = \'\' AND TRIM(' . $expression . ') <> \'\', LEFT(TRIM(' . $expression . '), ' . $length . '), d.`' . $column . '`)';
     }
 }
