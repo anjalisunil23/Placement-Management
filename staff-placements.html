@@ -157,19 +157,16 @@
                       </select>
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editEmployer" id="editEmployerLabel">Name of the Employer/Higher
-                        Education Institution</label>
-                      <input class="form-control" id="editEmployer" placeholder="Name of the Employer" required />
+                      <label class="form-label small fw-semibold" for="editEmployer" id="editEmployerLabel">Company name</label>
+                      <input class="form-control" id="editEmployer" placeholder="Company name" required />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editEmployerContact" id="editEmployerContactLabel">Contact Number of
-                        Employer/Higher Education Institution</label>
-                      <input class="form-control" id="editEmployerContact" placeholder="Contact Number of Employer" />
+                      <label class="form-label small fw-semibold" for="editEmployerContact" id="editEmployerContactLabel">Contact</label>
+                      <input class="form-control" id="editEmployerContact" placeholder="Contact" />
                     </div>
                     <div class="col-md-6">
-                      <label class="form-label small fw-semibold" for="editAddress" id="editAddressLabel">Address of the Employer/Higher
-                        Education Institution</label>
-                      <input class="form-control" id="editAddress" placeholder="Address of the Employer" />
+                      <label class="form-label small fw-semibold" for="editAddress" id="editAddressLabel">Company address</label>
+                      <input class="form-control" id="editAddress" placeholder="Company address" />
                     </div>
                     <div class="col-md-6">
                       <label class="form-label small fw-semibold" for="editPackage" id="editPackageLabel">Package</label>
@@ -214,9 +211,6 @@
                   </div>
                 </div>
                 <div class="modal-footer registry-edit-footer">
-                  <button type="button" class="btn btn-outline-danger me-auto" id="editPlacementDeleteBtn" hidden>
-                    <i class="bi bi-trash me-1"></i>Delete
-                  </button>
                   <button type="button" class="btn btn-danger px-4" data-bs-dismiss="modal">Cancel</button>
                   <button type="submit" class="btn btn-success px-4" id="editPlacementSaveBtn">
                     <i class="bi bi-check2 me-1"></i>Submit
@@ -435,6 +429,10 @@
 
           .registry-action-btn.ed {
             background: #f59e0b
+          }
+
+          .registry-action-btn.del {
+            background: #dc3545
           }
 
           .registry-action-btn.view {
@@ -1251,12 +1249,10 @@
         const slIndex = start + i + 1;
         const sid = esc(r.studentId || '');
         const hasDoc = !!(r.hasOfferLetter || r.hasJoiningLetter || r.hasCompanyIdDoc);
-        const hasPlacement = rowHasPlacement(r);
         const rowIndex = start + i;
         const viewBtn = `<button type="button" class="registry-action-btn view" title="View student details" aria-label="View details for ${esc(r.studentName || r.student || 'student')}" onclick="openViewPlacement(${rowIndex})"><i class="bi bi-eye-fill"></i></button>`;
         const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
-        const detailsBtn = `<button type="button" class="registry-action-btn add" title="${hasPlacement ? 'Add another placement / higher-education detail' : 'Add placement / higher-education details'}" aria-label="${hasPlacement ? 'Add another entry for' : 'Add details for'} ${esc(r.studentName || 'student')}" onclick="openAddPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`;
-        const actions = canEditSelectedBatch ? `${viewBtn}${downloadBtn}${detailsBtn}` : viewBtn;
+        const actions = canEditSelectedBatch ? `${viewBtn}${downloadBtn}` : viewBtn;
         const cells = cols.map((col) => {
           const cls = registryCellClass(col);
           if (col.key === 'cno') {
@@ -1299,12 +1295,12 @@
 
       const profiles = {
         Placement: {
-          employer: 'Name of the Employer',
-          employerPh: 'Name of the Employer',
-          contact: 'Contact Number of Employer',
-          contactPh: 'Contact Number of Employer',
-          address: 'Address of the Employer',
-          addressPh: 'Address of the Employer',
+          employer: 'Company name',
+          employerPh: 'Company name',
+          contact: 'Contact',
+          contactPh: 'Contact',
+          address: 'Company address',
+          addressPh: 'Company address',
           package: 'Package',
           packagePh: 'Pay package (e.g. ₹6 LPA)',
           status: 'Placement status',
@@ -1319,12 +1315,12 @@
           requiredMsg: 'Employer name is required.',
         },
         'Higher Education': {
-          employer: 'Name of the Higher Education Institution',
-          employerPh: 'Name of the Institution',
-          contact: 'Contact Number of Institution',
-          contactPh: 'Contact Number of Institution',
-          address: 'Address of the Institution',
-          addressPh: 'Address of the Institution',
+          employer: 'Company name',
+          employerPh: 'Company name',
+          contact: 'Contact',
+          contactPh: 'Contact',
+          address: 'Company address',
+          addressPh: 'Company address',
           package: 'Name of programme admitted to',
           packagePh: 'Programme / course name',
           status: 'Higher education status',
@@ -1339,12 +1335,12 @@
           requiredMsg: 'Institution name is required.',
         },
         Research: {
-          employer: 'Name of Research Institute / Lab / University',
-          employerPh: 'Research institute / lab / university',
-          contact: 'Contact Number of Institute',
-          contactPh: 'Contact Number of Institute',
-          address: 'Address of Research Institute',
-          addressPh: 'Address of Research Institute',
+          employer: 'Company name',
+          employerPh: 'Company name',
+          contact: 'Contact',
+          contactPh: 'Contact',
+          address: 'Company address',
+          addressPh: 'Company address',
           package: 'Programme / fellowship / research area',
           packagePh: 'e.g. PhD, JRF, research area',
           status: 'Research status',
@@ -1396,6 +1392,11 @@
     let viewPlacementStudentId = '';
 
     const ENTRY_VIEW_KEYS = ['type', 'employer', 'empcno', 'empadr', 'payscale'];
+    const ENTRY_VIEW_LABELS = {
+      employer: 'company name',
+      empcno: 'contact',
+      empadr: 'company address',
+    };
 
     function placementEntryFromRow(row) {
       return {
@@ -1413,8 +1414,8 @@
       const head = document.getElementById('viewPlacementHead');
       const body = document.getElementById('viewPlacementBody');
       if (head) {
-        const editHead = canEditSelectedBatch ? '<th>edit</th>' : '';
-        head.innerHTML = ENTRY_VIEW_KEYS.map((key) => `<th>${esc(key)}</th>`).join('') + editHead;
+        const editHead = canEditSelectedBatch ? '<th>action</th>' : '';
+        head.innerHTML = ENTRY_VIEW_KEYS.map((key) => `<th>${esc(ENTRY_VIEW_LABELS[key] || key)}</th>`).join('') + editHead;
       }
       if (!body) return;
       const role = String(fallback?.role || '').trim();
@@ -1446,7 +1447,7 @@
       body.innerHTML = rows.length
         ? rows.map((entry, index) => {
           const editCell = canEditSelectedBatch
-            ? `<td class="text-center"><button type="button" class="registry-action-btn ed" title="Edit this entry" aria-label="Edit this entry" onclick="openEditPlacementEntry(${index})"><i class="bi bi-pencil-fill"></i></button></td>`
+            ? `<td class="text-center"><div class="registry-actions"><button type="button" class="registry-action-btn ed" title="Edit this entry" aria-label="Edit this entry" onclick="openEditPlacementEntry(${index})"><i class="bi bi-pencil-fill"></i></button><button type="button" class="registry-action-btn del" title="Delete this entry" aria-label="Delete this entry" onclick="deleteViewPlacement(${index})"><i class="bi bi-trash-fill"></i></button></div></td>`
             : '';
           return `<tr>${ENTRY_VIEW_KEYS.map((key) => `<td>${esc(entry[key] || '—')}</td>`).join('')}${editCell}</tr>`;
         }).join('')
@@ -1513,9 +1514,7 @@
     function showPlacementForm(mode) {
       const adding = mode !== 'edit';
       const offerWrap = document.getElementById('editOfferLetterWrap');
-      const deleteBtn = document.getElementById('editPlacementDeleteBtn');
       if (offerWrap) offerWrap.hidden = !adding;
-      if (deleteBtn) deleteBtn.hidden = adding;
       syncEditTypeFields();
       const viewModal = document.getElementById('viewPlacementModal');
       if (viewModal) bootstrap.Modal.getOrCreateInstance(viewModal).hide();
@@ -1722,26 +1721,37 @@
       await loadRegistry();
     }
 
-    async function deleteEditPlacement() {
+    async function deleteViewPlacement(index) {
       if (!canEditSelectedBatch) {
         toast('Only the class incharge can delete placement details for this batch.', 'warn');
         return;
       }
-      const studentId = document.getElementById('editStudentId').value;
-      if (!studentId) return;
+      const entry = viewPlacementRows[index];
+      const studentId = viewPlacementStudentId;
+      if (!entry || !studentId) {
+        toast('Record not found.', 'warn');
+        return;
+      }
       if (!window.confirm('Delete this entry from the database? The student stays in the list.')) return;
-      const btn = document.getElementById('editPlacementDeleteBtn');
-      if (btn) btn.disabled = true;
-      const entryId = document.getElementById('editEntryId')?.value || '';
-      const res = await placementRegistryApi().deleteStudentPlacement(studentId, entryId);
-      if (btn) btn.disabled = false;
+      const res = await placementRegistryApi().deleteStudentPlacement(studentId, entry.id || '');
       if (!res?.success) {
         toast(res?.message || 'Could not delete placement details.', 'error');
         return;
       }
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).hide();
       toast('Placement details deleted.', 'success');
       await loadRegistry();
+      let entries = [];
+      try {
+        const listed = await placementRegistryApi().listPlacementEntries(studentId);
+        if (listed?.success && Array.isArray(listed.data?.entries)) entries = listed.data.entries;
+      } catch (_) {
+        entries = [];
+      }
+      const row = findRowByStudentId(studentId);
+      renderPlacementEntries(entries, {
+        role: String(row?.stud_role || row?.studRole || '').trim(),
+        batch: String(row?.year || row?.classBatch || row?.batch || '').trim(),
+      });
     }
 
     function applySubmittedRow(oldStudentId, savedStudentId, payload, hasOfferLetter) {
@@ -1943,7 +1953,6 @@
       if (page < pages) { page++; renderTable(); }
     });
     document.getElementById('editPlacementForm')?.addEventListener('submit', saveEditPlacement);
-    document.getElementById('editPlacementDeleteBtn')?.addEventListener('click', deleteEditPlacement);
     document.getElementById('viewPlacementAddBtn')?.addEventListener('click', () => {
       if (viewPlacementStudentId) openAddPlacement(viewPlacementStudentId);
     });
