@@ -324,14 +324,24 @@ class StudentPlacementDetailsTable
         $directory = new StudentDirectoryTable();
         if ($directory->isReady()) {
             $directoryCount = $directory->count();
-            if ($directoryCount > 0 && $this->count() !== $directoryCount) {
+            if ($directoryCount > 0 && $this->count() === 0) {
                 $this->replaceRowsFromDirectory();
                 $this->refreshStudentNamesFromDirectory();
                 $this->writeSyncSignature('');
+            } elseif ($directoryCount > 0) {
+                try {
+                    if ($this->insertMissingDirectoryRows() > 0) {
+                        $this->refreshStudentNamesFromDirectory();
+                        $this->writeSyncSignature('');
+                    }
+                } catch (\Throwable) {
+                    // Keep the rows already stored if a directory insert fails.
+                }
             }
         }
         try {
             $this->fillEmptyColumnsFromPlacements();
+            $this->refreshStudentNamesFromDirectory();
         } catch (\Throwable) {
             // Keep the name list even if a placement batch fails.
         }
@@ -1014,9 +1024,9 @@ class StudentPlacementDetailsTable
     }
 
     /**
-     * Copy cno, employer, and the other placement columns from student_placements
-     * into blank cells, matched by admission number. Stops before the page times out
-     * and continues on the next load.
+     * Copy placement rows from student_placements.
+     * An existing student is updated when the admission number matches.
+     * Every other type=placement row is inserted, including a second offer for the same student.
      */
     private function fillEmptyColumnsFromPlacements(): void
     {
@@ -1027,64 +1037,224 @@ class StudentPlacementDetailsTable
         if ($admnoColumn === null) {
             return;
         }
-        $signature = 'admj:2:' . $this->placementSourceSignature();
+        $signature = 'admj:3:' . $this->placementSourceSignature();
         if ($this->readSyncSignature() === $signature) {
             return;
         }
+        $fields = $this->resolvedPlacementFields();
+        if ($fields === []) {
+            return;
+        }
+        $this->updateMatchedPlacementRows($admnoColumn, $fields);
+        $this->insertMissingPlacementRows($admnoColumn, $fields);
+        $this->db->exec(
+            'UPDATE `student_placement_details`
+             SET `type` = \'placement\'
+             WHERE `type` = \'\' AND `employer` <> \'\''
+        );
+        $this->writeSyncSignature($signature);
+    }
+
+    private function insertMissingDirectoryRows(): int
+    {
+        $selectSql = 'SELECT TRIM(d.`student_name`) AS `student`, TRIM(d.`adm_no`) AS `admno`,
+                    CASE
+                      WHEN LOWER(d.`stud_role`) LIKE \'%alumni%\' THEN \'alumni\'
+                      WHEN LOWER(d.`stud_role`) LIKE \'%student%\' THEN \'student\'
+                      ELSE LOWER(LEFT(d.`stud_role`, 16))
+                    END AS `stud_role`,
+                    TRIM(d.`batch`) AS `year`
+             FROM `student_details` d
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM `student_placement_details` p
+                 WHERE (TRIM(d.`adm_no`) <> \'\' AND '
+                    . $this->admnoMatchKey('p.`admno`') . ' = ' . $this->admnoMatchKey('d.`adm_no`') . ')
+                    OR (TRIM(d.`adm_no`) = \'\' AND TRIM(p.`admno`) = \'\'
+                        AND TRIM(p.`student`) = TRIM(d.`student_name`)
+                        AND TRIM(p.`year`) = TRIM(d.`batch`))
+             )';
+        $this->db->exec('DROP TEMPORARY TABLE IF EXISTS `tmp_pms_missing_directory`');
+        $this->db->exec('CREATE TEMPORARY TABLE `tmp_pms_missing_directory` AS ' . $selectSql);
+        $inserted = $this->db->exec(
+            'INSERT INTO `student_placement_details` (`student`, `admno`, `stud_role`, `year`)
+             SELECT `student`, `admno`, `stud_role`, `year` FROM `tmp_pms_missing_directory`'
+        );
+        $this->db->exec('DROP TEMPORARY TABLE IF EXISTS `tmp_pms_missing_directory`');
+
+        return $inserted === false ? 0 : (int) $inserted;
+    }
+
+    /**
+     * Same key for 16549, 016549, and mixed-case admission numbers.
+     */
+    private function admnoMatchKey(string $expr): string
+    {
+        $trimmed = 'TRIM(CAST(' . $expr . ' AS CHAR))';
+
+        return 'CASE WHEN ' . $trimmed . " REGEXP '^[0-9]+$' THEN CAST(CAST(" . $trimmed
+            . ' AS UNSIGNED) AS CHAR) ELSE UPPER(' . $trimmed . ') END';
+    }
+
+    /**
+     * @return list<array{dest:string,source:string,limit:int}>
+     */
+    private function resolvedPlacementFields(): array
+    {
         $map = [
-            'cno' => ['cno'],
-            'email' => ['email'],
-            'courseid' => ['courseId', 'courseid'],
-            'branchid' => ['branchId', 'branchid'],
-            'employer' => ['employer'],
-            'empcno' => ['empcno', 'empco'],
-            'empadr' => ['empadr'],
-            'payscale' => ['payscale'],
-            'status' => ['status'],
-            'createdBy' => ['createdBy'],
-            'updatedBy' => ['updatedBy'],
-            'fordvv' => ['fordvv'],
-            'type' => ['type'],
-            'includedvv' => ['includedvv'],
+            'cno' => [['cno'], 64],
+            'email' => [['email'], 255],
+            'year' => [['year'], 64],
+            'courseid' => [['courseId', 'courseid'], 64],
+            'branchid' => [['branchId', 'branchid'], 64],
+            'employer' => [['employer'], 255],
+            'empcno' => [['empcno', 'empco'], 128],
+            'empadr' => [['empadr'], 512],
+            'payscale' => [['payscale'], 128],
+            'status' => [['status'], 64],
+            'createdBy' => [['createdBy'], 128],
+            'updatedBy' => [['updatedBy'], 128],
+            'fordvv' => [['fordvv'], 16],
+            'type' => [['type'], 64],
+            'includedvv' => [['includedvv'], 16],
         ];
-        $limits = [
-            'cno' => 64, 'email' => 255, 'courseid' => 64, 'branchid' => 64, 'employer' => 255,
-            'empcno' => 128, 'empadr' => 512, 'payscale' => 128, 'status' => 64,
-            'createdBy' => 128, 'updatedBy' => 128, 'fordvv' => 16, 'type' => 64, 'includedvv' => 16,
-        ];
-        $sets = [];
-        foreach ($map as $dest => $candidates) {
-            $source = null;
+        $fields = [];
+        foreach ($map as $dest => [$candidates, $limit]) {
             foreach ($candidates as $candidate) {
                 $source = $this->sourceColumn($candidate);
-                if ($source !== null) {
-                    break;
+                if ($source === null) {
+                    continue;
                 }
+                $fields[] = ['dest' => $dest, 'source' => $source, 'limit' => $limit];
+                break;
             }
-            if ($source === null) {
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @param list<array{dest:string,source:string,limit:int}> $fields
+     */
+    private function updateMatchedPlacementRows(string $admnoColumn, array $fields): void
+    {
+        $idColumn = $this->sourceColumn('id');
+        if ($idColumn === null) {
+            return;
+        }
+        $sets = [];
+        foreach ($fields as $field) {
+            if ($field['dest'] === 'year') {
                 continue;
             }
-            $sets[] = 'd.`' . $dest . '` = IF(d.`' . $dest . '` = \'\' AND s.`' . $source
-                . '` IS NOT NULL AND TRIM(CAST(s.`' . $source . '` AS CHAR)) <> \'\', LEFT(TRIM(CAST(s.`'
-                . $source . '` AS CHAR)), ' . $limits[$dest] . '), d.`' . $dest . '`)';
+            $source = $field['source'];
+            $dest = $field['dest'];
+            $sets[] = 'd.`' . $dest . '` = IF(d.`' . $dest . '` = \'\' AND TRIM(CAST(s.`' . $source
+                . '` AS CHAR)) <> \'\', LEFT(TRIM(CAST(s.`' . $source . '` AS CHAR)), ' . $field['limit']
+                . '), d.`' . $dest . '`)';
         }
         if ($sets === []) {
             return;
         }
+        $typeColumn = $this->sourceColumn('type');
+        $where = 'TRIM(CAST(p.`' . $admnoColumn . '` AS CHAR)) <> \'\'';
+        if ($typeColumn !== null) {
+            $where .= ' AND LOWER(TRIM(CAST(p.`' . $typeColumn . '` AS CHAR))) IN (\'placement\', \'placements\')';
+        }
         $this->db->exec(
             'UPDATE `student_placement_details` d
-             INNER JOIN `student_placements` s
-               ON d.`admno` <> \'\'
-              AND d.`admno` = TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR))
-              AND TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR)) <> \'\'
+             INNER JOIN (
+                SELECT src.*
+                FROM `student_placements` src
+                INNER JOIN (
+                    SELECT ' . $this->admnoMatchKey('p.`' . $admnoColumn . '`') . ' AS admno_key,
+                           MAX(p.`' . $idColumn . '`) AS pick_id
+                    FROM `student_placements` p
+                    WHERE ' . $where . '
+                    GROUP BY admno_key
+                ) picked ON src.`' . $idColumn . '` = picked.pick_id
+             ) s ON TRIM(d.`admno`) <> \'\'
+                AND ' . $this->admnoMatchKey('d.`admno`') . ' = ' . $this->admnoMatchKey('s.`' . $admnoColumn . '`') . '
              SET ' . implode(', ', $sets)
         );
+    }
+
+    /**
+     * @param list<array{dest:string,source:string,limit:int}> $fields
+     */
+    private function insertMissingPlacementRows(string $admnoColumn, array $fields): void
+    {
+        $typeColumn = $this->sourceColumn('type');
+        if ($typeColumn === null) {
+            return;
+        }
+        $studentColumn = $this->sourceColumn('student');
+        $studentExpr = $studentColumn !== null
+            ? 'TRIM(CAST(s.`' . $studentColumn . '` AS CHAR))'
+            : '\'\'';
+        $sourceKey = $this->admnoMatchKey('s.`' . $admnoColumn . '`');
+        $insertCols = ['`student`', '`admno`', '`stud_role`', '`year`'];
+        $selects = [
+            'COALESCE(NULLIF(TRIM(dir.`student`), \'\'), NULLIF(' . $studentExpr . ', \'\'), \'\') AS `student`',
+            'LEFT(TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR)), 64) AS `admno`',
+            'COALESCE(dir.`stud_role`, \'\') AS `stud_role`',
+        ];
+        $yearSelect = '\'\' AS `year`';
+        $dataFields = [];
+        foreach ($fields as $field) {
+            if ($field['dest'] === 'year') {
+                $yearSelect = 'LEFT(TRIM(IFNULL(CAST(s.`' . $field['source'] . '` AS CHAR), \'\')), '
+                    . $field['limit'] . ') AS `year`';
+                continue;
+            }
+            $dataFields[] = $field;
+        }
+        $selects[] = $yearSelect;
+        $identity = [];
+        foreach ($dataFields as $field) {
+            $insertCols[] = '`' . $field['dest'] . '`';
+            $selects[] = 'LEFT(TRIM(IFNULL(CAST(s.`' . $field['source'] . '` AS CHAR), \'\')), '
+                . $field['limit'] . ') AS `' . $field['dest'] . '`';
+            if (in_array($field['dest'], ['employer', 'cno', 'email', 'payscale', 'courseid', 'branchid'], true)) {
+                $identity[] = 'TRIM(IFNULL(d.`' . $field['dest'] . '`, \'\')) = TRIM(IFNULL(CAST(s.`'
+                    . $field['source'] . '` AS CHAR), \'\'))';
+            }
+        }
+        $identitySql = $identity === [] ? '1 = 1' : implode(' AND ', $identity);
+        $selectSql = 'SELECT ' . implode(', ', $selects) . '
+             FROM `student_placements` s
+             LEFT JOIN (
+                SELECT ' . $this->admnoMatchKey('p.`admno`') . ' AS admno_key, MIN(p.`id`) AS pick_id
+                FROM `student_placement_details` p
+                WHERE TRIM(p.`admno`) <> \'\'
+                GROUP BY admno_key
+             ) picked ON picked.admno_key = ' . $sourceKey . '
+             LEFT JOIN `student_placement_details` dir ON dir.`id` = picked.pick_id
+             WHERE LOWER(TRIM(CAST(s.`' . $typeColumn . '` AS CHAR))) IN (\'placement\', \'placements\')
+               AND (
+                    TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR)) <> \'\'
+                    OR ' . $studentExpr . ' <> \'\'
+               )
+               AND NOT EXISTS (
+                    SELECT 1 FROM `student_placement_details` d
+                    WHERE ' . $identitySql . '
+                      AND (
+                        (TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR)) <> \'\' AND '
+                            . $this->admnoMatchKey('d.`admno`') . ' = ' . $sourceKey . ')
+                        OR (
+                            TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR)) = \'\'
+                            AND TRIM(d.`admno`) = \'\'
+                            AND TRIM(d.`student`) = ' . $studentExpr . '
+                            AND TRIM(d.`student`) <> \'\'
+                        )
+                      )
+               )';
+        $this->db->exec('DROP TEMPORARY TABLE IF EXISTS `tmp_pms_missing_placements`');
+        $this->db->exec('CREATE TEMPORARY TABLE `tmp_pms_missing_placements` AS ' . $selectSql);
         $this->db->exec(
-            'UPDATE `student_placement_details`
-             SET `type` = \'Placement\'
-             WHERE `type` = \'\' AND `employer` <> \'\''
+            'INSERT INTO `student_placement_details` (' . implode(', ', $insertCols) . ')
+             SELECT ' . implode(', ', $insertCols) . ' FROM `tmp_pms_missing_placements`'
         );
-        $this->writeSyncSignature($signature);
+        $this->db->exec('DROP TEMPORARY TABLE IF EXISTS `tmp_pms_missing_placements`');
     }
 
     private function sourceColumn(string $name): ?string
