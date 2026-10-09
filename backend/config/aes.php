@@ -74,8 +74,8 @@ return [
     'auth_key' => $authKey,
     'ref_host' => $refHost,
     'api_url' => $readEnv('AES_API_URL') ?: 'https://api.aesajce.in/',
-    'api_origin' => $readEnv('AES_API_ORIGIN') ?: 'https://www.aesajce.in',
-    'api_referer' => $readEnv('AES_API_REFERER') ?: 'https://www.aesajce.in/',
+    'api_origin' => $readEnv('AES_API_ORIGIN') ?: 'https://placements.amaljyothi.ac.in',
+    'api_referer' => $readEnv('AES_API_REFERER') ?: 'https://placements.amaljyothi.ac.in/',
     'ssl_verify' => filter_var($readEnv('AES_SSL_VERIFY') ?: 'true', FILTER_VALIDATE_BOOLEAN),
     // api.aesajce.in can exceed 15s under load (course search, placement filters).
     'curl_timeout' => max(15, min(120, (int) ($readEnv('AES_API_TIMEOUT') ?: 45))),

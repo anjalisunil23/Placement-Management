@@ -44,8 +44,8 @@ final class AesApiService
     {
         $aes = require dirname(__DIR__) . '/config/aes.php';
         $this->apiUrl = rtrim((string) ($aes['api_url'] ?? 'https://api.aesajce.in/'), '/') . '/';
-        $this->origin = (string) ($aes['api_origin'] ?? 'https://www.aesajce.in');
-        $this->referer = (string) ($aes['api_referer'] ?? 'https://www.aesajce.in/');
+        $this->origin = (string) ($aes['api_origin'] ?? 'https://placements.amaljyothi.ac.in');
+        $this->referer = (string) ($aes['api_referer'] ?? 'https://placements.amaljyothi.ac.in/');
         $this->authKey = (string) ($aes['auth_key'] ?? '');
         $this->refHost = trim((string) ($aes['ref_host'] ?? ''));
         $sslVerify = $aes['ssl_verify'] ?? true;

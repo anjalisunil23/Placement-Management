@@ -21,8 +21,8 @@ foreach (['admno only', 'with refurl'] as $label) {
         CURLOPT_SSL_VERIFYPEER => false,
         CURLOPT_HTTPHEADER => [
             'Content-Type: application/x-www-form-urlencoded',
-            'Origin: https://www.aesajce.in',
-            'Referer: https://www.aesajce.in/',
+            'Origin: https://placements.amaljyothi.ac.in',
+            'Referer: https://placements.amaljyothi.ac.in/',
         ],
     ]);
     $raw = (string) curl_exec($ch);
@@ -42,7 +42,7 @@ curl_setopt_array($ch, [
     CURLOPT_POST => true,
     CURLOPT_POSTFIELDS => http_build_query(['admno' => $admno, 'authkey' => $authKey, 'refurl' => 'placements.amaljyothi.ac.in']),
     CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_HTTPHEADER => ['Origin: https://www.aesajce.in', 'Referer: https://www.aesajce.in/'],
+    CURLOPT_HTTPHEADER => ['Origin: https://placements.amaljyothi.ac.in', 'Referer: https://placements.amaljyothi.ac.in/'],
 ]);
 $qualRaw = (string) curl_exec($ch);
 curl_close($ch);
