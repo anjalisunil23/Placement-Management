@@ -2203,7 +2203,16 @@
       }
     }
     const type = String(test?.contestType || 'none');
+    if (type === 'weekly' || type === 'monthly') {
+      return contestStatusClient(test) === 'ACTIVE';
+    }
     return type === 'none' || !type;
+  }
+
+  function resolveContestTestMeta(testId) {
+    const id = String(testId || '');
+    if (!id) return null;
+    return (tests || []).find((t) => String(t.id) === id) || null;
   }
 
   function contestScheduleLabel(test) {
@@ -2557,10 +2566,16 @@
     if (isContestTest(t) && !open) {
       title = `${title} · ${contestScheduleLabel(t)}`;
     }
+    const contestCta = canOpen && isContestTest(t)
+      ? '<span class="badge-soft success flex-shrink-0">Start</span>'
+      : (isContestTest(t) && open && !access.canTake
+        ? '<span class="badge-soft muted flex-shrink-0">Students only</span>'
+        : '');
     return `<${tag} class="apt-prob-row ${canOpen ? 'is-clickable' : ''}"${extra}>
       <span class="apt-prob-check">${solved ? '<i class="bi bi-check-lg"></i>' : ''}</span>
       <span class="apt-prob-title">${index + 1}. ${esc(title)}</span>
       <span class="apt-prob-pct">${esc(formatListPercentage(t, mine))}</span>
+      ${contestCta}
       <span class="apt-prob-diff ${diff.cls}">${esc(diff.text)}</span>
     </${tag}>`;
   }
@@ -2572,8 +2587,18 @@
   function bindOpenTests(root, list) {
     root?.querySelectorAll('[data-open-test]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const t = list.find((x) => String(x.id) === String(btn.getAttribute('data-open-test')));
-        if (t) openExam(t);
+        const testId = btn.getAttribute('data-open-test');
+        const t = (list || tests || []).find((x) => String(x.id) === String(testId))
+          || resolveContestTestMeta(testId);
+        if (!t) {
+          toastMsg('Could not open this challenge. Refresh the page and try again.', 'error');
+          return;
+        }
+        if (isContestTest(t) && !isContestOpenClient(t)) {
+          toastMsg(`This challenge is not open right now. ${contestScheduleLabel(t) || ''}`.trim(), 'warning');
+          return;
+        }
+        openExam(t);
       });
     });
   }
@@ -4021,7 +4046,7 @@
         </tbody></table></div>`;
   }
 
-  function contestCardHtml(c, { student = false, myUserId = '', myDepartmentId = '' } = {}) {
+  function contestCardHtml(c, { student = false, myUserId = '', myDepartmentId = '', testsById = {} } = {}) {
     const published = !!c.winnersPublished;
     const open = !!c.contestOpen;
     const winners = c.winners || [];
@@ -4067,7 +4092,18 @@
           <div class="small text-muted-2 mt-1">${rankLines.length ? 'Full leaderboards unlock after results are published.' : 'Rank and medals unlock after the contest closes.'}</div>
         </div>`;
       } else if (student && open) {
-        body += '<p class="small text-muted-2 mb-0">Join from the left to earn a podium finish.</p>';
+        const testId = String(c.id || c.testId || '');
+        const meta = testsById[testId] || resolveContestTestMeta(testId);
+        if (meta && access.canTake) {
+          body += `<div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+            <button type="button" class="btn btn-primary btn-sm" data-open-test="${esc(testId)}">
+              <i class="bi bi-play-fill me-1"></i>Start challenge
+            </button>
+            <span class="small text-muted-2">Opens the timed contest with malpractice rules.</span>
+          </div>`;
+        } else {
+          body += '<p class="small text-muted-2 mb-0">Contest is open. Select the challenge in the list above or refresh if Start is missing.</p>';
+        }
       }
     }
     return `<div class="border rounded-3 p-3 mb-3">
@@ -4102,6 +4138,14 @@
       </div>`).join('');
   }
 
+  function testsByIdMap() {
+    const map = {};
+    (tests || []).forEach((t) => {
+      if (t?.id != null) map[String(t.id)] = t;
+    });
+    return map;
+  }
+
   function bindContestScopeNav(root) {
     root?.querySelectorAll('[id^="contestScopeNav-"]')?.forEach((nav) => {
       const card = nav.closest('.border.rounded-3');
@@ -4130,14 +4174,21 @@
     try {
       const data = await CodingService.contestBoard();
       const contests = (data?.contests || []).filter((c) => String(c.contestType || '') === takeContestType);
-    const u = Auth.user() || {};
+      const u = Auth.user() || {};
       const myDepartmentId = String(u.departmentId || access.scope?.departmentId || '');
+      const cardRoot = document.getElementById('testList')?.closest('.card-surface') || document;
       root.innerHTML = contests.length
         ? `<h6 class="fw-bold mb-2">Contest leaderboards</h6>
-           <p class="small text-muted-2 mb-3">Switch between overall and your department. Names appear after results are published.</p>
-           ${contestBoardsHtml(contests, { student: true, myUserId: data?.myUserId || u.id || '', myDepartmentId })}`
+           <p class="small text-muted-2 mb-3">When a challenge is live, use <strong>Start challenge</strong> below or the row above. Leaderboard names appear after results are published.</p>
+           ${contestBoardsHtml(contests, {
+             student: true,
+             myUserId: data?.myUserId || u.id || '',
+             myDepartmentId,
+             testsById: testsByIdMap(),
+           })}`
         : '<p class="text-muted-2 mb-0">No published contest leaderboards for this period yet.</p>';
       bindContestScopeNav(root);
+      bindOpenTests(cardRoot, tests);
     } catch (err) {
       root.innerHTML = `<p class="text-muted-2 mb-0">${esc(err?.message || 'Could not load contest leaderboards.')}</p>`;
     }

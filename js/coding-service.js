@@ -488,7 +488,10 @@
       contestType: test.contestType || 'none',
       contestWeekday: test.contestWeekday,
       contestMonthDay: test.contestMonthDay,
-      contestOpen: isContestOpen(test),
+      contestStartTime: test.contestStartTime,
+      contestEndTime: test.contestEndTime,
+      contestWindowBounds: test.contestWindowBounds,
+      contestOpen: typeof test.contestOpen === 'boolean' ? test.contestOpen : isContestOpen(test),
     };
   }
 
