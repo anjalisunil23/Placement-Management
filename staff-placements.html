@@ -1297,6 +1297,7 @@
       if (typeof registryApi.clearPlacementsCache === 'function') {
         registryApi.clearPlacementsCache();
       }
+      try {
       if (changed === 'filterDepartment') {
         syncDepartmentFilter();
         filterProgram = '';
@@ -1318,6 +1319,14 @@
       }
 
       await loadRegistry();
+      } catch (err) {
+        const tbody = document.getElementById('registryRows');
+        const msg = esc(err?.message || 'Could not refresh the registry.');
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="${registryColspan()}" class="text-danger p-4 text-center">${msg}</td></tr>`;
+        }
+        if (typeof toast === 'function') toast(err?.message || 'Could not refresh filters.', 'error');
+      }
     }
 
     async function downloadOffer(studentId) {

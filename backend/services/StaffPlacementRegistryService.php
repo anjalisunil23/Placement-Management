@@ -2324,45 +2324,85 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * Admission numbers belonging to a PlaceHub department (student_details).
-     *
-     * @return array<string, true>|null null when lookup is unavailable
+     * @return list<string>
      */
-    private function admnoLookupForDepartment(string $departmentId): ?array
+    private function programmeCodesForDepartmentId(string $departmentId): array
     {
         $departmentId = trim($departmentId);
         if ($departmentId === '') {
-            return null;
+            return [];
         }
         static $cache = [];
-        if (array_key_exists($departmentId, $cache)) {
+        if (isset($cache[$departmentId])) {
             return $cache[$departmentId];
         }
-        $lookup = [];
-        try {
-            $model = new \PMS\Models\StudentDetailsModel();
-            if (!$model->isAvailable()) {
-                $cache[$departmentId] = null;
+        $dept = (new DepartmentModel())->findById($departmentId);
+        if (!is_array($dept)) {
+            $cache[$departmentId] = [];
 
-                return null;
-            }
-            $oid = Security::toObjectId($departmentId);
-            $filter = $oid !== null ? ['departmentId' => $oid] : [];
-            $limit = max(1000, min(50000, (int) ($_ENV['STUDENT_DETAILS_DEPT_LOOKUP_MAX'] ?? 25000)));
-            foreach ($model->findAll($filter, $limit) as $rec) {
-                $adm = strtoupper(\PMS\Models\StudentDetailsModel::resolveAesAdmno($rec));
-                if ($adm !== '') {
-                    $lookup[$adm] = true;
-                }
-            }
-        } catch (\Throwable) {
-            $cache[$departmentId] = null;
-
-            return null;
+            return [];
         }
-        $cache[$departmentId] = $lookup;
+        $codes = [];
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
+            (string) ($dept['code'] ?? ''),
+            (string) ($dept['name'] ?? '')
+        );
+        if ($group !== null) {
+            $codes = DepartmentProgrammeCatalog::programmeCodesForGroup($group);
+        }
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode((string) ($dept['code'] ?? ''));
+        if ($resolved !== '') {
+            $codes[] = $resolved;
+        }
+        $codes = array_values(array_unique(array_filter(array_map(
+            static fn (string $c): string => DepartmentProgrammeCatalog::resolveProgrammeCode($c),
+            $codes
+        ), static fn (string $c): bool => $c !== '')));
+        $cache[$departmentId] = $codes;
 
-        return $lookup;
+        return $codes;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function placementDetailRowMatchesDepartment(array $row, string $departmentId): bool
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return true;
+        }
+        $codes = $this->programmeCodesForDepartmentId($departmentId);
+        if ($codes === []) {
+            return true;
+        }
+        $courseId = trim((string) ($row['courseid'] ?? $row['courseId'] ?? ''));
+        $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
+        $fromCourse = $courseId !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($courseId)
+            : '';
+        $fromYear = $year !== ''
+            ? DepartmentProgrammeCatalog::programmeInferredFromBatchLabel($year)
+            : '';
+        $yearNorm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $year) ?? '');
+
+        foreach ($codes as $code) {
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode($code);
+            if ($code === '') {
+                continue;
+            }
+            if ($fromCourse !== '' && strcasecmp($fromCourse, $code) === 0) {
+                return true;
+            }
+            if ($fromYear !== '' && strcasecmp($fromYear, $code) === 0) {
+                return true;
+            }
+            if ($yearNorm !== '' && str_contains($yearNorm, strtoupper($code))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2466,20 +2506,13 @@ final class StaffPlacementRegistryService
         if ($departmentId === '' && $program === '' && $batch === '' && $type === '' && $q === '') {
             return $rows;
         }
-        $deptAdmnos = $departmentId !== '' ? $this->admnoLookupForDepartment($departmentId) : null;
-        if ($departmentId !== '' && is_array($deptAdmnos) && $deptAdmnos === []) {
-            return [];
-        }
         $wantProgram = $program !== ''
             ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
             : '';
 
-        return array_values(array_filter($rows, function (array $row) use ($departmentId, $deptAdmnos, $program, $wantProgram, $batch, $type, $q): bool {
-            if (is_array($deptAdmnos)) {
-                $adm = strtoupper(trim((string) ($row['admno'] ?? $row['admissionNo'] ?? '')));
-                if ($adm === '' || !isset($deptAdmnos[$adm])) {
-                    return false;
-                }
+        return array_values(array_filter($rows, function (array $row) use ($departmentId, $program, $wantProgram, $batch, $type, $q): bool {
+            if ($departmentId !== '' && !$this->placementDetailRowMatchesDepartment($row, $departmentId)) {
+                return false;
             }
             $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
             if ($batch !== '' && !StudentPlacementModel::matchesClassBatchSelection($year, $batch)) {

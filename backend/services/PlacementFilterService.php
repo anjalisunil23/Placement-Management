@@ -6,6 +6,7 @@ namespace PMS\Services;
 
 use PMS\Models\DepartmentModel;
 use PMS\Models\StudentModel;
+use PMS\Models\StudentPlacementDetailsTable;
 use PMS\Models\StudentPlacementModel;
 use PMS\Utils\Security;
 
@@ -207,6 +208,10 @@ final class PlacementFilterService
             if ($hint !== '') {
                 $canonical[] = $hint;
             }
+        }
+
+        foreach ($this->programmesFromPlacementDetailsTable($ctx) as $code) {
+            $canonical[] = $code;
         }
 
         if ($this->departmentProgrammeCodesForFilterScope($ctx) !== null) {
@@ -693,7 +698,80 @@ final class PlacementFilterService
             }
         }
 
+        foreach ($this->batchLabelsFromPlacementDetailsTable($ctx, $program) as $label) {
+            $batches[] = $label;
+        }
+
         return $this->refineStaffRegistryBatchOptions($batches, $ctx, $program, $branch);
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function programmesFromPlacementDetailsTable(array $ctx): array
+    {
+        $table = new StudentPlacementDetailsTable();
+        if (!$table->isReady()) {
+            return [];
+        }
+        $scoped = $this->departmentProgrammeCodesForFilterScope($ctx);
+        $codes = [];
+        foreach ($table->distinctColumnValues('courseid', 500) as $raw) {
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($raw));
+            if ($code === '') {
+                continue;
+            }
+            if ($scoped !== null && !$this->programmeMatchesDepartmentFilterScope($code, $ctx)) {
+                continue;
+            }
+            $codes[] = $code;
+        }
+        foreach ($table->distinctColumnValues('year', 1500) as $year) {
+            $code = DepartmentProgrammeCatalog::programmeInferredFromBatchLabel(trim($year));
+            if ($code === '') {
+                continue;
+            }
+            if ($scoped !== null && !$this->programmeMatchesDepartmentFilterScope($code, $ctx)) {
+                continue;
+            }
+            $codes[] = $code;
+        }
+
+        return array_values(array_unique($codes));
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function batchLabelsFromPlacementDetailsTable(array $ctx, string $program): array
+    {
+        $table = new StudentPlacementDetailsTable();
+        if (!$table->isReady()) {
+            return [];
+        }
+        $program = trim($program);
+        $scoped = $this->departmentProgrammeCodesForFilterScope($ctx);
+        $batches = [];
+        foreach ($table->distinctColumnValues('year', 2000) as $year) {
+            $year = trim($year);
+            if ($year === '') {
+                continue;
+            }
+            $code = DepartmentProgrammeCatalog::programmeInferredFromBatchLabel($year);
+            if ($scoped !== null && $code !== '' && !$this->programmeMatchesDepartmentFilterScope($code, $ctx)) {
+                continue;
+            }
+            if ($program !== '' && $code !== '' && strcasecmp($code, DepartmentProgrammeCatalog::resolveProgrammeCode($program)) !== 0) {
+                if (!$this->batchMatchesProgramme($year, $program)) {
+                    continue;
+                }
+            }
+            $batches[] = $year;
+        }
+
+        return $batches;
     }
 
     /**

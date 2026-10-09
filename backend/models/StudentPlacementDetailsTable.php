@@ -379,6 +379,34 @@ class StudentPlacementDetailsTable
     }
 
     /**
+     * @return list<string>
+     */
+    public function distinctColumnValues(string $column, int $limit = 2000): array
+    {
+        if (!$this->ensure()) {
+            return [];
+        }
+        $allowed = ['courseid' => true, 'year' => true];
+        if (!isset($allowed[$column])) {
+            return [];
+        }
+        $limit = max(1, min($limit, 5000));
+        $statement = $this->db->query(
+            'SELECT DISTINCT `' . $column . '` AS v FROM `student_placement_details`
+             WHERE `' . $column . "` <> '' ORDER BY v ASC LIMIT " . $limit
+        );
+        $values = [];
+        while ($row = $statement->fetch()) {
+            $v = trim((string) ($row['v'] ?? ''));
+            if ($v !== '') {
+                $values[] = $v;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
      * Alumni placement rows copied from student_placements.
      *
      * @return list<array<string, mixed>>
