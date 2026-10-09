@@ -852,7 +852,7 @@ final class StaffPlacementRegistryService
      */
     private function listFromPlacementDetails(\PMS\Models\StudentPlacementDetailsTable $details): array
     {
-        $limit = max(100, min(20000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 20000)));
+        $limit = max(100, min(30000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 30000)));
         $rows = [];
         foreach ($details->listRows($limit) as $row) {
             $id = trim((string) ($row['id'] ?? ''));

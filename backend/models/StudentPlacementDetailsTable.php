@@ -69,7 +69,9 @@ class StudentPlacementDetailsTable
               `type` VARCHAR(64) NOT NULL DEFAULT \'\',
               includedvv VARCHAR(16) NOT NULL DEFAULT \'\',
               createdate DATETIME NULL,
+              source_id VARCHAR(64) NULL DEFAULT NULL,
               PRIMARY KEY (id),
+              UNIQUE KEY uq_student_placement_details_source_id (source_id),
               KEY idx_student_placement_details_admno (admno),
               KEY idx_student_placement_details_year (`year`),
               KEY idx_student_placement_details_type (`type`)
@@ -94,6 +96,7 @@ class StudentPlacementDetailsTable
             'type' => "VARCHAR(64) NOT NULL DEFAULT ''",
             'includedvv' => "VARCHAR(16) NOT NULL DEFAULT ''",
             'createdate' => 'DATETIME NULL',
+            'source_id' => 'VARCHAR(64) NULL DEFAULT NULL',
         ];
         foreach ($missing as $name => $definition) {
             if ($this->hasColumn($name)) {
@@ -102,6 +105,27 @@ class StudentPlacementDetailsTable
             $this->db->exec(
                 'ALTER TABLE `student_placement_details` ADD COLUMN `' . $name . '` ' . $definition
             );
+        }
+        $this->ensureSourceIdIndex();
+    }
+
+    private function ensureSourceIdIndex(): void
+    {
+        if (!$this->hasColumn('source_id')) {
+            return;
+        }
+        $existing = $this->db->query(
+            "SHOW INDEX FROM `student_placement_details` WHERE Key_name = 'uq_student_placement_details_source_id'"
+        );
+        if ($existing !== false && $existing->fetch()) {
+            return;
+        }
+        try {
+            $this->db->exec(
+                'ALTER TABLE `student_placement_details` ADD UNIQUE KEY `uq_student_placement_details_source_id` (`source_id`)'
+            );
+        } catch (\Throwable) {
+            // The copy still runs if this index cannot be added.
         }
     }
 
@@ -322,28 +346,14 @@ class StudentPlacementDetailsTable
             return 0;
         }
         $directory = new StudentDirectoryTable();
-        if ($directory->isReady()) {
-            $directoryCount = $directory->count();
-            if ($directoryCount > 0 && $this->count() === 0) {
-                $this->replaceRowsFromDirectory();
-                $this->refreshStudentNamesFromDirectory();
-                $this->writeSyncSignature('');
-            } elseif ($directoryCount > 0) {
-                try {
-                    if ($this->insertMissingDirectoryRows() > 0) {
-                        $this->refreshStudentNamesFromDirectory();
-                        $this->writeSyncSignature('');
-                    }
-                } catch (\Throwable) {
-                    // Keep the rows already stored if a directory insert fails.
-                }
-            }
+        if ($directory->isReady() && $directory->count() > 0 && $this->count() === 0) {
+            $this->replaceRowsFromDirectory();
+            $this->writeSyncSignature('');
         }
         try {
             $this->fillEmptyColumnsFromPlacements();
-            $this->refreshStudentNamesFromDirectory();
         } catch (\Throwable) {
-            // Keep the name list even if a placement batch fails.
+            // Keep the rows already stored. The next placements load retries the copy.
         }
 
         return $this->count();
@@ -359,7 +369,7 @@ class StudentPlacementDetailsTable
         if (!$this->ensure()) {
             return [];
         }
-        $limit = max(1, min($limit, 20000));
+        $limit = max(1, min($limit, 30000));
         $statement = $this->db->query(
             'SELECT `id`, `student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`,
                     `employer`, `empcno`, `empadr`, `payscale`, `status`, `createdBy`, `updatedBy`,
@@ -1052,20 +1062,22 @@ class StudentPlacementDetailsTable
     }
 
     /**
-     * Copy placement rows from student_placements.
-     * An existing student is updated when the admission number matches.
-     * Every other type=placement row is inserted, including a second offer for the same student.
+     * Copy every type=placement row from student_placements, one details row per source id.
+     * Column values are copied as stored. Directory rows that are not those copies lose the
+     * placement type so the type count matches student_placements.
      */
     private function fillEmptyColumnsFromPlacements(): void
     {
-        if (!$this->sourceTableExists()) {
+        if (!$this->sourceTableExists() || !$this->hasColumn('source_id')) {
             return;
         }
         $admnoColumn = $this->sourceColumn('admno');
-        if ($admnoColumn === null) {
+        $typeColumn = $this->sourceColumn('type');
+        $idColumn = $this->sourceColumn('id');
+        if ($admnoColumn === null || $typeColumn === null || $idColumn === null) {
             return;
         }
-        $signature = 'admj:3:' . $this->placementSourceSignature();
+        $signature = 'admj:5:' . $this->placementSourceSignature();
         if ($this->readSyncSignature() === $signature) {
             return;
         }
@@ -1073,14 +1085,155 @@ class StudentPlacementDetailsTable
         if ($fields === []) {
             return;
         }
-        $this->updateMatchedPlacementRows($admnoColumn, $fields);
-        $this->insertMissingPlacementRows($admnoColumn, $fields);
+        $this->insertEveryPlacementRow($admnoColumn, $typeColumn, $idColumn, $fields);
+        $this->applyDirectoryIdentityToCopies();
+        $sourceCount = (int) $this->db->query(
+            'SELECT COUNT(*) FROM `student_placements` s WHERE ' . $this->placementTypeWhere('s', $typeColumn)
+        )->fetchColumn();
+        $copied = (int) $this->db->query(
+            'SELECT COUNT(*) FROM `student_placement_details` WHERE `source_id` IS NOT NULL AND `source_id` <> \'\''
+        )->fetchColumn();
+        if ($sourceCount > 0 && $copied >= $sourceCount) {
+            $this->db->exec(
+                'UPDATE `student_placement_details`
+                 SET `type` = \'\'
+                 WHERE `source_id` IS NULL
+                   AND LOWER(TRIM(`type`)) IN (\'placement\', \'placements\')'
+            );
+            $this->writeSyncSignature($signature);
+        }
+    }
+
+    private function placementTypeWhere(string $alias, string $typeColumn): string
+    {
+        return 'LOWER(TRIM(CAST(' . $alias . '.`' . $typeColumn . '` AS CHAR))) IN (\'placement\', \'placements\')';
+    }
+
+    private function sourceText(string $alias, string $column, int $limit): string
+    {
+        return 'LEFT(TRIM(IFNULL(CAST(' . $alias . '.`' . $column . '` AS CHAR), \'\')), ' . $limit . ')';
+    }
+
+    /**
+     * @param list<array{dest:string,source:string,limit:int}> $fields
+     */
+    private function insertEveryPlacementRow(string $admnoColumn, string $typeColumn, string $idColumn, array $fields): void
+    {
+        $studentColumn = $this->sourceColumn('student');
+        $pieces = [
+            ['col' => 'student', 'expr' => $studentColumn !== null ? $this->sourceText('s', $studentColumn, 255) : '\'\''],
+            ['col' => 'admno', 'expr' => $this->sourceText('s', $admnoColumn, 64)],
+            ['col' => 'stud_role', 'expr' => '\'\''],
+            ['col' => 'year', 'expr' => '\'\''],
+            ['col' => 'source_id', 'expr' => 'LEFT(TRIM(CAST(s.`' . $idColumn . '` AS CHAR)), 64)'],
+        ];
+        foreach ($fields as $field) {
+            if ($field['dest'] === 'year') {
+                $pieces[3]['expr'] = $this->sourceText('s', $field['source'], $field['limit']);
+                continue;
+            }
+            $pieces[] = [
+                'col' => $field['dest'],
+                'expr' => $this->sourceText('s', $field['source'], $field['limit']),
+            ];
+        }
+        foreach ($this->placementDateCopies('s') as $date) {
+            $pieces[] = ['col' => $date['dest'], 'expr' => $date['expr']];
+        }
+        $cols = [];
+        $inner = [];
+        foreach ($pieces as $piece) {
+            $cols[] = '`' . $piece['col'] . '`';
+            $inner[] = $piece['expr'] . ' AS `' . $piece['col'] . '`';
+        }
+        $idKey = 'LEFT(TRIM(CAST(s.`' . $idColumn . '` AS CHAR)), 64)';
         $this->db->exec(
-            'UPDATE `student_placement_details`
-             SET `type` = \'placement\'
-             WHERE `type` = \'\' AND `employer` <> \'\''
+            'INSERT INTO `student_placement_details` (' . implode(', ', $cols) . ')
+             SELECT ' . implode(', ', $cols) . '
+             FROM (
+                SELECT ' . implode(', ', $inner) . '
+                FROM `student_placements` s
+                LEFT JOIN `student_placement_details` existing
+                  ON existing.`source_id` = ' . $idKey . '
+                WHERE ' . $this->placementTypeWhere('s', $typeColumn) . '
+                  AND ' . $idKey . ' <> \'\'
+                  AND existing.`source_id` IS NULL
+             ) incoming'
         );
-        $this->writeSyncSignature($signature);
+    }
+
+    private function applyDirectoryIdentityToCopies(): void
+    {
+        $directory = new StudentDirectoryTable();
+        if (!$directory->isReady()) {
+            return;
+        }
+        $this->db->exec(
+            'UPDATE `student_placement_details` d
+             INNER JOIN `student_details` sd
+               ON sd.`adm_no` <> \'\' AND sd.`adm_no` = d.`admno`
+             SET d.`stud_role` = CASE
+                    WHEN LOWER(sd.`stud_role`) LIKE \'%alumni%\' THEN \'alumni\'
+                    WHEN LOWER(sd.`stud_role`) LIKE \'%student%\' THEN \'student\'
+                    ELSE LOWER(LEFT(sd.`stud_role`, 16))
+                 END,
+                 d.`student` = IF(TRIM(sd.`student_name`) <> \'\', TRIM(sd.`student_name`), d.`student`)
+             WHERE d.`source_id` IS NOT NULL AND d.`source_id` <> \'\''
+        );
+    }
+
+    /**
+     * @param list<array{dest:string,source:string,limit:int}> $fields
+     */
+    private function overwriteCopiedPlacementRows(string $idColumn, array $fields): void
+    {
+        $sets = [];
+        foreach ($fields as $field) {
+            $sets[] = 'd.`' . $field['dest'] . '` = ' . $this->sourceText('s', $field['source'], $field['limit']);
+        }
+        foreach ($this->placementDateCopies('s') as $date) {
+            $sets[] = 'd.`' . $date['dest'] . '` = ' . $date['expr'];
+        }
+        if ($sets === []) {
+            return;
+        }
+        $this->db->exec(
+            'UPDATE `student_placement_details` d
+             INNER JOIN `student_placements` s
+               ON d.`source_id` = TRIM(CAST(s.`' . $idColumn . '` AS CHAR))
+             SET ' . implode(', ', $sets)
+        );
+    }
+
+    /**
+     * @return list<array{dest:string,expr:string}>
+     */
+    private function placementDateCopies(string $alias): array
+    {
+        $map = [
+            'updatedate' => ['updatedate', 'updated_at', 'updatedAt'],
+            'createdate' => ['createdate', 'createdat', 'created_at', 'createdAt'],
+        ];
+        $copies = [];
+        foreach ($map as $dest => $candidates) {
+            if (!$this->hasColumn($dest)) {
+                continue;
+            }
+            foreach ($candidates as $candidate) {
+                $source = $this->sourceColumn($candidate);
+                if ($source === null) {
+                    continue;
+                }
+                $raw = 'TRIM(CAST(' . $alias . '.`' . $source . '` AS CHAR))';
+                $copies[] = [
+                    'dest' => $dest,
+                    'expr' => 'CASE WHEN ' . $raw . " REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN CAST(" . $raw . ' AS DATETIME) ELSE NULL END',
+                ];
+                break;
+            }
+        }
+
+        return $copies;
     }
 
     private function insertMissingDirectoryRows(): int
