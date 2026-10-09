@@ -345,6 +345,16 @@
             text-overflow: ellipsis
           }
 
+          .registry-cell-cno-email {
+            white-space: normal;
+            line-height: 1.35
+          }
+
+          .registry-cell-cno-email .registry-email-line {
+            color: #495057;
+            font-size: .8125rem
+          }
+
           .registry-table tbody td {
             padding: .65rem .75rem;
             border: 1px solid #dee2e6;
@@ -570,8 +580,26 @@
 
     const SORT_ICON = '<i class="bi bi-chevron-expand registry-sort-icon" aria-hidden="true"></i>';
 
+    const GRID_COLUMN_KEYS = ['student', 'admno', 'stud_role', 'cno', 'year'];
+    const VIEW_TABLE_SKIP = new Set([
+      '_sl', 'student', 'admno', 'stud_role', 'year',
+      'courseid', 'branchid', 'status', 'createdBy', 'updatedBy',
+      'updatedate', 'fordvv', 'includedvv', 'createdate',
+    ]);
+
+    function gridColumns() {
+      const byKey = new Map(registryColumns.map((col) => [col.key, col]));
+      return GRID_COLUMN_KEYS.map((key) => {
+        const col = byKey.get(key) || { key, label: key, sortable: true, sortKey: key, payloadField: key };
+        if (key === 'cno') {
+          return Object.assign({}, col, { label: 'cno / email' });
+        }
+        return col;
+      });
+    }
+
     function registryColspan() {
-      return (registryColumns.length || 16) + 1;
+      return gridColumns().length + 1;
     }
 
     function columnGroup(col) {
@@ -591,9 +619,10 @@
 
     function renderRegistryTableHead() {
       const thead = document.getElementById('registryTableHead');
-      if (!thead || !registryColumns.length) return;
+      const columns = gridColumns();
+      if (!thead || !columns.length) return;
 
-      const labelRow = registryColumns.map((col) => {
+      const labelRow = columns.map((col) => {
         const label = esc(col.label || col.key || '');
         if (col.sortable === false) {
           return `<th>${label}</th>`;
@@ -1203,7 +1232,7 @@
         return;
       }
 
-      const cols = registryColumns.length ? registryColumns : [];
+      const cols = gridColumns();
       tbody.innerHTML = slice.map((r, i) => {
         const slIndex = start + i + 1;
         const sid = esc(r.studentId || '');
@@ -1219,6 +1248,15 @@
             : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`);
         const cells = cols.map((col) => {
           const cls = registryCellClass(col);
+          if (col.key === 'cno') {
+            const mobile = String(r.cno || r.phone || '').trim();
+            const email = String(r.email || '').trim();
+            const lines = [];
+            if (mobile) lines.push(`<div>${esc(mobile)}</div>`);
+            if (email) lines.push(`<div class="registry-email-line">${esc(email)}</div>`);
+            const inner = lines.length ? lines.join('') : '—';
+            return `<td class="${cls ? cls + ' ' : ''}registry-cell-cno-email">${inner}</td>`;
+          }
           const inner = registryCellValue(col, r, slIndex);
           if (col.key === 'student' || col.key === 'studentName') {
             return `<td${cls ? ` class="${cls}"` : ''}><span class="registry-student-name">${inner}</span></td>`;
@@ -1343,8 +1381,6 @@
       }
     }
 
-    const VIEW_IDENTITY_KEYS = ['student', 'admno', 'stud_role', 'email', 'year', 'courseid', 'branchid'];
-
     function viewPlacementColumns() {
       const source = registryColumns.length
         ? registryColumns
@@ -1353,7 +1389,7 @@
           'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy', 'updatedBy',
           'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
         ].map((key) => ({ key, label: key, payloadField: key }));
-      return source.filter((col) => (col.key || '') !== '_sl');
+      return source.filter((col) => !VIEW_TABLE_SKIP.has(col.key || ''));
     }
 
     function openViewPlacement(rowIndex) {
@@ -1363,19 +1399,19 @@
         return;
       }
       const columns = viewPlacementColumns();
-      const byKey = new Map(columns.map((col) => [col.key, col]));
-      const name = String(row.student || row.studentName || 'Student').trim();
+      const name = String(row.student || row.studentName || 'Student').trim().toUpperCase();
+      const admno = String(row.admno || row.admissionNo || row.registerNumber || '').trim();
+      const role = String(row.stud_role || row.studRole || '').trim();
+      const year = String(row.year || row.classBatch || row.batch || '').trim();
+      const bracket = [admno, role].filter(Boolean).join(', ');
+      const heading = bracket ? `${name} (${bracket})` : (name || 'Student details');
       const title = document.getElementById('viewPlacementTitle');
-      if (title) title.textContent = name || 'Student details';
+      if (title) title.textContent = heading;
       const identity = document.getElementById('viewPlacementIdentity');
       if (identity) {
-        identity.innerHTML = VIEW_IDENTITY_KEYS.map((key) => {
-          const col = byKey.get(key) || { key, label: key, payloadField: key };
-          return `<div class="col-md-6 col-lg-4"><div class="view-field-label">${esc(col.label || key)}</div><div class="view-field-value">${registryCellValue(col, row, 0)}</div></div>`;
-        }).join('');
+        identity.innerHTML = `<div class="col-md-4"><div class="view-field-label">year</div><div class="view-field-value">${esc(year || '—')}</div></div>`;
       }
-      const skip = new Set(VIEW_IDENTITY_KEYS);
-      const detailCols = columns.filter((col) => !skip.has(col.key || ''));
+      const detailCols = columns;
       const head = document.getElementById('viewPlacementHead');
       const body = document.getElementById('viewPlacementBody');
       if (head) {
