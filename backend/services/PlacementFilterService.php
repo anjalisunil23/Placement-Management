@@ -18,6 +18,9 @@ final class PlacementFilterService
     /** @var array<string, list<array{stud_course:string,stud_branch:string,stud_class:string}>> */
     private static array $scopedRowsCache = [];
 
+    /** @var array<string, list<string>> */
+    private static array $batchDropdownCache = [];
+
     public static function clearScopedRowsCache(): void
     {
         self::$scopedRowsCache = [];
@@ -403,8 +406,26 @@ final class PlacementFilterService
         $branch = trim($branch);
         $program = trim($program);
 
+        if (!empty($ctx['placementStaffRegistryFilters']) && $program !== '') {
+            $cacheKey = md5(implode('|', [
+                (string) ($ctx['departmentId'] ?? ''),
+                $program,
+                $branch,
+                $finalYearOnly ? '1' : '0',
+                $this->placementStudRole($ctx),
+            ]));
+            if (isset(self::$batchDropdownCache[$cacheKey])) {
+                return self::$batchDropdownCache[$cacheKey];
+            }
+        }
+
         if ($this->registryAesDepartmentActive($ctx)) {
-            return $this->fetchBatchOptionsFromAes($ctx, $program, $branch, $finalYearOnly);
+            $result = $this->fetchBatchOptionsFromAes($ctx, $program, $branch, $finalYearOnly);
+            if (!empty($ctx['placementStaffRegistryFilters']) && $program !== '') {
+                self::$batchDropdownCache[$cacheKey] = $result;
+            }
+
+            return $result;
         }
 
         if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
@@ -820,6 +841,30 @@ final class PlacementFilterService
     }
 
     /**
+     * @return list<string>
+     */
+    private function collectClassBatchesForProgramme(
+        AesApiService $api,
+        string $deptAesId,
+        string $program,
+        string $branch
+    ): array {
+        $collected = [];
+        foreach ($this->resolveProgrammeList($program) as $prog) {
+            try {
+                $collected = array_merge(
+                    $collected,
+                    $api->fetchPlacementClassBatches($deptAesId, $prog, $branch)
+                );
+            } catch (\Throwable) {
+                // Try other programme variants.
+            }
+        }
+
+        return $collected;
+    }
+
+    /**
      * AES stud_deptcode for batch/stud-info calls — child programme dept when selected.
      *
      * @param array<string, mixed> $ctx
@@ -920,44 +965,40 @@ final class PlacementFilterService
 
         $api = new AesApiService();
         $branch = trim($branch);
-        $branchCandidates = $branch !== '' ? [$branch] : [];
-        if ($branchCandidates === []) {
-            try {
-                foreach ($this->resolveProgrammeList($program) as $prog) {
-                    $branchCandidates = array_merge(
-                        $branchCandidates,
-                        $api->fetchPlacementBranches($deptAesId, $prog)
-                    );
-                    if ($deptAesId !== $parentAesId && $parentAesId !== '') {
-                        $branchCandidates = array_merge(
-                            $branchCandidates,
-                            $api->fetchPlacementBranches($parentAesId, $prog)
-                        );
-                    }
-                }
-                $branchCandidates = array_values(array_unique(array_filter(array_map(
-                    static fn (string $v): string => trim($v),
-                    $branchCandidates
-                ), static fn (string $v): bool => $v !== '')));
-            } catch (\Throwable) {
-                $branchCandidates = [];
-            }
-        }
-        if ($branchCandidates === []) {
-            $branchCandidates = [''];
+
+        $collected = $this->collectClassBatchesForProgramme($api, $deptAesId, $program, $branch);
+        if ($collected === [] && $deptAesId !== $parentAesId && $parentAesId !== '') {
+            $collected = $this->collectClassBatchesForProgramme($api, $parentAesId, $program, $branch);
         }
 
-        $collected = [];
-        foreach ($this->resolveProgrammeList($program) as $prog) {
-            foreach ($branchCandidates as $br) {
-                $br = trim((string) $br);
+        if ($collected === []) {
+            $branchCandidates = $branch !== '' ? [$branch] : [];
+            if ($branchCandidates === []) {
                 try {
+                    foreach ($this->resolveProgrammeList($program) as $prog) {
+                        $branchCandidates = array_merge(
+                            $branchCandidates,
+                            $api->fetchPlacementBranches($deptAesId, $prog)
+                        );
+                    }
+                    $branchCandidates = array_values(array_unique(array_filter(array_map(
+                        static fn (string $v): string => trim($v),
+                        $branchCandidates
+                    ), static fn (string $v): bool => $v !== '')));
+                } catch (\Throwable) {
+                    $branchCandidates = [];
+                }
+            }
+            if ($branchCandidates === []) {
+                $branchCandidates = [''];
+            }
+
+            foreach ($this->resolveProgrammeList($program) as $prog) {
+                foreach ($branchCandidates as $br) {
                     $collected = array_merge(
                         $collected,
-                        $api->fetchPlacementClassBatches($deptAesId, $prog, $br)
+                        $this->collectClassBatchesForProgramme($api, $deptAesId, $prog, trim((string) $br))
                     );
-                } catch (\Throwable) {
-                    // Try other branch / programme variants.
                 }
             }
         }
