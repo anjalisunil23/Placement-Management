@@ -83,7 +83,10 @@ final class PlacementFilterService
     public function fetchProgramOptions(array $ctx): array
     {
         if ($this->registryAesDepartmentActive($ctx)) {
-            return $this->fetchProgramOptionsFromAes($ctx);
+            $aes = $this->fetchProgramOptionsFromAes($ctx);
+            if ($aes !== []) {
+                return $aes;
+            }
         }
 
         if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
@@ -652,26 +655,16 @@ final class PlacementFilterService
         try {
             $courses = (new AesApiService())->fetchPlacementCourses($deptAesId);
         } catch (\Throwable) {
-            return [];
+            $courses = [];
         }
 
-        $aesApi = new AesApiService();
         $labels = [];
         foreach ($courses as $raw) {
             $raw = trim((string) $raw);
             if ($raw === '') {
                 continue;
             }
-            $code = $aesApi->isCourseLevelShort($raw)
-                ? strtoupper(preg_replace('/[^A-Z0-9]/', '', $raw) ?? '')
-                : DepartmentProgrammeCatalog::resolveProgrammeCode($raw);
-            if ($code === '') {
-                $code = $raw;
-            }
-            if ($this->departmentProgrammeCodesForFilterScope($ctx) !== null
-                && !$this->programmeMatchesDepartmentFilterScope($code, $ctx)) {
-                continue;
-            }
+            // stud_deptcode already scopes AES; do not re-filter by local catalog (drops valid labels).
             $labels[] = $raw;
         }
 

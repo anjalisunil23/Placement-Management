@@ -3226,6 +3226,25 @@ final class AesApiService
             }
         }
 
+        try {
+            $fromStudInfo = $this->fetchStudInfoFieldLabels(
+                ['stud_deptcode' => $deptAesId],
+                'stud_course'
+            );
+            if ($fromStudInfo !== []) {
+                return $fromStudInfo;
+            }
+            $fromStudInfo = $this->fetchStudInfoFieldLabels(
+                ['stud_deptcode' => $deptAesId],
+                'stud_cource_short'
+            );
+            if ($fromStudInfo !== []) {
+                return $fromStudInfo;
+            }
+        } catch (\Throwable) {
+            // Caller may fall back to local registry options.
+        }
+
         return [];
     }
 
