@@ -97,6 +97,42 @@ class StudentDirectoryTable
     }
 
     /**
+     * Every studying student and alumni row, for the placements name list.
+     *
+     * @return list<array{name:string,admno:string,department:string,studRole:string,batch:string,action:string}>
+     */
+    public function listAll(int $limit = 20000): array
+    {
+        if (!$this->isReady()) {
+            return [];
+        }
+        $limit = max(1, min($limit, 30000));
+        $statement = $this->db->query(
+            'SELECT student_name, adm_no, department, stud_role, batch, action
+             FROM `student_details`
+             ORDER BY student_name ASC, id ASC
+             LIMIT ' . $limit
+        );
+        $rows = [];
+        while ($row = $statement->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $role = strtolower(trim((string) ($row['stud_role'] ?? '')));
+            $rows[] = [
+                'name' => trim((string) ($row['student_name'] ?? '')),
+                'admno' => trim((string) ($row['adm_no'] ?? '')),
+                'department' => trim((string) ($row['department'] ?? '')),
+                'studRole' => $role === 'alumni' ? 'alumni' : 'student',
+                'batch' => trim((string) ($row['batch'] ?? '')),
+                'action' => trim((string) ($row['action'] ?? '')),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function listByRole(string $role): array

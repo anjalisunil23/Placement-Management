@@ -21,7 +21,7 @@
         <div class="page-header d-flex flex-wrap align-items-start justify-content-between gap-2">
           <div class="flex-grow-1 min-w-0">
             <h1 class="page-title">Placements &amp; Higher Education</h1>
-            <p class="text-muted-2 small mb-0 mt-1">The grid reads <code>student_placement_details</code>. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
+            <p class="text-muted-2 small mb-0 mt-1">Names, admission numbers, and batch come from <code>student_details</code>. Placement columns come from <code>student_placement_details</code> when the admission number matches. Only the class teacher / co-class teacher can add or edit entries for their class.</p>
           </div>
         </div>
 
@@ -462,9 +462,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261008details"></script>
+  <script src="js/staff-api.js?v=20261008names"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261008details"></script>
+  <script src="js/officer-api.js?v=20261008names"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -885,7 +885,7 @@
       const q = (document.getElementById('tableSearch')?.value || '').trim().toLowerCase();
       filteredRows = !q ? allRows.slice() : allRows.filter(r => {
         const hay = [
-          r.student, r.studentName, r.admno, r.registerNumber, r.admissionNo,
+          r.student, r.studentName, r.admno, r.registerNumber, r.admissionNo, r.department,
           r.year, r.classBatch, r.batch, r.courseid, r.courseId, r.branchid, r.branchId,
           r.cno, r.phone, r.email,
           r.employer, r.company, r.empcno, r.employerContact, r.empadr, r.address,

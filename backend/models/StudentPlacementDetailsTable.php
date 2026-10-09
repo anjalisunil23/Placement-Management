@@ -160,7 +160,7 @@ class StudentPlacementDetailsTable
         if (!$this->ensure()) {
             return [];
         }
-        $limit = max(1, min($limit, 10000));
+        $limit = max(1, min($limit, 20000));
         $statement = $this->db->query(
             'SELECT `id`, `student`, `admno`, `cno`, `email`, `year`, `courseid`, `branchid`,
                     `employer`, `empcno`, `empadr`, `payscale`, `status`, `createdBy`, `updatedBy`,
@@ -177,6 +177,25 @@ class StudentPlacementDetailsTable
         }
 
         return $rows;
+    }
+
+    /**
+     * Latest placement row for each admission number.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function mapLatestByAdmno(): array
+    {
+        $map = [];
+        foreach ($this->listRows(20000) as $row) {
+            $admno = strtoupper(trim((string) ($row['admno'] ?? '')));
+            if ($admno === '' || isset($map[$admno])) {
+                continue;
+            }
+            $map[$admno] = $row;
+        }
+
+        return $map;
     }
 
     public function count(): int

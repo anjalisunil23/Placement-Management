@@ -6,6 +6,7 @@ namespace PMS\Services;
 
 use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
+use PMS\Models\StudentDirectoryTable;
 use PMS\Models\StudentModel;
 use PMS\Models\StudentPlacementModel;
 use PMS\Utils\DocumentHelper;
@@ -78,7 +79,7 @@ final class StaffPlacementRegistryService
 
     public function list(array $staffCtx, array $filters = []): array
     {
-        @set_time_limit(max(60, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 90)));
+        @set_time_limit(max(120, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 120)));
         if (empty($staffCtx['isAdmin'])) {
             StaffContext::requireDepartmentScope($staffCtx);
         }
@@ -100,7 +101,7 @@ final class StaffPlacementRegistryService
             $staffCtx,
             $listCtx,
             $filters,
-            $this->listFromPlacementDetails($details)
+            $this->listFromStudentDirectory($details)
         );
     }
 
@@ -684,6 +685,78 @@ final class StaffPlacementRegistryService
      * @param array<string, string> $filters
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * One row per student_details person. Name, admission number, and batch come from that
+     * directory. Placement columns are filled when student_placement_details has the same admno.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function listFromStudentDirectory(\PMS\Models\StudentPlacementDetailsTable $details): array
+    {
+        $directory = new StudentDirectoryTable();
+        $people = $directory->listAll(20000);
+        if ($people === []) {
+            return $this->listFromPlacementDetails($details);
+        }
+        $placements = $details->mapLatestByAdmno();
+        $rows = [];
+        foreach ($people as $person) {
+            $admno = $person['admno'];
+            $placement = $admno !== '' ? ($placements[strtoupper($admno)] ?? []) : [];
+            $placementYear = trim((string) ($placement['year'] ?? ''));
+            $year = $person['batch'] !== '' ? $person['batch'] : $placementYear;
+            $student = $person['name'];
+            $studentId = $admno !== '' ? $admno : ($person['action'] !== '' ? $person['action'] : $student);
+            $employer = trim((string) ($placement['employer'] ?? ''));
+            $type = trim((string) ($placement['type'] ?? ''));
+            $status = trim((string) ($placement['status'] ?? ''));
+            $rows[] = [
+                'id' => $studentId,
+                'studentId' => $studentId,
+                'student' => $student,
+                'studentName' => $student,
+                'admno' => $admno,
+                'admissionNo' => $admno,
+                'registerNumber' => $admno,
+                'department' => $person['department'],
+                'studRole' => $person['studRole'],
+                'cno' => trim((string) ($placement['cno'] ?? '')),
+                'phone' => trim((string) ($placement['cno'] ?? '')),
+                'email' => trim((string) ($placement['email'] ?? '')),
+                'year' => $year,
+                'classBatch' => $year,
+                'batch' => $year,
+                'courseid' => trim((string) ($placement['courseid'] ?? '')),
+                'courseId' => trim((string) ($placement['courseid'] ?? '')),
+                'branchid' => trim((string) ($placement['branchid'] ?? '')),
+                'branchId' => trim((string) ($placement['branchid'] ?? '')),
+                'employer' => $employer,
+                'company' => $employer,
+                'empcno' => trim((string) ($placement['empcno'] ?? '')),
+                'employerContact' => trim((string) ($placement['empcno'] ?? '')),
+                'empadr' => trim((string) ($placement['empadr'] ?? '')),
+                'address' => trim((string) ($placement['empadr'] ?? '')),
+                'payscale' => trim((string) ($placement['payscale'] ?? '')),
+                'package' => trim((string) ($placement['payscale'] ?? '')),
+                'status' => $status,
+                'placementStatus' => $status,
+                'createdBy' => trim((string) ($placement['createdBy'] ?? '')),
+                'updatedBy' => trim((string) ($placement['updatedBy'] ?? '')),
+                'updatedate' => trim((string) ($placement['updatedate'] ?? '')),
+                'updatedAt' => trim((string) ($placement['updatedate'] ?? '')),
+                'fordvv' => trim((string) ($placement['fordvv'] ?? '')),
+                'type' => $type,
+                'recordType' => $type,
+                'includedvv' => trim((string) ($placement['includedvv'] ?? '')),
+                'createdat' => trim((string) ($placement['createdat'] ?? '')),
+                'createdAt' => trim((string) ($placement['createdat'] ?? '')),
+                'source' => 'student_details',
+            ];
+        }
+
+        return $rows;
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -2296,6 +2369,7 @@ final class StaffPlacementRegistryService
                 (string) ($row['payscale'] ?? ''),
                 (string) ($row['status'] ?? ''),
                 (string) ($row['type'] ?? ''),
+                (string) ($row['department'] ?? ''),
             ]));
 
             return str_contains($hay, $q);
