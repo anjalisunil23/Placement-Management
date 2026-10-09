@@ -109,7 +109,18 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
               <div class="modal-body">
-                <div class="row g-3" id="viewPlacementBody"></div>
+                <div class="row g-2 mb-3" id="viewPlacementIdentity"></div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered align-middle mb-0 view-details-table">
+                    <thead>
+                      <tr>
+                        <th>Field</th>
+                        <th>Value</th>
+                      </tr>
+                    </thead>
+                    <tbody id="viewPlacementBody"></tbody>
+                  </table>
+                </div>
               </div>
               <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
@@ -431,6 +442,15 @@
           .view-field-value {
             font-size: .95rem;
             color: #212529;
+            word-break: break-word
+          }
+
+          .view-details-table th {
+            background: #f1f3f5;
+            width: 11rem
+          }
+
+          .view-details-table td {
             word-break: break-word
           }
 
@@ -1254,15 +1274,17 @@
       }
     }
 
+    const VIEW_IDENTITY_KEYS = ['student', 'admno', 'stud_role', 'email', 'year', 'courseid', 'branchid'];
+
     function viewPlacementColumns() {
-      if (registryColumns.length) {
-        return registryColumns.filter((col) => (col.key || '') !== '_sl');
-      }
-      return [
-        'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
-        'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy', 'updatedBy',
-        'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
-      ].map((key) => ({ key, label: key, payloadField: key }));
+      const source = registryColumns.length
+        ? registryColumns
+        : [
+          'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
+          'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy', 'updatedBy',
+          'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
+        ].map((key) => ({ key, label: key, payloadField: key }));
+      return source.filter((col) => (col.key || '') !== '_sl');
     }
 
     function openViewPlacement(rowIndex) {
@@ -1271,16 +1293,25 @@
         toast('Record not found.', 'warn');
         return;
       }
+      const columns = viewPlacementColumns();
+      const byKey = new Map(columns.map((col) => [col.key, col]));
       const name = String(row.student || row.studentName || 'Student').trim();
       const title = document.getElementById('viewPlacementTitle');
       if (title) title.textContent = name || 'Student details';
+      const identity = document.getElementById('viewPlacementIdentity');
+      if (identity) {
+        identity.innerHTML = VIEW_IDENTITY_KEYS.map((key) => {
+          const col = byKey.get(key) || { key, label: key, payloadField: key };
+          return `<div class="col-md-6 col-lg-4"><div class="view-field-label">${esc(col.label || key)}</div><div class="view-field-value">${registryCellValue(col, row, 0)}</div></div>`;
+        }).join('');
+      }
       const body = document.getElementById('viewPlacementBody');
       if (body) {
-        body.innerHTML = viewPlacementColumns().map((col) => {
-          const label = esc(col.label || col.key || '');
-          const value = registryCellValue(col, row, 0);
-          return `<div class="col-md-6"><div class="view-field-label">${label}</div><div class="view-field-value">${value}</div></div>`;
-        }).join('');
+        const skip = new Set(VIEW_IDENTITY_KEYS);
+        const detailRows = columns.filter((col) => !skip.has(col.key || ''));
+        body.innerHTML = detailRows.length
+          ? detailRows.map((col) => `<tr><th>${esc(col.label || col.key || '')}</th><td>${registryCellValue(col, row, 0)}</td></tr>`).join('')
+          : '<tr><td colspan="2" class="text-muted-2">No other details for this student.</td></tr>';
       }
       bootstrap.Modal.getOrCreateInstance(document.getElementById('viewPlacementModal')).show();
     }
