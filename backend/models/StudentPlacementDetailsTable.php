@@ -269,7 +269,7 @@ class StudentPlacementDetailsTable
     /**
      * One student_placement_details row per student_details person.
      * Placement columns that are still empty are filled from student_placements
-     * when the admission number matches. Name and stud_role stay from student_details.
+     * when the admission number matches. Student name, role, and batch stay from student_details.
      */
     public function syncDirectoryWithAlumniPlacements(): int
     {
@@ -292,8 +292,8 @@ class StudentPlacementDetailsTable
             return $directoryCount;
         }
 
-        $directoryPart = strstr($signature, '|alumni:', true);
-        $storedPart = strstr($this->readSyncSignature(), '|alumni:', true);
+        $directoryPart = strstr($signature, '|src:', true);
+        $storedPart = strstr($this->readSyncSignature(), '|src:', true);
         $rebuildDirectory = $this->count() !== $directoryCount || $directoryPart === false || $directoryPart !== $storedPart;
         if ($rebuildDirectory) {
             $this->replaceRowsFromDirectory();
@@ -302,13 +302,9 @@ class StudentPlacementDetailsTable
         }
         $alumniSeen = 0;
         if ($this->sourceTableExists()) {
-            $alumniSeen = $this->overlayAlumniPlacementsByAdmno();
+            $alumniSeen = $this->overlayNeededPlacementColumns();
         }
-        $alumniCount = 0;
-        if (preg_match('/\|alumni:(\d+):/', $signature, $match) === 1) {
-            $alumniCount = (int) $match[1];
-        }
-        if (!($alumniCount > 0 && $alumniSeen === 0)) {
+        if ($alumniSeen > 0 || !$this->sourceTableExists()) {
             $this->writeSyncSignature($signature);
         }
         $this->refreshStudentNamesFromDirectory();
@@ -486,8 +482,8 @@ class StudentPlacementDetailsTable
 
         $roster = StudentPlacementModel::rosterRowFromDocument($payload);
         $placement = is_array($roster['placement'] ?? null) ? $roster['placement'] : [];
-        $type = trim((string) ($placement['recordType'] ?? $placement['type'] ?? ''));
-        $employer = trim((string) ($placement['company'] ?? $placement['employer'] ?? ''));
+        $employer = $this->firstText($payload, $placement, ['employer', 'company', 'companyName']);
+        $type = $this->firstText($payload, $placement, ['type', 'recordType']);
         if ($type === '' && $employer !== '') {
             $type = 'Placement';
         }
@@ -496,22 +492,22 @@ class StudentPlacementDetailsTable
             'student' => $this->clip((string) ($roster['studentName'] ?? ''), 255),
             'admno' => $this->clip((string) ($roster['admno'] ?? $roster['registerNumber'] ?? ''), 64),
             'stud_role' => $this->alumniRoleFromPayload($payload, (string) ($roster['studRole'] ?? '')),
-            'cno' => $this->clip((string) ($roster['phone'] ?? ''), 64),
-            'email' => $this->clip((string) ($roster['email'] ?? ''), 255),
+            'cno' => $this->clip($this->firstText($payload, $placement, ['cno', 'phone', 'mobile', 'stud_mobile', 'contactPhone']) ?: (string) ($roster['phone'] ?? ''), 64),
+            'email' => $this->clip($this->firstText($payload, $placement, ['email', 'collegeEmail', 'personalEmail', 'stud_email']) ?: (string) ($roster['email'] ?? ''), 255),
             'year' => $this->clip((string) ($roster['classBatch'] ?? ''), 64),
-            'courseid' => $this->clip((string) ($roster['courseId'] ?? ''), 64),
-            'branchid' => $this->clip((string) ($roster['branchId'] ?? ''), 64),
+            'courseid' => $this->clip($this->firstText($payload, $placement, ['courseid', 'courseId', 'course_id', 'stud_courseid']) ?: (string) ($roster['courseId'] ?? ''), 64),
+            'branchid' => $this->clip($this->firstText($payload, $placement, ['branchid', 'branchId', 'branch_id', 'stud_branchid']) ?: (string) ($roster['branchId'] ?? ''), 64),
             'employer' => $this->clip($employer, 255),
-            'empcno' => $this->clip((string) ($placement['employerContact'] ?? $placement['empcno'] ?? $placement['empco'] ?? ''), 128),
-            'empadr' => $this->clip((string) ($placement['address'] ?? $placement['empadr'] ?? ''), 512),
-            'payscale' => $this->clip((string) ($placement['package'] ?? $placement['payscale'] ?? ''), 128),
-            'status' => $this->clip((string) ($placement['placementStatus'] ?? $placement['status'] ?? ''), 64),
-            'createdBy' => $this->clip((string) ($roster['createdBy'] ?? $placement['createdBy'] ?? ''), 128),
-            'updatedBy' => $this->clip((string) ($roster['updatedBy'] ?? $placement['updatedBy'] ?? ''), 128),
+            'empcno' => $this->clip($this->firstText($payload, $placement, ['empcno', 'empco', 'employerContact', 'contact', 'emp_contact']), 128),
+            'empadr' => $this->clip($this->firstText($payload, $placement, ['empadr', 'address', 'employerAddress']), 512),
+            'payscale' => $this->clip($this->firstText($payload, $placement, ['payscale', 'package', 'salary']), 128),
+            'status' => $this->clip($this->firstText($payload, $placement, ['status', 'placementStatus']), 64),
+            'createdBy' => $this->clip($this->firstText($payload, $placement, ['createdBy']) ?: (string) ($roster['createdBy'] ?? ''), 128),
+            'updatedBy' => $this->clip($this->firstText($payload, $placement, ['updatedBy']) ?: (string) ($roster['updatedBy'] ?? ''), 128),
             'updatedate' => $this->sqlDateTime($roster['updatedAt'] ?? null),
-            'fordvv' => $this->clip((string) ($placement['fordvv'] ?? ''), 16),
+            'fordvv' => $this->clip($this->firstText($payload, $placement, ['fordvv']), 16),
             'type' => $this->clip($type, 64),
-            'includedvv' => $this->clip((string) ($placement['includedvv'] ?? ''), 16),
+            'includedvv' => $this->clip($this->firstText($payload, $placement, ['includedvv']), 16),
             'createdate' => $this->sqlDateTime($roster['createdAt'] ?? null),
         ];
     }
@@ -742,27 +738,10 @@ class StudentPlacementDetailsTable
         } catch (\Throwable) {
             $synced = '';
         }
-        $alumniCount = 0;
-        $alumniTouched = '';
-        if ($this->sourceTableExists()) {
-            $alumniCount = $this->countAlumniSource();
-            if ($this->sourceHasColumn('updated_at')) {
-                try {
-                    $sql = 'SELECT MAX(`updated_at`) FROM `student_placements`';
-                    $where = $this->alumniSourceWhere();
-                    if ($alumniCount > 0 && $where !== '') {
-                        $sql .= ' WHERE ' . $where;
-                    }
-                    $alumniTouched = (string) $this->db->query($sql)->fetchColumn();
-                } catch (\Throwable) {
-                    $alumniTouched = '';
-                }
-            }
-        }
 
         return 'dir:' . $directoryCount . ':' . ($this->sqlDateTime($synced) ?? $synced)
-            . '|alumni:' . $alumniCount . ':' . ($this->sqlDateTime($alumniTouched) ?? $alumniTouched)
-            . '|fill:2';
+            . '|src:' . $this->placementSourceSignature()
+            . '|cols:2';
     }
 
     private function replaceRowsFromDirectory(): void
@@ -817,32 +796,26 @@ class StudentPlacementDetailsTable
         );
     }
 
-    private function overlayAlumniPlacementsByAdmno(): int
+    private function overlayNeededPlacementColumns(): int
     {
         $columns = $this->sourceColumns();
         if ($columns === []) {
             return 0;
         }
         $select = implode(', ', array_map(static fn (string $column): string => '`' . $column . '`', $columns));
+        $textFields = [
+            'cno', 'email', 'courseid', 'branchid', 'employer', 'empcno', 'empadr',
+            'payscale', 'status', 'createdBy', 'updatedBy', 'fordvv', 'type', 'includedvv',
+        ];
+        $assignments = [];
+        foreach ($textFields as $field) {
+            $assignments[] = '`' . $field . '` = IF(`' . $field . '` = \'\' AND ? <> \'\', ?, `' . $field . '`)';
+        }
+        $assignments[] = '`updatedate` = IF(`updatedate` IS NULL AND ? IS NOT NULL, ?, `updatedate`)';
+        $assignments[] = '`createdate` = IF(`createdate` IS NULL AND ? IS NOT NULL, ?, `createdate`)';
         $update = $this->db->prepare(
-            'UPDATE `student_placement_details` SET
-                `cno` = IF(`cno` = \'\' AND ? <> \'\', ?, `cno`),
-                `email` = IF(`email` = \'\' AND ? <> \'\', ?, `email`),
-                `courseid` = IF(`courseid` = \'\' AND ? <> \'\', ?, `courseid`),
-                `branchid` = IF(`branchid` = \'\' AND ? <> \'\', ?, `branchid`),
-                `employer` = IF(`employer` = \'\' AND ? <> \'\', ?, `employer`),
-                `empcno` = IF(`empcno` = \'\' AND ? <> \'\', ?, `empcno`),
-                `empadr` = IF(`empadr` = \'\' AND ? <> \'\', ?, `empadr`),
-                `payscale` = IF(`payscale` = \'\' AND ? <> \'\', ?, `payscale`),
-                `status` = IF(`status` = \'\' AND ? <> \'\', ?, `status`),
-                `createdBy` = IF(`createdBy` = \'\' AND ? <> \'\', ?, `createdBy`),
-                `updatedBy` = IF(`updatedBy` = \'\' AND ? <> \'\', ?, `updatedBy`),
-                `updatedate` = IF(`updatedate` IS NULL AND ? IS NOT NULL, ?, `updatedate`),
-                `fordvv` = IF(`fordvv` = \'\' AND ? <> \'\', ?, `fordvv`),
-                `type` = IF(`type` = \'\' AND ? <> \'\', ?, `type`),
-                `includedvv` = IF(`includedvv` = \'\' AND ? <> \'\', ?, `includedvv`),
-                `createdate` = IF(`createdate` IS NULL AND ? IS NOT NULL, ?, `createdate`)
-             WHERE `admno` <> \'\' AND `admno` = ?'
+            'UPDATE `student_placement_details` SET ' . implode(', ', $assignments)
+            . ' WHERE `admno` <> \'\' AND `admno` = ?'
         );
         $order = '';
         if ($this->sourceHasColumn('updated_at')) {
@@ -867,34 +840,35 @@ class StudentPlacementDetailsTable
                 if (!is_array($source)) {
                     continue;
                 }
+                $payload = $this->payloadFromSource($source);
                 $row = $this->detailRowFromSource($source);
-                $admnos = $this->matchAdmnos($source, $row);
                 unset($source);
-                if ($admnos === [] || !$this->rowHasPlacementData($row)) {
+                $needed = false;
+                foreach ($textFields as $field) {
+                    if (trim((string) ($row[$field] ?? '')) !== '') {
+                        $needed = true;
+                        break;
+                    }
+                }
+                if (!$needed) {
+                    unset($payload, $row);
                     continue;
                 }
                 $seen++;
-                $values = [
-                    $row['cno'], $row['cno'],
-                    $row['email'], $row['email'],
-                    $row['courseid'], $row['courseid'],
-                    $row['branchid'], $row['branchid'],
-                    $row['employer'], $row['employer'],
-                    $row['empcno'], $row['empcno'],
-                    $row['empadr'], $row['empadr'],
-                    $row['payscale'], $row['payscale'],
-                    $row['status'], $row['status'],
-                    $row['createdBy'], $row['createdBy'],
-                    $row['updatedBy'], $row['updatedBy'],
-                    $row['updatedate'], $row['updatedate'],
-                    $row['fordvv'], $row['fordvv'],
-                    $row['type'], $row['type'],
-                    $row['includedvv'], $row['includedvv'],
-                    $row['createdate'], $row['createdate'],
-                ];
-                foreach ($admnos as $admno) {
-                    $update->execute([...$values, $admno]);
+                $params = [];
+                foreach ($textFields as $field) {
+                    $value = (string) ($row[$field] ?? '');
+                    $params[] = $value;
+                    $params[] = $value;
                 }
+                $params[] = $row['updatedate'];
+                $params[] = $row['updatedate'];
+                $params[] = $row['createdate'];
+                $params[] = $row['createdate'];
+                foreach ($this->admissionKeys($payload, (string) ($row['admno'] ?? '')) as $admno) {
+                    $update->execute([...$params, $admno]);
+                }
+                unset($payload, $row);
             }
             $statement->closeCursor();
             unset($statement);
@@ -908,49 +882,83 @@ class StudentPlacementDetailsTable
     }
 
     /**
-     * @param array<string, mixed> $source
-     * @param array<string, string|null> $row
+     * @param array<string, mixed> $payload
      * @return list<string>
      */
-    private function matchAdmnos(array $source, array $row): array
+    private function admissionKeys(array $payload, string $admno): array
     {
-        $payload = $this->payloadFromSource($source);
-        $bags = [$payload];
-        foreach (['roster', 'personal', 'placement'] as $nest) {
-            if (is_array($payload[$nest] ?? null)) {
-                $bags[] = $payload[$nest];
+        $keys = [];
+        $add = static function (mixed $value) use (&$keys): void {
+            $value = trim((string) $value);
+            if ($value === '') {
+                return;
             }
+            $keys[strtoupper($value)] = $value;
+        };
+        $add($admno);
+        foreach (['admno', 'admissionNo', 'stud_admno', 'registerNumber', 'registerno'] as $key) {
+            $add($payload[$key] ?? '');
         }
-        $keys = [(string) ($row['admno'] ?? '')];
-        foreach ($bags as $bag) {
-            foreach (['admno', 'stud_admno', 'admissionNo', 'admission_no', 'registerNumber', 'registerno'] as $name) {
-                $keys[] = trim((string) ($bag[$name] ?? ''));
-            }
-        }
-        $out = [];
-        foreach ($keys as $key) {
-            $key = $this->clip($key, 64);
-            if ($key === '' || isset($out[$key])) {
+        foreach (['placement', 'roster', 'personal'] as $nested) {
+            if (!is_array($payload[$nested] ?? null)) {
                 continue;
             }
-            $out[$key] = $key;
+            foreach (['admno', 'admissionNo', 'stud_admno', 'registerNumber', 'registerno'] as $key) {
+                $add($payload[$nested][$key] ?? '');
+            }
         }
 
-        return array_values($out);
+        return array_values($keys);
     }
 
     /**
-     * @param array<string, string|null> $row
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $placement
+     * @param list<string> $keys
      */
-    private function rowHasPlacementData(array $row): bool
+    private function firstText(array $payload, array $placement, array $keys): string
     {
-        foreach (['cno', 'email', 'courseid', 'branchid', 'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy', 'updatedBy', 'fordvv', 'type', 'includedvv'] as $field) {
-            if (trim((string) ($row[$field] ?? '')) !== '') {
-                return true;
+        $sources = [$payload, $placement];
+        foreach (['placement', 'selfPlacement', 'roster'] as $nested) {
+            if (is_array($payload[$nested] ?? null)) {
+                $sources[] = $payload[$nested];
+            }
+            if (is_array($placement[$nested] ?? null)) {
+                $sources[] = $placement[$nested];
+            }
+        }
+        foreach ($sources as $source) {
+            foreach ($keys as $key) {
+                $value = $source[$key] ?? '';
+                if (is_array($value) || is_object($value)) {
+                    continue;
+                }
+                $value = trim((string) $value);
+                if ($value !== '') {
+                    return $value;
+                }
             }
         }
 
-        return ($row['updatedate'] ?? null) !== null || ($row['createdate'] ?? null) !== null;
+        return '';
+    }
+
+    private function placementSourceSignature(): string
+    {
+        if (!$this->sourceTableExists()) {
+            return '0:';
+        }
+        try {
+            $count = (int) $this->db->query('SELECT COUNT(*) FROM `student_placements`')->fetchColumn();
+            $touched = '';
+            if ($this->sourceHasColumn('updated_at')) {
+                $touched = (string) $this->db->query('SELECT MAX(`updated_at`) FROM `student_placements`')->fetchColumn();
+            }
+
+            return $count . ':' . ($this->sqlDateTime($touched) ?? $touched);
+        } catch (\Throwable) {
+            return '0:';
+        }
     }
 
     private function syncSignaturePath(): string
