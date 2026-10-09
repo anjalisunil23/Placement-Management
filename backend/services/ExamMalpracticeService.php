@@ -24,6 +24,16 @@ final class ExamMalpracticeService
 
     /**
      * @param array<string, mixed> $attempt
+     */
+    public static function attemptEndsAtMs(array $attempt): int
+    {
+        $endsAt = (int) ($attempt['examEndsAt'] ?? $attempt['endsAt'] ?? 0);
+
+        return $endsAt;
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
      * @return array{patch: array<string, mixed>, response: array<string, mixed>}
      */
     public static function recordIncident(array $attempt): array
@@ -151,7 +161,7 @@ final class ExamMalpracticeService
                     'shouldAutoSubmit' => false,
                     'ackRequired' => false,
                     'resumed' => true,
-                    'endsAt' => $attempt['endsAt'] ?? null,
+                    'endsAt' => self::attemptEndsAtMs($attempt),
                 ],
             ];
         }
@@ -162,7 +172,7 @@ final class ExamMalpracticeService
         }
 
         $pausedMs = max(0, min(30 * 60 * 1000, $pausedMs));
-        $endsAt = (int) ($attempt['endsAt'] ?? 0);
+        $endsAt = self::attemptEndsAtMs($attempt);
         $newEndsAt = $endsAt;
         if ($pausedMs > 0 && $endsAt > 0) {
             $newEndsAt = $endsAt + $pausedMs;
@@ -177,6 +187,7 @@ final class ExamMalpracticeService
         ];
         if ($newEndsAt !== $endsAt && $newEndsAt > 0) {
             $patch['endsAt'] = $newEndsAt;
+            $patch['examEndsAt'] = $newEndsAt;
         }
 
         return [
