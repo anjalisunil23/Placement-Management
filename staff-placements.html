@@ -523,9 +523,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009dept"></script>
+  <script src="js/staff-api.js?v=20261009cascade"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009dept"></script>
+  <script src="js/officer-api.js?v=20261009cascade"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -562,6 +562,11 @@
     let cachedDepartmentOptions = [];
     let cachedProgramOptions = [];
     let cachedBatchOptions = [];
+    /** Scope keys so stale branch/batch lists from another department cannot repopulate dropdowns. */
+    let cachedProgramOptionsDeptId = '';
+    let cachedBatchOptionsKey = '';
+    /** Ignore out-of-order placement-filters responses when the user changes department/branch quickly. */
+    let filterCascadeSeq = 0;
 
     const SORT_ICON = '<i class="bi bi-chevron-expand registry-sort-icon" aria-hidden="true"></i>';
 
@@ -774,12 +779,24 @@
       if (!el) return;
       let list = (values || []).map(v => String(v || '').trim()).filter(Boolean);
       if (id === 'filterProgram') {
-        if (list.length) cachedProgramOptions = list;
-        else if (cachedProgramOptions.length) list = cachedProgramOptions.slice();
+        if (list.length) {
+          cachedProgramOptions = list;
+          cachedProgramOptionsDeptId = filterDepartmentId;
+        } else if (
+          cachedProgramOptions.length
+          && cachedProgramOptionsDeptId === filterDepartmentId
+        ) {
+          list = cachedProgramOptions.slice();
+        }
       }
       if (id === 'filterBatch') {
-        if (list.length) cachedBatchOptions = list;
-        else if (cachedBatchOptions.length) list = cachedBatchOptions.slice();
+        const batchScopeKey = `${filterDepartmentId}|${filterProgram}`;
+        if (list.length) {
+          cachedBatchOptions = list;
+          cachedBatchOptionsKey = batchScopeKey;
+        } else if (cachedBatchOptions.length && cachedBatchOptionsKey === batchScopeKey) {
+          list = cachedBatchOptions.slice();
+        }
       }
       const current = selected || el.value;
       const labelFor = (v) => {
@@ -977,8 +994,11 @@
     function resetBranchBatchFiltersForCascade() {
       cachedProgramOptions = [];
       cachedBatchOptions = [];
+      cachedProgramOptionsDeptId = '';
+      cachedBatchOptionsKey = '';
       filterProgram = '';
       filterBatch = '';
+      filterBranch = '';
       fillSelect('filterProgram', [], 'Select department first', '', false);
       fillSelect('filterBatch', [], 'Select department first', '', false);
       updateFilterCascadeState();
@@ -1012,45 +1032,15 @@
       return false;
     }
 
-    async function loadPlacementFilters() {
-      const registryApi = placementRegistryApi();
-      if (!registryApi || !registryApi.fetchPlacementFilters) return;
-
-      syncDepartmentFilter();
-      updateFilterCascadeState();
-      if (placementFilterCascadeRequired() && !filterDepartmentId) {
-        resetBranchBatchFiltersForCascade();
-        const deptOnly = await registryApi.fetchPlacementFilters({ studRole: 'all' });
-        if (deptOnly && Array.isArray(deptOnly.departments) && deptOnly.departments.length) {
-          fillDepartmentSelect(deptOnly.departments, filterDepartmentId || scopeDepartmentId);
-        } else {
-          await loadDepartmentOptionsFallback();
-        }
-        updateClassTeacherBanner();
-        return;
-      }
-      const initialProgram = filterProgram || '';
-      const data = await registryApi.fetchPlacementFilters({
-        departmentId: filterDepartmentId,
-        program: initialProgram || filterProgram,
-        branch: filterBranch || '',
-        studRole: 'all',
-      });
-      if (!data) {
-        await loadDepartmentOptionsFallback();
-        return;
-      }
-
+    function applyFilterMetaFromApi(data) {
+      if (!data) return;
       if (Array.isArray(data.assignedClassBatches) && data.assignedClassBatches.length) {
         apiAssignedBatches = data.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
       }
-
       applyScopeFromFiltersApi(data);
       const deptRows = Array.isArray(data.departments) ? data.departments : [];
       if (deptRows.length) {
         fillDepartmentSelect(deptRows, filterDepartmentId || scopeDepartmentId);
-      } else {
-        await loadDepartmentOptionsFallback();
       }
       if (!filterDepartmentId && scopeDepartmentId) {
         const deptEl = document.getElementById('filterDepartment');
@@ -1059,63 +1049,115 @@
           syncDepartmentFilter();
         }
       }
+    }
 
-      let programs = data.programs || [];
-      let batches = data.batches || [];
-      applyAesBranchHintFromFiltersApi(data);
-      lastFilterPrograms = programs;
-      lastFilterBatches = batches;
-      const programForBatches = String(filterProgram || initialProgram || '').trim();
-      if (filterDepartmentId && programForBatches) {
-        const scoped = await registryApi.fetchPlacementFilters({
-          departmentId: filterDepartmentId,
-          program: programForBatches,
-          branch: filterBranch || '',
+    async function loadPlacementFilters() {
+      const registryApi = placementRegistryApi();
+      if (!registryApi || !registryApi.fetchPlacementFilters) return;
+
+      const seq = ++filterCascadeSeq;
+      syncDepartmentFilter();
+      updateFilterCascadeState();
+
+      if (placementFilterCascadeRequired() && !filterDepartmentId) {
+        resetBranchBatchFiltersForCascade();
+        const deptOnly = await registryApi.fetchPlacementFilters({ studRole: 'all' });
+        if (seq !== filterCascadeSeq) return;
+        if (deptOnly && Array.isArray(deptOnly.departments) && deptOnly.departments.length) {
+          fillDepartmentSelect(deptOnly.departments, filterDepartmentId || scopeDepartmentId);
+        } else {
+          await loadDepartmentOptionsFallback();
+        }
+        updateClassTeacherBanner();
+        return;
+      }
+
+      syncDepartmentFilter();
+      let deptId = String(filterDepartmentId || '').trim();
+      if (!deptId && !placementFilterCascadeRequired()) {
+        const bootstrap = await registryApi.fetchPlacementFilters({
+          departmentId: scopeDepartmentId || undefined,
           studRole: 'all',
         });
-        if (scoped) {
-          applyAesBranchHintFromFiltersApi(scoped);
-          if (Array.isArray(scoped.programs) && scoped.programs.length) {
-            programs = scoped.programs;
-          }
-          if (Array.isArray(scoped.batches)) {
-            batches = scoped.batches;
-          }
-          if (Array.isArray(scoped.assignedClassBatches) && scoped.assignedClassBatches.length) {
-            apiAssignedBatches = scoped.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
-          }
-        }
-      } else if ((!programs.length || !batches.length) && filterDepartmentId) {
-        const again = await registryApi.fetchPlacementFilters({
-          departmentId: filterDepartmentId,
-          program: '',
-          branch: '',
-          studRole: 'all',
-        });
-        if (again?.programs?.length) {
-          programs = again.programs;
-        }
-        if (Array.isArray(again?.assignedClassBatches) && again.assignedClassBatches.length) {
-          apiAssignedBatches = again.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
+        if (seq !== filterCascadeSeq) return;
+        applyFilterMetaFromApi(bootstrap);
+        syncDepartmentFilter();
+        deptId = String(filterDepartmentId || scopeDepartmentId || '').trim();
+      }
+      if (!deptId) {
+        resetBranchBatchFiltersForCascade();
+        updateClassTeacherBanner();
+        return;
+      }
+
+      // Step 1 — Department → Branch (no program/batch params; backend scopes by departmentId).
+      const branchData = await registryApi.fetchPlacementFilters({
+        departmentId: deptId,
+        studRole: 'all',
+      });
+      if (seq !== filterCascadeSeq) return;
+      if (!branchData) {
+        if (typeof toast === 'function') toast('Could not load branches for this department.', 'error');
+        fillSelect('filterProgram', [], 'All branches', '', false);
+        fillSelect('filterBatch', [], 'Select branch first', '', false);
+        cachedProgramOptions = [];
+        cachedBatchOptions = [];
+        cachedProgramOptionsDeptId = '';
+        cachedBatchOptionsKey = '';
+        await loadDepartmentOptionsFallback();
+        updateClassTeacherBanner();
+        return;
+      }
+
+      applyFilterMetaFromApi(branchData);
+      applyAesBranchHintFromFiltersApi(branchData);
+
+      const branches = Array.isArray(branchData.programs) ? branchData.programs : [];
+      lastFilterPrograms = branches;
+      const branchLabel = 'All branches';
+      fillSelect('filterProgram', branches, branchLabel, filterProgram, false);
+      filterProgram = document.getElementById('filterProgram')?.value || '';
+
+      const branchKey = String(filterProgram || '').trim();
+      if (!branchKey) {
+        filterBatch = '';
+        filterBranch = '';
+        cachedBatchOptions = [];
+        cachedBatchOptionsKey = '';
+        lastFilterBatches = [];
+        fillSelect('filterBatch', [], 'Select branch first', '', false);
+        updateClassTeacherBanner();
+        updateFilterCascadeState();
+        return;
+      }
+
+      // Step 2 — Branch → Batch (program = selected branch/programme under the department).
+      const batchData = await registryApi.fetchPlacementFilters({
+        departmentId: deptId,
+        program: branchKey,
+        branch: filterBranch || '',
+        studRole: 'all',
+      });
+      if (seq !== filterCascadeSeq) return;
+
+      if (batchData) {
+        applyAesBranchHintFromFiltersApi(batchData);
+        if (Array.isArray(batchData.assignedClassBatches) && batchData.assignedClassBatches.length) {
+          apiAssignedBatches = batchData.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
         }
       }
 
-      const branchLabel = filterDepartmentId ? 'All branches' : 'Select department first';
-      const batchLabel = filterDepartmentId ? (filterProgram ? 'All batches' : 'Select branch first') : 'Select department first';
-      fillSelect('filterProgram', programs, branchLabel, filterProgram, false);
-      filterProgram = document.getElementById('filterProgram')?.value || '';
-
-      fillSelect('filterBatch', batches, batchLabel, filterBatch, false);
+      const batches = batchData && Array.isArray(batchData.batches) ? batchData.batches : [];
+      lastFilterBatches = batches;
+      fillSelect('filterBatch', batches, 'All batches', filterBatch, false);
       filterBatch = document.getElementById('filterBatch')?.value || '';
       alignProgramWithBatchSelection();
-      // Do not clear canEditSelectedBatch here — loadRegistry() sets it from the
-      // server (CT/CoCT). Resetting it made co-class teachers look "view only".
+
       if (!canEditSelectedBatch && filterBatch) {
         canEditSelectedBatch = batchIsAssigned(filterBatch);
       }
       updateClassTeacherBanner();
       updateFilterCascadeState();
-
     }
 
     function applyClientFilter() {
@@ -1585,6 +1627,8 @@
         filterBatch = '';
         cachedProgramOptions = [];
         cachedBatchOptions = [];
+        cachedProgramOptionsDeptId = '';
+        cachedBatchOptionsKey = '';
         const programEl = document.getElementById('filterProgram');
         const batchEl = document.getElementById('filterBatch');
         if (programEl) programEl.value = '';
@@ -1599,6 +1643,7 @@
         filterBranch = '';
         filterBatch = '';
         cachedBatchOptions = [];
+        cachedBatchOptionsKey = '';
         const batchEl = document.getElementById('filterBatch');
         if (batchEl) batchEl.value = '';
         await loadPlacementFilters();

@@ -389,11 +389,12 @@ final class StaffController
         if ($assigned === [] && $this->staffPlacementRefreshCtFromAesEnabled()) {
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
+        $departmentSelected = $departmentId !== '';
         Response::success(DocumentHelper::jsonSafe([
             'departments' => $registrySvc->departmentFilterOptions(),
-            'programs' => $svc->fetchProgramOptions($filterCtx),
+            'programs' => $departmentSelected ? $svc->fetchProgramOptions($filterCtx) : [],
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
-            'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
+            'batches'  => $program !== '' ? $svc->fetchBatchOptions($filterCtx, $program, $branch, false) : [],
             'assignedClassBatches' => $assigned,
             'scope'    => $registrySvc->resolvedRegistryScope($ctx, $filterPayload),
         ]));

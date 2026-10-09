@@ -1254,11 +1254,13 @@ final class OfficerController
         ];
         $filterCtx = $registrySvc->placementFilterContext($ctx, $filterPayload);
         $svc = new \PMS\Services\PlacementFilterService();
+        $departmentSelected = $departmentId !== '';
         Response::success(DocumentHelper::jsonSafe([
             'departments' => $registrySvc->departmentFilterOptions(),
-            'programs' => $svc->fetchProgramOptions($filterCtx),
+            // UI "Branch" dropdown — programmes under the selected department (getDepartments / AES).
+            'programs' => $departmentSelected ? $svc->fetchProgramOptions($filterCtx) : [],
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
-            'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
+            'batches'  => $program !== '' ? $svc->fetchBatchOptions($filterCtx, $program, $branch, false) : [],
             'assignedClassBatches' => \PMS\Services\StaffContext::assignedClassBatches($filterCtx),
             'scope'    => $registrySvc->resolvedRegistryScope($ctx, $filterPayload),
         ]));

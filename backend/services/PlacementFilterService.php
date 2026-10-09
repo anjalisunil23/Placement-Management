@@ -82,6 +82,11 @@ final class PlacementFilterService
      */
     public function fetchProgramOptions(array $ctx): array
     {
+        if (!empty($ctx['placementStaffRegistryFilters'])
+            && trim((string) ($ctx['departmentId'] ?? '')) === '') {
+            return [];
+        }
+
         $aesPrograms = [];
         if ($this->registryAesDepartmentActive($ctx)) {
             $aesPrograms = $this->fetchProgramOptionsFromAes($ctx);
