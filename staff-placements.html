@@ -102,7 +102,7 @@
 
         <!-- View student placement details -->
         <div class="modal fade" id="viewPlacementModal" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+          <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
             <div class="modal-content">
               <div class="modal-header">
                 <h5 class="modal-title fw-bold" id="viewPlacementTitle">Student details</h5>
@@ -110,13 +110,10 @@
               </div>
               <div class="modal-body">
                 <div class="row g-2 mb-3" id="viewPlacementIdentity"></div>
-                <div class="table-responsive">
+                <div class="table-responsive view-details-scroll">
                   <table class="table table-sm table-bordered align-middle mb-0 view-details-table">
                     <thead>
-                      <tr>
-                        <th>Field</th>
-                        <th>Value</th>
-                      </tr>
+                      <tr id="viewPlacementHead"></tr>
                     </thead>
                     <tbody id="viewPlacementBody"></tbody>
                   </table>
@@ -445,13 +442,23 @@
             word-break: break-word
           }
 
-          .view-details-table th {
-            background: #f1f3f5;
-            width: 11rem
+          .view-details-scroll {
+            overflow-x: auto
           }
 
+          .view-details-table {
+            width: max-content;
+            min-width: 100%
+          }
+
+          .view-details-table th,
           .view-details-table td {
-            word-break: break-word
+            white-space: nowrap;
+            vertical-align: middle
+          }
+
+          .view-details-table th {
+            background: #f1f3f5
           }
 
           .registry-action-btn:hover:not(:disabled) {
@@ -1305,13 +1312,19 @@
           return `<div class="col-md-6 col-lg-4"><div class="view-field-label">${esc(col.label || key)}</div><div class="view-field-value">${registryCellValue(col, row, 0)}</div></div>`;
         }).join('');
       }
+      const skip = new Set(VIEW_IDENTITY_KEYS);
+      const detailCols = columns.filter((col) => !skip.has(col.key || ''));
+      const head = document.getElementById('viewPlacementHead');
       const body = document.getElementById('viewPlacementBody');
+      if (head) {
+        head.innerHTML = detailCols.length
+          ? detailCols.map((col) => `<th>${esc(col.label || col.key || '')}</th>`).join('')
+          : '<th>Details</th>';
+      }
       if (body) {
-        const skip = new Set(VIEW_IDENTITY_KEYS);
-        const detailRows = columns.filter((col) => !skip.has(col.key || ''));
-        body.innerHTML = detailRows.length
-          ? detailRows.map((col) => `<tr><th>${esc(col.label || col.key || '')}</th><td>${registryCellValue(col, row, 0)}</td></tr>`).join('')
-          : '<tr><td colspan="2" class="text-muted-2">No other details for this student.</td></tr>';
+        body.innerHTML = detailCols.length
+          ? `<tr>${detailCols.map((col) => `<td>${registryCellValue(col, row, 0)}</td>`).join('')}</tr>`
+          : '<tr><td class="text-muted-2">No other details for this student.</td></tr>';
       }
       bootstrap.Modal.getOrCreateInstance(document.getElementById('viewPlacementModal')).show();
     }
