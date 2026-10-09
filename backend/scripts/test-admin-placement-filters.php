@@ -72,6 +72,26 @@ if ($deptId === '' && $departments !== []) {
     $deptId = (string) ($departments[0]['id'] ?? '');
 }
 if ($deptId !== '') {
+    $deptFilterCtx = $registry->placementFilterContext($adminCtx, [
+        'departmentId' => $deptId,
+        'studRole'     => 'all',
+    ]);
+    $filterSvc = new PlacementFilterService();
+    $deptPrograms = $filterSvc->fetchProgramOptions($deptFilterCtx);
+    $deptBatches = $filterSvc->fetchBatchOptions($deptFilterCtx, '', '', false);
+    echo 'Department programmes (branch dropdown): ' . count($deptPrograms) . "\n";
+    if ($deptPrograms !== []) {
+        echo '  sample: ' . implode(', ', array_slice($deptPrograms, 0, 8)) . "\n";
+    }
+    echo 'Department batches (no branch selected): ' . count($deptBatches) . "\n";
+    if ($deptBatches !== []) {
+        echo '  sample: ' . implode(', ', array_slice($deptBatches, 0, 6)) . "\n";
+    }
+    if ($deptPrograms === []) {
+        fwrite(STDERR, "FAIL: no programmes for selected department.\n");
+        $fail = true;
+    }
+
     $program = trim((string) ($opts['program'] ?? ''));
     $batch = trim((string) ($opts['batch'] ?? ''));
     $scoped = $registry->list($adminCtx, [

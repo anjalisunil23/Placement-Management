@@ -82,15 +82,15 @@ final class PlacementFilterService
      */
     public function fetchProgramOptions(array $ctx): array
     {
+        $aesPrograms = [];
         if ($this->registryAesDepartmentActive($ctx)) {
-            $aes = $this->fetchProgramOptionsFromAes($ctx);
-            if ($aes !== []) {
-                return $aes;
-            }
+            $aesPrograms = $this->fetchProgramOptionsFromAes($ctx);
         }
 
         if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
-            return $this->fetchProgramOptionsFromRegistryTable($ctx);
+            $registry = $this->fetchProgramOptionsFromRegistryTable($ctx);
+
+            return $this->sortLabels(array_values(array_unique(array_merge($aesPrograms, $registry))));
         }
 
         $programmes = $this->distinctFieldFromScopedRows($ctx, 'stud_course', '', '');
@@ -155,6 +155,8 @@ final class PlacementFilterService
             $code = DepartmentProgrammeCatalog::resolveProgrammeCode($raw);
             if ($code !== '') {
                 $canonical[] = $code;
+            } elseif ($raw !== '') {
+                $canonical[] = $raw;
             }
         }
 
@@ -165,7 +167,15 @@ final class PlacementFilterService
             ));
         }
 
-        return $this->sortLabels(array_values(array_unique(array_filter($canonical))));
+        $merged = array_values(array_unique(array_filter(array_merge($aesPrograms, $canonical))));
+        if (!empty($ctx['placementStaffRegistryFilters']) && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+            $merged = array_values(array_unique(array_merge(
+                $merged,
+                $this->fetchProgramOptionsFromRegistryTable($ctx)
+            )));
+        }
+
+        return $this->sortLabels($merged);
     }
 
     /**
@@ -685,7 +695,19 @@ final class PlacementFilterService
     ): array {
         $program = trim($program);
         if ($program === '') {
-            return [];
+            $programs = $this->fetchProgramOptions($ctx);
+            if ($programs === []) {
+                return $this->batchLabelsFromPlacementDetailsTable($ctx, '');
+            }
+            $collected = [];
+            foreach ($programs as $prog) {
+                $collected = array_merge(
+                    $collected,
+                    $this->fetchBatchOptionsFromAes($ctx, (string) $prog, $branch, $finalYearOnly)
+                );
+            }
+
+            return $this->sortLabels(array_values(array_unique($collected)));
         }
 
         $deptAesId = $this->resolveParentDeptAesId($ctx);
@@ -724,6 +746,14 @@ final class PlacementFilterService
 
         $collected = $this->refineStaffRegistryBatchOptions($collected, $ctx, $program, $branch);
         $collected = $this->normalizeBatchLabelsForFilters($collected, $ctx);
+        if ($collected === [] && !empty($ctx['placementStaffRegistryFilters'])) {
+            $collected = array_merge(
+                $collected,
+                $this->batchLabelsFromPlacementDetailsTable($ctx, $program)
+            );
+            $collected = $this->refineStaffRegistryBatchOptions($collected, $ctx, $program, $branch);
+            $collected = $this->normalizeBatchLabelsForFilters($collected, $ctx);
+        }
         if (!$finalYearOnly) {
             return $collected;
         }
