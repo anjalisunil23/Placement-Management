@@ -2105,7 +2105,7 @@ final class StaffPlacementRegistryService
             'programs'    => $programs,
             'branches'    => $program !== '' ? $filterSvc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'     => $batches,
-            'departments' => $this->loadAllDepartments(),
+            'departments' => $this->departmentFilterOptions(),
         ];
     }
 
@@ -2262,6 +2262,8 @@ final class StaffPlacementRegistryService
         $model = new DepartmentModel();
         $rows = [];
 
+        $byId = [];
+
         if ($catalog !== []) {
             foreach ($catalog as $aesRow) {
                 $code = strtoupper(trim((string) ($aesRow['code'] ?? '')));
@@ -2276,33 +2278,39 @@ final class StaffPlacementRegistryService
                 if ($local === null) {
                     continue;
                 }
-                $rows[] = [
-                    'id'   => (string) ($local['_id'] ?? ''),
+                $id = (string) ($local['_id'] ?? '');
+                if ($id === '') {
+                    continue;
+                }
+                $byId[$id] = [
+                    'id'   => $id,
                     'code' => $code,
                     'name' => $name,
                 ];
             }
-        } else {
-            foreach ($model->findAll([], 200) as $dept) {
+        }
+
+        foreach ($model->findAll([], 500) as $dept) {
             $code = strtoupper(trim((string) ($dept['code'] ?? '')));
             $name = trim((string) ($dept['name'] ?? ''));
             if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
                 continue;
             }
-                if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
-                    continue;
-                }
-                if (empty($dept['aesAcademic']) && trim((string) ($dept['aesId'] ?? '')) === '') {
+            if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
                 continue;
             }
-            $rows[] = [
-                'id'   => (string) ($dept['_id'] ?? ''),
-                'code' => $code,
-                'name' => $name,
-            ];
+            $id = (string) ($dept['_id'] ?? '');
+            if ($id === '') {
+                continue;
             }
+            $byId[$id] = [
+                'id'   => $id,
+                'code' => $code,
+                'name' => $name !== '' ? $name : $code,
+            ];
         }
 
+        $rows = array_values($byId);
         usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));
 
         return $rows;
@@ -2313,6 +2321,48 @@ final class StaffPlacementRegistryService
         $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_FILTERS_SKIP_AES'] ?? '1')));
 
         return !in_array($v, ['0', 'false', 'no', 'off'], true);
+    }
+
+    /**
+     * Admission numbers belonging to a PlaceHub department (student_details).
+     *
+     * @return array<string, true>|null null when lookup is unavailable
+     */
+    private function admnoLookupForDepartment(string $departmentId): ?array
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return null;
+        }
+        static $cache = [];
+        if (array_key_exists($departmentId, $cache)) {
+            return $cache[$departmentId];
+        }
+        $lookup = [];
+        try {
+            $model = new \PMS\Models\StudentDetailsModel();
+            if (!$model->isAvailable()) {
+                $cache[$departmentId] = null;
+
+                return null;
+            }
+            $oid = Security::toObjectId($departmentId);
+            $filter = $oid !== null ? ['departmentId' => $oid] : [];
+            $limit = max(1000, min(50000, (int) ($_ENV['STUDENT_DETAILS_DEPT_LOOKUP_MAX'] ?? 25000)));
+            foreach ($model->findAll($filter, $limit) as $rec) {
+                $adm = strtoupper(\PMS\Models\StudentDetailsModel::resolveAesAdmno($rec));
+                if ($adm !== '') {
+                    $lookup[$adm] = true;
+                }
+            }
+        } catch (\Throwable) {
+            $cache[$departmentId] = null;
+
+            return null;
+        }
+        $cache[$departmentId] = $lookup;
+
+        return $lookup;
     }
 
     /**
@@ -2408,18 +2458,29 @@ final class StaffPlacementRegistryService
      */
     private function applyPlacementDetailsFilters(array $rows, array $filters): array
     {
+        $departmentId = trim((string) ($filters['departmentId'] ?? ''));
         $program = trim((string) ($filters['program'] ?? ''));
         $batch = trim((string) ($filters['batch'] ?? ''));
         $type = trim((string) ($filters['type'] ?? ''));
         $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
-        if ($program === '' && $batch === '' && $type === '' && $q === '') {
+        if ($departmentId === '' && $program === '' && $batch === '' && $type === '' && $q === '') {
             return $rows;
+        }
+        $deptAdmnos = $departmentId !== '' ? $this->admnoLookupForDepartment($departmentId) : null;
+        if ($departmentId !== '' && is_array($deptAdmnos) && $deptAdmnos === []) {
+            return [];
         }
         $wantProgram = $program !== ''
             ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
             : '';
 
-        return array_values(array_filter($rows, function (array $row) use ($program, $wantProgram, $batch, $type, $q): bool {
+        return array_values(array_filter($rows, function (array $row) use ($departmentId, $deptAdmnos, $program, $wantProgram, $batch, $type, $q): bool {
+            if (is_array($deptAdmnos)) {
+                $adm = strtoupper(trim((string) ($row['admno'] ?? $row['admissionNo'] ?? '')));
+                if ($adm === '' || !isset($deptAdmnos[$adm])) {
+                    return false;
+                }
+            }
             $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
             if ($batch !== '' && !StudentPlacementModel::matchesClassBatchSelection($year, $batch)) {
                 return false;

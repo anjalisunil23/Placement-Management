@@ -727,10 +727,20 @@
       return merged.length > 12 ? [] : merged;
     }
 
+    function isCampusPlacementViewer() {
+      return pageRole === 'admin' || pageRole === 'placement_officer';
+    }
+
     function updateClassTeacherBanner() {
       const el = document.getElementById('classTeacherBanner');
       if (!el) return;
       const assigned = assignedBatches();
+      if (!assigned.length && isCampusPlacementViewer()) {
+        el.classList.remove('d-none');
+        el.className = 'alert alert-info py-2 px-3 mb-3';
+        el.textContent = 'Campus-wide view — pick a department and branch above to narrow the list. Add and edit require class-incharge assignment.';
+        return;
+      }
       if (!assigned.length) {
         el.classList.remove('d-none');
         el.className = 'alert alert-warning py-2 px-3 mb-3';

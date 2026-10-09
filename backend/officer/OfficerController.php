@@ -1303,10 +1303,10 @@ final class OfficerController
 
         return [
             'profile'      => is_array($officerCtx['profile'] ?? null) ? $officerCtx['profile'] : [],
-            'departmentId' => $deptId,
-            'department'   => is_array($officerCtx['department'] ?? null) ? $officerCtx['department'] : null,
+            'departmentId' => $isAdmin ? '' : $deptId,
+            'department'   => $isAdmin ? null : (is_array($officerCtx['department'] ?? null) ? $officerCtx['department'] : null),
             'isAdmin'      => $isAdmin,
-            'campusWide'   => $isAdmin && $deptId === '',
+            'campusWide'   => $isAdmin,
         ];
     }
 
