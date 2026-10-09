@@ -92,10 +92,9 @@ final class StaffPlacementRegistryService
 
         $details = new \PMS\Models\StudentPlacementDetailsTable();
         try {
-            $details->replaceFromStudentPlacements();
-            $details->importAlumniFromStudentPlacements();
+            $details->syncDirectoryWithAlumniPlacements();
         } catch (\Throwable) {
-            // Show whatever is already stored if the copy from student_placements fails.
+            // Show whatever is already stored if the directory or alumni copy fails.
         }
         $filters['placementDetails'] = '1';
 
@@ -103,7 +102,7 @@ final class StaffPlacementRegistryService
             $staffCtx,
             $listCtx,
             $filters,
-            $this->listFromStudentDirectory($details)
+            $this->listFromPlacementDetails($details)
         );
     }
 
@@ -846,7 +845,7 @@ final class StaffPlacementRegistryService
     {
         $limit = max(100, min(20000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 20000)));
         $rows = [];
-        foreach ($details->listRows($limit) as $row) {
+        foreach ($details->listRows($limit, 'name') as $row) {
             $id = trim((string) ($row['id'] ?? ''));
             $admno = trim((string) ($row['admno'] ?? ''));
             $student = trim((string) ($row['student'] ?? ''));
@@ -863,6 +862,8 @@ final class StaffPlacementRegistryService
                 'admno' => $admno,
                 'admissionNo' => $admno,
                 'registerNumber' => $admno,
+                'stud_role' => trim((string) ($row['stud_role'] ?? '')),
+                'studRole' => trim((string) ($row['stud_role'] ?? '')),
                 'cno' => trim((string) ($row['cno'] ?? '')),
                 'phone' => trim((string) ($row['cno'] ?? '')),
                 'email' => trim((string) ($row['email'] ?? '')),
