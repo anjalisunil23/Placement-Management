@@ -1020,35 +1020,82 @@ class StudentPlacementDetailsTable
      */
     private function fillEmptyColumnsFromPlacements(): void
     {
-        if (!$this->sourceTableExists() || !$this->sourceHasColumn('id')) {
+        if (!$this->sourceTableExists()) {
             return;
         }
-        $signature = $this->placementSourceSignature();
-        $state = $this->readSyncSignature();
-        if ($state === 'filled:' . $signature) {
+        $admnoColumn = $this->sourceColumn('admno');
+        if ($admnoColumn === null) {
             return;
         }
-        $afterId = '';
-        $prefix = 'fillprog:' . $signature . ':';
-        if (str_starts_with($state, $prefix)) {
-            $afterId = substr($state, strlen($prefix));
+        $signature = 'admj:2:' . $this->placementSourceSignature();
+        if ($this->readSyncSignature() === $signature) {
+            return;
         }
-        $deadline = microtime(true) + 18;
-        while (microtime(true) < $deadline) {
-            $nextId = $this->fillPlacementIdChunk($afterId);
-            if ($nextId === null) {
-                $this->db->exec(
-                    'UPDATE `student_placement_details`
-                     SET `type` = \'Placement\'
-                     WHERE `type` = \'\' AND `employer` <> \'\''
-                );
-                $this->writeSyncSignature('filled:' . $signature);
-
-                return;
+        $map = [
+            'cno' => ['cno'],
+            'email' => ['email'],
+            'courseid' => ['courseId', 'courseid'],
+            'branchid' => ['branchId', 'branchid'],
+            'employer' => ['employer'],
+            'empcno' => ['empcno', 'empco'],
+            'empadr' => ['empadr'],
+            'payscale' => ['payscale'],
+            'status' => ['status'],
+            'createdBy' => ['createdBy'],
+            'updatedBy' => ['updatedBy'],
+            'fordvv' => ['fordvv'],
+            'type' => ['type'],
+            'includedvv' => ['includedvv'],
+        ];
+        $limits = [
+            'cno' => 64, 'email' => 255, 'courseid' => 64, 'branchid' => 64, 'employer' => 255,
+            'empcno' => 128, 'empadr' => 512, 'payscale' => 128, 'status' => 64,
+            'createdBy' => 128, 'updatedBy' => 128, 'fordvv' => 16, 'type' => 64, 'includedvv' => 16,
+        ];
+        $sets = [];
+        foreach ($map as $dest => $candidates) {
+            $source = null;
+            foreach ($candidates as $candidate) {
+                $source = $this->sourceColumn($candidate);
+                if ($source !== null) {
+                    break;
+                }
             }
-            $afterId = $nextId;
-            $this->writeSyncSignature($prefix . $afterId);
+            if ($source === null) {
+                continue;
+            }
+            $sets[] = 'd.`' . $dest . '` = IF(d.`' . $dest . '` = \'\' AND s.`' . $source
+                . '` IS NOT NULL AND TRIM(CAST(s.`' . $source . '` AS CHAR)) <> \'\', LEFT(TRIM(CAST(s.`'
+                . $source . '` AS CHAR)), ' . $limits[$dest] . '), d.`' . $dest . '`)';
         }
+        if ($sets === []) {
+            return;
+        }
+        $this->db->exec(
+            'UPDATE `student_placement_details` d
+             INNER JOIN `student_placements` s
+               ON d.`admno` <> \'\'
+              AND d.`admno` = TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR))
+              AND TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR)) <> \'\'
+             SET ' . implode(', ', $sets)
+        );
+        $this->db->exec(
+            'UPDATE `student_placement_details`
+             SET `type` = \'Placement\'
+             WHERE `type` = \'\' AND `employer` <> \'\''
+        );
+        $this->writeSyncSignature($signature);
+    }
+
+    private function sourceColumn(string $name): ?string
+    {
+        foreach ($this->sourceColumns() as $column) {
+            if (strcasecmp($column, $name) === 0) {
+                return $column;
+            }
+        }
+
+        return null;
     }
 
     private function fillPlacementIdChunk(string $afterId): ?string
