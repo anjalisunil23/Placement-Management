@@ -309,8 +309,11 @@ final class PublicController
             $id = (string) ($serialized['id'] ?? $serialized['_id'] ?? '');
             $code = strtoupper(trim((string) ($serialized['code'] ?? '')));
             $name = trim((string) ($serialized['name'] ?? ''));
-            if ($code === '' || $name === '' || !DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+            if ($name === '' || !DepartmentModel::isStudentAcademicDepartment($code, $name)) {
                 continue;
+            }
+            if ($code === '' || preg_match('/^\d+$/', $code) === 1) {
+                $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? '') ?: $code;
             }
             $aesId = trim((string) ($serialized['aesId'] ?? ''));
             $rows[] = [

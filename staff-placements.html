@@ -461,9 +461,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009match"></script>
+  <script src="js/staff-api.js?v=20261009filter"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009match"></script>
+  <script src="js/officer-api.js?v=20261009filter"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -845,16 +845,32 @@
       syncDepartmentFilter();
     }
 
+    function normalizeDepartmentOptions(rows) {
+      return (rows || []).map(d => ({
+        id: String(d.id || d._id || '').trim(),
+        name: String(d.name || '').trim(),
+        code: String(d.code || '').trim(),
+      })).filter(d => d.id && d.name);
+    }
+
     async function loadDepartmentOptionsFallback() {
-      try {
-        const res = await api('/public/departments');
-        const rows = res?.success && Array.isArray(res.data) ? res.data : [];
-        if (!rows.length) return false;
-        fillDepartmentSelect(rows, filterDepartmentId || scopeDepartmentId);
-        return true;
-      } catch (_) {
-        return false;
+      const tryEndpoints = [];
+      if (pageRole === 'admin') {
+        tryEndpoints.push('/admin/departments');
       }
+      tryEndpoints.push('/public/departments');
+      for (const path of tryEndpoints) {
+        try {
+          const res = await api(path);
+          const rows = normalizeDepartmentOptions(res?.success && Array.isArray(res.data) ? res.data : []);
+          if (!rows.length) continue;
+          fillDepartmentSelect(rows, filterDepartmentId || scopeDepartmentId);
+          return true;
+        } catch (_) {
+          /* try next source */
+        }
+      }
+      return false;
     }
 
     async function loadPlacementFilters() {
@@ -1447,10 +1463,19 @@
         const u = Auth.user() || {};
         apiAssignedBatches = Array.isArray(u.assignedClassBatches) ? u.assignedClassBatches : [];
       }
-      await Promise.all([
-        loadPlacementFilters(),
-        loadRegistry(),
-      ]);
+      const registryApi = placementRegistryApi();
+      if (registryApi && typeof registryApi.clearPlacementsCache === 'function') {
+        registryApi.clearPlacementsCache();
+      }
+      try {
+        await loadPlacementFilters();
+      } catch (err) {
+        await loadDepartmentOptionsFallback();
+        if (typeof toast === 'function') {
+          toast(err?.message || 'Could not load filter dropdowns.', 'warn');
+        }
+      }
+      await loadRegistry();
     });
   </script>
 </body>

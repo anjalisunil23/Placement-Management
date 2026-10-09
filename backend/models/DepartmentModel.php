@@ -54,6 +54,9 @@ class DepartmentModel extends BaseModel
         if ($code !== '' && preg_match('/^\d+$/', $code) === 1) {
             $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? '');
         }
+        if ($code === '' && $name !== '') {
+            $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? '');
+        }
         if ($code === '' || preg_match('/^\d+$/', $code) === 1) {
             return false;
         }
@@ -81,5 +84,39 @@ class DepartmentModel extends BaseModel
         }
 
         return true;
+    }
+
+    /**
+     * Dropdown label/code for placement filters (handles AES numeric codes).
+     *
+     * @param array<string, mixed> $dept
+     * @return array{id:string,code:string,name:string}|null
+     */
+    public static function toPlacementFilterOption(array $dept): ?array
+    {
+        $name = trim((string) ($dept['name'] ?? ''));
+        if ($name === '') {
+            return null;
+        }
+        $rawCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        if (!self::isStudentAcademicDepartment($rawCode, $name)) {
+            return null;
+        }
+        $id = trim((string) ($dept['_id'] ?? $dept['id'] ?? ''));
+        if ($id === '') {
+            return null;
+        }
+        $displayCode = $rawCode !== '' && preg_match('/^\d+$/', $rawCode) !== 1
+            ? $rawCode
+            : strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? '');
+        if ($displayCode === '') {
+            $displayCode = 'DEPT';
+        }
+
+        return [
+            'id'   => $id,
+            'code' => $displayCode,
+            'name' => $name,
+        ];
     }
 }

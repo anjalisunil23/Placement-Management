@@ -171,10 +171,12 @@ final class PlacementFilterService
     {
         $canonical = [];
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
-        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
-            (string) ($dept['code'] ?? ''),
-            (string) ($dept['name'] ?? '')
-        );
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        if ($deptCode !== '' && preg_match('/^\d+$/', $deptCode) === 1) {
+            $deptCode = '';
+        }
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment($deptCode, $deptName);
         if ($group !== null) {
             foreach (DepartmentProgrammeCatalog::programmeCodesForGroup($group) as $code) {
                 $code = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($code));
@@ -1179,14 +1181,16 @@ final class PlacementFilterService
 
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
         $codes = [];
-        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
-            (string) ($dept['code'] ?? ''),
-            (string) ($dept['name'] ?? '')
-        );
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        if ($deptCode !== '' && preg_match('/^\d+$/', $deptCode) === 1) {
+            $deptCode = '';
+        }
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment($deptCode, $deptName);
         if ($group !== null) {
             $codes = array_merge($codes, DepartmentProgrammeCatalog::programmeCodesForGroup($group));
         }
-        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode((string) ($dept['code'] ?? ''));
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($deptCode);
         if ($resolved !== '') {
             $codes[] = $resolved;
         }

@@ -480,19 +480,21 @@ const OfficerApi = {
     if (params.branch) qs.set('branch', params.branch);
     qs.set('studRole', params.studRole || 'all');
     const q = qs.toString();
-    const cacheKey = 'ph_officer_placement_filters_v2_' + q;
+    const cacheKey = 'ph_officer_placement_filters_v3_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed._at && (Date.now() - parsed._at) < 300000 && parsed.data) {
+        const depts = parsed?.data?.departments;
+        const deptOk = Array.isArray(depts) && depts.length > 0;
+        if (parsed && parsed._at && (Date.now() - parsed._at) < 300000 && parsed.data && deptOk) {
           return parsed.data;
         }
       }
     } catch (_) { /* ignore */ }
     const res = await api('/officer/placement-filters' + (q ? `?${q}` : ''));
     const data = res.success && res.data ? res.data : null;
-    if (data) {
+    if (data && Array.isArray(data.departments) && data.departments.length) {
       try {
         sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
       } catch (_) { /* ignore */ }
@@ -535,7 +537,7 @@ const OfficerApi = {
       const keys = [];
       for (let i = 0; i < sessionStorage.length; i++) {
         const k = sessionStorage.key(i);
-        if (k && (k.startsWith('ph_officer_placements') || k.startsWith('ph_officer_placement_filters_'))) {
+        if (k && (k.startsWith('ph_officer_placements') || k.startsWith('ph_officer_placement_filters'))) {
           keys.push(k);
         }
       }

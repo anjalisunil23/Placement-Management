@@ -1241,7 +1241,9 @@ final class OfficerController
         $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'all')));
         $registrySvc = new \PMS\Services\StaffPlacementRegistryService();
         $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
-        if ($departmentId === '' && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+        if ($departmentId === ''
+            && empty($ctx['isAdmin'])
+            && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
             $departmentId = trim((string) $ctx['departmentId']);
         }
         $filterPayload = [
@@ -1269,7 +1271,9 @@ final class OfficerController
         $scope = (new OfficerDataService())->requireScope();
         $ctx = $this->staffLikeFilterCtx($scope['ctx']);
         $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
-        if ($departmentId === '' && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+        if ($departmentId === ''
+            && empty($ctx['isAdmin'])
+            && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
             $departmentId = trim((string) $ctx['departmentId']);
         }
         $filters = [

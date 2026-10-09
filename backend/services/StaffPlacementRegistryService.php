@@ -7,6 +7,7 @@ namespace PMS\Services;
 use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
 use PMS\Models\StudentDirectoryTable;
+use PMS\Models\StudentDetailsModel;
 use PMS\Models\StudentModel;
 use PMS\Models\StudentPlacementModel;
 use PMS\Utils\DocumentHelper;
@@ -23,6 +24,10 @@ final class StaffPlacementRegistryService
     /** @var array<string, array<string, array<string, mixed>>> */
     private array $placementsIndexCache = [];
 
+    /** @var array<string, string>|null admno (upper) => local department id */
+    private ?array $admnoDepartmentIdIndex = null;
+
+
     public function __construct()
     {
         $this->officerData = new OfficerDataService();
@@ -38,7 +43,18 @@ final class StaffPlacementRegistryService
      */
     public function departmentFilterOptions(): array
     {
-        return $this->loadAllDepartments($this->placementFiltersSkipLiveAes());
+        $localOnly = $this->placementFiltersSkipLiveAes();
+        $rows = $this->loadAllDepartments($localOnly);
+        if ($rows === [] && $localOnly) {
+            try {
+                (new AesApiService())->syncDepartmentsToLocal();
+            } catch (\Throwable) {
+                // Serve whatever is already stored locally.
+            }
+            $rows = $this->loadAllDepartments(true);
+        }
+
+        return $rows;
     }
 
     /**
@@ -2306,24 +2322,11 @@ final class StaffPlacementRegistryService
         }
 
         foreach ($model->findAll([], 500) as $dept) {
-            $code = strtoupper(trim((string) ($dept['code'] ?? '')));
-            $name = trim((string) ($dept['name'] ?? ''));
-            if ($name === '') {
+            $option = DepartmentModel::toPlacementFilterOption($dept);
+            if ($option === null) {
                 continue;
             }
-            if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
-                continue;
-            }
-            $id = (string) ($dept['_id'] ?? $dept['id'] ?? '');
-            if ($id === '') {
-                continue;
-            }
-            $displayCode = $code !== '' && preg_match('/^\d+$/', $code) !== 1 ? $code : '';
-            $byId[$id] = [
-                'id'   => $id,
-                'code' => $displayCode !== '' ? $displayCode : strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? ''),
-                'name' => $name,
-            ];
+            $byId[$option['id']] = $option;
         }
 
         $rows = array_values($byId);
@@ -2359,14 +2362,12 @@ final class StaffPlacementRegistryService
             return [];
         }
         $codes = [];
-        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
-            (string) ($dept['code'] ?? ''),
-            (string) ($dept['name'] ?? '')
-        );
+        [$deptCode, $deptName] = $this->departmentCatalogKeys($dept);
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment($deptCode, $deptName);
         if ($group !== null) {
             $codes = DepartmentProgrammeCatalog::programmeCodesForGroup($group);
         }
-        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode((string) ($dept['code'] ?? ''));
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($deptCode);
         if ($resolved !== '') {
             $codes[] = $resolved;
         }
@@ -2390,7 +2391,7 @@ final class StaffPlacementRegistryService
         }
         $codes = $this->programmeCodesForDepartmentId($departmentId);
         if ($codes === []) {
-            return true;
+            return $this->placementDetailRowMatchesDepartmentByDirectory($row, $departmentId);
         }
         $courseId = trim((string) ($row['courseid'] ?? $row['courseId'] ?? ''));
         $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
@@ -2418,7 +2419,56 @@ final class StaffPlacementRegistryService
             }
         }
 
+        return $this->placementDetailRowMatchesDepartmentByDirectory($row, $departmentId);
+    }
+
+    /**
+     * @param array<string, mixed> $dept
+     * @return array{0:string,1:string} catalog code and name (numeric AES codes ignored)
+     */
+    private function departmentCatalogKeys(array $dept): array
+    {
+        $code = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $name = trim((string) ($dept['name'] ?? ''));
+        if ($code !== '' && preg_match('/^\d+$/', $code) === 1) {
+            $code = '';
+        }
+
+        return [$code, $name];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function placementDetailRowMatchesDepartmentByDirectory(array $row, string $departmentId): bool
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return true;
+        }
+        $admno = strtoupper(trim((string) ($row['admno'] ?? $row['admissionNo'] ?? '')));
+        if ($admno === '') {
+            return false;
+        }
+        $index = $this->admnoDepartmentIdIndex();
+        $rowDeptId = trim((string) ($index[$admno] ?? ''));
+        if ($rowDeptId !== '' && strcasecmp($rowDeptId, $departmentId) === 0) {
+            return true;
+        }
         return false;
+    }
+
+    /**
+     * @return array<string, string> upper admno => department id
+     */
+    private function admnoDepartmentIdIndex(): array
+    {
+        if ($this->admnoDepartmentIdIndex !== null) {
+            return $this->admnoDepartmentIdIndex;
+        }
+        $this->admnoDepartmentIdIndex = (new StudentDetailsModel())->mapAdmnoToDepartmentId();
+
+        return $this->admnoDepartmentIdIndex;
     }
 
     /**
