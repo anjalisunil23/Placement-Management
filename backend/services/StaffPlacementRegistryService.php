@@ -88,10 +88,16 @@ final class StaffPlacementRegistryService
             StaffContext::requireDepartmentScope($staffCtx);
         }
         $filters = $this->normalizeRegistryScopeFilters($filters);
+        $requestedDept = trim((string) ($filters['departmentId'] ?? ''));
         $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
         $batch = trim((string) ($filters['batch'] ?? ''));
-
-        $filters['departmentId'] = trim((string) ($listCtx['departmentId'] ?? $filters['departmentId'] ?? ''));
+        if ($requestedDept !== '') {
+            $filters['departmentId'] = $requestedDept;
+        } elseif (!empty($staffCtx['isAdmin']) || !empty($listCtx['campusWide'])) {
+            $filters['departmentId'] = '';
+        } else {
+            $filters['departmentId'] = trim((string) ($listCtx['departmentId'] ?? ''));
+        }
 
         $details = new \PMS\Models\StudentPlacementDetailsTable();
         try {
@@ -2181,7 +2187,11 @@ final class StaffPlacementRegistryService
 
         $dept = (new DepartmentModel())->findById($selectedDeptId);
         if (!is_array($dept) || $dept === []) {
-            return $staffCtx;
+            return array_merge($staffCtx, [
+                'departmentId' => $selectedDeptId,
+                'department'   => null,
+                'campusWide'   => false,
+            ]);
         }
 
         return array_merge($staffCtx, [
@@ -2406,6 +2416,77 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * @param array<string, mixed> $row
+     */
+    private function placementDetailRowMatchesProgram(array $row, string $program): bool
+    {
+        $program = trim($program);
+        if ($program === '') {
+            return true;
+        }
+        $wantProgram = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
+        $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
+        $courseId = trim((string) ($row['courseid'] ?? $row['courseId'] ?? ''));
+        if ($courseId !== '') {
+            $fromCourse = DepartmentProgrammeCatalog::resolveProgrammeCode($courseId);
+            if ($fromCourse !== '' && $wantProgram !== '' && strcasecmp($fromCourse, $wantProgram) === 0) {
+                return true;
+            }
+            if (strcasecmp($courseId, $program) === 0) {
+                return true;
+            }
+            if (strcasecmp(
+                DepartmentProgrammeCatalog::normalizeCode($courseId),
+                DepartmentProgrammeCatalog::normalizeCode($program)
+            ) === 0) {
+                return true;
+            }
+        }
+        if ($year === '') {
+            return false;
+        }
+        $fromYear = DepartmentProgrammeCatalog::programmeInferredFromBatchLabel($year);
+        if ($fromYear !== '' && $wantProgram !== '' && strcasecmp($fromYear, $wantProgram) === 0) {
+            return true;
+        }
+        $yearNorm = DepartmentProgrammeCatalog::normalizeCode($year);
+        $progNorm = DepartmentProgrammeCatalog::normalizeCode($program);
+        if ($progNorm !== '' && $yearNorm !== '' && str_contains($yearNorm, $progNorm)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function placementDetailRowMatchesType(array $row, string $type): bool
+    {
+        $type = strtolower(trim($type));
+        if ($type === '') {
+            return true;
+        }
+        $rowType = strtolower(trim((string) ($row['type'] ?? $row['recordType'] ?? '')));
+        if ($rowType === '') {
+            return $type === 'placement';
+        }
+        $want = match ($type) {
+            'higher_education' => ['higher education', 'higher_education', 'highereducation'],
+            'research' => ['research'],
+            default => ['placement', 'placed', 'job'],
+        };
+
+        foreach ($want as $token) {
+            if ($rowType === $token || str_contains($rowType, $token)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param array<string, mixed> $staffCtx
      * @return string[]
      */
@@ -2506,11 +2587,8 @@ final class StaffPlacementRegistryService
         if ($departmentId === '' && $program === '' && $batch === '' && $type === '' && $q === '') {
             return $rows;
         }
-        $wantProgram = $program !== ''
-            ? DepartmentProgrammeCatalog::resolveProgrammeCode($program)
-            : '';
 
-        return array_values(array_filter($rows, function (array $row) use ($departmentId, $program, $wantProgram, $batch, $type, $q): bool {
+        return array_values(array_filter($rows, function (array $row) use ($departmentId, $program, $batch, $type, $q): bool {
             if ($departmentId !== '' && !$this->placementDetailRowMatchesDepartment($row, $departmentId)) {
                 return false;
             }
@@ -2518,36 +2596,11 @@ final class StaffPlacementRegistryService
             if ($batch !== '' && !StudentPlacementModel::matchesClassBatchSelection($year, $batch)) {
                 return false;
             }
-            if ($batch === '' && $program !== '') {
-                $fromYear = DepartmentProgrammeCatalog::resolveProgrammeCode($year);
-                if ($fromYear === '' && $year !== '') {
-                    $norm = DepartmentProgrammeCatalog::normalizeCode($year);
-                    if (str_contains($norm, 'MCAINT') || str_contains($norm, 'INMCA')) {
-                        $fromYear = 'INMCA';
-                    } elseif (str_starts_with($norm, 'MCA')) {
-                        $fromYear = 'MCA';
-                    } elseif (str_contains($norm, 'BCA')) {
-                        $fromYear = 'BCA';
-                    }
-                }
-                $courseId = trim((string) ($row['courseid'] ?? ''));
-                $match = strcasecmp($courseId, $program) === 0
-                    || ($wantProgram !== '' && $fromYear !== '' && strcasecmp($fromYear, $wantProgram) === 0)
-                    || strcasecmp(DepartmentProgrammeCatalog::normalizeCode($courseId), DepartmentProgrammeCatalog::normalizeCode($program)) === 0;
-                if (!$match) {
-                    return false;
-                }
+            if ($program !== '' && !$this->placementDetailRowMatchesProgram($row, $program)) {
+                return false;
             }
-            if ($type !== '') {
-                $want = match ($type) {
-                    'higher_education' => 'Higher Education',
-                    'research' => 'Research',
-                    default => 'Placement',
-                };
-                $rowType = trim((string) ($row['type'] ?? ''));
-                if ($rowType !== '' && strcasecmp($rowType, $want) !== 0) {
-                    return false;
-                }
+            if (!$this->placementDetailRowMatchesType($row, $type)) {
+                return false;
             }
             if ($q === '') {
                 return true;

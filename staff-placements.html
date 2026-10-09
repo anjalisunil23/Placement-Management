@@ -463,7 +463,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="js/staff-api.js?v=20261009rows"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009rows"></script>
+  <script src="js/officer-api.js?v=20261009filters"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -658,11 +658,21 @@
 
     function effectiveDepartmentId() {
       syncDepartmentFilter();
+      const deptEl = document.getElementById('filterDepartment');
+      if (deptEl && deptEl.value !== '') {
+        return deptEl.value;
+      }
+      if (isCampusPlacementViewer()) {
+        return '';
+      }
       return filterDepartmentId || scopeDepartmentId || '';
     }
 
     function currentFilters() {
       alignProgramWithBatchSelection();
+      syncDepartmentFilter();
+      filterProgram = document.getElementById('filterProgram')?.value ?? filterProgram;
+      filterBatch = document.getElementById('filterBatch')?.value ?? filterBatch;
       return {
         departmentId: effectiveDepartmentId(),
         program: filterProgram,
@@ -678,9 +688,13 @@
       if (!scope || typeof scope !== 'object') return;
       scopeDepartmentId = String(scope.departmentId || '').trim();
       scopeDepartmentName = String(scope.departmentName || scope.departmentCode || '').trim();
-      const deptEl = document.getElementById('filterDepartment');
-      if (deptEl && !filterDepartmentId && scopeDepartmentId) {
-        if ([...deptEl.options].some(o => o.value === scopeDepartmentId)) {
+      if (isCampusPlacementViewer()) {
+        scopeDepartmentId = '';
+        return;
+      }
+      if (!filterDepartmentId && scopeDepartmentId) {
+        const deptEl = document.getElementById('filterDepartment');
+        if (deptEl && [...deptEl.options].some(o => o.value === scopeDepartmentId)) {
           deptEl.value = scopeDepartmentId;
           syncDepartmentFilter();
         }
@@ -1352,6 +1366,10 @@
       });
     });
     document.getElementById('filterType')?.addEventListener('change', () => {
+      const registryApi = placementRegistryApi();
+      if (typeof registryApi.clearPlacementsCache === 'function') {
+        registryApi.clearPlacementsCache();
+      }
       loadRegistry();
     });
     document.getElementById('tableSearch')?.addEventListener('input', () => {
