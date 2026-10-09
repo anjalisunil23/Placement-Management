@@ -268,7 +268,8 @@ class StudentPlacementDetailsTable
 
     /**
      * One student_placement_details row per student_details person.
-     * Placement columns are filled only when admno matches an alumni row in student_placements.
+     * Placement columns that are still empty are filled from student_placements
+     * when the admission number matches. Name and stud_role stay from student_details.
      */
     public function syncDirectoryWithAlumniPlacements(): int
     {
@@ -760,7 +761,8 @@ class StudentPlacementDetailsTable
         }
 
         return 'dir:' . $directoryCount . ':' . ($this->sqlDateTime($synced) ?? $synced)
-            . '|alumni:' . $alumniCount . ':' . ($this->sqlDateTime($alumniTouched) ?? $alumniTouched);
+            . '|alumni:' . $alumniCount . ':' . ($this->sqlDateTime($alumniTouched) ?? $alumniTouched)
+            . '|fill:2';
     }
 
     private function replaceRowsFromDirectory(): void
@@ -824,52 +826,75 @@ class StudentPlacementDetailsTable
         $select = implode(', ', array_map(static fn (string $column): string => '`' . $column . '`', $columns));
         $update = $this->db->prepare(
             'UPDATE `student_placement_details` SET
-                `cno` = ?, `email` = ?, `courseid` = ?, `branchid` = ?,
-                `employer` = ?, `empcno` = ?, `empadr` = ?, `payscale` = ?,
-                `status` = ?, `createdBy` = ?, `updatedBy` = ?, `updatedate` = ?,
-                `fordvv` = ?, `type` = ?, `includedvv` = ?, `createdate` = ?
+                `cno` = IF(`cno` = \'\' AND ? <> \'\', ?, `cno`),
+                `email` = IF(`email` = \'\' AND ? <> \'\', ?, `email`),
+                `courseid` = IF(`courseid` = \'\' AND ? <> \'\', ?, `courseid`),
+                `branchid` = IF(`branchid` = \'\' AND ? <> \'\', ?, `branchid`),
+                `employer` = IF(`employer` = \'\' AND ? <> \'\', ?, `employer`),
+                `empcno` = IF(`empcno` = \'\' AND ? <> \'\', ?, `empcno`),
+                `empadr` = IF(`empadr` = \'\' AND ? <> \'\', ?, `empadr`),
+                `payscale` = IF(`payscale` = \'\' AND ? <> \'\', ?, `payscale`),
+                `status` = IF(`status` = \'\' AND ? <> \'\', ?, `status`),
+                `createdBy` = IF(`createdBy` = \'\' AND ? <> \'\', ?, `createdBy`),
+                `updatedBy` = IF(`updatedBy` = \'\' AND ? <> \'\', ?, `updatedBy`),
+                `updatedate` = IF(`updatedate` IS NULL AND ? IS NOT NULL, ?, `updatedate`),
+                `fordvv` = IF(`fordvv` = \'\' AND ? <> \'\', ?, `fordvv`),
+                `type` = IF(`type` = \'\' AND ? <> \'\', ?, `type`),
+                `includedvv` = IF(`includedvv` = \'\' AND ? <> \'\', ?, `includedvv`),
+                `createdate` = IF(`createdate` IS NULL AND ? IS NOT NULL, ?, `createdate`)
              WHERE `admno` <> \'\' AND `admno` = ?'
         );
-        $where = $this->alumniSourceWhere();
         $order = '';
         if ($this->sourceHasColumn('updated_at')) {
-            $order = ' ORDER BY `updated_at` ASC';
+            $order = ' ORDER BY `updated_at` DESC';
             if ($this->sourceHasColumn('id')) {
-                $order .= ', `id` ASC';
+                $order .= ', `id` DESC';
             }
         } elseif ($this->sourceHasColumn('id')) {
-            $order = ' ORDER BY `id` ASC';
+            $order = ' ORDER BY `id` DESC';
         }
         $chunkSize = 50;
         $offset = 0;
         $seen = 0;
         while (true) {
-            $sql = 'SELECT ' . $select . ' FROM `student_placements`';
-            if ($where !== '') {
-                $sql .= ' WHERE ' . $where;
-            }
-            $statement = $this->db->query($sql . $order . ' LIMIT ' . $chunkSize . ' OFFSET ' . $offset);
+            $statement = $this->db->query(
+                'SELECT ' . $select . ' FROM `student_placements`' . $order
+                . ' LIMIT ' . $chunkSize . ' OFFSET ' . $offset
+            );
             $fetched = 0;
             while ($source = $statement->fetch()) {
                 $fetched++;
-                if (!is_array($source) || !$this->sourceRowIsAlumni($source)) {
-                    unset($source);
+                if (!is_array($source)) {
                     continue;
                 }
                 $row = $this->detailRowFromSource($source);
+                $admnos = $this->matchAdmnos($source, $row);
                 unset($source);
-                $seen++;
-                $admno = (string) ($row['admno'] ?? '');
-                if ($admno === '') {
+                if ($admnos === [] || !$this->rowHasPlacementData($row)) {
                     continue;
                 }
-                $update->execute([
-                    $row['cno'], $row['email'], $row['courseid'], $row['branchid'],
-                    $row['employer'], $row['empcno'], $row['empadr'], $row['payscale'],
-                    $row['status'], $row['createdBy'], $row['updatedBy'], $row['updatedate'],
-                    $row['fordvv'], $row['type'], $row['includedvv'], $row['createdate'],
-                    $admno,
-                ]);
+                $seen++;
+                $values = [
+                    $row['cno'], $row['cno'],
+                    $row['email'], $row['email'],
+                    $row['courseid'], $row['courseid'],
+                    $row['branchid'], $row['branchid'],
+                    $row['employer'], $row['employer'],
+                    $row['empcno'], $row['empcno'],
+                    $row['empadr'], $row['empadr'],
+                    $row['payscale'], $row['payscale'],
+                    $row['status'], $row['status'],
+                    $row['createdBy'], $row['createdBy'],
+                    $row['updatedBy'], $row['updatedBy'],
+                    $row['updatedate'], $row['updatedate'],
+                    $row['fordvv'], $row['fordvv'],
+                    $row['type'], $row['type'],
+                    $row['includedvv'], $row['includedvv'],
+                    $row['createdate'], $row['createdate'],
+                ];
+                foreach ($admnos as $admno) {
+                    $update->execute([...$values, $admno]);
+                }
             }
             $statement->closeCursor();
             unset($statement);
@@ -880,6 +905,52 @@ class StudentPlacementDetailsTable
         }
 
         return $seen;
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     * @param array<string, string|null> $row
+     * @return list<string>
+     */
+    private function matchAdmnos(array $source, array $row): array
+    {
+        $payload = $this->payloadFromSource($source);
+        $bags = [$payload];
+        foreach (['roster', 'personal', 'placement'] as $nest) {
+            if (is_array($payload[$nest] ?? null)) {
+                $bags[] = $payload[$nest];
+            }
+        }
+        $keys = [(string) ($row['admno'] ?? '')];
+        foreach ($bags as $bag) {
+            foreach (['admno', 'stud_admno', 'admissionNo', 'admission_no', 'registerNumber', 'registerno'] as $name) {
+                $keys[] = trim((string) ($bag[$name] ?? ''));
+            }
+        }
+        $out = [];
+        foreach ($keys as $key) {
+            $key = $this->clip($key, 64);
+            if ($key === '' || isset($out[$key])) {
+                continue;
+            }
+            $out[$key] = $key;
+        }
+
+        return array_values($out);
+    }
+
+    /**
+     * @param array<string, string|null> $row
+     */
+    private function rowHasPlacementData(array $row): bool
+    {
+        foreach (['cno', 'email', 'courseid', 'branchid', 'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy', 'updatedBy', 'fordvv', 'type', 'includedvv'] as $field) {
+            if (trim((string) ($row[$field] ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return ($row['updatedate'] ?? null) !== null || ($row['createdate'] ?? null) !== null;
     }
 
     private function syncSignaturePath(): string
