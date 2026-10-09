@@ -3304,6 +3304,7 @@ final class AesApiService
             ? $this->placementCourseParamVariants($programmeCode)
             : [[]];
 
+        $collected = [];
         foreach ($courseVariants as $courseParams) {
             $params = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
             if ($branch !== '') {
@@ -3312,16 +3313,24 @@ final class AesApiService
 
             $labels = $this->fetchStudInfoFieldLabels($params, 'stud_class', $programmeCode, $branch);
             if ($labels !== []) {
-                return $labels;
+                $collected = array_merge($collected, $labels);
             }
 
             if ($branch !== '') {
                 $withoutBranch = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
                 $labels = $this->fetchStudInfoFieldLabels($withoutBranch, 'stud_class', $programmeCode);
                 if ($labels !== []) {
-                    return $labels;
+                    $collected = array_merge($collected, $labels);
                 }
             }
+        }
+
+        $collected = array_values(array_unique(array_filter(array_map(
+            static fn (string $v): string => trim($v),
+            $collected
+        ), static fn (string $v): bool => $v !== '')));
+        if ($collected !== []) {
+            return $collected;
         }
 
         return $this->fetchLegacyPlacementClassBatches($deptAesId, $programmeCode, $branch);

@@ -259,7 +259,7 @@ const StaffApi = {
     if (params.branch) qs.set('branch', params.branch);
     qs.set('studRole', params.studRole || 'all');
     const q = qs.toString();
-    const cacheKey = 'ph_staff_placement_filters_v3_' + q;
+    const cacheKey = 'ph_staff_placement_filters_v4_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
@@ -267,9 +267,12 @@ const StaffApi = {
         const depts = parsed?.data?.departments;
         const deptOk = Array.isArray(depts) && depts.length > 0;
         const deptScoped = !!String(params.departmentId || '').trim();
+        const programScoped = !!String(params.program || '').trim();
         const programs = parsed?.data?.programs;
         const programsOk = !deptScoped || (Array.isArray(programs) && programs.length > 0);
-        if (parsed && parsed._at && (Date.now() - parsed._at) < 300000 && parsed.data && deptOk && programsOk) {
+        const batches = parsed?.data?.batches;
+        const batchesOk = !programScoped || (Array.isArray(batches) && batches.length > 0);
+        if (parsed && parsed._at && (Date.now() - parsed._at) < 300000 && parsed.data && deptOk && programsOk && batchesOk) {
           return parsed.data;
         }
       }
@@ -277,8 +280,10 @@ const StaffApi = {
     const res = await api('/staff/placement-filters' + (q ? `?${q}` : ''));
     const data = res.success && res.data ? res.data : null;
     const deptScoped = !!String(params.departmentId || '').trim();
+    const programScoped = !!String(params.program || '').trim();
     const programsOk = !deptScoped || (Array.isArray(data?.programs) && data.programs.length > 0);
-    if (data && Array.isArray(data.departments) && data.departments.length && programsOk) {
+    const batchesOk = !programScoped || (Array.isArray(data?.batches) && data.batches.length > 0);
+    if (data && Array.isArray(data.departments) && data.departments.length && programsOk && batchesOk) {
       try {
         sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
       } catch (_) { /* ignore */ }

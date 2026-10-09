@@ -84,12 +84,24 @@ if ($deptId !== '') {
         echo '  sample: ' . implode(', ', array_slice($deptPrograms, 0, 8)) . "\n";
     }
     echo 'Department batches (no branch selected): ' . count($deptBatches) . "\n";
-    if ($deptBatches !== []) {
-        echo '  sample: ' . implode(', ', array_slice($deptBatches, 0, 6)) . "\n";
-    }
     if ($deptPrograms === []) {
         fwrite(STDERR, "FAIL: no programmes for selected department.\n");
         $fail = true;
+    }
+    $sampleProgram = trim((string) ($opts['program'] ?? ''));
+    if ($sampleProgram === '' && $deptPrograms !== []) {
+        $sampleProgram = (string) $deptPrograms[0];
+    }
+    if ($sampleProgram !== '') {
+        $scopedBatches = $filterSvc->fetchBatchOptions($deptFilterCtx, $sampleProgram, '', false);
+        echo "Batches for programme [{$sampleProgram}]: " . count($scopedBatches) . "\n";
+        if ($scopedBatches !== []) {
+            echo '  sample: ' . implode(', ', array_slice($scopedBatches, 0, 6)) . "\n";
+        }
+        if ($scopedBatches === []) {
+            fwrite(STDERR, "FAIL: no batches for programme {$sampleProgram} in selected department.\n");
+            $fail = true;
+        }
     }
 
     $program = trim((string) ($opts['program'] ?? ''));

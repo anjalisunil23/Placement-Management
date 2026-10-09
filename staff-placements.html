@@ -523,9 +523,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009branch2"></script>
+  <script src="js/staff-api.js?v=20261009batch"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009branch2"></script>
+  <script src="js/officer-api.js?v=20261009batch"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -951,9 +951,11 @@
         if (needDept && !hasDept) programEl.title = 'Choose a department first';
         else programEl.removeAttribute('title');
       }
+      const hasProgram = !!String(document.getElementById('filterProgram')?.value || '').trim();
       if (batchEl) {
-        batchEl.disabled = needDept && !hasDept;
+        batchEl.disabled = (needDept && !hasDept) || (needDept && hasDept && !hasProgram);
         if (needDept && !hasDept) batchEl.title = 'Choose a department first';
+        else if (needDept && hasDept && !hasProgram) batchEl.title = 'Choose a branch first';
         else batchEl.removeAttribute('title');
       }
     }
@@ -1063,16 +1065,34 @@
       applyAesBranchHintFromFiltersApi(data);
       lastFilterPrograms = programs;
       lastFilterBatches = batches;
-      if ((!programs.length || !batches.length) && filterDepartmentId) {
-        const again = await registryApi.fetchPlacementFilters({
+      const programForBatches = String(filterProgram || initialProgram || '').trim();
+      if (filterDepartmentId && programForBatches) {
+        const scoped = await registryApi.fetchPlacementFilters({
           departmentId: filterDepartmentId,
-          program: filterProgram || '',
-          branch: filterBranch,
+          program: programForBatches,
+          branch: filterBranch || '',
           studRole: 'all',
         });
-        applyAesBranchHintFromFiltersApi(again);
-        batches = again?.batches || batches;
-        if (!programs.length && again?.programs?.length) {
+        if (scoped) {
+          applyAesBranchHintFromFiltersApi(scoped);
+          if (Array.isArray(scoped.programs) && scoped.programs.length) {
+            programs = scoped.programs;
+          }
+          if (Array.isArray(scoped.batches)) {
+            batches = scoped.batches;
+          }
+          if (Array.isArray(scoped.assignedClassBatches) && scoped.assignedClassBatches.length) {
+            apiAssignedBatches = scoped.assignedClassBatches.map(v => String(v || '').trim()).filter(Boolean);
+          }
+        }
+      } else if ((!programs.length || !batches.length) && filterDepartmentId) {
+        const again = await registryApi.fetchPlacementFilters({
+          departmentId: filterDepartmentId,
+          program: '',
+          branch: '',
+          studRole: 'all',
+        });
+        if (again?.programs?.length) {
           programs = again.programs;
         }
         if (Array.isArray(again?.assignedClassBatches) && again.assignedClassBatches.length) {

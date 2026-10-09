@@ -307,7 +307,9 @@ final class DepartmentProgrammeCatalog
             $canonical = self::normalizeCode($codeOrAlias);
         }
         if ($canonical === '') {
-            return [];
+            $raw = trim($codeOrAlias);
+
+            return $raw !== '' ? [$raw] : [];
         }
 
         $tokens = [];
