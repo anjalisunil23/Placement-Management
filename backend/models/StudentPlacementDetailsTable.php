@@ -592,7 +592,8 @@ class StudentPlacementDetailsTable
     }
 
     /**
-     * Remove one extra entry. The first row for this admission number is cleared and kept.
+     * Delete this placement entry, including duplicate copies of the same values.
+     * If nothing is left for the admission number, keep a blank student row.
      */
     public function deleteEntry(string $admno, int $entryId): bool
     {
@@ -600,29 +601,63 @@ class StudentPlacementDetailsTable
         if ($admno === '' || $entryId <= 0 || !$this->ensure()) {
             return false;
         }
-        $min = $this->db->prepare(
-            'SELECT MIN(`id`) FROM `student_placement_details` WHERE UPPER(TRIM(`admno`)) = ?'
+        $found = $this->db->prepare(
+            'SELECT * FROM `student_placement_details` WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ? LIMIT 1'
         );
-        $min->execute([$admno]);
-        $firstId = (int) $min->fetchColumn();
-        if ($firstId === $entryId) {
-            $statement = $this->db->prepare(
-                'UPDATE `student_placement_details` SET
-                    `employer` = \'\', `empcno` = \'\', `empadr` = \'\', `payscale` = \'\',
-                    `status` = \'\', `type` = \'\', `fordvv` = \'\', `includedvv` = \'\',
-                    `offer_letter` = \'\', `updatedate` = NOW()
-                 WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ?'
-            );
-            $statement->execute([$entryId, $admno]);
-
-            return $statement->rowCount() > 0;
+        $found->execute([$entryId, $admno]);
+        $row = $found->fetch();
+        if (!is_array($row)) {
+            return false;
         }
         $statement = $this->db->prepare(
-            'DELETE FROM `student_placement_details` WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ?'
+            'DELETE FROM `student_placement_details`
+             WHERE UPPER(TRIM(`admno`)) = ?
+               AND TRIM(IFNULL(`type`, \'\')) = ?
+               AND TRIM(IFNULL(`employer`, \'\')) = ?
+               AND TRIM(IFNULL(`empcno`, \'\')) = ?
+               AND TRIM(IFNULL(`empadr`, \'\')) = ?
+               AND TRIM(IFNULL(`payscale`, \'\')) = ?
+               AND TRIM(IFNULL(`status`, \'\')) = ?
+               AND TRIM(IFNULL(`fordvv`, \'\')) = ?
+               AND TRIM(IFNULL(`includedvv`, \'\')) = ?'
         );
-        $statement->execute([$entryId, $admno]);
+        $statement->execute([
+            $admno,
+            trim((string) ($row['type'] ?? '')),
+            trim((string) ($row['employer'] ?? '')),
+            trim((string) ($row['empcno'] ?? '')),
+            trim((string) ($row['empadr'] ?? '')),
+            trim((string) ($row['payscale'] ?? '')),
+            trim((string) ($row['status'] ?? '')),
+            trim((string) ($row['fordvv'] ?? '')),
+            trim((string) ($row['includedvv'] ?? '')),
+        ]);
+        if ($statement->rowCount() < 1) {
+            return false;
+        }
+        $left = $this->db->prepare(
+            'SELECT COUNT(*) FROM `student_placement_details` WHERE UPPER(TRIM(`admno`)) = ?'
+        );
+        $left->execute([$admno]);
+        if ((int) $left->fetchColumn() === 0) {
+            $insert = $this->db->prepare(
+                'INSERT INTO `student_placement_details`
+                    (`student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`, `createdate`, `updatedate`)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())'
+            );
+            $insert->execute([
+                (string) ($row['student'] ?? ''),
+                (string) ($row['admno'] ?? ''),
+                (string) ($row['stud_role'] ?? ''),
+                (string) ($row['cno'] ?? ''),
+                (string) ($row['email'] ?? ''),
+                (string) ($row['year'] ?? ''),
+                (string) ($row['courseid'] ?? ''),
+                (string) ($row['branchid'] ?? ''),
+            ]);
+        }
 
-        return $statement->rowCount() > 0;
+        return true;
     }
 
     /**

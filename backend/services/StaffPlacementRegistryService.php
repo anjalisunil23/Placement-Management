@@ -3239,20 +3239,15 @@ final class StaffPlacementRegistryService
         $details = new \PMS\Models\StudentPlacementDetailsTable();
         $existing = $this->editableDetailsRow($staffCtx, $studentId, $details);
         $entryId = (int) ($_GET['entryId'] ?? 0);
-        if ($entryId > 0) {
-            $admno = (string) ($existing['admno'] ?? '');
-            if (!$details->deleteEntry($admno, $entryId)) {
-                Response::error('Could not delete this placement.', 500);
-            }
-
-            return ['studentId' => $this->detailsRowKey($existing), 'entryId' => $entryId];
+        if ($entryId <= 0) {
+            $entryId = (int) ($existing['id'] ?? 0);
         }
-        $key = $this->detailsRowKey($existing);
-        if (!$details->clearPlacementFields($key)) {
+        $admno = (string) ($existing['admno'] ?? '');
+        if (!$details->deleteEntry($admno, $entryId)) {
             Response::error('Could not delete this placement.', 500);
         }
 
-        return ['studentId' => $key];
+        return ['studentId' => $this->detailsRowKey($existing), 'entryId' => $entryId];
     }
 
     /**

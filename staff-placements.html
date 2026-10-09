@@ -120,6 +120,7 @@
                 </div>
               </div>
               <div class="modal-footer">
+                <button type="button" class="btn btn-primary px-4" id="viewPlacementAddBtn" hidden>Add</button>
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
               </div>
             </div>
@@ -1394,7 +1395,7 @@
     let viewPlacementRows = [];
     let viewPlacementStudentId = '';
 
-    const ENTRY_VIEW_KEYS = ['type', 'employer', 'empcno', 'empadr', 'payscale', 'role', 'batch'];
+    const ENTRY_VIEW_KEYS = ['type', 'employer', 'empcno', 'empadr', 'payscale'];
 
     function placementEntryFromRow(row) {
       return {
@@ -1466,6 +1467,8 @@
       const heading = bracket ? `${name} (${bracket})` : (name || 'Student details');
       const title = document.getElementById('viewPlacementTitle');
       if (title) title.textContent = heading;
+      const addBtn = document.getElementById('viewPlacementAddBtn');
+      if (addBtn) addBtn.hidden = !canEditSelectedBatch;
       const identity = document.getElementById('viewPlacementIdentity');
       if (identity) identity.innerHTML = '';
       const entryFallback = { role, batch: year };
@@ -1726,7 +1729,7 @@
       }
       const studentId = document.getElementById('editStudentId').value;
       if (!studentId) return;
-      if (!window.confirm('Delete this student\'s placement details? The student row stays in the list.')) return;
+      if (!window.confirm('Delete this entry from the database? The student stays in the list.')) return;
       const btn = document.getElementById('editPlacementDeleteBtn');
       if (btn) btn.disabled = true;
       const entryId = document.getElementById('editEntryId')?.value || '';
@@ -1941,6 +1944,9 @@
     });
     document.getElementById('editPlacementForm')?.addEventListener('submit', saveEditPlacement);
     document.getElementById('editPlacementDeleteBtn')?.addEventListener('click', deleteEditPlacement);
+    document.getElementById('viewPlacementAddBtn')?.addEventListener('click', () => {
+      if (viewPlacementStudentId) openAddPlacement(viewPlacementStudentId);
+    });
     document.getElementById('editType')?.addEventListener('change', syncEditTypeFields);
     document.getElementById('uploadPlacementForm')?.addEventListener('submit', saveUploadPlacement);
     document.getElementById('registryTable')?.addEventListener('click', (e) => {
