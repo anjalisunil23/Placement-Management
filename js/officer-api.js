@@ -480,7 +480,7 @@ const OfficerApi = {
     if (params.branch) qs.set('branch', params.branch);
     qs.set('studRole', params.studRole || 'all');
     const q = qs.toString();
-    const cacheKey = 'ph_officer_placement_filters_' + q;
+    const cacheKey = 'ph_officer_placement_filters_v2_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {

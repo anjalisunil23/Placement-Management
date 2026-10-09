@@ -2278,24 +2278,29 @@ final class StaffPlacementRegistryService
             foreach ($catalog as $aesRow) {
                 $code = strtoupper(trim((string) ($aesRow['code'] ?? '')));
                 $name = trim((string) ($aesRow['name'] ?? ''));
-                if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
+                if ($name === '') {
                     continue;
                 }
                 if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
                     continue;
                 }
                 $local = $model->findByCode($code);
+                if ($local === null && $code !== '' && preg_match('/^\d+$/', $code) === 1) {
+                    $local = $model->findByAesId($code);
+                }
                 if ($local === null) {
                     continue;
                 }
-                $id = (string) ($local['_id'] ?? '');
+                $id = (string) ($local['_id'] ?? $local['id'] ?? '');
                 if ($id === '') {
                     continue;
                 }
+                $localCode = strtoupper(trim((string) ($local['code'] ?? $code)));
+                $localName = trim((string) ($local['name'] ?? $name));
                 $byId[$id] = [
                     'id'   => $id,
-                    'code' => $code,
-                    'name' => $name,
+                    'code' => $localCode !== '' && preg_match('/^\d+$/', $localCode) !== 1 ? $localCode : $code,
+                    'name' => $localName !== '' ? $localName : $name,
                 ];
             }
         }
@@ -2303,20 +2308,21 @@ final class StaffPlacementRegistryService
         foreach ($model->findAll([], 500) as $dept) {
             $code = strtoupper(trim((string) ($dept['code'] ?? '')));
             $name = trim((string) ($dept['name'] ?? ''));
-            if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
+            if ($name === '') {
                 continue;
             }
             if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
                 continue;
             }
-            $id = (string) ($dept['_id'] ?? '');
+            $id = (string) ($dept['_id'] ?? $dept['id'] ?? '');
             if ($id === '') {
                 continue;
             }
+            $displayCode = $code !== '' && preg_match('/^\d+$/', $code) !== 1 ? $code : '';
             $byId[$id] = [
                 'id'   => $id,
-                'code' => $code,
-                'name' => $name !== '' ? $name : $code,
+                'code' => $displayCode !== '' ? $displayCode : strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? ''),
+                'name' => $name,
             ];
         }
 

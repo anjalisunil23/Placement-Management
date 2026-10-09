@@ -51,6 +51,9 @@ class DepartmentModel extends BaseModel
     {
         $code = strtoupper(trim($code));
         $name = strtoupper(trim($name));
+        if ($code !== '' && preg_match('/^\d+$/', $code) === 1) {
+            $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? '');
+        }
         if ($code === '' || preg_match('/^\d+$/', $code) === 1) {
             return false;
         }
