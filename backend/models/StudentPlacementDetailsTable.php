@@ -39,8 +39,9 @@ class StudentPlacementDetailsTable
             return false;
         }
         $this->ensureColumns();
+        $this->backfillStudRole();
 
-        return $this->hasColumn('createdat');
+        return $this->hasColumn('createdat') && $this->hasColumn('stud_role');
     }
 
     private function createTable(): void
@@ -50,6 +51,7 @@ class StudentPlacementDetailsTable
               id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
               student VARCHAR(255) NOT NULL DEFAULT \'\',
               admno VARCHAR(64) NOT NULL DEFAULT \'\',
+              stud_role VARCHAR(16) NOT NULL DEFAULT \'\',
               cno VARCHAR(64) NOT NULL DEFAULT \'\',
               email VARCHAR(255) NOT NULL DEFAULT \'\',
               `year` VARCHAR(64) NOT NULL DEFAULT \'\',
@@ -78,6 +80,7 @@ class StudentPlacementDetailsTable
     private function ensureColumns(): void
     {
         $missing = [
+            'stud_role' => "VARCHAR(16) NOT NULL DEFAULT ''",
             'courseid' => "VARCHAR(64) NOT NULL DEFAULT ''",
             'branchid' => "VARCHAR(64) NOT NULL DEFAULT ''",
             'empcno' => "VARCHAR(128) NOT NULL DEFAULT ''",
@@ -184,7 +187,7 @@ class StudentPlacementDetailsTable
         }
         $limit = max(1, min($limit, 20000));
         $statement = $this->db->query(
-            'SELECT `id`, `student`, `admno`, `cno`, `email`, `year`, `courseid`, `branchid`,
+            'SELECT `id`, `student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`,
                     `employer`, `empcno`, `empadr`, `payscale`, `status`, `createdBy`, `updatedBy`,
                     `updatedate`, `fordvv`, `type`, `includedvv`, `createdat`
              FROM `student_placement_details`
@@ -321,6 +324,7 @@ class StudentPlacementDetailsTable
         return [
             'student' => $this->clip((string) ($roster['studentName'] ?? ''), 255),
             'admno' => $this->clip((string) ($roster['admno'] ?? $roster['registerNumber'] ?? ''), 64),
+            'stud_role' => $this->normalizeStudRole((string) ($roster['studRole'] ?? $payload['stud_role'] ?? '')),
             'cno' => $this->clip((string) ($roster['phone'] ?? ''), 64),
             'email' => $this->clip((string) ($roster['email'] ?? ''), 255),
             'year' => $this->clip((string) ($roster['classBatch'] ?? ''), 64),
@@ -349,7 +353,7 @@ class StudentPlacementDetailsTable
         $placeholders = [];
         $values = [];
         $fields = [
-            'student', 'admno', 'cno', 'email', 'year', 'courseid', 'branchid',
+            'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
             'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy',
             'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdat',
         ];
@@ -364,6 +368,41 @@ class StudentPlacementDetailsTable
             . implode(', ', $placeholders);
         $statement = $this->db->prepare($sql);
         $statement->execute($values);
+    }
+
+    private function backfillStudRole(): void
+    {
+        if (!$this->hasColumn('stud_role')) {
+            return;
+        }
+        try {
+            $blank = (int) $this->db->query(
+                "SELECT COUNT(*) FROM `student_placement_details` WHERE `stud_role` = ''"
+            )->fetchColumn();
+            if ($blank === 0) {
+                return;
+            }
+            $this->db->exec(
+                "UPDATE `student_placement_details` p
+                 INNER JOIN `student_details` d
+                   ON d.adm_no <> '' AND d.adm_no = p.admno
+                 SET p.stud_role = LOWER(d.stud_role)
+                 WHERE p.stud_role = ''
+                   AND LOWER(d.stud_role) IN ('student', 'alumni')"
+            );
+        } catch (\Throwable) {
+            // student_details may not be ready yet; the next placements load retries.
+        }
+    }
+
+    private function normalizeStudRole(string $value): string
+    {
+        $value = strtolower(trim($value));
+        if ($value === 'alumni' || $value === 'student') {
+            return $value;
+        }
+
+        return '';
     }
 
     private function clip(string $value, int $length): string

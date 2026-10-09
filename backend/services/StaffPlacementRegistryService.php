@@ -721,6 +721,7 @@ final class StaffPlacementRegistryService
                 'admissionNo' => $admno,
                 'registerNumber' => $admno,
                 'department' => $person['department'],
+                'stud_role' => $person['studRole'],
                 'studRole' => $person['studRole'],
                 'cno' => trim((string) ($placement['cno'] ?? '')),
                 'phone' => trim((string) ($placement['cno'] ?? '')),
@@ -1012,7 +1013,7 @@ final class StaffPlacementRegistryService
     public static function registryTableColumns(): array
     {
         $keys = [
-            'student', 'admno', 'cno', 'email', 'year', 'courseid', 'branchid',
+            'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
             'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy',
             'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdat',
         ];
