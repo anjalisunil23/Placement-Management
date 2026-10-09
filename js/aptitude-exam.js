@@ -224,6 +224,9 @@
     let keydownGuardBound = false;
     let focusEnforceTimer = null;
     let hiddenViolationPending = false;
+    let fullscreenListenerBound = false;
+    let allowFullscreenExit = false;
+    let fullscreenEnforceTimer = null;
     const MAX_MALPRACTICE_WARNINGS = 2;
     const TAB_SWITCH_PROHIBITED_MSG = 'You left the test tab. Tab switching is not allowed. Return here immediately to see your malpractice warning.';
 
@@ -328,7 +331,7 @@
         return;
       }
       const n = Math.min(focusViolationCount, MAX_MALPRACTICE_WARNINGS);
-      const blocked = source === 'keyboard';
+      const blocked = source === 'keyboard' || source === 'fullscreen';
       const deferOverlay = opts.deferOverlay === true || document.hidden;
       if (!deferOverlay) {
         toast(
@@ -355,10 +358,73 @@
 
     function onExamKeydown(e) {
       if (!focusLockActive() || finalizingViolation) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!getFullscreenElement()) tryEnterExamFullscreen();
+        toast('Stay in fullscreen until you submit the test.', 'warning');
+        return;
+      }
       if (!isLeaveShortcut(e)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       recordBlockedMalpracticeAttempt('keyboard');
+    }
+
+    function getFullscreenElement() {
+      return document.fullscreenElement || document.webkitFullscreenElement || null;
+    }
+
+    async function tryEnterExamFullscreen() {
+      if (!focusLockActive() || allowFullscreenExit) return;
+      const node = document.documentElement;
+      try {
+        if (node.requestFullscreen) await node.requestFullscreen();
+        else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
+      } catch (_) { /* ignore */ }
+    }
+
+    function exitExamFullscreen() {
+      if (!allowFullscreenExit) return;
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } catch (_) { /* ignore */ }
+    }
+
+    function startFullscreenEnforce() {
+      stopFullscreenEnforce();
+      fullscreenEnforceTimer = window.setInterval(() => {
+        if (allowFullscreenExit || !focusLockActive() || finalizingViolation) return;
+        if (!getFullscreenElement()) tryEnterExamFullscreen();
+      }, 400);
+    }
+
+    function stopFullscreenEnforce() {
+      if (fullscreenEnforceTimer) {
+        clearInterval(fullscreenEnforceTimer);
+        fullscreenEnforceTimer = null;
+      }
+    }
+
+    function onFullscreenChange() {
+      if (allowFullscreenExit || !focusLockActive() || finalizingViolation) return;
+      if (getFullscreenElement()) return;
+      recordBlockedMalpracticeAttempt('fullscreen');
+      tryEnterExamFullscreen();
+    }
+
+    function bindFullscreenGuard(on) {
+      if (on && !fullscreenListenerBound) {
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+        fullscreenListenerBound = true;
+      }
+      if (!on && fullscreenListenerBound) {
+        document.removeEventListener('fullscreenchange', onFullscreenChange);
+        document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+        fullscreenListenerBound = false;
+      }
     }
 
     function startFocusEnforce() {
@@ -471,6 +537,7 @@
       if (hiddenViolationPending) {
         hiddenViolationPending = false;
         window.focus();
+        tryEnterExamFullscreen();
         if (violationAckRequired && !finalizingViolation) {
           const n = Math.min(focusViolationCount, MAX_MALPRACTICE_WARNINGS);
           toast(`Warning ${n} of ${MAX_MALPRACTICE_WARNINGS}: tab switching is not allowed.`, 'warning');
@@ -510,6 +577,8 @@
         document.addEventListener('visibilitychange', onVisibilityChange);
         bindKeydownGuard(true);
         startFocusEnforce();
+        bindFullscreenGuard(true);
+        startFullscreenEnforce();
         root.addEventListener('copy', onClipboardBlock, true);
         root.addEventListener('cut', onClipboardBlock, true);
         root.addEventListener('paste', onClipboardBlock, true);
@@ -521,6 +590,8 @@
         document.removeEventListener('visibilitychange', onVisibilityChange);
         bindKeydownGuard(false);
         stopFocusEnforce();
+        bindFullscreenGuard(false);
+        stopFullscreenEnforce();
         hiddenViolationPending = false;
         root.removeEventListener('copy', onClipboardBlock, true);
         root.removeEventListener('cut', onClipboardBlock, true);
@@ -532,6 +603,9 @@
       if (!on) {
         hideLockOverlay();
         violationAckRequired = false;
+        allowFullscreenExit = true;
+        exitExamFullscreen();
+        allowFullscreenExit = false;
       }
     }
 
@@ -544,7 +618,6 @@
       lastFocusViolationAt = 0;
       bindLockdownGuards(false);
       bindUnload(false);
-      stopFocusEnforce();
       root.removeAttribute('data-exam-locked');
     }
 
@@ -575,6 +648,7 @@
         </div>
         <div class="alert alert-warning py-2 px-3 small mb-3">
           <strong>During the test:</strong> copying questions and pasting answers are disabled.
+          <strong>Fullscreen is required</strong> until you submit — do not press Esc or exit fullscreen.
           <strong>Tab switching is not allowed</strong> — stay on this test window. Each blocked attempt gives a malpractice warning (${MAX_MALPRACTICE_WARNINGS} warnings allowed); the next attempt auto-submits your test and signs you out.
           ${isContestAttempt(test) ? ' Challenge rules apply for the full duration.' : ''}
         </div>
@@ -760,6 +834,7 @@
       focusViolationCount = 0;
       violationAckRequired = false;
       finalizingViolation = false;
+      allowFullscreenExit = false;
       examLockdown = true;
       timerDeadline = state.endsAt;
       remainingMs = durationMs;
@@ -772,6 +847,7 @@
       renderQuestion();
       restoreExamInteractions();
       startTimer();
+      tryEnterExamFullscreen();
     }
 
     async function submitExam(auto = false, options = {}) {

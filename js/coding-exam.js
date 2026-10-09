@@ -205,6 +205,8 @@
     let finalizingViolation = false;
     let lastFocusViolationAt = 0;
     let fullscreenListenerBound = false;
+    let allowFullscreenExit = false;
+    let fullscreenEnforceTimer = null;
     let keydownGuardBound = false;
     let focusEnforceTimer = null;
     let hiddenViolationPending = false;
@@ -470,10 +472,21 @@
 
     function onExamKeydown(e) {
       if (!focusLockActive() || finalizingViolation) return;
+      if (!isPracticeMode() && e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!getFullscreenElement()) tryEnterExamFullscreen();
+        toast('Stay in fullscreen until you submit the test.', 'warning');
+        return;
+      }
       if (!isLeaveShortcut(e)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       recordBlockedMalpracticeAttempt('keyboard');
+    }
+
+    function getFullscreenElement() {
+      return document.fullscreenElement || document.webkitFullscreenElement || null;
     }
 
     function startFocusEnforce() {
@@ -507,7 +520,7 @@
     }
 
     async function tryEnterExamFullscreen() {
-      if (isPracticeMode() || !focusLockActive()) return;
+      if (isPracticeMode() || !focusLockActive() || allowFullscreenExit) return;
       const node = document.documentElement;
       try {
         if (node.requestFullscreen) await node.requestFullscreen();
@@ -516,15 +529,31 @@
     }
 
     function exitExamFullscreen() {
+      if (!allowFullscreenExit) return;
       try {
         if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
         else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
       } catch (_) { /* ignore */ }
     }
 
+    function startFullscreenEnforce() {
+      stopFullscreenEnforce();
+      fullscreenEnforceTimer = window.setInterval(() => {
+        if (allowFullscreenExit || !focusLockActive() || isPracticeMode() || finalizingViolation) return;
+        if (!getFullscreenElement()) tryEnterExamFullscreen();
+      }, 400);
+    }
+
+    function stopFullscreenEnforce() {
+      if (fullscreenEnforceTimer) {
+        clearInterval(fullscreenEnforceTimer);
+        fullscreenEnforceTimer = null;
+      }
+    }
+
     function onFullscreenChange() {
-      if (!focusLockActive() || isPracticeMode() || finalizingViolation) return;
-      if (document.fullscreenElement || document.webkitFullscreenElement) return;
+      if (allowFullscreenExit || !focusLockActive() || isPracticeMode() || finalizingViolation) return;
+      if (getFullscreenElement()) return;
       recordBlockedMalpracticeAttempt('fullscreen');
       tryEnterExamFullscreen();
     }
@@ -664,6 +693,7 @@
           bindFullscreenGuard(true);
           bindKeydownGuard(true);
           startFocusEnforce();
+          startFullscreenEnforce();
           setDocumentFocusLockFlag(true);
         }
         clipboardGuardsEnabled = useClipboard;
@@ -677,6 +707,7 @@
         bindFullscreenGuard(false);
         bindKeydownGuard(false);
         stopFocusEnforce();
+        stopFullscreenEnforce();
         hiddenViolationPending = false;
         setDocumentFocusLockFlag(false);
         root.removeEventListener('copy', onClipboardBlock, true);
@@ -690,6 +721,9 @@
       focusGuardsEnabled = false;
       hideLockOverlay();
       violationAckRequired = false;
+      allowFullscreenExit = true;
+      exitExamFullscreen();
+      allowFullscreenExit = false;
       syncTimedExamChrome();
     }
 
@@ -702,8 +736,6 @@
       lastFocusViolationAt = 0;
       bindLockdownGuards(false);
       bindUnload(false);
-      stopFocusEnforce();
-      exitExamFullscreen();
       root.removeAttribute('data-cod-locked');
       syncTimedExamChrome();
     }
@@ -773,6 +805,7 @@
       const lockdownNote = `
         <div class="alert alert-warning py-2 px-3 small mb-3">
           <strong>During the test:</strong> copying questions and pasting answers are disabled.
+          <strong>Fullscreen is required</strong> until you submit — do not press Esc or exit fullscreen.
           <strong>Tab switching is not allowed</strong> — stay on this contest window. Each blocked attempt gives a malpractice warning (${MAX_MALPRACTICE_WARNINGS} warnings allowed); the next attempt auto-submits your test and signs you out.
         </div>`;
       el('instr-list').innerHTML = `${lockdownNote}<ul class="text-muted-2 mb-0 ps-3">${lines.length ? lines.map((line) => `<li>${esc(line)}</li>`).join('') : '<li>Read each problem carefully. Write and run your code before submitting.</li>'}</ul>`;
@@ -1118,6 +1151,7 @@
         focusViolationCount = 0;
         violationAckRequired = false;
         finalizingViolation = false;
+        allowFullscreenExit = false;
         examLockdown = true;
         clipboardGuardsEnabled = true;
         focusGuardsEnabled = true;
