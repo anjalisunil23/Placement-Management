@@ -217,7 +217,11 @@
     let lockOverlay = null;
     let lockdownGuardsBound = false;
     let beforeUnloadBound = false;
-    let focusViolationHandled = false;
+    let focusViolationCount = 0;
+    let pendingFocusViolation = false;
+    let finalizingViolation = false;
+    let lastFocusViolationAt = 0;
+    const MAX_FOCUS_VIOLATIONS = 3;
 
     function el(id) {
       return root.querySelector(`[data-exam="${id}"]`);
@@ -244,18 +248,31 @@
       overlay.style.pointerEvents = 'auto';
       overlay.innerHTML = `
         <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
-          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
+          <div data-exam-lock-title style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
           <div data-exam-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">You left the test window. Submitting your answers and signing you out…</div>
+          <button type="button" class="btn btn-primary btn-sm mt-3 d-none" data-exam-lock-dismiss>I understand — continue test</button>
         </div>`;
       document.body.appendChild(overlay);
       lockOverlay = overlay;
       return lockOverlay;
     }
 
-    function showLockOverlay(message) {
+    function showLockOverlay(message, opts = {}) {
       const overlay = ensureLockOverlay();
+      const title = overlay.querySelector('[data-exam-lock-title]');
       const msg = overlay.querySelector('[data-exam-lock-message]');
+      const dismiss = overlay.querySelector('[data-exam-lock-dismiss]');
+      if (title) title.textContent = opts.title || 'Test Ended';
       if (msg) msg.textContent = message || 'You have left the test window. Return to this tab to continue.';
+      if (dismiss) {
+        if (opts.dismissible) {
+          dismiss.classList.remove('d-none');
+          dismiss.onclick = () => hideLockOverlay();
+        } else {
+          dismiss.classList.add('d-none');
+          dismiss.onclick = null;
+        }
+      }
       overlay.style.display = 'flex';
     }
 
@@ -300,23 +317,28 @@
     }
 
     function logoutAfterViolation() {
-      if (typeof Auth !== 'undefined' && typeof Auth.logout === 'function') {
-        Auth.logout();
-        return;
+      if (typeof apiFetch === 'function') {
+        apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
       }
-      window.location.href = 'public-stats.html';
+      if (typeof Auth !== 'undefined' && typeof Auth.clear === 'function') {
+        Auth.clear();
+      }
+      window.location.href = 'login.html';
     }
 
-    async function handleFocusViolation() {
-      if (focusViolationHandled || !examLockdown || state?.submitted || !state?.started || submitting) return;
-      if (!document.hidden && document.hasFocus()) return;
-      focusViolationHandled = true;
+    function focusLockActive() {
+      return examLockdown && state?.started && !state?.submitted && !submitting;
+    }
+
+    async function finalizeAfterMaxViolations() {
+      if (finalizingViolation || !focusLockActive()) return;
+      finalizingViolation = true;
       stopTimer();
       bindLockdownGuards(false);
       bindUnload(false);
       examLockdown = false;
       freezeExamInteractions();
-      showLockOverlay('You switched tabs or left the test window. Your test is being submitted and you will be signed out.');
+      showLockOverlay('You exceeded the maximum number of malpractice warnings. Your test is being submitted and you will be signed out.');
       try {
         await submitExam(true, { logoutAfter: true });
       } catch (_) { /* still sign out below */ }
@@ -324,13 +346,42 @@
     }
 
     function onVisibilityChange() {
-      if (document.hidden) handleFocusViolation();
+      if (!focusLockActive() || finalizingViolation) return;
+      if (document.hidden) {
+        pendingFocusViolation = true;
+        showLockOverlay(
+          'You left the test window. Tab switching, minimizing, and opening other windows are prohibited during contests and tests.',
+          { title: 'Return to the test', dismissible: false }
+        );
+        return;
+      }
+      if (!pendingFocusViolation) {
+        hideLockOverlay();
+        return;
+      }
+      pendingFocusViolation = false;
+      const now = Date.now();
+      if (now - lastFocusViolationAt < 800) return;
+      lastFocusViolationAt = now;
+      focusViolationCount += 1;
+      if (focusViolationCount >= MAX_FOCUS_VIOLATIONS) {
+        finalizeAfterMaxViolations();
+        return;
+      }
+      showLockOverlay(
+        `Malpractice warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}. Do not switch tabs, minimize this window, or open other applications. After ${MAX_FOCUS_VIOLATIONS} warnings your test will be submitted automatically and you will be signed out.`,
+        { title: 'Malpractice warning', dismissible: true }
+      );
+      toast(`Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: stay on this test tab.`, 'warning');
     }
 
     function onClipboardBlock(e) {
       if (!examLockdown || !state?.started || state.submitted) return;
       e.preventDefault();
       e.stopPropagation();
+      if (e.type === 'paste') {
+        toast('Pasting answers is not allowed during the test.', 'warning');
+      }
     }
 
     function onContextMenuBlock(e) {
@@ -362,12 +413,18 @@
         root.removeEventListener('selectstart', onSelectStartBlock, true);
         lockdownGuardsBound = false;
       }
-      if (!on) hideLockOverlay();
+      if (!on) {
+        hideLockOverlay();
+        pendingFocusViolation = false;
+      }
     }
 
     function teardownLockdown() {
       examLockdown = false;
-      focusViolationHandled = false;
+      focusViolationCount = 0;
+      pendingFocusViolation = false;
+      finalizingViolation = false;
+      lastFocusViolationAt = 0;
       bindLockdownGuards(false);
       bindUnload(false);
       root.removeAttribute('data-exam-locked');
@@ -399,7 +456,8 @@
           <div class="col-6 col-md-4"><div class="card-surface p-3"><div class="small text-muted-2">Difficulty</div><strong>${esc(test.difficulty || '—')}</strong></div></div>
         </div>
         <div class="alert alert-warning py-2 px-3 small mb-3">
-          <strong>During the test:</strong> copy, cut, and paste are disabled. Switching tabs or windows will automatically submit your test and sign you out.
+          <strong>During the test:</strong> copying questions and pasting answers are disabled. Tab switching, minimizing, and opening other windows are prohibited.
+          You get ${MAX_FOCUS_VIOLATIONS} malpractice warnings; after that the test is submitted automatically and you are signed out.
           ${isContestAttempt(test) ? ' Challenge rules apply for the full duration.' : ''}
         </div>
         <h6 class="fw-bold">Instructions</h6>
@@ -581,7 +639,9 @@
       state.started = true;
       state.submitted = false;
       state.status = 'ACTIVE';
-      focusViolationHandled = false;
+      focusViolationCount = 0;
+      pendingFocusViolation = false;
+      finalizingViolation = false;
       examLockdown = true;
       timerDeadline = state.endsAt;
       remainingMs = durationMs;

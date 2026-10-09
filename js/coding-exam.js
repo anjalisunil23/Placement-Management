@@ -197,7 +197,13 @@
     let beforeUnloadBound = false;
     let examLockdown = false;
     let lockdownGuardsBound = false;
-    let focusViolationHandled = false;
+    let clipboardGuardsEnabled = false;
+    let focusGuardsEnabled = false;
+    let focusViolationCount = 0;
+    let pendingFocusViolation = false;
+    let finalizingViolation = false;
+    let lastFocusViolationAt = 0;
+    const MAX_FOCUS_VIOLATIONS = 3;
     let remainingMs = 0;
     let timerDeadline = 0;
     let lockOverlay = null;
@@ -257,18 +263,31 @@
       overlay.style.pointerEvents = 'auto';
       overlay.innerHTML = `
         <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
-          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
+          <div data-cod-lock-title style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
           <div data-cod-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">You left the test window. Submitting your answers and signing you out…</div>
+          <button type="button" class="btn btn-primary btn-sm mt-3 d-none" data-cod-lock-dismiss>I understand — continue test</button>
         </div>`;
       document.body.appendChild(overlay);
       lockOverlay = overlay;
       return lockOverlay;
     }
 
-    function showLockOverlay(message) {
+    function showLockOverlay(message, opts = {}) {
       const overlay = ensureLockOverlay();
+      const title = overlay.querySelector('[data-cod-lock-title]');
       const msg = overlay.querySelector('[data-cod-lock-message]');
+      const dismiss = overlay.querySelector('[data-cod-lock-dismiss]');
+      if (title) title.textContent = opts.title || 'Test Ended';
       if (msg) msg.textContent = message || 'You have left the test window. Please return to continue.';
+      if (dismiss) {
+        if (opts.dismissible) {
+          dismiss.classList.remove('d-none');
+          dismiss.onclick = () => hideLockOverlay();
+        } else {
+          dismiss.classList.add('d-none');
+          dismiss.onclick = null;
+        }
+      }
       overlay.style.display = 'flex';
     }
 
@@ -334,23 +353,34 @@
     }
 
     function logoutAfterViolation() {
-      if (typeof Auth !== 'undefined' && typeof Auth.logout === 'function') {
-        Auth.logout();
-        return;
+      if (typeof apiFetch === 'function') {
+        apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
       }
-      window.location.href = 'public-stats.html';
+      if (typeof Auth !== 'undefined' && typeof Auth.clear === 'function') {
+        Auth.clear();
+      }
+      window.location.href = 'login.html';
     }
 
-    async function handleFocusViolation() {
-      if (focusViolationHandled || !examLockdown || state?.submitted || !state?.attemptId || submitting) return;
-      if (!document.hidden && document.hasFocus()) return;
-      focusViolationHandled = true;
+    function clipboardLockActive() {
+      return (clipboardGuardsEnabled || examLockdown) && !!state?.attemptId && !state?.submitted;
+    }
+
+    function focusLockActive() {
+      return focusGuardsEnabled && examLockdown && !!state?.attemptId && !state?.submitted;
+    }
+
+    async function finalizeAfterMaxViolations() {
+      if (finalizingViolation || !focusLockActive()) return;
+      finalizingViolation = true;
       stopTimer();
       bindLockdownGuards(false);
       bindUnload(false);
       examLockdown = false;
+      focusGuardsEnabled = false;
+      clipboardGuardsEnabled = false;
       freezeExamInteractions();
-      showLockOverlay('You switched tabs or left the test window. Your test is being submitted and you will be signed out.');
+      showLockOverlay('You exceeded the maximum number of malpractice warnings. Your test is being submitted and you will be signed out.');
       try {
         await submitExam(true, { logoutAfter: true });
       } catch (_) { /* still sign out below */ }
@@ -358,45 +388,81 @@
     }
 
     function onVisibilityChange() {
-      if (document.hidden) handleFocusViolation();
+      if (!focusLockActive() || finalizingViolation) return;
+      if (document.hidden) {
+        pendingFocusViolation = true;
+        showLockOverlay(
+          'You left the test window. Tab switching, minimizing, and opening other windows are prohibited during contests and tests.',
+          { title: 'Return to the test', dismissible: false }
+        );
+        return;
+      }
+      if (!pendingFocusViolation) {
+        hideLockOverlay();
+        return;
+      }
+      pendingFocusViolation = false;
+      const now = Date.now();
+      if (now - lastFocusViolationAt < 800) return;
+      lastFocusViolationAt = now;
+      focusViolationCount += 1;
+      if (focusViolationCount >= MAX_FOCUS_VIOLATIONS) {
+        finalizeAfterMaxViolations();
+        return;
+      }
+      showLockOverlay(
+        `Malpractice warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}. Do not switch tabs, minimize this window, or open other applications. After ${MAX_FOCUS_VIOLATIONS} warnings your test will be submitted automatically and you will be signed out.`,
+        { title: 'Malpractice warning', dismissible: true }
+      );
+      toast(`Warning ${focusViolationCount} of ${MAX_FOCUS_VIOLATIONS}: stay on this test tab.`, 'warning');
     }
 
     function onClipboardBlock(e) {
-      if (!examLockdown || !state?.attemptId || state.submitted) return;
+      if (!clipboardLockActive()) return;
       if (e.type === 'paste') {
-        if (!isEditorArea(e.target)) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
+        e.preventDefault();
+        e.stopPropagation();
+        toast('Pasting code or answers is not allowed.', 'warning');
         return;
       }
-      if (isProblemArea(e.target) || selectionInProblemArea()) {
+      if (isProblemArea(e.target) || selectionInProblemArea()
+        || isEditorArea(e.target)) {
         e.preventDefault();
         e.stopPropagation();
       }
     }
 
     function onContextMenuBlock(e) {
-      if (!examLockdown || !state?.attemptId || state.submitted) return;
-      if (isProblemArea(e.target)) e.preventDefault();
+      if (!clipboardLockActive()) return;
+      if (isProblemArea(e.target) || isEditorArea(e.target)) e.preventDefault();
     }
 
     function onSelectStartBlock(e) {
-      if (!examLockdown || !state?.attemptId || state.submitted) return;
+      if (!clipboardLockActive()) return;
       if (isProblemArea(e.target)) e.preventDefault();
     }
 
-    function bindLockdownGuards(on) {
-      if (on && !lockdownGuardsBound) {
-        document.addEventListener('visibilitychange', onVisibilityChange);
-        root.addEventListener('copy', onClipboardBlock, true);
-        root.addEventListener('cut', onClipboardBlock, true);
-        root.addEventListener('paste', onClipboardBlock, true);
-        root.addEventListener('contextmenu', onContextMenuBlock, true);
-        root.addEventListener('selectstart', onSelectStartBlock, true);
-        lockdownGuardsBound = true;
+    function bindLockdownGuards(on, options = {}) {
+      const useClipboard = on && options.clipboard !== false;
+      const useFocus = on && options.focus === true;
+      if (on) {
+        if (!lockdownGuardsBound) {
+          root.addEventListener('copy', onClipboardBlock, true);
+          root.addEventListener('cut', onClipboardBlock, true);
+          root.addEventListener('paste', onClipboardBlock, true);
+          root.addEventListener('contextmenu', onContextMenuBlock, true);
+          root.addEventListener('selectstart', onSelectStartBlock, true);
+          lockdownGuardsBound = true;
+        }
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        if (useFocus) {
+          document.addEventListener('visibilitychange', onVisibilityChange);
+        }
+        clipboardGuardsEnabled = useClipboard;
+        focusGuardsEnabled = useFocus;
+        return;
       }
-      if (!on && lockdownGuardsBound) {
+      if (lockdownGuardsBound) {
         document.removeEventListener('visibilitychange', onVisibilityChange);
         root.removeEventListener('copy', onClipboardBlock, true);
         root.removeEventListener('cut', onClipboardBlock, true);
@@ -405,12 +471,18 @@
         root.removeEventListener('selectstart', onSelectStartBlock, true);
         lockdownGuardsBound = false;
       }
-      if (!on) hideLockOverlay();
+      clipboardGuardsEnabled = false;
+      focusGuardsEnabled = false;
+      hideLockOverlay();
+      pendingFocusViolation = false;
     }
 
     function teardownLockdown() {
       examLockdown = false;
-      focusViolationHandled = false;
+      focusViolationCount = 0;
+      pendingFocusViolation = false;
+      finalizingViolation = false;
+      lastFocusViolationAt = 0;
       bindLockdownGuards(false);
       bindUnload(false);
       root.removeAttribute('data-cod-locked');
@@ -480,8 +552,8 @@
       const lines = test.instructions || [];
       const lockdownNote = `
         <div class="alert alert-warning py-2 px-3 small mb-3">
-          <strong>During the test:</strong> problem statements cannot be copied. Switching tabs or windows will automatically submit your test and sign you out.
-          You can still edit code in the editor. These rules apply for the full duration.
+          <strong>During the test:</strong> copying questions and pasting answers are disabled. Tab switching, minimizing, and opening other windows are prohibited.
+          You get ${MAX_FOCUS_VIOLATIONS} malpractice warnings; after that the test is submitted automatically and you are signed out.
         </div>`;
       el('instr-list').innerHTML = `${lockdownNote}<ul class="text-muted-2 mb-0 ps-3">${lines.length ? lines.map((line) => `<li>${esc(line)}</li>`).join('') : '<li>Read each problem carefully. Write and run your code before submitting.</li>'}</ul>`;
     }
@@ -823,8 +895,12 @@
         state.submitted = false;
         state.status = 'ACTIVE';
         state.answers = {};
-        focusViolationHandled = false;
+        focusViolationCount = 0;
+        pendingFocusViolation = false;
+        finalizingViolation = false;
         examLockdown = true;
+        clipboardGuardsEnabled = true;
+        focusGuardsEnabled = true;
         remainingMs = Math.max(0, (started.endsAt || 0) - Date.now());
         const serverAnswers = started.answers && typeof started.answers === 'object' ? started.answers : {};
         (started.test.items || []).forEach((item) => {
@@ -842,7 +918,7 @@
         el('exam-title').textContent = started.test.title || 'Coding Test';
         root.setAttribute('data-cod-locked', '1');
         bindUnload(true);
-        bindLockdownGuards(true);
+        bindLockdownGuards(true, { clipboard: true, focus: true });
         renderQuestion();
         restoreExamInteractions();
         startTimer(remainingMs);
@@ -1021,6 +1097,9 @@
         } : {};
         if (!editor) editor = createCodeEditor(el('editor'));
         bindEditorInput();
+        clipboardGuardsEnabled = true;
+        root.setAttribute('data-cod-locked', '1');
+        bindLockdownGuards(true, { clipboard: true, focus: false });
         showPanel('exam');
         applyPracticeUi(true);
         el('exam-title').textContent = started.problem.title || 'Coding Problem';
@@ -1077,7 +1156,7 @@
           examLockdown = true;
           root.setAttribute('data-cod-locked', '1');
           bindUnload(true);
-          bindLockdownGuards(true);
+          bindLockdownGuards(true, { clipboard: true, focus: true });
           restoreExamInteractions();
           startTimer(remainingMs);
           setBusy(false);
