@@ -38,7 +38,7 @@ final class StaffPlacementRegistryService
      */
     public function departmentFilterOptions(): array
     {
-        return $this->loadAllDepartments();
+        return $this->loadAllDepartments($this->placementFiltersSkipLiveAes());
     }
 
     /**
@@ -66,7 +66,10 @@ final class StaffPlacementRegistryService
         $dept = is_array($listCtx['department'] ?? null) ? $listCtx['department'] : null;
         $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
         $filterCtx = StaffContext::officerCompatible($listCtx);
-        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($filterCtx);
+        $deptAesId = trim((string) ($dept['aesId'] ?? ''));
+        if (($deptAesId === '' || !ctype_digit($deptAesId)) && !$this->placementFiltersSkipLiveAes()) {
+            $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($filterCtx);
+        }
 
         return [
             'departmentId'     => $deptId,
@@ -92,9 +95,9 @@ final class StaffPlacementRegistryService
 
         $details = new \PMS\Models\StudentPlacementDetailsTable();
         try {
-            $details->syncDirectoryWithAlumniPlacements();
+            $details->ensureDirectoryShell();
         } catch (\Throwable) {
-            // Show whatever is already stored if the directory copy or alumni match fails.
+            // Show whatever is already stored. Do not scan student_placements or call AES on this request.
         }
         $filters['placementDetails'] = '1';
 
@@ -2239,20 +2242,21 @@ final class StaffPlacementRegistryService
     /**
      * @return array<int, array{id:string,code:string,name:string}>
      */
-    private function loadAllDepartments(): array
+    private function loadAllDepartments(bool $localOnly = false): array
     {
         $api = new AesApiService();
-        try {
-            $api->syncDepartmentsToLocal();
-        } catch (\Throwable) {
-            // Serve local departments when AES is unreachable.
-        }
-
         $catalog = [];
-        try {
-            $catalog = $api->listDepartments();
-        } catch (\Throwable) {
-            $catalog = [];
+        if (!$localOnly) {
+            try {
+                $api->syncDepartmentsToLocal();
+            } catch (\Throwable) {
+                // Serve local departments when AES is unreachable.
+            }
+            try {
+                $catalog = $api->listDepartments();
+            } catch (\Throwable) {
+                $catalog = [];
+            }
         }
 
         $model = new DepartmentModel();
@@ -2302,6 +2306,13 @@ final class StaffPlacementRegistryService
         usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));
 
         return $rows;
+    }
+
+    private function placementFiltersSkipLiveAes(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_FILTERS_SKIP_AES'] ?? '1')));
+
+        return !in_array($v, ['0', 'false', 'no', 'off'], true);
     }
 
     /**

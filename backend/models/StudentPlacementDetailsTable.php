@@ -313,6 +313,29 @@ class StudentPlacementDetailsTable
     }
 
     /**
+     * Make sure the grid table has one row per student_details person.
+     * Does not read student_placements payloads and does not call AES.
+     */
+    public function ensureDirectoryShell(): int
+    {
+        if (!$this->ensure()) {
+            return 0;
+        }
+        $directory = new StudentDirectoryTable();
+        if (!$directory->isReady()) {
+            return $this->count();
+        }
+        $directoryCount = $directory->count();
+        if ($directoryCount === 0 || $this->count() === $directoryCount) {
+            return $this->count();
+        }
+        $this->replaceRowsFromDirectory();
+        $this->refreshStudentNamesFromDirectory();
+
+        return $this->count();
+    }
+
+    /**
      * Rows for the placements grid, newest update first.
      *
      * @return list<array<string, mixed>>
