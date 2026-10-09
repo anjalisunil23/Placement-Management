@@ -3065,6 +3065,12 @@ final class StaffPlacementRegistryService
      */
     public function updatePlacement(array $staffCtx, string $studentId, array $input): array
     {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existingDetails = $details->findByAdmnoOrId($studentId);
+        if (is_array($existingDetails)) {
+            return $this->updateDetailsPlacement($staffCtx, $existingDetails, $input, $details);
+        }
+
         $student = $this->officerData->resolveStudentRef($studentId);
         if (!$student) {
             Response::notFound('Student not found.');
@@ -3162,6 +3168,67 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * Save an edit onto one student_placement_details row.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, mixed> $existing
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function updateDetailsPlacement(
+        array $staffCtx,
+        array $existing,
+        array $input,
+        \PMS\Models\StudentPlacementDetailsTable $details
+    ): array {
+        if (empty($staffCtx['isAdmin'])) {
+            $batch = trim((string) ($existing['year'] ?? ''));
+            $admnoCheck = strtoupper(trim((string) ($existing['admno'] ?? '')));
+            StaffContext::assertCanEditClassPlacement([
+                'classBatch' => $batch,
+                'batch' => $batch,
+                'admno' => $admnoCheck,
+                'registerNumber' => $admnoCheck,
+            ], $staffCtx);
+        }
+        $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
+        if ($employer === '') {
+            Response::error('Employer / institution name is required.', 422);
+        }
+        $typeRaw = strtolower(trim((string) ($input['type'] ?? 'Placement')));
+        if (str_contains($typeRaw, 'higher') || str_contains($typeRaw, 'education')) {
+            $recordType = 'Higher Education';
+        } elseif (str_contains($typeRaw, 'research')) {
+            $recordType = 'Research';
+        } else {
+            $recordType = 'Placement';
+        }
+        $fields = [
+            'employer' => $employer,
+            'empcno' => trim((string) ($input['employerContact'] ?? '')),
+            'empadr' => trim((string) ($input['address'] ?? $input['companyAddress'] ?? '')),
+            'payscale' => trim((string) ($input['package'] ?? '')),
+            'status' => trim((string) ($input['placementStatus'] ?? '')),
+            'fordvv' => $this->normalizeVvValue($input['fordvv'] ?? ''),
+            'includedvv' => $this->normalizeVvValue($input['includedvv'] ?? ''),
+            'type' => $recordType,
+        ];
+        $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+        $entryId = (int) ($input['entryId'] ?? 0);
+        $saved = $entryId > 0
+            ? $details->saveFieldsById($admno, $entryId, $fields)
+            : $details->saveFieldsForAdmno($admno !== '' ? $admno : (string) ($existing['id'] ?? ''), $fields);
+        if (!$saved) {
+            Response::error('Could not update this entry.', 500);
+        }
+
+        return [
+            'studentId' => $admno !== '' ? $admno : (string) ($existing['id'] ?? ''),
+            'entryId' => $entryId > 0 ? $entryId : (int) ($existing['id'] ?? 0),
+        ];
+    }
+
+    /**
      * Clear placement columns for this admission number. The student row stays.
      *
      * @param array<string, mixed> $staffCtx
@@ -3171,6 +3238,15 @@ final class StaffPlacementRegistryService
     {
         $details = new \PMS\Models\StudentPlacementDetailsTable();
         $existing = $this->editableDetailsRow($staffCtx, $studentId, $details);
+        $entryId = (int) ($_GET['entryId'] ?? 0);
+        if ($entryId > 0) {
+            $admno = (string) ($existing['admno'] ?? '');
+            if (!$details->deleteEntry($admno, $entryId)) {
+                Response::error('Could not delete this placement.', 500);
+            }
+
+            return ['studentId' => $this->detailsRowKey($existing), 'entryId' => $entryId];
+        }
         $key = $this->detailsRowKey($existing);
         if (!$details->clearPlacementFields($key)) {
             Response::error('Could not delete this placement.', 500);

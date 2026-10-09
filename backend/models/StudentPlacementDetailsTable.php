@@ -491,6 +491,62 @@ class StudentPlacementDetailsTable
         return true;
     }
 
+    /**
+     * Update one entry that belongs to this admission number.
+     *
+     * @param array<string, mixed> $fields
+     */
+    public function saveFieldsById(string $admno, int $entryId, array $fields): bool
+    {
+        $admno = strtoupper(trim($admno));
+        if ($admno === '' || $entryId <= 0 || !$this->ensure()) {
+            return false;
+        }
+        $owned = $this->db->prepare(
+            'SELECT `id` FROM `student_placement_details` WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ? LIMIT 1'
+        );
+        $owned->execute([$entryId, $admno]);
+        if (!is_array($owned->fetch())) {
+            return false;
+        }
+        $allowed = [
+            'employer' => 512,
+            'empcno' => 255,
+            'empadr' => 512,
+            'payscale' => 255,
+            'status' => 128,
+            'fordvv' => 16,
+            'type' => 64,
+            'includedvv' => 16,
+        ];
+        $sets = [];
+        $params = [];
+        foreach ($allowed as $column => $limit) {
+            if (!array_key_exists($column, $fields)) {
+                continue;
+            }
+            $value = trim((string) $fields[$column]);
+            if (strlen($value) > $limit) {
+                $value = substr($value, 0, $limit);
+            }
+            $sets[] = '`' . $column . '` = ?';
+            $params[] = $value;
+        }
+        if ($sets === []) {
+            return false;
+        }
+        $sets[] = '`updatedate` = NOW()';
+        $params[] = $entryId;
+        $params[] = $admno;
+        $statement = $this->db->prepare(
+            'UPDATE `student_placement_details` SET ' . implode(', ', $sets)
+            . ' WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ?'
+        );
+        $statement->execute($params);
+
+        return true;
+    }
+
     public function saveOfferLetterPath(string $key, string $path): bool
     {
         $row = $this->findByAdmnoOrId($key);
@@ -533,6 +589,40 @@ class StudentPlacementDetailsTable
         $statement->execute([$id]);
 
         return true;
+    }
+
+    /**
+     * Remove one extra entry. The first row for this admission number is cleared and kept.
+     */
+    public function deleteEntry(string $admno, int $entryId): bool
+    {
+        $admno = strtoupper(trim($admno));
+        if ($admno === '' || $entryId <= 0 || !$this->ensure()) {
+            return false;
+        }
+        $min = $this->db->prepare(
+            'SELECT MIN(`id`) FROM `student_placement_details` WHERE UPPER(TRIM(`admno`)) = ?'
+        );
+        $min->execute([$admno]);
+        $firstId = (int) $min->fetchColumn();
+        if ($firstId === $entryId) {
+            $statement = $this->db->prepare(
+                'UPDATE `student_placement_details` SET
+                    `employer` = \'\', `empcno` = \'\', `empadr` = \'\', `payscale` = \'\',
+                    `status` = \'\', `type` = \'\', `fordvv` = \'\', `includedvv` = \'\',
+                    `offer_letter` = \'\', `updatedate` = NOW()
+                 WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ?'
+            );
+            $statement->execute([$entryId, $admno]);
+
+            return $statement->rowCount() > 0;
+        }
+        $statement = $this->db->prepare(
+            'DELETE FROM `student_placement_details` WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ?'
+        );
+        $statement->execute([$entryId, $admno]);
+
+        return $statement->rowCount() > 0;
     }
 
     /**
@@ -627,7 +717,7 @@ class StudentPlacementDetailsTable
             return [];
         }
         $statement = $this->db->prepare(
-            'SELECT `type`, `employer`, `empcno`, `empadr`, `payscale`, `status`, `fordvv`, `includedvv`
+            'SELECT `id`, `type`, `employer`, `empcno`, `empadr`, `payscale`, `status`, `fordvv`, `includedvv`
              FROM `student_placement_details`
              WHERE UPPER(TRIM(`admno`)) = ?
              ORDER BY `id` ASC'
@@ -639,7 +729,7 @@ class StudentPlacementDetailsTable
             if (!is_array($row)) {
                 continue;
             }
-            $entry = [];
+            $entry = ['id' => (string) ($row['id'] ?? '')];
             $filled = false;
             foreach (['type', 'employer', 'empcno', 'empadr', 'payscale', 'status', 'fordvv', 'includedvv'] as $column) {
                 $value = trim((string) ($row[$column] ?? ''));

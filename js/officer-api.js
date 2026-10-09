@@ -549,9 +549,10 @@ const OfficerApi = {
     });
   },
 
-  async deleteStudentPlacement(studentId) {
+  async deleteStudentPlacement(studentId, entryId) {
     if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
-    return api(`/officer/students/${encodeURIComponent(studentId)}/placement`, { method: 'DELETE' });
+    const query = entryId ? `?entryId=${encodeURIComponent(entryId)}` : '';
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement${query}`, { method: 'DELETE' });
   },
 
   async addPlacementEntry(studentId, body) {

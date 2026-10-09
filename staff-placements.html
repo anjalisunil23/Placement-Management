@@ -137,6 +137,8 @@
                 </div>
                 <div class="modal-body">
                   <input type="hidden" id="editStudentId" />
+                  <input type="hidden" id="editMode" value="create" />
+                  <input type="hidden" id="editEntryId" />
                   <input type="hidden" id="editRole" />
                   <input type="hidden" id="editJoinDate" />
                   <input type="hidden" id="editEndDate" />
@@ -213,9 +215,6 @@
                 <div class="modal-footer registry-edit-footer">
                   <button type="button" class="btn btn-outline-danger me-auto" id="editPlacementDeleteBtn" hidden>
                     <i class="bi bi-trash me-1"></i>Delete
-                  </button>
-                  <button type="button" class="btn btn-primary px-4" id="editPlacementAddAnotherBtn" hidden>
-                    Add another
                   </button>
                   <button type="button" class="btn btn-danger px-4" data-bs-dismiss="modal">Cancel</button>
                   <button type="submit" class="btn btn-success px-4" id="editPlacementSaveBtn">
@@ -538,9 +537,9 @@
     </div>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="js/staff-api.js?v=20261009entries"></script>
+  <script src="js/staff-api.js?v=20261009rowedit"></script>
   <script src="js/api.js?v=20261008phe"></script>
-  <script src="js/officer-api.js?v=20261009entries"></script>
+  <script src="js/officer-api.js?v=20261009rowedit"></script>
   <script src="js/app.js?v=20261008phe"></script>
   <script>
     function placementRegistryApi() {
@@ -1255,9 +1254,7 @@
         const rowIndex = start + i;
         const viewBtn = `<button type="button" class="registry-action-btn view" title="View student details" aria-label="View details for ${esc(r.studentName || r.student || 'student')}" onclick="openViewPlacement(${rowIndex})"><i class="bi bi-eye-fill"></i></button>`;
         const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
-        const detailsBtn = hasPlacement
-          ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
-          : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`;
+        const detailsBtn = `<button type="button" class="registry-action-btn add" title="${hasPlacement ? 'Add another placement / higher-education detail' : 'Add placement / higher-education details'}" aria-label="${hasPlacement ? 'Add another entry for' : 'Add details for'} ${esc(r.studentName || 'student')}" onclick="openAddPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`;
         const actions = canEditSelectedBatch ? `${viewBtn}${downloadBtn}${detailsBtn}` : viewBtn;
         const cells = cols.map((col) => {
           const cls = registryCellClass(col);
@@ -1394,6 +1391,9 @@
       }
     }
 
+    let viewPlacementRows = [];
+    let viewPlacementStudentId = '';
+
     const ENTRY_VIEW_KEYS = ['type', 'employer', 'empcno', 'empadr', 'payscale', 'role', 'batch'];
 
     function placementEntryFromRow(row) {
@@ -1412,13 +1412,15 @@
       const head = document.getElementById('viewPlacementHead');
       const body = document.getElementById('viewPlacementBody');
       if (head) {
-        head.innerHTML = ENTRY_VIEW_KEYS.map((key) => `<th>${esc(key)}</th>`).join('');
+        const editHead = canEditSelectedBatch ? '<th>edit</th>' : '';
+        head.innerHTML = ENTRY_VIEW_KEYS.map((key) => `<th>${esc(key)}</th>`).join('') + editHead;
       }
       if (!body) return;
       const role = String(fallback?.role || '').trim();
       const batch = String(fallback?.batch || '').trim();
       const seen = new Set();
       const rows = (entries || []).map((entry) => ({
+        id: String(entry.id || '').trim(),
         type: String(entry.type || '').trim(),
         employer: String(entry.employer || '').trim(),
         empcno: String(entry.empcno || '').trim(),
@@ -1438,9 +1440,16 @@
         seen.add(signature);
         return true;
       });
+      viewPlacementRows = rows;
+      const colCount = ENTRY_VIEW_KEYS.length + (canEditSelectedBatch ? 1 : 0);
       body.innerHTML = rows.length
-        ? rows.map((entry) => `<tr>${ENTRY_VIEW_KEYS.map((key) => `<td>${esc(entry[key] || '—')}</td>`).join('')}</tr>`).join('')
-        : `<tr><td colspan="${ENTRY_VIEW_KEYS.length}" class="text-muted-2">No placement entries for this student.</td></tr>`;
+        ? rows.map((entry, index) => {
+          const editCell = canEditSelectedBatch
+            ? `<td class="text-center"><button type="button" class="registry-action-btn ed" title="Edit this entry" aria-label="Edit this entry" onclick="openEditPlacementEntry(${index})"><i class="bi bi-pencil-fill"></i></button></td>`
+            : '';
+          return `<tr>${ENTRY_VIEW_KEYS.map((key) => `<td>${esc(entry[key] || '—')}</td>`).join('')}${editCell}</tr>`;
+        }).join('')
+        : `<tr><td colspan="${colCount}" class="text-muted-2">No placement entries for this student.</td></tr>`;
     }
 
     async function openViewPlacement(rowIndex) {
@@ -1463,10 +1472,11 @@
       renderPlacementEntries([], entryFallback);
       const body = document.getElementById('viewPlacementBody');
       if (body) {
-        body.innerHTML = `<tr><td colspan="${ENTRY_VIEW_KEYS.length}" class="text-muted-2">Loading entries…</td></tr>`;
+        body.innerHTML = `<tr><td colspan="${ENTRY_VIEW_KEYS.length + (canEditSelectedBatch ? 1 : 0)}" class="text-muted-2">Loading entries…</td></tr>`;
       }
       bootstrap.Modal.getOrCreateInstance(document.getElementById('viewPlacementModal')).show();
       const studentId = row.studentId || admno;
+      viewPlacementStudentId = studentId;
       let entries = [];
       try {
         const res = await placementRegistryApi().listPlacementEntries(studentId);
@@ -1482,9 +1492,36 @@
       renderPlacementEntries(entries, entryFallback);
     }
 
-    function openEditPlacement(studentId) {
+    function blankPlacementFields() {
+      ['editEmployer', 'editEmployerContact', 'editAddress', 'editPackage', 'editFordvv', 'editIncludedvv', 'editVerificationDate'].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+      });
+      const type = document.getElementById('editType');
+      if (type) type.value = 'Placement';
+      const statusSel = document.getElementById('editPlacementStatus');
+      if (statusSel) statusSel.value = '';
+      const verified = document.getElementById('editOfferLetterVerified');
+      if (verified) verified.value = 'false';
+      const offerInput = document.getElementById('editOfferLetter');
+      if (offerInput) offerInput.value = '';
+    }
+
+    function showPlacementForm(mode) {
+      const adding = mode !== 'edit';
+      const offerWrap = document.getElementById('editOfferLetterWrap');
+      const deleteBtn = document.getElementById('editPlacementDeleteBtn');
+      if (offerWrap) offerWrap.hidden = !adding;
+      if (deleteBtn) deleteBtn.hidden = adding;
+      syncEditTypeFields();
+      const viewModal = document.getElementById('viewPlacementModal');
+      if (viewModal) bootstrap.Modal.getOrCreateInstance(viewModal).hide();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).show();
+    }
+
+    function openAddPlacement(studentId) {
       if (!canEditSelectedBatch) {
-        toast('Only the class incharge (class teacher / co-class teacher) can add or edit entries for this batch.', 'warn');
+        toast('Only the class incharge (class teacher / co-class teacher) can add entries for this batch.', 'warn');
         return;
       }
       const row = findRowByStudentId(studentId);
@@ -1493,35 +1530,49 @@
         return;
       }
       document.getElementById('editStudentId').value = row.studentId || '';
-      document.getElementById('editStudentName').value = row.studentName || '';
-      document.getElementById('editEmployer').value = row.employer || '';
-      document.getElementById('editRole').value = row.role || '';
-      document.getElementById('editType').value = (
-        row.type === 'Higher Education' || row.type === 'Research'
-          ? row.type
-          : 'Placement'
-      );
-      document.getElementById('editPackage').value = row.package || '';
-      document.getElementById('editEmployerContact').value = row.employerContact || '';
-      document.getElementById('editAddress').value = row.address || '';
-      document.getElementById('editJoinDate').value = row.joinDate || '';
-      document.getElementById('editEndDate').value = row.endDate || '';
-      document.getElementById('editPlacementStatus').value = row.placementStatus || '';
-      document.getElementById('editOfferLetterVerified').value = row.offerLetterVerified ? 'true' : 'false';
-      document.getElementById('editVerificationDate').value = row.verificationDate || '';
-      document.getElementById('editFordvv').value = row.fordvv ?? '';
-      document.getElementById('editIncludedvv').value = row.includedvv ?? '';
-      const adding = !rowHasPlacement(row);
-      const offerWrap = document.getElementById('editOfferLetterWrap');
+      document.getElementById('editStudentName').value = row.studentName || row.student || '';
+      document.getElementById('editRole').value = row.stud_role || row.studRole || row.role || '';
+      document.getElementById('editMode').value = rowHasPlacement(row) ? 'append' : 'create';
+      document.getElementById('editEntryId').value = '';
+      blankPlacementFields();
+      showPlacementForm(document.getElementById('editMode').value);
+    }
+
+    function openEditPlacementEntry(index) {
+      if (!canEditSelectedBatch) {
+        toast('Only the class incharge (class teacher / co-class teacher) can edit entries for this batch.', 'warn');
+        return;
+      }
+      const entry = viewPlacementRows[index];
+      const studentId = viewPlacementStudentId;
+      const row = findRowByStudentId(studentId);
+      if (!entry || !studentId) {
+        toast('Record not found.', 'warn');
+        return;
+      }
+      document.getElementById('editStudentId').value = studentId;
+      document.getElementById('editStudentName').value = row?.studentName || row?.student || '';
+      document.getElementById('editRole').value = entry.role || row?.stud_role || row?.studRole || '';
+      document.getElementById('editMode').value = 'edit';
+      document.getElementById('editEntryId').value = entry.id || '';
+      const type = entry.type === 'Higher Education' || entry.type === 'Research' ? entry.type : 'Placement';
+      document.getElementById('editType').value = type;
+      document.getElementById('editEmployer').value = entry.employer || '';
+      document.getElementById('editEmployerContact').value = entry.empcno || '';
+      document.getElementById('editAddress').value = entry.empadr || '';
+      document.getElementById('editPackage').value = entry.payscale || '';
+      document.getElementById('editPlacementStatus').value = entry.status || '';
+      document.getElementById('editFordvv').value = entry.fordvv || '';
+      document.getElementById('editIncludedvv').value = entry.includedvv || '';
+      document.getElementById('editOfferLetterVerified').value = 'false';
+      document.getElementById('editVerificationDate').value = '';
       const offerInput = document.getElementById('editOfferLetter');
-      const deleteBtn = document.getElementById('editPlacementDeleteBtn');
-      if (offerWrap) offerWrap.hidden = false;
       if (offerInput) offerInput.value = '';
-      if (deleteBtn) deleteBtn.hidden = adding;
-      const addAnotherBtn = document.getElementById('editPlacementAddAnotherBtn');
-      if (addAnotherBtn) addAnotherBtn.hidden = adding;
-      syncEditTypeFields();
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).show();
+      showPlacementForm('edit');
+    }
+
+    function openEditPlacement(studentId) {
+      openAddPlacement(studentId);
     }
 
     function openUploadPlacement(studentId) {
@@ -1548,7 +1599,13 @@
         toast('Only the class incharge (class teacher / co-class teacher) can submit placement details for this batch.', 'warn');
         return;
       }
+      const mode = document.getElementById('editMode')?.value || 'create';
+      if (mode === 'append') {
+        await addAnotherPlacement();
+        return;
+      }
       const studentId = document.getElementById('editStudentId').value;
+      const entryId = document.getElementById('editEntryId')?.value || '';
       const payload = {
         employer: document.getElementById('editEmployer').value.trim(),
         role: document.getElementById('editRole').value.trim(),
@@ -1564,6 +1621,7 @@
         fordvv: document.getElementById('editFordvv').value.trim(),
         includedvv: document.getElementById('editIncludedvv').value.trim(),
       };
+      if (entryId) payload.entryId = Number(entryId);
       if (!payload.employer) {
         toast(window.__editTypeRequiredMsg || 'Employer / institution name is required.', 'warn');
         return;
@@ -1580,7 +1638,7 @@
         return;
       }
       const savedId = String(res?.data?.studentId || studentId);
-      const offerFile = document.getElementById('editOfferLetter')?.files?.[0] || null;
+      const offerFile = mode === 'create' ? (document.getElementById('editOfferLetter')?.files?.[0] || null) : null;
       if (offerFile) {
         const fd = new FormData();
         fd.append('offerLetter', offerFile, offerFile.name);
@@ -1624,7 +1682,7 @@
         toast(window.__editTypeRequiredMsg || 'Employer / institution name is required.', 'warn');
         return;
       }
-      const btn = document.getElementById('editPlacementAddAnotherBtn');
+      const btn = document.getElementById('editPlacementSaveBtn');
       if (btn) btn.disabled = true;
       const res = await placementRegistryApi().addPlacementEntry(studentId, payload);
       if (!res?.success) {
@@ -1657,6 +1715,7 @@
       if (offerSaved) {
         toast(offerFile ? 'Another entry and offer letter saved.' : 'Another entry saved. View shows every entry for this student.', 'success');
       }
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlacementModal')).hide();
       await loadRegistry();
     }
 
@@ -1670,7 +1729,8 @@
       if (!window.confirm('Delete this student\'s placement details? The student row stays in the list.')) return;
       const btn = document.getElementById('editPlacementDeleteBtn');
       if (btn) btn.disabled = true;
-      const res = await placementRegistryApi().deleteStudentPlacement(studentId);
+      const entryId = document.getElementById('editEntryId')?.value || '';
+      const res = await placementRegistryApi().deleteStudentPlacement(studentId, entryId);
       if (btn) btn.disabled = false;
       if (!res?.success) {
         toast(res?.message || 'Could not delete placement details.', 'error');
@@ -1881,7 +1941,6 @@
     });
     document.getElementById('editPlacementForm')?.addEventListener('submit', saveEditPlacement);
     document.getElementById('editPlacementDeleteBtn')?.addEventListener('click', deleteEditPlacement);
-    document.getElementById('editPlacementAddAnotherBtn')?.addEventListener('click', addAnotherPlacement);
     document.getElementById('editType')?.addEventListener('change', syncEditTypeFields);
     document.getElementById('uploadPlacementForm')?.addEventListener('submit', saveUploadPlacement);
     document.getElementById('registryTable')?.addEventListener('click', (e) => {

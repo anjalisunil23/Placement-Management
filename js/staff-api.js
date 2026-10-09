@@ -389,9 +389,10 @@ const StaffApi = {
     return res;
   },
 
-  async deleteStudentPlacement(studentId) {
+  async deleteStudentPlacement(studentId, entryId) {
     if (typeof StaffApi.clearPlacementsCache === 'function') StaffApi.clearPlacementsCache();
-    return api(`/staff/students/${encodeURIComponent(studentId)}/placement`, { method: 'DELETE' });
+    const query = entryId ? `?entryId=${encodeURIComponent(entryId)}` : '';
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement${query}`, { method: 'DELETE' });
   },
 
   async addPlacementEntry(studentId, body) {
