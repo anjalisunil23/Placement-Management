@@ -1062,22 +1062,21 @@ class StudentPlacementDetailsTable
     }
 
     /**
-     * Copy every type=placement row from student_placements, one details row per source id.
-     * Column values are copied as stored. Directory rows that are not those copies lose the
-     * placement type so the type count matches student_placements.
+     * Compare admission numbers and copy placement columns from student_placements
+     * onto the matching student_placement_details row. One indexed pass, then stop.
      */
     private function fillEmptyColumnsFromPlacements(): void
     {
-        if (!$this->sourceTableExists() || !$this->hasColumn('source_id')) {
+        if (!$this->sourceTableExists()) {
             return;
         }
         $admnoColumn = $this->sourceColumn('admno');
         $typeColumn = $this->sourceColumn('type');
         $idColumn = $this->sourceColumn('id');
-        if ($admnoColumn === null || $typeColumn === null || $idColumn === null) {
+        if ($admnoColumn === null || $idColumn === null) {
             return;
         }
-        $signature = 'admj:5:' . $this->placementSourceSignature();
+        $signature = 'admj:6:' . $this->placementSourceSignature();
         if ($this->readSyncSignature() === $signature) {
             return;
         }
@@ -1085,23 +1084,31 @@ class StudentPlacementDetailsTable
         if ($fields === []) {
             return;
         }
-        $this->insertEveryPlacementRow($admnoColumn, $typeColumn, $idColumn, $fields);
-        $this->applyDirectoryIdentityToCopies();
-        $sourceCount = (int) $this->db->query(
-            'SELECT COUNT(*) FROM `student_placements` s WHERE ' . $this->placementTypeWhere('s', $typeColumn)
-        )->fetchColumn();
-        $copied = (int) $this->db->query(
-            'SELECT COUNT(*) FROM `student_placement_details` WHERE `source_id` IS NOT NULL AND `source_id` <> \'\''
-        )->fetchColumn();
-        if ($sourceCount > 0 && $copied >= $sourceCount) {
-            $this->db->exec(
-                'UPDATE `student_placement_details`
-                 SET `type` = \'\'
-                 WHERE `source_id` IS NULL
-                   AND LOWER(TRIM(`type`)) IN (\'placement\', \'placements\')'
-            );
-            $this->writeSyncSignature($signature);
+        $picked = $this->pickedPlacementJoin($admnoColumn, $typeColumn, $idColumn);
+        $this->updateDetailsFromMatchedAdmno($admnoColumn, $fields, $picked);
+        $this->insertPlacementsForNewAdmno($admnoColumn, $idColumn, $fields, $picked);
+        $this->writeSyncSignature($signature);
+    }
+
+    /**
+     * Latest type=placement row for each admission number.
+     */
+    private function pickedPlacementJoin(string $admnoColumn, ?string $typeColumn, string $idColumn): string
+    {
+        $admnoKey = 'TRIM(CAST(p.`' . $admnoColumn . '` AS CHAR))';
+        $where = $admnoKey . ' <> \'\'';
+        if ($typeColumn !== null) {
+            $where .= ' AND ' . $this->placementTypeWhere('p', $typeColumn);
         }
+
+        return 'SELECT src.*
+            FROM `student_placements` src
+            INNER JOIN (
+                SELECT ' . $admnoKey . ' AS admno_key, MAX(p.`' . $idColumn . '`) AS pick_id
+                FROM `student_placements` p
+                WHERE ' . $where . '
+                GROUP BY ' . $admnoKey . '
+            ) picked ON src.`' . $idColumn . '` = picked.pick_id';
     }
 
     private function placementTypeWhere(string $alias, string $typeColumn): string
@@ -1112,6 +1119,79 @@ class StudentPlacementDetailsTable
     private function sourceText(string $alias, string $column, int $limit): string
     {
         return 'LEFT(TRIM(IFNULL(CAST(' . $alias . '.`' . $column . '` AS CHAR), \'\')), ' . $limit . ')';
+    }
+
+    /**
+     * @param list<array{dest:string,source:string,limit:int}> $fields
+     */
+    private function updateDetailsFromMatchedAdmno(string $admnoColumn, array $fields, string $picked): void
+    {
+        $sets = [];
+        foreach ($fields as $field) {
+            if ($field['dest'] === 'year') {
+                continue;
+            }
+            $value = $this->sourceText('s', $field['source'], $field['limit']);
+            $sets[] = 'd.`' . $field['dest'] . '` = IF(' . $value . ' <> \'\', ' . $value . ', d.`' . $field['dest'] . '`)';
+        }
+        foreach ($this->placementDateCopies('s') as $date) {
+            $sets[] = 'd.`' . $date['dest'] . '` = IF(' . $date['expr'] . ' IS NOT NULL, ' . $date['expr'] . ', d.`' . $date['dest'] . '`)';
+        }
+        if ($sets === []) {
+            return;
+        }
+        $this->db->exec(
+            'UPDATE `student_placement_details` d
+             INNER JOIN (' . $picked . ') s
+               ON d.`admno` <> \'\'
+              AND d.`admno` = TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR))
+             SET ' . implode(', ', $sets)
+        );
+    }
+
+    /**
+     * @param list<array{dest:string,source:string,limit:int}> $fields
+     */
+    private function insertPlacementsForNewAdmno(string $admnoColumn, string $idColumn, array $fields, string $picked): void
+    {
+        $studentColumn = $this->sourceColumn('student');
+        $pieces = [
+            ['col' => 'student', 'expr' => $studentColumn !== null ? $this->sourceText('s', $studentColumn, 255) : '\'\''],
+            ['col' => 'admno', 'expr' => $this->sourceText('s', $admnoColumn, 64)],
+            ['col' => 'stud_role', 'expr' => '\'\''],
+            ['col' => 'year', 'expr' => '\'\''],
+            ['col' => 'source_id', 'expr' => 'LEFT(TRIM(CAST(s.`' . $idColumn . '` AS CHAR)), 64)'],
+        ];
+        foreach ($fields as $field) {
+            if ($field['dest'] === 'year') {
+                $pieces[3]['expr'] = $this->sourceText('s', $field['source'], $field['limit']);
+                continue;
+            }
+            $pieces[] = [
+                'col' => $field['dest'],
+                'expr' => $this->sourceText('s', $field['source'], $field['limit']),
+            ];
+        }
+        $cols = [];
+        $inner = [];
+        foreach ($pieces as $piece) {
+            $cols[] = '`' . $piece['col'] . '`';
+            $inner[] = $piece['expr'] . ' AS `' . $piece['col'] . '`';
+        }
+        $admnoKey = 'TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR))';
+        $this->db->exec(
+            'INSERT INTO `student_placement_details` (' . implode(', ', $cols) . ')
+             SELECT ' . implode(', ', $cols) . '
+             FROM (
+                SELECT ' . implode(', ', $inner) . '
+                FROM (' . $picked . ') s
+                LEFT JOIN `student_placement_details` existing
+                  ON existing.`admno` <> \'\'
+                 AND existing.`admno` = ' . $admnoKey . '
+                WHERE ' . $admnoKey . ' <> \'\'
+                  AND existing.`admno` IS NULL
+             ) incoming'
+        );
     }
 
     /**
