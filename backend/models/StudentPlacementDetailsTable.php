@@ -107,6 +107,35 @@ class StudentPlacementDetailsTable
             );
         }
         $this->ensureSourceIdIndex();
+        $this->ensurePlacementValueWidths();
+    }
+
+    private function ensurePlacementValueWidths(): void
+    {
+        $widths = [
+            'cno' => 255,
+            'courseid' => 128,
+            'branchid' => 128,
+            'employer' => 512,
+            'empcno' => 255,
+            'payscale' => 255,
+            'status' => 128,
+        ];
+        foreach ($widths as $name => $length) {
+            $statement = $this->db->prepare('SHOW COLUMNS FROM `student_placement_details` WHERE Field = ?');
+            $statement->execute([$name]);
+            $column = $statement->fetch();
+            if (!is_array($column)) {
+                continue;
+            }
+            $type = strtolower((string) ($column['Type'] ?? ''));
+            if (preg_match('/varchar\((\d+)\)/', $type, $match) !== 1 || (int) $match[1] >= $length) {
+                continue;
+            }
+            $this->db->exec(
+                'ALTER TABLE `student_placement_details` MODIFY `' . $name . '` VARCHAR(' . $length . ') NOT NULL DEFAULT \'\''
+            );
+        }
     }
 
     private function ensureSourceIdIndex(): void
@@ -1076,7 +1105,7 @@ class StudentPlacementDetailsTable
         if ($admnoColumn === null || $idColumn === null) {
             return;
         }
-        $signature = 'admj:6:' . $this->placementSourceSignature();
+        $signature = 'admj:8:' . $this->placementSourceSignature();
         if ($this->readSyncSignature() === $signature) {
             return;
         }
@@ -1084,9 +1113,14 @@ class StudentPlacementDetailsTable
         if ($fields === []) {
             return;
         }
-        $picked = $this->pickedPlacementJoin($admnoColumn, $typeColumn, $idColumn);
-        $this->updateDetailsFromMatchedAdmno($admnoColumn, $fields, $picked);
-        $this->insertPlacementsForNewAdmno($admnoColumn, $idColumn, $fields, $picked);
+        try {
+            $this->db->exec('SET SESSION group_concat_max_len = 4096');
+        } catch (\Throwable) {
+            // The default length still holds several values for one student.
+        }
+        $aggregate = $this->aggregatedPlacementSql($admnoColumn, $typeColumn, $idColumn, $fields);
+        $this->updateDetailsFromMatchedAdmno($fields, $aggregate);
+        $this->insertPlacementsForNewAdmno($fields, $aggregate);
         $this->writeSyncSignature($signature);
     }
 
@@ -1113,7 +1147,10 @@ class StudentPlacementDetailsTable
 
     private function placementTypeWhere(string $alias, string $typeColumn): string
     {
-        return 'LOWER(TRIM(CAST(' . $alias . '.`' . $typeColumn . '` AS CHAR))) IN (\'placement\', \'placements\')';
+        $value = 'LOWER(TRIM(CAST(' . $alias . '.`' . $typeColumn . '` AS CHAR)))';
+
+        return '(' . $value . ' IN (\'placement\', \'placements\', \'higher education\', \'higher_education\', \'highereducation\', \'higher ed\', \'higher_ed\')'
+            . ' OR ' . $value . ' LIKE \'higher education%\')';
     }
 
     private function sourceText(string $alias, string $column, int $limit): string
@@ -1124,27 +1161,26 @@ class StudentPlacementDetailsTable
     /**
      * @param list<array{dest:string,source:string,limit:int}> $fields
      */
-    private function updateDetailsFromMatchedAdmno(string $admnoColumn, array $fields, string $picked): void
+    private function updateDetailsFromMatchedAdmno(array $fields, string $aggregate): void
     {
         $sets = [];
         foreach ($fields as $field) {
             if ($field['dest'] === 'year') {
                 continue;
             }
-            $value = $this->sourceText('s', $field['source'], $field['limit']);
-            $sets[] = 'd.`' . $field['dest'] . '` = IF(' . $value . ' <> \'\', ' . $value . ', d.`' . $field['dest'] . '`)';
+            $sets[] = 'd.`' . $field['dest'] . '` = IF(s.`' . $field['dest'] . '` IS NOT NULL AND s.`' . $field['dest'] . '` <> \'\', s.`' . $field['dest'] . '`, d.`' . $field['dest'] . '`)';
         }
-        foreach ($this->placementDateCopies('s') as $date) {
-            $sets[] = 'd.`' . $date['dest'] . '` = IF(' . $date['expr'] . ' IS NOT NULL, ' . $date['expr'] . ', d.`' . $date['dest'] . '`)';
+        foreach ($this->placementDateCopies('p') as $date) {
+            $sets[] = 'd.`' . $date['dest'] . '` = IF(s.`' . $date['dest'] . '` IS NOT NULL, s.`' . $date['dest'] . '`, d.`' . $date['dest'] . '`)';
         }
         if ($sets === []) {
             return;
         }
         $this->db->exec(
             'UPDATE `student_placement_details` d
-             INNER JOIN (' . $picked . ') s
+             INNER JOIN (' . $aggregate . ') s
                ON d.`admno` <> \'\'
-              AND d.`admno` = TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR))
+              AND d.`admno` = s.`admno_key`
              SET ' . implode(', ', $sets)
         );
     }
@@ -1152,25 +1188,65 @@ class StudentPlacementDetailsTable
     /**
      * @param list<array{dest:string,source:string,limit:int}> $fields
      */
-    private function insertPlacementsForNewAdmno(string $admnoColumn, string $idColumn, array $fields, string $picked): void
+    private function aggregatedPlacementSql(string $admnoColumn, ?string $typeColumn, string $idColumn, array $fields): string
     {
-        $studentColumn = $this->sourceColumn('student');
+        $admnoKey = 'TRIM(CAST(p.`' . $admnoColumn . '` AS CHAR))';
+        $parts = [
+            $admnoKey . ' AS `admno_key`',
+            $this->groupedText($this->sourceColumn('student'), $idColumn, 255) . ' AS `student`',
+        ];
+        foreach ($fields as $field) {
+            $parts[] = $this->groupedText($field['source'], $idColumn, $field['limit']) . ' AS `' . $field['dest'] . '`';
+        }
+        foreach ($this->placementDateCopies('p') as $date) {
+            $parts[] = 'MAX(' . $date['expr'] . ') AS `' . $date['dest'] . '`';
+        }
+        $where = $admnoKey . ' <> \'\'';
+        if ($typeColumn !== null) {
+            $where .= ' AND ' . $this->placementTypeWhere('p', $typeColumn);
+        }
+
+        return 'SELECT ' . implode(', ', $parts)
+            . ' FROM `student_placements` p WHERE ' . $where
+            . ' GROUP BY ' . $admnoKey;
+    }
+
+    private function groupedText(?string $sourceColumn, string $idColumn, int $limit): string
+    {
+        if ($sourceColumn === null) {
+            return '\'\'';
+        }
+        $value = 'NULLIF(TRIM(CAST(p.`' . $sourceColumn . '` AS CHAR)), \'\')';
+
+        return 'LEFT(GROUP_CONCAT(DISTINCT ' . $value . ' ORDER BY ' . $value . ' SEPARATOR \', \'), ' . $limit . ')';
+    }
+
+    /**
+     * @param list<array{dest:string,source:string,limit:int}> $fields
+     */
+    private function insertPlacementsForNewAdmno(array $fields, string $aggregate): void
+    {
+        $hasYear = false;
+        foreach ($fields as $field) {
+            if ($field['dest'] === 'year') {
+                $hasYear = true;
+                break;
+            }
+        }
         $pieces = [
-            ['col' => 'student', 'expr' => $studentColumn !== null ? $this->sourceText('s', $studentColumn, 255) : '\'\''],
-            ['col' => 'admno', 'expr' => $this->sourceText('s', $admnoColumn, 64)],
+            ['col' => 'student', 'expr' => 'IFNULL(s.`student`, \'\')'],
+            ['col' => 'admno', 'expr' => 's.`admno_key`'],
             ['col' => 'stud_role', 'expr' => '\'\''],
-            ['col' => 'year', 'expr' => '\'\''],
-            ['col' => 'source_id', 'expr' => 'LEFT(TRIM(CAST(s.`' . $idColumn . '` AS CHAR)), 64)'],
+            ['col' => 'year', 'expr' => $hasYear ? 'IFNULL(s.`year`, \'\')' : '\'\''],
         ];
         foreach ($fields as $field) {
             if ($field['dest'] === 'year') {
-                $pieces[3]['expr'] = $this->sourceText('s', $field['source'], $field['limit']);
                 continue;
             }
-            $pieces[] = [
-                'col' => $field['dest'],
-                'expr' => $this->sourceText('s', $field['source'], $field['limit']),
-            ];
+            $pieces[] = ['col' => $field['dest'], 'expr' => 'IFNULL(s.`' . $field['dest'] . '`, \'\')'];
+        }
+        foreach ($this->placementDateCopies('p') as $date) {
+            $pieces[] = ['col' => $date['dest'], 'expr' => 's.`' . $date['dest'] . '`'];
         }
         $cols = [];
         $inner = [];
@@ -1178,17 +1254,16 @@ class StudentPlacementDetailsTable
             $cols[] = '`' . $piece['col'] . '`';
             $inner[] = $piece['expr'] . ' AS `' . $piece['col'] . '`';
         }
-        $admnoKey = 'TRIM(CAST(s.`' . $admnoColumn . '` AS CHAR))';
         $this->db->exec(
             'INSERT INTO `student_placement_details` (' . implode(', ', $cols) . ')
              SELECT ' . implode(', ', $cols) . '
              FROM (
                 SELECT ' . implode(', ', $inner) . '
-                FROM (' . $picked . ') s
+                FROM (' . $aggregate . ') s
                 LEFT JOIN `student_placement_details` existing
                   ON existing.`admno` <> \'\'
-                 AND existing.`admno` = ' . $admnoKey . '
-                WHERE ' . $admnoKey . ' <> \'\'
+                 AND existing.`admno` = s.`admno_key`
+                WHERE s.`admno_key` <> \'\'
                   AND existing.`admno` IS NULL
              ) incoming'
         );
@@ -1362,16 +1437,16 @@ class StudentPlacementDetailsTable
     private function resolvedPlacementFields(): array
     {
         $map = [
-            'cno' => [['cno'], 64],
+            'cno' => [['cno'], 255],
             'email' => [['email'], 255],
             'year' => [['year'], 64],
-            'courseid' => [['courseId', 'courseid'], 64],
-            'branchid' => [['branchId', 'branchid'], 64],
-            'employer' => [['employer'], 255],
-            'empcno' => [['empcno', 'empco'], 128],
+            'courseid' => [['courseId', 'courseid'], 128],
+            'branchid' => [['branchId', 'branchid'], 128],
+            'employer' => [['employer'], 512],
+            'empcno' => [['empcno', 'empco'], 255],
             'empadr' => [['empadr'], 512],
-            'payscale' => [['payscale'], 128],
-            'status' => [['status'], 64],
+            'payscale' => [['payscale'], 255],
+            'status' => [['status'], 128],
             'createdBy' => [['createdBy'], 128],
             'updatedBy' => [['updatedBy'], 128],
             'fordvv' => [['fordvv'], 16],

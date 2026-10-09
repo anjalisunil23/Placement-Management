@@ -510,7 +510,7 @@ const OfficerApi = {
     qs.set('studRole', params.studRole || 'all');
     qs.set('omitFilters', params.omitFilters !== false ? '1' : '0');
     const q = qs.toString();
-    const cacheKey = 'ph_officer_placements_v14_' + q;
+    const cacheKey = 'ph_officer_placements_v16_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
