@@ -389,13 +389,15 @@
           }
 
           .registry-actions-col {
-            width: 52px;
-            min-width: 52px
+            width: 8.5rem;
+            min-width: 8.5rem;
+            white-space: nowrap
           }
 
           .registry-actions {
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
+            flex-wrap: nowrap;
             gap: 4px;
             align-items: center;
             justify-content: center
@@ -1245,11 +1247,10 @@
         const rowIndex = start + i;
         const viewBtn = `<button type="button" class="registry-action-btn view" title="View student details" aria-label="View details for ${esc(r.studentName || r.student || 'student')}" onclick="openViewPlacement(${rowIndex})"><i class="bi bi-eye-fill"></i></button>`;
         const downloadBtn = `<button type="button" class="registry-action-btn dl" title="${hasDoc ? 'Download offer letter' : 'No document uploaded'}" ${hasDoc ? '' : 'disabled'} onclick="downloadOffer('${sid}')"><i class="bi bi-download"></i></button>`;
-        const detailsBtn = !canEditSelectedBatch
-          ? `<button type="button" class="registry-action-btn add" title="Only class incharge can add or edit" disabled><i class="bi bi-lock-fill"></i></button>`
-          : (hasPlacement
-            ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
-            : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`);
+        const detailsBtn = hasPlacement
+          ? `<button type="button" class="registry-action-btn ed" title="Edit placement / higher-education details" aria-label="Edit details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-pencil-fill"></i></button>`
+          : `<button type="button" class="registry-action-btn add" title="Add placement / higher-education details" aria-label="Add details for ${esc(r.studentName || 'student')}" onclick="openEditPlacement('${sid}')"><i class="bi bi-plus-lg"></i></button>`;
+        const actions = canEditSelectedBatch ? `${viewBtn}${downloadBtn}${detailsBtn}` : viewBtn;
         const cells = cols.map((col) => {
           const cls = registryCellClass(col);
           if (col.key === 'cno') {
@@ -1267,7 +1268,7 @@
           }
           return `<td${cls ? ` class="${cls}"` : ''}>${inner}</td>`;
         }).join('');
-        return `<tr>${cells}<td><div class="registry-actions">${viewBtn}${downloadBtn}${detailsBtn}</div></td></tr>`;
+        return `<tr>${cells}<td class="registry-actions-col"><div class="registry-actions">${actions}</div></td></tr>`;
       }).join('');
     }
 
