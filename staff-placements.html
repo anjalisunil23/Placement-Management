@@ -208,7 +208,6 @@
                       <label class="form-label small fw-semibold" for="editOfferLetter">Offer letter (PDF only)</label>
                       <input class="form-control" id="editOfferLetter" type="file" accept=".pdf,application/pdf" />
                     </div>
-                    </div>
                   </div>
                 </div>
                 <div class="modal-footer registry-edit-footer">
@@ -512,12 +511,13 @@
 
           .registry-edit-footer {
             flex-shrink: 0;
-            position: sticky;
-            bottom: 0;
-            z-index: 5;
+            position: static;
+            width: 100%;
+            margin-top: auto;
             background: #fff;
             border-top: 1px solid #dee2e6;
             justify-content: flex-end;
+            flex-wrap: wrap;
             gap: .75rem
           }
 
