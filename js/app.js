@@ -61,44 +61,46 @@ const APP_SHELL_VERSION = '2026.07.11o';
 const NAV = [
   { section: "Overview", roles: ROLES },
   { href: "dashboard.html", icon: "bi-grid-1x2-fill", label: "Dashboard", roles: ROLES },
-  {
-    group: "mock",
-    icon: "bi-lightning-charge-fill",
-    label: "Practice",
-    roles: ['admin', 'placement_officer', 'student', 'staff'],
-    children: [
-      {
-        group: "mock-aptitude",
-        label: "Aptitude Training",
-        href: "aptitude-training.html",
-        roles: ['admin', 'placement_officer', 'student', 'staff'],
-        children: [],
-      },
-      {
-        group: "mock-coding",
-        label: "Coding",
-        href: "coding.html",
-        roles: ['admin', 'placement_officer', 'student', 'staff'],
-        children: [],
-      },
-      {
-        group: "certifications",
-        label: "Certification",
-        href: "certifications.html",
-        roles: ['admin', 'placement_officer', 'student'],
-        children: [],
-      },
-      {
-        group: "tutorials",
-        label: "Tutorials",
-        href: "tutorials.html",
-        roles: ['admin', 'placement_officer', 'student', 'staff'],
-        children: [],
-      },
-    ],
-  },
-  { href: "staff-courses.html", icon: "bi-journal-richtext", label: "Autonomous MCQ", roles: ['admin', 'placement_officer', 'staff'], staffSyllabus: true },
-  { href: "autonomous-mcq.html", icon: "bi-journal-richtext", label: "Autonomous MCQ", roles: ['student'], studentOnly: true },
+  // TEMPORARILY HIDDEN (sidebar only): Practice section + Autonomous MCQ for all roles.
+  // Pages, APIs, and direct URL access are unchanged. To restore, uncomment the blocks below.
+  // {
+  //   group: "mock",
+  //   icon: "bi-lightning-charge-fill",
+  //   label: "Practice",
+  //   roles: ['admin', 'placement_officer', 'student', 'staff'],
+  //   children: [
+  //     {
+  //       group: "mock-aptitude",
+  //       label: "Aptitude Training",
+  //       href: "aptitude-training.html",
+  //       roles: ['admin', 'placement_officer', 'student', 'staff'],
+  //       children: [],
+  //     },
+  //     {
+  //       group: "mock-coding",
+  //       label: "Coding",
+  //       href: "coding.html",
+  //       roles: ['admin', 'placement_officer', 'student', 'staff'],
+  //       children: [],
+  //     },
+  //     {
+  //       group: "certifications",
+  //       label: "Certification",
+  //       href: "certifications.html",
+  //       roles: ['admin', 'placement_officer', 'student'],
+  //       children: [],
+  //     },
+  //     {
+  //       group: "tutorials",
+  //       label: "Tutorials",
+  //       href: "tutorials.html",
+  //       roles: ['admin', 'placement_officer', 'student', 'staff'],
+  //       children: [],
+  //     },
+  //   ],
+  // },
+  // { href: "staff-courses.html", icon: "bi-journal-richtext", label: "Autonomous MCQ", roles: ['admin', 'placement_officer', 'staff'], staffSyllabus: true },
+  // { href: "autonomous-mcq.html", icon: "bi-journal-richtext", label: "Autonomous MCQ", roles: ['student'], studentOnly: true },
 
   { section: "Placement", roles: ['admin', 'placement_officer', 'student', 'staff', 'alumni'] },
   { href: "drives.html", icon: "bi-briefcase-fill", label: "Placement Drives", roles: ['admin', 'placement_officer', 'staff'] },
