@@ -597,12 +597,215 @@ final class CodingService
             'answers' => $answers,
             'startedAt' => $startedAt,
             'endsAt' => $endsAt,
+            'malpractice' => ExamMalpracticeService::publicState([
+                'malpracticeViolationCount' => 0,
+                'malpracticePendingWarning' => 0,
+                'malpracticeAckRequired' => false,
+                'malpracticeState' => 'ACTIVE',
+                'terminationReason' => '',
+            ]),
         ];
     }
 
     /**
      * @param array<string, mixed> $user
-     * @param array<string, mixed> $result
+     * @return array<string, mixed>
+     */
+    public function reportMalpracticeIncident(array $user, string $attemptId, array $body = []): array
+    {
+        $attempt = $this->requireOwnedActiveAttempt($user, $attemptId);
+        if ((string) ($attempt['terminationReason'] ?? '') === ExamMalpracticeService::TERMINATION_MALPRACTICE
+            && CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            return [
+                'terminated' => true,
+                'ackRequired' => false,
+                'violationCount' => (int) ($attempt['malpracticeViolationCount'] ?? ExamMalpracticeService::TERMINATE_AT_COUNT),
+                'state' => ExamMalpracticeService::publicState($attempt),
+            ];
+        }
+
+        ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::recordIncident($attempt);
+        if ($patch !== []) {
+            $this->attempts->update($attemptId, $patch);
+            $attempt = array_merge($attempt, $patch);
+        }
+
+        $pending = (int) ($resp['pendingWarning'] ?? 0);
+        if ($pending > 0) {
+            $resp['warningMessage'] = ExamMalpracticeService::warningMessage($pending);
+            $resp['warningTitle'] = ExamMalpracticeService::warningTitle($pending);
+        }
+
+        $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
+        $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+
+        $resp['state'] = ExamMalpracticeService::publicState($attempt);
+        return $resp;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function acknowledgeMalpractice(array $user, string $attemptId, array $body = []): array
+    {
+        $attempt = $this->requireOwnedActiveAttempt($user, $attemptId);
+        $reason = strtolower(trim((string) ($body['reason'] ?? 'ack')));
+        if (!in_array($reason, ['ack', 'timeout', 'expired'], true)) {
+            $reason = 'ack';
+        }
+
+        ['patch' => $expirePatch, 'response' => $expireResp] = ExamMalpracticeService::checkDeadlineExpired($attempt);
+        if (!empty($expireResp['shouldAutoSubmit']) && $expirePatch !== []) {
+            $this->attempts->update($attemptId, $expirePatch);
+            $attempt = array_merge($attempt, $expirePatch);
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $expireResp, $body);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $expireResp['state'] = ExamMalpracticeService::publicState($attempt);
+            return $expireResp;
+        }
+
+        if ($reason === 'ack') {
+            $pausedMs = max(0, min(30 * 60 * 1000, (int) ($body['pausedMs'] ?? 0)));
+            ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::acknowledgeWithinDeadline($attempt, $pausedMs);
+        } else {
+            ['patch' => $patch, 'response' => $resp] = ExamMalpracticeService::finalizeWarning($attempt, $reason);
+        }
+
+        if ($patch !== []) {
+            $this->attempts->update($attemptId, $patch);
+            $attempt = array_merge($attempt, $patch);
+        } elseif (!empty($resp['alreadyFinalized'])) {
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $resp['state'] = ExamMalpracticeService::publicState($attempt);
+            if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+                $resp['terminated'] = true;
+                return $resp;
+            }
+            if (!empty($resp['shouldAutoSubmit'])) {
+                $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
+                $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            }
+            $resp['state'] = ExamMalpracticeService::publicState($attempt);
+            return $resp;
+        }
+
+        if (!empty($resp['shouldAutoSubmit'])) {
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $resp, $body);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+        }
+
+        $resp['state'] = ExamMalpracticeService::publicState($attempt);
+        if (!empty($resp['resumed']) && isset($attempt['endsAt'])) {
+            $resp['endsAt'] = (int) $attempt['endsAt'];
+        }
+        return $resp;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    public function malpracticeState(array $user, string $attemptId): array
+    {
+        $attempt = $this->requireOwnedAttempt($user, $attemptId);
+        $resp = ['state' => ExamMalpracticeService::publicState($attempt)];
+
+        if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            $resp['terminated'] = true;
+            return $resp;
+        }
+
+        ['patch' => $expirePatch, 'response' => $expireResp] = ExamMalpracticeService::checkDeadlineExpired($attempt);
+        if (!empty($expireResp['shouldAutoSubmit']) && $expirePatch !== []) {
+            $this->attempts->update($attemptId, $expirePatch);
+            $attempt = array_merge($attempt, $expirePatch);
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $expireResp, []);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $resp = array_merge($expireResp, ['state' => ExamMalpracticeService::publicState($attempt)]);
+            return $resp;
+        }
+
+        if (!empty($attempt['malpracticeTerminationSubmitDone'])
+            && CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') === 'ACTIVE') {
+            $retry = ['shouldAutoSubmit' => true, 'terminationReason' => (string) ($attempt['terminationReason'] ?? '')];
+            $this->applyMalpracticeAutoSubmit($user, $attemptId, $attempt, $retry, []);
+            $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+            $resp['submitResult'] = $retry['submitResult'] ?? null;
+            $resp['terminated'] = !empty($retry['terminated']);
+        }
+
+        $resp['state'] = ExamMalpracticeService::publicState($attempt);
+        return $resp;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $resp
+     * @param array<string, mixed> $body
+     */
+    private function applyMalpracticeAutoSubmit(array $user, string $attemptId, array $attempt, array &$resp, array $body): void
+    {
+        if (empty($resp['shouldAutoSubmit'])) {
+            return;
+        }
+        $attempt = $this->attempts->findById($attemptId) ?? $attempt;
+        if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            $resp['terminated'] = true;
+            $resp['ackRequired'] = false;
+            $resp['shouldAutoSubmit'] = false;
+            return;
+        }
+
+        $terminationReason = (string) ($resp['terminationReason'] ?? $attempt['terminationReason'] ?? ExamMalpracticeService::TERMINATION_MALPRACTICE);
+        if ($terminationReason === '') {
+            $terminationReason = ExamMalpracticeService::TERMINATION_MALPRACTICE;
+        }
+
+        $answers = $this->answersForMalpracticeSubmit($attempt, $body);
+        $started = (int) ($attempt['startedAt'] ?? 0);
+        $taken = $started > 0 ? max(0, (int) round((microtime(true) * 1000 - $started) / 1000)) : 0;
+
+        try {
+            $submitResult = $this->submit($user, $attemptId, [
+                'answers' => $answers,
+                'timeTakenSeconds' => $taken,
+                'autoSubmitted' => true,
+                'terminationReason' => $terminationReason,
+            ]);
+            $resp['submitResult'] = $submitResult;
+            $resp['terminated'] = true;
+            $resp['ackRequired'] = false;
+            $resp['shouldAutoSubmit'] = false;
+        } catch (\Throwable $e) {
+            $this->attempts->update($attemptId, [
+                'malpracticeState' => 'TERMINATING',
+                'terminationReason' => $terminationReason,
+                'malpracticeTerminationSubmitDone' => true,
+            ]);
+            $resp['submitError'] = $e->getMessage();
+            $resp['terminated'] = true;
+            $resp['shouldAutoSubmit'] = false;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @param array<string, mixed> $body
+     * @return array<string, array{language: string, code: string}>
+     */
+    private function answersForMalpracticeSubmit(array $attempt, array $body): array
+    {
+        $fromClient = is_array($body['answers'] ?? null) ? $body['answers'] : [];
+        if ($fromClient !== []) {
+            return $this->mergeSubmitAnswers($attempt, ['answers' => $fromClient]);
+        }
+        return $this->answersPayloadFromAttempt($attempt);
+    }
+
+    /**
+     * @param array<string, mixed> $user
      * @return array<string, mixed>
      */
     public function submit(array $user, string $attemptId, array $body): array
@@ -631,7 +834,7 @@ final class CodingService
             $test = $this->tests->findById((string) ($attempt['testId'] ?? ''));
             $open = is_array($test) && CodingTestModel::isContestOpen($test);
             $result['contestClosed'] = !$open;
-            $result['winnersPublished'] = !$open;
+            $result['winnersPublished'] = is_array($test) && CodingTestModel::resultsPublished($test);
             if (is_array($test)) {
                 $result['contestStartTime'] = (string) ($attempt['contestStartTime'] ?? $test['contestStartTime'] ?? '09:00');
                 $result['periodKey'] = (string) ($attempt['periodKey'] ?? CodingTestModel::periodKey($test, $attempt['submittedAt'] ?? null));
@@ -650,6 +853,12 @@ final class CodingService
         $isContest = in_array($contestType, ['weekly', 'monthly'], true);
         $rankInfo = $this->computePeerRanks($testId, $uid, $percentage, $timeTaken, $isContest);
         $this->attempts->update($attemptId, $rankInfo);
+        if ($isContest && $testId !== '') {
+            $this->recomputeContestRanks($testId);
+            $rankInfo = array_merge($rankInfo, $this->peerRankFieldsFromAttempt(
+                $this->attempts->findById($attemptId) ?? array_merge($attempt, $rankInfo)
+            ));
+        }
 
         return array_merge($result, $rankInfo);
     }
@@ -690,6 +899,11 @@ final class CodingService
             ? CodingTestModel::composeProblemTestId($testId, $problemItemId)
             : $testId;
 
+        $terminationReason = trim((string) ($body['terminationReason'] ?? ''));
+        if ($terminationReason === '') {
+            $terminationReason = trim((string) ($attempt['terminationReason'] ?? ''));
+        }
+
         return array_merge($graded, [
             'testId' => $testId,
             'listTestId' => $listTestId,
@@ -698,7 +912,61 @@ final class CodingService
             'timeTakenSeconds' => $taken,
             'timeTakenLabel' => sprintf('%02d:%02d', $minutes, $taken % 60),
             'autoSubmitted' => !empty($body['autoSubmitted']),
+            'terminationReason' => $terminationReason !== '' ? $terminationReason : null,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $attempt
+     * @return array<string, array{language: string, code: string}>
+     */
+    private function answersPayloadFromAttempt(array $attempt): array
+    {
+        $answers = [];
+        $stored = is_array($attempt['answers'] ?? null) ? $attempt['answers'] : [];
+        foreach ($stored as $qid => $row) {
+            if (!is_string($qid) || !is_array($row)) {
+                continue;
+            }
+            $answers[$qid] = [
+                'language' => (string) ($row['language'] ?? 'Python'),
+                'code' => (string) ($row['code'] ?? ''),
+            ];
+        }
+        return $answers;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireOwnedActiveAttempt(array $user, string $attemptId): array
+    {
+        $attempt = $this->requireOwnedAttempt($user, $attemptId);
+        if (CodingAttemptModel::normalizeStatus($attempt['status'] ?? '') !== 'ACTIVE') {
+            Response::error('This attempt is no longer active.', 422);
+        }
+        return $attempt;
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     * @return array<string, mixed>
+     */
+    private function requireOwnedAttempt(array $user, string $attemptId): array
+    {
+        if (!Security::isValidId($attemptId)) {
+            Response::notFound('Attempt not found.');
+        }
+        $attempt = $this->attempts->findById($attemptId);
+        if (!$attempt) {
+            Response::notFound('Attempt not found.');
+        }
+        $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
+        if ((string) ($attempt['userId'] ?? '') !== $uid) {
+            Response::forbidden('This attempt does not belong to you.');
+        }
+        return $attempt;
     }
 
     /**
@@ -780,9 +1048,20 @@ final class CodingService
             );
         }
 
+        $testId = (string) ($attempt['testId'] ?? '');
+        $test = $testId !== '' ? ($this->tests->findById($testId) ?: []) : [];
+        $contestType = CodingTestModel::normalizeContestType((string) ($attempt['contestType'] ?? $test['contestType'] ?? 'none'));
+        $isContest = in_array($contestType, ['weekly', 'monthly'], true);
+        $contestClosed = $isContest && is_array($test) && $test !== []
+            ? !CodingTestModel::isContestOpen($test)
+            : !empty($attempt['contestClosed']);
+        $winnersPublished = $isContest && is_array($test) && $test !== []
+            ? (CodingTestModel::resultsPublished($test) && $contestClosed)
+            : true;
+
         return array_merge([
             'attemptId' => $attemptId,
-            'testId' => (string) ($attempt['testId'] ?? ''),
+            'testId' => $testId,
             'testTitle' => (string) ($attempt['testTitle'] ?? ''),
             'score' => $score,
             'totalMarks' => $totalMarks,
@@ -798,9 +1077,11 @@ final class CodingService
             'timeTakenSeconds' => $seconds,
             'timeTakenLabel' => $timeTakenLabel,
             'questionResults' => array_values((array) ($attempt['questionResults'] ?? [])),
-            'contestType' => (string) ($attempt['contestType'] ?? 'none'),
-            'winnersPublished' => !empty($attempt['winnersPublished']),
-            'contestClosed' => !empty($attempt['contestClosed']),
+            'contestType' => $contestType,
+            'winnersPublished' => $winnersPublished,
+            'contestClosed' => $contestClosed,
+            'resultsPublished' => is_array($test) && $test !== [] ? CodingTestModel::resultsPublished($test) : false,
+            'resultStatus' => is_array($test) && $test !== [] ? CodingTestModel::resultStatus($test) : 'PUBLISHED',
             'submittedAt' => $attempt['submittedAt'] ?? '',
         ], $rankFields);
     }
@@ -815,6 +1096,8 @@ final class CodingService
         $rows = $this->attempts->findAll(['userId' => $uid, 'status' => 'submitted'], 50, 0, ['submittedAt' => -1]);
         $history = [];
         $solved = [];
+        /** @var array<string, array<string, mixed>> $testCache */
+        $testCache = [];
         foreach ($rows as $row) {
             foreach ((array) ($row['questionResults'] ?? []) as $qr) {
                 if (!is_array($qr)) {
@@ -829,8 +1112,14 @@ final class CodingService
             $listTestId = $problemItemId !== ''
                 ? CodingTestModel::composeProblemTestId($parentTestId, $problemItemId)
                 : $parentTestId;
+            if ($parentTestId !== '' && !isset($testCache[$parentTestId])) {
+                $testCache[$parentTestId] = $this->tests->findById($parentTestId) ?: [];
+            }
+            $testDoc = $testCache[$parentTestId] ?? [];
+            $contestType = CodingTestModel::normalizeContestType((string) ($row['contestType'] ?? $testDoc['contestType'] ?? 'none'));
             $history[] = [
                 'id' => (string) ($row['_id'] ?? ''),
+                'attemptId' => (string) ($row['_id'] ?? ''),
                 'testId' => $parentTestId,
                 'listTestId' => $listTestId,
                 'problemItemId' => $problemItemId !== '' ? $problemItemId : null,
@@ -840,10 +1129,17 @@ final class CodingService
                 'totalMarks' => $row['totalMarks'] ?? 0,
                 'percentage' => $row['percentage'] ?? 0,
                 'status' => $row['resultStatus'] ?? $row['status'] ?? '',
-                'contestType' => $row['contestType'] ?? 'none',
+                'contestType' => $contestType,
                 'testKind' => $row['testKind'] ?? 'regular',
                 'companyId' => $row['companyId'] ?? null,
                 'dateLabel' => self::formatDateLabel($row['submittedAt'] ?? ''),
+                'timeTakenSeconds' => (int) ($row['timeTakenSeconds'] ?? 0),
+                'timeTakenLabel' => (string) ($row['timeTakenLabel'] ?? ''),
+                'rank' => isset($row['rank']) ? (int) $row['rank'] : null,
+                'departmentRank' => isset($row['departmentRank']) ? (int) $row['departmentRank'] : null,
+                'resultsPublished' => $testDoc !== [] ? CodingTestModel::resultsPublished($testDoc) : false,
+                'resultStatus' => $testDoc !== [] ? CodingTestModel::resultStatus($testDoc) : 'PUBLISHED',
+                'contestScheduleLabel' => $testDoc !== [] ? CodingTestModel::contestScheduleLabel($testDoc) : '',
             ];
         }
         $percents = array_map(static fn($h) => (float) ($h['percentage'] ?? 0), $history);
@@ -1031,6 +1327,7 @@ final class CodingService
             if (CodingTestModel::resultsPublished($test)) {
                 Response::error('Contest results are already published.', 422);
             }
+            $this->recomputeContestRanks($id);
             $patch = [
                 'resultsPublished' => true,
                 'resultPublishedAt' => DocumentHelper::now(),
@@ -1071,6 +1368,7 @@ final class CodingService
             Response::error('Results preview is available only after the contest has ended.', 422);
         }
 
+        $this->recomputeContestRanks($id);
         $participants = $this->contestLeaderboardRows($test);
         $window = CodingTestModel::contestWindow($test);
         $view = CodingTestModel::publicView($test, true);
@@ -1536,6 +1834,7 @@ final class CodingService
      */
     public function contestBoard(array $user): array
     {
+        $this->syncCompletedContestLeaderboards();
         $uid = (string) ($user['_id'] ?? $user['id'] ?? '');
         $officerView = AptitudeAccessService::canViewDirectory($user);
         $allowed = $officerView ? AptitudeAccessService::authorizedSubjectUserIds($user) : null;
@@ -1560,7 +1859,8 @@ final class CodingService
                 $mine = null;
                 $pool = array_merge(
                     (array) ($contest['liveParticipants'] ?? []),
-                    (array) ($contest['participants'] ?? [])
+                    (array) ($contest['participants'] ?? []),
+                    (array) ($contest['closedPeriodParticipants'] ?? [])
                 );
                 foreach ($pool as $p) {
                     if ((string) ($p['userId'] ?? '') === $uid) {
@@ -1662,7 +1962,20 @@ final class CodingService
             $current = self::rankContestParticipants($current);
             $previous = self::rankContestParticipants($previous);
             $open = $test !== [] ? CodingTestModel::isContestOpen($test) : true;
-            $winnersPublished = $previous !== [];
+            $resultsPublished = $test !== [] && CodingTestModel::resultsPublished($test);
+            if ($open) {
+                $liveParticipants = $current;
+                $publishedParticipants = $resultsPublished ? $previous : [];
+                $winnersPublished = $resultsPublished && $publishedParticipants !== [];
+                $closedPeriodParticipants = [];
+                $participantCount = count($current);
+            } else {
+                $liveParticipants = [];
+                $publishedParticipants = $current;
+                $winnersPublished = $resultsPublished;
+                $closedPeriodParticipants = $resultsPublished ? [] : $current;
+                $participantCount = count($current);
+            }
             $out[] = [
                 'id' => $tid,
                 'title' => $title !== '' ? $title : 'Contest',
@@ -1672,11 +1985,13 @@ final class CodingService
                 'contestStartTime' => $test !== [] ? (string) ($test['contestStartTime'] ?? '09:00') : '09:00',
                 'contestScheduleLabel' => $test !== [] ? CodingTestModel::contestScheduleLabel($test) : '',
                 'contestWindowBounds' => $test !== [] ? CodingTestModel::contestWindowBounds($test) : [],
+                'resultsPublished' => $resultsPublished,
                 'winnersPublished' => $winnersPublished,
-                'winners' => $winnersPublished ? array_slice($previous, 0, 3) : [],
-                'participants' => $winnersPublished ? $previous : [],
-                'liveParticipants' => $current,
-                'participantCount' => count($current),
+                'winners' => $winnersPublished ? array_slice($publishedParticipants, 0, 3) : [],
+                'participants' => $winnersPublished ? $publishedParticipants : [],
+                'liveParticipants' => $liveParticipants,
+                'closedPeriodParticipants' => $closedPeriodParticipants,
+                'participantCount' => $participantCount,
                 'periodKey' => $currentKey,
                 'currentPeriodKey' => $currentKey,
                 'previousPeriodKey' => $previousKey,
@@ -2012,6 +2327,7 @@ final class CodingService
      */
     private function contestResultsDirectory(array $user, array $filters): array
     {
+        $this->syncCompletedContestLeaderboards();
         $allowed = AptitudeAccessService::authorizedSubjectUserIds($user);
         if (is_array($allowed) && $allowed === []) {
             return $this->emptyContestDirectory($user);
@@ -2153,6 +2469,7 @@ final class CodingService
             return [];
         }
         $attempts = $this->attempts->findAll(['testId' => $testId, 'status' => 'submitted'], 5000, 0, ['submittedAt' => -1]);
+        $attempts = $this->filterAttemptsForContestPeriod($test, $attempts);
         if ($attempts === []) {
             return [];
         }
@@ -2174,8 +2491,9 @@ final class CodingService
                 'totalMarks' => (float) ($attempt['totalMarks'] ?? $test['totalMarks'] ?? 0),
                 'score' => (float) ($attempt['score'] ?? 0),
                 'percentage' => (float) ($attempt['percentage'] ?? 0),
-                'timeTakenLabel' => '—',
-                'timeTakenSeconds' => 0,
+                'timeTakenLabel' => (string) ($attempt['timeTakenLabel'] ?? '—'),
+                'timeTakenSeconds' => (int) ($attempt['timeTakenSeconds'] ?? 0),
+                'rank' => isset($attempt['rank']) ? (int) $attempt['rank'] : null,
             ];
         }
 
@@ -2697,6 +3015,10 @@ final class CodingService
             return $empty;
         }
         $peers = $this->attempts->findAll(['testId' => $testId, 'status' => 'submitted'], 2000, 0, ['submittedAt' => -1]);
+        $test = $this->tests->findById($testId);
+        if ($useTimeTiebreak && is_array($test) && CodingTestModel::isContest($test)) {
+            $peers = $this->filterAttemptsForContestPeriod($test, $peers);
+        }
         $overall = $this->rankAmongAttempts($peers, $percentage, $timeTakenSeconds, $useTimeTiebreak);
         $dept = $this->computeDepartmentPeerRanks($testId, $userId, $percentage, $timeTakenSeconds, $useTimeTiebreak, $peers);
 
@@ -2826,5 +3148,93 @@ final class CodingService
         $percentile = $total > 0 ? round(($better / $total) * 100, 1) : null;
 
         return ['rank' => $rank, 'percentile' => $percentile, 'total' => $total];
+    }
+
+    private function syncCompletedContestLeaderboards(): void
+    {
+        foreach ($this->tests->findAll(['status' => 'published'], 500, 0, ['createdAt' => -1]) as $test) {
+            if (!CodingTestModel::isContest($test)) {
+                continue;
+            }
+            if (CodingTestModel::contestStatus($test) !== 'COMPLETED') {
+                continue;
+            }
+            $testId = (string) ($test['_id'] ?? $test['id'] ?? '');
+            if ($testId === '') {
+                continue;
+            }
+            $this->recomputeContestRanks($testId);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $test
+     * @param array<int, array<string, mixed>> $attempts
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterAttemptsForContestPeriod(array $test, array $attempts, ?string $periodKey = null): array
+    {
+        if (!CodingTestModel::isContest($test)) {
+            return $attempts;
+        }
+        if ($periodKey === null || $periodKey === '') {
+            $periodKey = CodingTestModel::periodKey($test);
+        }
+        $out = [];
+        foreach ($attempts as $attempt) {
+            $key = trim((string) ($attempt['periodKey'] ?? ''));
+            if ($key === '') {
+                $key = CodingTestModel::periodKey($test, $attempt['submittedAt'] ?? '');
+            }
+            if ($key === $periodKey) {
+                $out[] = $attempt;
+            }
+        }
+
+        return $out;
+    }
+
+    private function recomputeContestRanks(string $testId): void
+    {
+        if (!Security::isValidId($testId)) {
+            return;
+        }
+        $test = $this->tests->findById($testId);
+        if (!$test || !CodingTestModel::isContest($test)) {
+            return;
+        }
+        $attempts = $this->attempts->findAll(['testId' => $testId, 'status' => 'submitted'], 5000, 0, ['submittedAt' => -1]);
+        $attempts = $this->filterAttemptsForContestPeriod($test, $attempts);
+        if ($attempts === []) {
+            return;
+        }
+
+        /** @var array<string, array<string, mixed>> $bestByUser */
+        $bestByUser = [];
+        foreach ($attempts as $attempt) {
+            $uid = (string) ($attempt['userId'] ?? '');
+            if ($uid === '') {
+                continue;
+            }
+            $pct = (float) ($attempt['percentage'] ?? 0);
+            if (!isset($bestByUser[$uid]) || $pct > (float) ($bestByUser[$uid]['percentage'] ?? 0)) {
+                $bestByUser[$uid] = $attempt;
+            }
+        }
+
+        foreach ($bestByUser as $uid => $attempt) {
+            $attemptId = (string) ($attempt['_id'] ?? '');
+            if ($attemptId === '') {
+                continue;
+            }
+            $rankInfo = $this->computePeerRanks(
+                $testId,
+                $uid,
+                (float) ($attempt['percentage'] ?? 0),
+                (int) ($attempt['timeTakenSeconds'] ?? 0),
+                true
+            );
+            $this->attempts->update($attemptId, $rankInfo);
+        }
     }
 }

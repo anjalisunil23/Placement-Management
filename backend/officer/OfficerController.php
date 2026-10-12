@@ -1230,55 +1230,166 @@ final class OfficerController
         Response::success((new RecruitingService())->getCampusOverview($deptId, $filterCtx, $lite));
     }
 
-    /** GET /api/officer/placement-filters — AES program / branch / stud_class batches (current + previous) */
+    /** GET /api/officer/placement-filters — same dropdowns as the staff placements grid */
     public function placementFilters(): void
     {
+        @set_time_limit(max(30, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 60)));
         $scope = (new OfficerDataService())->requireScope();
-        $ctx = array_merge($this->staffLikeFilterCtx($scope['ctx']), ['filterMode' => true]);
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
         $program = trim((string) ($_GET['program'] ?? ''));
         $branch = trim((string) ($_GET['branch'] ?? ''));
+        $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'all')));
+        $registrySvc = new \PMS\Services\StaffPlacementRegistryService();
+        $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
+        if ($departmentId === ''
+            && empty($ctx['isAdmin'])
+            && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+            $departmentId = trim((string) $ctx['departmentId']);
+        }
+        $filterPayload = [
+            'departmentId' => $departmentId,
+            'program'      => $program,
+            'branch'       => $branch,
+            'studRole'     => $studRole !== '' ? $studRole : 'all',
+        ];
+        $filterCtx = $registrySvc->placementFilterContext($ctx, $filterPayload);
         $svc = new \PMS\Services\PlacementFilterService();
+        $departmentSelected = $departmentId !== '';
+        $lite = filter_var($_GET['lite'] ?? '0', FILTER_VALIDATE_BOOLEAN);
+        if ($lite) {
+            $payload = [];
+            if ($program !== '') {
+                $payload['batches'] = $svc->fetchBatchOptions($filterCtx, $program, $branch, false);
+            } elseif ($departmentSelected) {
+                $payload['programs'] = $svc->fetchProgramOptions($filterCtx);
+            }
+            Response::success(DocumentHelper::jsonSafe($payload));
+
+            return;
+        }
         Response::success(DocumentHelper::jsonSafe([
-            'programs' => $svc->fetchProgramOptions($ctx),
-            'branches' => $program !== '' ? $svc->fetchBranchOptions($ctx, $program) : [],
-            'batches'  => $svc->fetchBatchOptions($ctx, $program, $branch),
+            'departments' => $registrySvc->departmentFilterOptions(),
+            // UI "Branch" dropdown — programmes under the selected department (getDepartments / AES).
+            'programs' => $departmentSelected ? $svc->fetchProgramOptions($filterCtx) : [],
+            'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
+            'batches'  => $program !== '' ? $svc->fetchBatchOptions($filterCtx, $program, $branch, false) : [],
+            'assignedClassBatches' => \PMS\Services\StaffContext::assignedClassBatches($filterCtx),
+            'scope'    => $registrySvc->resolvedRegistryScope($ctx, $filterPayload),
         ]));
     }
 
-    /** GET /api/officer/placements-higher-education — placement registry filtered by AES batch */
+    /** GET /api/officer/placements-higher-education — same student_placements grid as staff */
     public function placementsHigherEducation(): void
     {
+        @set_time_limit(max(60, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 90)));
         $scope = (new OfficerDataService())->requireScope();
         $ctx = $this->staffLikeFilterCtx($scope['ctx']);
-        $studRole = strtolower(trim((string) ($_GET['studRole'] ?? 'student')));
+        $departmentId = trim((string) ($_GET['departmentId'] ?? ''));
+        if ($departmentId === ''
+            && empty($ctx['isAdmin'])
+            && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+            $departmentId = trim((string) $ctx['departmentId']);
+        }
         $filters = [
-            'program'  => (string) ($_GET['program'] ?? ''),
-            'branch'   => (string) ($_GET['branch'] ?? ''),
-            'batch'    => (string) ($_GET['batch'] ?? ''),
-            'studRole' => $studRole === 'alumni' ? 'alumni' : 'student',
-            'type'     => (string) ($_GET['type'] ?? ''),
-            'q'        => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+            'departmentId' => $departmentId,
+            'program'      => (string) ($_GET['program'] ?? ''),
+            'branch'       => (string) ($_GET['branch'] ?? ''),
+            'batch'        => (string) ($_GET['batch'] ?? ''),
+            'studRole'     => (string) ($_GET['studRole'] ?? 'all'),
+            'type'         => (string) ($_GET['type'] ?? ''),
+            'q'            => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+            'omitFilterOptions' => filter_var($_GET['omitFilters'] ?? '1', FILTER_VALIDATE_BOOLEAN),
         ];
         Response::success(DocumentHelper::jsonSafe(
             (new \PMS\Services\StaffPlacementRegistryService())->list($ctx, $filters)
         ));
     }
 
+    /** PUT /api/officer/students/{id}/placement — save into student_placement_details */
+    public function updateStudentPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->updatePlacement($ctx, $studentId, $input)
+        ), 'Placement details updated.');
+    }
+
+    /** DELETE /api/officer/students/{id}/placement */
+    public function deleteStudentPlacement(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->deletePlacement($ctx, $studentId)
+        ), 'Placement details deleted.');
+    }
+
+    /** POST /api/officer/students/{id}/placement/entries */
+    public function addStudentPlacementEntry(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->addPlacementEntry($ctx, $studentId, $input)
+        ), 'Placement entry added.');
+    }
+
+    /** GET /api/officer/students/{id}/placement/entries */
+    public function listStudentPlacementEntries(string $studentId): void
+    {
+        (new OfficerDataService())->requireScope();
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->listPlacementEntries($studentId)
+        ));
+    }
+
+    /** POST /api/officer/students/{id}/placement/offer-letter */
+    public function uploadPlacementOfferLetter(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\StaffPlacementRegistryService())->uploadOfferLetter($ctx, $studentId)
+        ), 'Offer letter uploaded.');
+    }
+
+    /** GET /api/officer/students/{id}/placement/offer-letter */
+    public function downloadPlacementOfferLetter(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        (new \PMS\Services\StaffPlacementRegistryService())->downloadOfferLetter($ctx, $studentId);
+    }
+
     /**
+     * Staff-shaped read context. Admin is campus-wide; a placement officer stays on their department.
+     *
      * @param array<string, mixed> $officerCtx
-     * @return array{profile:array<string,mixed>,departmentId:string,department:array<string,mixed>|null}
+     * @return array<string, mixed>
      */
     private function staffLikeFilterCtx(array $officerCtx): array
     {
+        $isAdmin = !empty($officerCtx['isAdmin']);
         $deptId = trim((string) ($officerCtx['departmentId'] ?? ''));
-        if ($deptId === '') {
+        if (!$isAdmin && $deptId === '') {
             Response::forbidden('Your placement officer profile has no department assigned.');
         }
 
         return [
             'profile'      => is_array($officerCtx['profile'] ?? null) ? $officerCtx['profile'] : [],
-            'departmentId' => $deptId,
-            'department'   => is_array($officerCtx['department'] ?? null) ? $officerCtx['department'] : null,
+            'departmentId' => $isAdmin ? '' : $deptId,
+            'department'   => $isAdmin ? null : (is_array($officerCtx['department'] ?? null) ? $officerCtx['department'] : null),
+            'isAdmin'      => $isAdmin,
+            'campusWide'   => $isAdmin,
         ];
     }
 

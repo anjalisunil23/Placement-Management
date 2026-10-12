@@ -255,7 +255,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/admin-api.js?v=20261004loginusers"></script>
 <script src="js/api.js?v=20260924bulkdel"></script>
-<script src="js/app.js?v=20261001mcqroles"></script>
+<script src="js/app.js?v=20261008phe"></script>
 <script>
 let departments = [];
 let companyDirectory = [];
@@ -437,14 +437,6 @@ function bindUserDeleteSelection() {
   const root = document.querySelector('.tab-content');
   if (!root || root.dataset.deleteSelectWired === '1') return;
   root.dataset.deleteSelectWired = '1';
-  document.addEventListener('pms-table-draw', () => {
-    document.querySelectorAll('.user-delete-check[data-delete-key]').forEach((box) => {
-      box.checked = selectedDeleteKeys.has(box.dataset.deleteKey || '');
-    });
-    document.querySelectorAll('.volunteer-delete-check[data-volunteer-id]').forEach((box) => {
-      box.checked = selectedVolunteerIds.has(box.dataset.volunteerId || '');
-    });
-  });
   root.addEventListener('change', e => {
     const selectAll = e.target.closest('.user-delete-select-all');
     if (selectAll) {

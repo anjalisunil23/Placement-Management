@@ -197,7 +197,35 @@
     let beforeUnloadBound = false;
     let examLockdown = false;
     let lockdownGuardsBound = false;
-    let focusViolationHandled = false;
+    let navigationGuardBound = false;
+    let windowBlurGuardBound = false;
+    let clipboardGuardsEnabled = false;
+    let focusGuardsEnabled = false;
+    let focusViolationCount = 0;
+    let violationAckRequired = false;
+    let finalizingViolation = false;
+    let lastFocusViolationAt = 0;
+    let fullscreenListenerBound = false;
+    let allowFullscreenExit = false;
+    let fullscreenEnforceTimer = null;
+    let keydownGuardBound = false;
+    let focusEnforceTimer = null;
+    let hiddenViolationPending = false;
+    let incidentReporting = false;
+    let lastServerWarningMessage = '';
+    let lastServerWarningTitle = '';
+    let malpracticeDeadlineAt = 0;
+    let malpracticeFinalizeInFlight = false;
+    let warningCountdownTimer = null;
+    let malpracticeStatePollTimer = null;
+    let lockOverlayDismissHandler = null;
+    let lockOverlayActionsBound = false;
+    let timerPauseStartedAt = 0;
+    const INCIDENT_DEBOUNCE_MS = 1500;
+    /** Warnings shown as 1 of 2 and 2 of 2; the 3rd blocked switch attempt ends the test. */
+    const MAX_MALPRACTICE_WARNINGS = 2;
+    const TAB_SWITCH_PROHIBITED_MSG = 'You left the contest tab. Tab switching is not allowed. Return here immediately to see your malpractice warning.';
+    const ACK_REQUIRED_MSG = 'You must return to this tab and tap "I understand — continue test" before the contest can continue. Tab switching and minimizing are not allowed.';
     let remainingMs = 0;
     let timerDeadline = 0;
     let lockOverlay = null;
@@ -253,28 +281,91 @@
       overlay.style.padding = '1rem';
       overlay.style.background = 'rgba(15, 23, 42, 0.78)';
       overlay.style.backdropFilter = 'blur(4px)';
-      overlay.style.zIndex = '1080';
+      overlay.style.zIndex = '2147483000';
       overlay.style.pointerEvents = 'auto';
       overlay.innerHTML = `
-        <div style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35)">
-          <div style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
+        <div data-cod-lock-panel style="max-width:34rem;width:min(34rem,100%);border-radius:1rem;padding:1rem 1.1rem;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.22);border:1px solid rgba(148,163,184,.35);pointer-events:auto;position:relative;z-index:1">
+          <div data-cod-lock-title style="font-size:1rem;font-weight:700;margin-bottom:.35rem">Test Ended</div>
           <div data-cod-lock-message style="font-size:.95rem;line-height:1.45;color:#334155">You left the test window. Submitting your answers and signing you out…</div>
+          <div data-cod-lock-countdown class="small fw-semibold mt-2 d-none" style="color:#b45309"></div>
+          <button type="button" class="btn btn-primary btn-sm mt-3 d-none" data-cod-lock-dismiss style="pointer-events:auto;cursor:pointer">I understand — continue test</button>
         </div>`;
       document.body.appendChild(overlay);
       lockOverlay = overlay;
+      bindLockOverlayActionsOnce();
       return lockOverlay;
     }
 
-    function showLockOverlay(message) {
+    function bindLockOverlayActionsOnce() {
       const overlay = ensureLockOverlay();
+      if (lockOverlayActionsBound) return;
+      lockOverlayActionsBound = true;
+      overlay.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-cod-lock-dismiss]');
+        if (!btn || btn.classList.contains('d-none') || btn.disabled) return;
+        e.preventDefault();
+        e.stopPropagation();
+        btn.disabled = true;
+        const handler = lockOverlayDismissHandler;
+        if (typeof handler === 'function') handler();
+      }, true);
+      overlay.addEventListener('mousedown', (e) => {
+        if (e.target.closest('[data-cod-lock-panel]')) e.stopPropagation();
+      }, true);
+    }
+
+    function malpracticeAckOverlayVisible() {
+      if (!lockOverlay || lockOverlay.style.display !== 'flex') return false;
+      const dismiss = lockOverlay.querySelector('[data-cod-lock-dismiss]');
+      return !!(dismiss && !dismiss.classList.contains('d-none') && violationAckRequired);
+    }
+
+    function showLockOverlay(message, opts = {}) {
+      mountLockOverlayForExam();
+      const overlay = ensureLockOverlay();
+      const title = overlay.querySelector('[data-cod-lock-title]');
       const msg = overlay.querySelector('[data-cod-lock-message]');
+      const dismiss = overlay.querySelector('[data-cod-lock-dismiss]');
+      const countdownEl = overlay.querySelector('[data-cod-lock-countdown]');
+      if (title) title.textContent = opts.title || 'Test Ended';
       if (msg) msg.textContent = message || 'You have left the test window. Please return to continue.';
+      if (countdownEl) {
+        if (opts.showCountdown) {
+          countdownEl.classList.remove('d-none');
+          syncWarningCountdownUi();
+        } else {
+          countdownEl.classList.add('d-none');
+          countdownEl.textContent = '';
+        }
+      }
+      if (dismiss) {
+        if (opts.dismissible) {
+          dismiss.classList.remove('d-none');
+          dismiss.disabled = false;
+          dismiss.textContent = opts.dismissText || 'I understand — continue test';
+          lockOverlayDismissHandler = () => { opts.onDismiss?.(); };
+        } else {
+          dismiss.classList.add('d-none');
+          dismiss.disabled = false;
+          lockOverlayDismissHandler = null;
+        }
+      } else {
+        lockOverlayDismissHandler = null;
+      }
       overlay.style.display = 'flex';
     }
 
-    function hideLockOverlay() {
+    function hideLockOverlay(force = false) {
+      if (violationAckRequired && !force) return;
       if (lockOverlay) {
         lockOverlay.style.display = 'none';
+      }
+    }
+
+    function mountLockOverlayForExam() {
+      const overlay = ensureLockOverlay();
+      if (overlay.parentElement !== document.body) {
+        document.body.appendChild(overlay);
       }
     }
 
@@ -321,6 +412,7 @@
     }
 
     function restoreExamInteractions() {
+      if (violationAckRequired) return;
       const locked = !!state?.submitted;
       if (editor) editor.setReadOnly(locked);
       if (el('stdin')) el('stdin').readOnly = locked;
@@ -334,70 +426,607 @@
     }
 
     function logoutAfterViolation() {
-      if (typeof Auth !== 'undefined' && typeof Auth.logout === 'function') {
-        Auth.logout();
-        return;
+      if (typeof apiFetch === 'function') {
+        apiFetch('/auth/logout', { method: 'POST', skipAuthRedirect: true, skipAuthRetry: true }).catch(() => {});
       }
-      window.location.href = 'public-stats.html';
+      if (typeof Auth !== 'undefined' && typeof Auth.clear === 'function') {
+        Auth.clear();
+      }
+      window.location.href = 'login.html';
     }
 
-    async function handleFocusViolation() {
-      if (focusViolationHandled || !examLockdown || state?.submitted || !state?.attemptId || submitting) return;
-      if (!document.hidden && document.hasFocus()) return;
-      focusViolationHandled = true;
+    function clipboardLockActive() {
+      return (clipboardGuardsEnabled || examLockdown) && !!state?.attemptId && !state?.submitted;
+    }
+
+    function focusLockActive() {
+      return focusGuardsEnabled && examLockdown && !!state?.attemptId && !state?.submitted;
+    }
+
+    function applyMalpracticeServerPayload(data) {
+      if (!data || typeof data !== 'object') return;
+      const st = data.state || data;
+      if (st.violationCount != null) focusViolationCount = Number(st.violationCount) || 0;
+      if (data.violationCount != null) focusViolationCount = Number(data.violationCount) || focusViolationCount;
+      violationAckRequired = !!(st.ackRequired ?? data.ackRequired);
+      if (data.warningMessage) lastServerWarningMessage = String(data.warningMessage);
+      if (data.warningTitle) lastServerWarningTitle = String(data.warningTitle);
+      const deadline = st.warningDeadlineAt ?? data.warningDeadlineAt;
+      if (deadline != null && Number(deadline) > 0) {
+        malpracticeDeadlineAt = Number(deadline);
+      } else if (!violationAckRequired) {
+        malpracticeDeadlineAt = 0;
+      }
+    }
+
+    function stopWarningCountdown() {
+      if (warningCountdownTimer) {
+        clearInterval(warningCountdownTimer);
+        warningCountdownTimer = null;
+      }
+    }
+
+    function stopMalpracticeStatePoll() {
+      if (malpracticeStatePollTimer) {
+        clearInterval(malpracticeStatePollTimer);
+        malpracticeStatePollTimer = null;
+      }
+    }
+
+    function syncWarningCountdownUi() {
+      const countdownEl = lockOverlay?.querySelector('[data-cod-lock-countdown]');
+      if (!countdownEl || !malpracticeDeadlineAt || !violationAckRequired) return;
+      const sec = Math.max(0, Math.ceil((malpracticeDeadlineAt - Date.now()) / 1000));
+      countdownEl.textContent = `Time remaining: ${sec} second${sec === 1 ? '' : 's'}`;
+      if (sec <= 0 && !malpracticeFinalizeInFlight && !finalizingViolation) {
+        finalizeMalpracticeFromClient('timeout');
+      }
+    }
+
+    function startWarningCountdown() {
+      stopWarningCountdown();
+      syncWarningCountdownUi();
+      warningCountdownTimer = window.setInterval(syncWarningCountdownUi, 200);
+    }
+
+    function startMalpracticeStatePoll() {
+      stopMalpracticeStatePoll();
+      if (!violationAckRequired || !state?.attemptId) return;
+      malpracticeStatePollTimer = window.setInterval(() => {
+        syncMalpracticeStateFromServer().catch(() => {});
+      }, 1500);
+    }
+
+    function buildAnswersPayloadForSubmit() {
+      const answers = {};
+      Object.entries(state?.answers || {}).forEach(([qid, ans]) => {
+        answers[qid] = {
+          language: ans?.language || 'Python',
+          code: ans?.code || '',
+        };
+      });
+      return answers;
+    }
+
+    async function persistAllAnswersForSubmit() {
+      const q = currentQ();
+      if (q && editor) {
+        const language = el('language')?.value || 'Python';
+        const code = editor.getValue();
+        const customInput = el('stdin') ? el('stdin').value : '';
+        const ans = normalizeAnswer(q, state.answers[q.id] || createAnswerState(q));
+        state.answers[q.id] = ans;
+        const draft = draftFieldsForAnswer(ans, q, language, code, customInput);
+        if (state.attemptId && !isPracticeMode()) {
+          await CodingService.saveDraft(state.attemptId, q.id, draft).catch(() => {});
+        }
+      }
+    }
+
+    async function syncMalpracticeStateFromServer() {
+      if (!state?.attemptId || finalizingViolation) return null;
+      const data = await CodingService.fetchMalpracticeState(state.attemptId);
+      if (data?.shouldAutoSubmit || data?.submitResult || data?.terminated) {
+        applyMalpracticeServerPayload(data);
+        await handleMalpracticeTermination(data);
+        return data;
+      }
+      const st = data?.state || data;
+      const clientPastDeadline = malpracticeDeadlineAt > 0 && Date.now() >= malpracticeDeadlineAt;
+      if (clientPastDeadline || (st?.warningExpired && clientPastDeadline)) {
+        return finalizeMalpracticeFromClient('expired');
+      }
+      applyMalpracticeServerPayload({ state: st, ...data });
+      if (st?.ackRequired || data?.ackRequired) {
+        if (!malpracticeAckOverlayVisible()) showMalpracticeAckOverlay();
+        else syncWarningCountdownUi();
+      }
+      return data;
+    }
+
+    function malpracticeWarningMessage() {
+      if (lastServerWarningMessage) return lastServerWarningMessage;
+      const n = Math.min(focusViolationCount, MAX_MALPRACTICE_WARNINGS);
+      if (n === 1) {
+        return 'WARNING 1 OF 2: You have left the active examination window. Further violations may result in automatic submission.';
+      }
+      if (n === 2) {
+        return 'FINAL WARNING: This is your second malpractice violation. One more violation will automatically submit your examination and end your session.';
+      }
+      return 'Switching tabs is not allowed during this examination.';
+    }
+
+    function pauseTimerForWarning() {
+      if (!timerPauseStartedAt) timerPauseStartedAt = Date.now();
+      stopTimer();
+    }
+
+    function resumeTimerAfterAck(endsAtFromServer) {
+      if (endsAtFromServer != null && Number.isFinite(Number(endsAtFromServer))) {
+        state.endsAt = Number(endsAtFromServer);
+        remainingMs = Math.max(0, state.endsAt - Date.now());
+        timerDeadline = Date.now() + remainingMs;
+      } else if (timerPauseStartedAt) {
+        const paused = Date.now() - timerPauseStartedAt;
+        timerDeadline += paused;
+        remainingMs = Math.max(0, timerDeadline - Date.now());
+      }
+      timerPauseStartedAt = 0;
+      if (state?.status === 'ACTIVE' && !state?.submitted) startTimer(remainingMs);
+    }
+
+    async function handleMalpracticeTermination(data) {
+      if (finalizingViolation) return;
+      finalizingViolation = true;
+      malpracticeFinalizeInFlight = true;
+      stopWarningCountdown();
+      stopMalpracticeStatePoll();
       stopTimer();
       bindLockdownGuards(false);
       bindUnload(false);
       examLockdown = false;
+      violationAckRequired = false;
       freezeExamInteractions();
-      showLockOverlay('You switched tabs or left the test window. Your test is being submitted and you will be signed out.');
+      const term = String(data?.terminationReason || data?.state?.terminationReason || '');
+      const msg = term.startsWith('MALPRACTICE_WARNING')
+        ? 'Your examination has been automatically submitted because the malpractice warning was not resolved in time.'
+        : 'Your examination has been automatically submitted because you exceeded the maximum number of permitted violations.';
+      showLockOverlay(msg, { title: 'Examination ended', dismissible: false });
       try {
-        await submitExam(true, { logoutAfter: true });
-      } catch (_) { /* still sign out below */ }
+        if (data?.submitResult) {
+          state.lastResult = data.submitResult;
+          state.submitted = true;
+          state.attemptId = null;
+        } else if (state?.attemptId) {
+          await submitExam(true, { logoutAfter: true });
+        }
+      } catch (_) { /* still sign out */ }
       logoutAfterViolation();
     }
 
+    async function acknowledgeMalpracticeWarning() {
+      if (!state?.attemptId || finalizingViolation || malpracticeFinalizeInFlight) return;
+      if (malpracticeDeadlineAt > 0 && Date.now() >= malpracticeDeadlineAt) {
+        return finalizeMalpracticeFromClient('expired');
+      }
+      malpracticeFinalizeInFlight = true;
+      const dismiss = lockOverlay?.querySelector('[data-cod-lock-dismiss]');
+      if (dismiss) dismiss.disabled = true;
+      const pausedMs = timerPauseStartedAt ? Date.now() - timerPauseStartedAt : 0;
+      try {
+        const data = await CodingService.acknowledgeMalpractice(state.attemptId, {
+          reason: 'ack',
+          pausedMs,
+        });
+        applyMalpracticeServerPayload(data);
+        if (data?.terminated || data?.shouldAutoSubmit || data?.submitResult) {
+          await handleMalpracticeTermination(data);
+          return;
+        }
+        stopWarningCountdown();
+        stopMalpracticeStatePoll();
+        violationAckRequired = false;
+        malpracticeDeadlineAt = 0;
+        malpracticeFinalizeInFlight = false;
+        hideLockOverlay(true);
+        resumeTimerAfterAck(data?.endsAt ?? data?.state?.endsAt);
+        if (focusLockActive() && state?.status === 'ACTIVE' && !state?.submitted) {
+          restoreExamInteractions();
+        }
+        await tryEnterExamFullscreen();
+      } catch (err) {
+        malpracticeFinalizeInFlight = false;
+        if (dismiss) dismiss.disabled = false;
+        toast(err?.message || 'Could not acknowledge warning.', 'error');
+        if (violationAckRequired) showMalpracticeAckOverlay();
+      }
+    }
+
+    async function finalizeMalpracticeFromClient(reason) {
+      if (!state?.attemptId || finalizingViolation || malpracticeFinalizeInFlight) return;
+      if (reason === 'ack') {
+        return acknowledgeMalpracticeWarning();
+      }
+      malpracticeFinalizeInFlight = true;
+      stopWarningCountdown();
+      stopMalpracticeStatePoll();
+      freezeExamInteractions();
+      pauseTimerForWarning();
+      const dismiss = lockOverlay?.querySelector('[data-cod-lock-dismiss]');
+      if (dismiss) dismiss.disabled = true;
+      try {
+        await persistAllAnswersForSubmit();
+        const data = await CodingService.acknowledgeMalpractice(state.attemptId, {
+          reason,
+          answers: buildAnswersPayloadForSubmit(),
+        });
+        applyMalpracticeServerPayload(data);
+        if (data?.terminated || data?.shouldAutoSubmit || data?.submitResult) {
+          await handleMalpracticeTermination(data);
+          return;
+        }
+        malpracticeFinalizeInFlight = false;
+        if (dismiss) dismiss.disabled = false;
+      } catch (err) {
+        malpracticeFinalizeInFlight = false;
+        toast(err?.message || 'Could not complete malpractice submission.', 'error');
+        if (violationAckRequired) {
+          if (dismiss) dismiss.disabled = false;
+          showMalpracticeAckOverlay();
+        }
+      }
+    }
+
+    function showMalpracticeAckOverlay() {
+      if (!violationAckRequired || finalizingViolation || malpracticeFinalizeInFlight) return;
+      if (malpracticeDeadlineAt > 0 && Date.now() >= malpracticeDeadlineAt) {
+        finalizeMalpracticeFromClient('expired');
+        return;
+      }
+      if (malpracticeAckOverlayVisible()) {
+        syncWarningCountdownUi();
+        return;
+      }
+      freezeExamInteractions();
+      pauseTimerForWarning();
+      mountLockOverlayForExam();
+      const title = lastServerWarningTitle
+        || (focusViolationCount >= 2 ? 'FINAL MALPRACTICE WARNING' : 'MALPRACTICE WARNING');
+      showLockOverlay(malpracticeWarningMessage(), {
+        title,
+        dismissible: true,
+        dismissText: 'I Understand — Continue Test',
+        showCountdown: true,
+        onDismiss: () => { acknowledgeMalpracticeWarning(); },
+      });
+      startWarningCountdown();
+      startMalpracticeStatePoll();
+      tryEnterExamFullscreen().catch(() => {});
+    }
+
+    async function reportUnifiedMalpracticeIncident(source) {
+      if (!focusLockActive() || finalizingViolation || !state?.attemptId) return;
+      const now = Date.now();
+      if (now - lastFocusViolationAt < INCIDENT_DEBOUNCE_MS) return;
+      if (incidentReporting) return;
+      incidentReporting = true;
+      lastFocusViolationAt = now;
+      freezeExamInteractions();
+      try {
+        persistCurrent();
+        const data = await CodingService.reportMalpracticeIncident(state.attemptId, { source });
+        applyMalpracticeServerPayload(data);
+        if (data?.terminated || data?.shouldAutoSubmit) {
+          await handleMalpracticeTermination(data);
+          return;
+        }
+        if (data?.ackRequired) {
+          if (data?.warningTitle) lastServerWarningTitle = String(data.warningTitle);
+          if (data?.incremented !== false) pauseTimerForWarning();
+          if (document.hidden) {
+            hiddenViolationPending = true;
+          } else {
+            toast(`Malpractice warning ${Math.min(focusViolationCount, MAX_MALPRACTICE_WARNINGS)} of ${MAX_MALPRACTICE_WARNINGS}.`, 'warning');
+            showMalpracticeAckOverlay();
+          }
+        }
+      } catch (err) {
+        toast(err?.message || 'Could not record malpractice incident.', 'error');
+      } finally {
+        incidentReporting = false;
+      }
+    }
+
+    function recordBlockedMalpracticeAttempt(source) {
+      reportUnifiedMalpracticeIncident(source);
+    }
+
+    function registerFocusViolation() {
+      recordBlockedMalpracticeAttempt('nav');
+    }
+
+    function isLeaveShortcut(e) {
+      const key = e.key;
+      const ctrl = e.ctrlKey || e.metaKey;
+      const alt = e.altKey;
+      if (key === 'F6' || key === 'F11') return true;
+      if (ctrl && (key === 'Tab' || key === 'PageUp' || key === 'PageDown'
+        || key === 't' || key === 'T' || key === 'n' || key === 'N'
+        || key === 'w' || key === 'W')) return true;
+      if (alt && (key === 'Tab' || key === 'F4')) return true;
+      return false;
+    }
+
+    function onExamKeydown(e) {
+      if (!focusLockActive() || finalizingViolation) return;
+      if (!isPracticeMode() && e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!getFullscreenElement()) tryEnterExamFullscreen();
+        toast('Stay in fullscreen until you submit the test.', 'warning');
+        return;
+      }
+      if (!isLeaveShortcut(e)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      recordBlockedMalpracticeAttempt('keyboard');
+    }
+
+    function getFullscreenElement() {
+      return document.fullscreenElement || document.webkitFullscreenElement || null;
+    }
+
+    function startFocusEnforce() {
+      stopFocusEnforce();
+      focusEnforceTimer = window.setInterval(() => {
+        if (!focusLockActive() || finalizingViolation || document.hidden) return;
+        try {
+          if (!getFullscreenElement()) tryEnterExamFullscreen();
+          if (typeof document.hasFocus === 'function' && !document.hasFocus()) {
+            window.focus();
+          }
+          if (violationAckRequired && !document.hidden && !malpracticeAckOverlayVisible()) {
+            showMalpracticeAckOverlay();
+          }
+        } catch (_) { /* ignore */ }
+      }, 350);
+    }
+
+    function stopFocusEnforce() {
+      if (focusEnforceTimer) {
+        clearInterval(focusEnforceTimer);
+        focusEnforceTimer = null;
+      }
+    }
+
+    function bindKeydownGuard(on) {
+      if (on && !keydownGuardBound) {
+        document.addEventListener('keydown', onExamKeydown, true);
+        keydownGuardBound = true;
+      }
+      if (!on && keydownGuardBound) {
+        document.removeEventListener('keydown', onExamKeydown, true);
+        keydownGuardBound = false;
+      }
+    }
+
+    async function tryEnterExamFullscreen() {
+      if (isPracticeMode() || !focusLockActive() || allowFullscreenExit) return;
+      const node = document.documentElement;
+      try {
+        if (node.requestFullscreen) await node.requestFullscreen();
+        else if (node.webkitRequestFullscreen) await node.webkitRequestFullscreen();
+      } catch (_) { /* browser may block without user gesture — attempt after Start click */ }
+    }
+
+    function exitExamFullscreen() {
+      if (!allowFullscreenExit) return;
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } catch (_) { /* ignore */ }
+    }
+
+    function startFullscreenEnforce() {
+      stopFullscreenEnforce();
+      fullscreenEnforceTimer = window.setInterval(() => {
+        if (allowFullscreenExit || !focusLockActive() || isPracticeMode() || finalizingViolation) return;
+        if (!getFullscreenElement()) tryEnterExamFullscreen();
+      }, 400);
+    }
+
+    function stopFullscreenEnforce() {
+      if (fullscreenEnforceTimer) {
+        clearInterval(fullscreenEnforceTimer);
+        fullscreenEnforceTimer = null;
+      }
+    }
+
+    function onFullscreenChange() {
+      if (allowFullscreenExit || !focusLockActive() || isPracticeMode() || finalizingViolation) return;
+      if (getFullscreenElement()) return;
+      recordBlockedMalpracticeAttempt('fullscreen');
+      tryEnterExamFullscreen();
+    }
+
+    function bindFullscreenGuard(on) {
+      if (on && !fullscreenListenerBound) {
+        document.addEventListener('fullscreenchange', onFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+        fullscreenListenerBound = true;
+      }
+      if (!on && fullscreenListenerBound) {
+        document.removeEventListener('fullscreenchange', onFullscreenChange);
+        document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+        fullscreenListenerBound = false;
+      }
+    }
+
+    function setDocumentFocusLockFlag(on) {
+      if (on) document.documentElement.setAttribute('data-ph-exam-focus-lock', 'coding');
+      else document.documentElement.removeAttribute('data-ph-exam-focus-lock');
+    }
+
+    function syncTimedExamChrome() {
+      const stayOnPage = focusLockActive() && !isPracticeMode() && state?.status === 'ACTIVE';
+      root.querySelectorAll('[data-cod-action="back"], [data-cod-action="cancel"]').forEach((btn) => {
+        btn.disabled = stayOnPage;
+        if (stayOnPage) {
+          btn.setAttribute('title', 'Stay on this contest until you submit or time runs out.');
+        } else {
+          btn.removeAttribute('title');
+        }
+      });
+    }
+
     function onVisibilityChange() {
-      if (document.hidden) handleFocusViolation();
+      if (!focusLockActive() || finalizingViolation) return;
+      if (document.hidden) {
+        const wasPending = hiddenViolationPending;
+        hiddenViolationPending = true;
+        freezeExamInteractions();
+        if (violationAckRequired) {
+          freezeExamInteractions();
+          return;
+        }
+        if (!wasPending && !violationAckRequired) {
+          recordBlockedMalpracticeAttempt('tab');
+        }
+        showLockOverlay(TAB_SWITCH_PROHIBITED_MSG, { title: 'Tab switching prohibited', dismissible: false });
+        return;
+      }
+      hiddenViolationPending = false;
+      window.focus();
+      tryEnterExamFullscreen();
+      if (violationAckRequired) {
+        syncMalpracticeStateFromServer().finally(() => {
+          if (violationAckRequired && !finalizingViolation) showMalpracticeAckOverlay();
+        });
+        return;
+      }
+      hideLockOverlay(true);
+      if (state?.status === 'ACTIVE' && !state?.submitted) restoreExamInteractions();
+    }
+
+    function onExamWindowBlur() {
+      if (!focusLockActive() || finalizingViolation || document.hidden) return;
+      window.setTimeout(() => {
+        if (!focusLockActive() || finalizingViolation || document.hidden) return;
+        if (violationAckRequired) {
+          window.focus();
+          tryEnterExamFullscreen();
+          showMalpracticeAckOverlay();
+          return;
+        }
+        reportUnifiedMalpracticeIncident('blur');
+      }, 0);
+    }
+
+    function bindWindowBlurGuard(on) {
+      if (on && !windowBlurGuardBound) {
+        window.addEventListener('blur', onExamWindowBlur);
+        windowBlurGuardBound = true;
+      }
+      if (!on && windowBlurGuardBound) {
+        window.removeEventListener('blur', onExamWindowBlur);
+        windowBlurGuardBound = false;
+      }
+    }
+
+    function onDocumentLeaveAttempt(e) {
+      if (!focusLockActive() || finalizingViolation) return;
+      if (e.target.closest('[data-cod-lock-overlay]')) return;
+      const inExam = root.contains(e.target);
+      const sidebarLink = e.target.closest('#sidebar a[href]');
+      const topLogout = e.target.closest('#logoutBtn, #topbarLogoutBtn');
+      const crumbHome = e.target.closest('.ph-crumb-home');
+      const viewNav = e.target.closest('#codViewNav [data-view]');
+      const externalLink = e.target.closest('a[href]');
+      let block = sidebarLink || topLogout || crumbHome || viewNav;
+      if (!block && externalLink && !inExam) {
+        const href = String(externalLink.getAttribute('href') || '');
+        if (href && href !== '#' && !href.startsWith('javascript:')) block = externalLink;
+      }
+      if (!block) return;
+      e.preventDefault();
+      e.stopPropagation();
+      registerFocusViolation();
+    }
+
+    function bindNavigationGuards(on) {
+      if (on && !navigationGuardBound) {
+        document.addEventListener('click', onDocumentLeaveAttempt, true);
+        navigationGuardBound = true;
+      }
+      if (!on && navigationGuardBound) {
+        document.removeEventListener('click', onDocumentLeaveAttempt, true);
+        navigationGuardBound = false;
+      }
     }
 
     function onClipboardBlock(e) {
-      if (!examLockdown || !state?.attemptId || state.submitted) return;
+      if (!clipboardLockActive()) return;
       if (e.type === 'paste') {
-        if (!isEditorArea(e.target)) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
+        e.preventDefault();
+        e.stopPropagation();
+        toast('Pasting code or answers is not allowed.', 'warning');
         return;
       }
-      if (isProblemArea(e.target) || selectionInProblemArea()) {
+      if (isProblemArea(e.target) || selectionInProblemArea()
+        || isEditorArea(e.target)) {
         e.preventDefault();
         e.stopPropagation();
       }
     }
 
     function onContextMenuBlock(e) {
-      if (!examLockdown || !state?.attemptId || state.submitted) return;
-      if (isProblemArea(e.target)) e.preventDefault();
+      if (!clipboardLockActive()) return;
+      if (isProblemArea(e.target) || isEditorArea(e.target)) e.preventDefault();
     }
 
     function onSelectStartBlock(e) {
-      if (!examLockdown || !state?.attemptId || state.submitted) return;
+      if (!clipboardLockActive()) return;
       if (isProblemArea(e.target)) e.preventDefault();
     }
 
-    function bindLockdownGuards(on) {
-      if (on && !lockdownGuardsBound) {
-        document.addEventListener('visibilitychange', onVisibilityChange);
-        root.addEventListener('copy', onClipboardBlock, true);
-        root.addEventListener('cut', onClipboardBlock, true);
-        root.addEventListener('paste', onClipboardBlock, true);
-        root.addEventListener('contextmenu', onContextMenuBlock, true);
-        root.addEventListener('selectstart', onSelectStartBlock, true);
-        lockdownGuardsBound = true;
-      }
-      if (!on && lockdownGuardsBound) {
+    function bindLockdownGuards(on, options = {}) {
+      const useClipboard = on && options.clipboard !== false;
+      const useFocus = on && options.focus === true;
+      if (on) {
+        if (!lockdownGuardsBound) {
+          root.addEventListener('copy', onClipboardBlock, true);
+          root.addEventListener('cut', onClipboardBlock, true);
+          root.addEventListener('paste', onClipboardBlock, true);
+          root.addEventListener('contextmenu', onContextMenuBlock, true);
+          root.addEventListener('selectstart', onSelectStartBlock, true);
+          lockdownGuardsBound = true;
+        }
         document.removeEventListener('visibilitychange', onVisibilityChange);
+        if (useFocus) {
+          document.addEventListener('visibilitychange', onVisibilityChange);
+          bindNavigationGuards(true);
+          bindFullscreenGuard(true);
+          bindKeydownGuard(true);
+          bindWindowBlurGuard(true);
+          startFocusEnforce();
+          startFullscreenEnforce();
+          setDocumentFocusLockFlag(true);
+        }
+        clipboardGuardsEnabled = useClipboard;
+        focusGuardsEnabled = useFocus;
+        syncTimedExamChrome();
+        return;
+      }
+      if (lockdownGuardsBound) {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        bindNavigationGuards(false);
+        bindFullscreenGuard(false);
+        bindKeydownGuard(false);
+        bindWindowBlurGuard(false);
+        stopFocusEnforce();
+        stopFullscreenEnforce();
+        hiddenViolationPending = false;
+        setDocumentFocusLockFlag(false);
         root.removeEventListener('copy', onClipboardBlock, true);
         root.removeEventListener('cut', onClipboardBlock, true);
         root.removeEventListener('paste', onClipboardBlock, true);
@@ -405,15 +1034,31 @@
         root.removeEventListener('selectstart', onSelectStartBlock, true);
         lockdownGuardsBound = false;
       }
-      if (!on) hideLockOverlay();
+      clipboardGuardsEnabled = false;
+      focusGuardsEnabled = false;
+      hideLockOverlay();
+      violationAckRequired = false;
+      allowFullscreenExit = true;
+      exitExamFullscreen();
+      allowFullscreenExit = false;
+      syncTimedExamChrome();
     }
 
     function teardownLockdown() {
       examLockdown = false;
-      focusViolationHandled = false;
+      focusViolationCount = 0;
+      violationAckRequired = false;
+      hiddenViolationPending = false;
+      finalizingViolation = false;
+      malpracticeFinalizeInFlight = false;
+      malpracticeDeadlineAt = 0;
+      stopWarningCountdown();
+      stopMalpracticeStatePoll();
+      lastFocusViolationAt = 0;
       bindLockdownGuards(false);
       bindUnload(false);
       root.removeAttribute('data-cod-locked');
+      syncTimedExamChrome();
     }
 
     function answeredCount() {
@@ -480,8 +1125,9 @@
       const lines = test.instructions || [];
       const lockdownNote = `
         <div class="alert alert-warning py-2 px-3 small mb-3">
-          <strong>During the test:</strong> problem statements cannot be copied. Switching tabs or windows will automatically submit your test and sign you out.
-          You can still edit code in the editor. These rules apply for the full duration.
+          <strong>During the test:</strong> copying questions and pasting answers are disabled.
+          <strong>Fullscreen is required</strong> until you submit — do not press Esc or exit fullscreen.
+          <strong>Tab switching is not allowed</strong> — stay on this contest window. Each blocked attempt gives a malpractice warning (${MAX_MALPRACTICE_WARNINGS} warnings allowed); the next attempt auto-submits your test and signs you out.
         </div>`;
       el('instr-list').innerHTML = `${lockdownNote}<ul class="text-muted-2 mb-0 ps-3">${lines.length ? lines.map((line) => `<li>${esc(line)}</li>`).join('') : '<li>Read each problem carefully. Write and run your code before submitting.</li>'}</ul>`;
     }
@@ -823,8 +1469,26 @@
         state.submitted = false;
         state.status = 'ACTIVE';
         state.answers = {};
-        focusViolationHandled = false;
+        focusViolationCount = 0;
+        violationAckRequired = false;
+        lastServerWarningMessage = '';
+        lastServerWarningTitle = '';
+        malpracticeDeadlineAt = 0;
+        malpracticeFinalizeInFlight = false;
+        stopWarningCountdown();
+        stopMalpracticeStatePoll();
+        timerPauseStartedAt = 0;
+        finalizingViolation = false;
+        allowFullscreenExit = false;
+        if (started.malpractice) {
+          applyMalpracticeServerPayload({ state: started.malpractice });
+          if (violationAckRequired) {
+            showMalpracticeAckOverlay();
+          }
+        }
         examLockdown = true;
+        clipboardGuardsEnabled = true;
+        focusGuardsEnabled = true;
         remainingMs = Math.max(0, (started.endsAt || 0) - Date.now());
         const serverAnswers = started.answers && typeof started.answers === 'object' ? started.answers : {};
         (started.test.items || []).forEach((item) => {
@@ -842,11 +1506,13 @@
         el('exam-title').textContent = started.test.title || 'Coding Test';
         root.setAttribute('data-cod-locked', '1');
         bindUnload(true);
-        bindLockdownGuards(true);
+        bindLockdownGuards(true, { clipboard: true, focus: true });
         renderQuestion();
         restoreExamInteractions();
+        syncTimedExamChrome();
         startTimer(remainingMs);
         editor.focus();
+        tryEnterExamFullscreen();
       } catch (err) {
         toast(err?.message || 'Could not start test.', 'error');
       }
@@ -1021,6 +1687,9 @@
         } : {};
         if (!editor) editor = createCodeEditor(el('editor'));
         bindEditorInput();
+        clipboardGuardsEnabled = true;
+        root.setAttribute('data-cod-locked', '1');
+        bindLockdownGuards(true, { clipboard: true, focus: false });
         showPanel('exam');
         applyPracticeUi(true);
         el('exam-title').textContent = started.problem.title || 'Coding Problem';
@@ -1077,7 +1746,7 @@
           examLockdown = true;
           root.setAttribute('data-cod-locked', '1');
           bindUnload(true);
-          bindLockdownGuards(true);
+          bindLockdownGuards(true, { clipboard: true, focus: true });
           restoreExamInteractions();
           startTimer(remainingMs);
           setBusy(false);
@@ -1196,6 +1865,10 @@
       if (action === 'start-practice') beginPractice();
       if (action === 'submit-practice') submitPracticeSolution();
       if (action === 'cancel' || action === 'back') {
+        if (focusLockActive() && !isPracticeMode() && state.status === 'ACTIVE') {
+          recordBlockedMalpracticeAttempt('nav');
+          return;
+        }
         if (state.test && !state.submitted && state.status === 'ACTIVE') {
           const msg = isPracticeMode()
             ? 'Leave this problem? Your draft is not submitted yet.'
@@ -1237,6 +1910,12 @@
     });
 
     return {
+      isFocusLocked() {
+        return focusLockActive();
+      },
+      registerFocusViolation() {
+        registerFocusViolation();
+      },
       open(testMeta) {
         stopTimer();
         teardownLockdown();

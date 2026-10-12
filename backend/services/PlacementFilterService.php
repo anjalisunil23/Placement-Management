@@ -6,6 +6,7 @@ namespace PMS\Services;
 
 use PMS\Models\DepartmentModel;
 use PMS\Models\StudentModel;
+use PMS\Models\StudentPlacementDetailsTable;
 use PMS\Models\StudentPlacementModel;
 use PMS\Utils\Security;
 
@@ -81,14 +82,31 @@ final class PlacementFilterService
      */
     public function fetchProgramOptions(array $ctx): array
     {
-        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
-            return $this->fetchProgramOptionsFromRegistryTable($ctx);
+        if (!empty($ctx['placementStaffRegistryFilters'])
+            && trim((string) ($ctx['departmentId'] ?? '')) === '') {
+            return [];
+        }
+
+        if (!empty($ctx['placementStaffRegistryFilters'])
+            && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+            return $this->sortLabels($this->fetchDepartmentBranchOptionsOnly($ctx));
+        }
+
+        $aesPrograms = [];
+        if ($this->registryAesDepartmentActive($ctx)) {
+            $aesPrograms = $this->fetchProgramOptionsFromAes($ctx);
+        }
+
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
+            $registry = $this->fetchProgramOptionsFromRegistryTable($ctx);
+
+            return $this->sortLabels(array_values(array_unique(array_merge($aesPrograms, $registry))));
         }
 
         $programmes = $this->distinctFieldFromScopedRows($ctx, 'stud_course', '', '');
         $deptAesId = $this->resolveParentDeptAesId($ctx);
         $enrichFromAes = $deptAesId !== ''
-            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']));
+            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']) || !empty($ctx['placementStaffRegistryFilters']));
         if ($enrichFromAes) {
             try {
                 $programmes = array_merge(
@@ -147,6 +165,8 @@ final class PlacementFilterService
             $code = DepartmentProgrammeCatalog::resolveProgrammeCode($raw);
             if ($code !== '') {
                 $canonical[] = $code;
+            } elseif ($raw !== '') {
+                $canonical[] = $raw;
             }
         }
 
@@ -157,7 +177,114 @@ final class PlacementFilterService
             ));
         }
 
-        return $this->sortLabels(array_values(array_unique(array_filter($canonical))));
+        $merged = array_values(array_unique(array_filter(array_merge($aesPrograms, $canonical))));
+        if (!empty($ctx['placementStaffRegistryFilters']) && trim((string) ($ctx['departmentId'] ?? '')) !== '') {
+            $merged = array_values(array_unique(array_merge(
+                $merged,
+                $this->fetchProgramOptionsFromRegistryTable($ctx)
+            )));
+        }
+
+        return $this->sortLabels($merged);
+    }
+
+    /**
+     * Staff placements Branch dropdown — scoped to one selected department only.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function fetchDepartmentBranchOptionsOnly(array $ctx): array
+    {
+        $labels = [];
+        $skipLiveAes = $this->staffRegistryFiltersSkipLiveAes($ctx);
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+
+        if (!$skipLiveAes && $deptAesId !== '') {
+            $labels = array_merge($labels, $this->fetchProgramOptionsFromAes($ctx));
+        }
+
+        $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
+            (string) ($dept['code'] ?? ''),
+            (string) ($dept['name'] ?? '')
+        );
+        if ($group !== null) {
+            foreach ($group['programmes'] as $programme) {
+                $label = trim((string) ($programme['label'] ?? ''));
+                $code = trim((string) ($programme['code'] ?? ''));
+                if ($label !== '') {
+                    $labels[] = $label;
+                }
+                if ($code !== '' && strcasecmp($code, $label) !== 0) {
+                    $labels[] = $code;
+                }
+            }
+        }
+
+        if ($labels === [] || $skipLiveAes) {
+            $labels = array_values(array_unique(array_merge(
+                $labels,
+                $this->fetchProgramOptionsFromRegistryTable($ctx)
+            )));
+        }
+
+        $labels = array_values(array_filter(array_map(
+            static fn ($v): string => trim((string) $v),
+            $labels
+        ), static fn (string $v): bool => $v !== ''));
+
+        if ($group !== null && $labels !== []) {
+            $allowed = [];
+            foreach ($group['programmes'] as $programme) {
+                foreach ([$programme['code'], $programme['label'], ...($programme['aliases'] ?? [])] as $token) {
+                    $token = trim((string) $token);
+                    if ($token !== '') {
+                        $allowed[DepartmentProgrammeCatalog::normalizeCode($token)] = true;
+                        $allowed[strtolower($token)] = true;
+                    }
+                }
+            }
+            if ($deptAesId !== '') {
+                foreach ((new AesApiService())->fetchChildAcademicDepartments($deptAesId) as $row) {
+                    foreach (['name', 'code', 'short'] as $key) {
+                        $token = trim((string) ($row[$key] ?? ''));
+                        if ($token === '' || self::isExcludedPlacementBranchLabel($token)) {
+                            continue;
+                        }
+                        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($token);
+                        $norm = $resolved !== ''
+                            ? DepartmentProgrammeCatalog::normalizeCode($resolved)
+                            : DepartmentProgrammeCatalog::normalizeCode($token);
+                        if ($norm === '' || !isset($allowed[$norm])) {
+                            continue;
+                        }
+                        $allowed[$norm] = true;
+                        $allowed[strtolower($token)] = true;
+                    }
+                }
+            }
+            $labels = array_values(array_filter($labels, static function (string $label) use ($allowed): bool {
+                if (self::isExcludedPlacementBranchLabel($label)) {
+                    return false;
+                }
+                $norm = DepartmentProgrammeCatalog::normalizeCode($label);
+                if ($norm !== '' && isset($allowed[$norm])) {
+                    return true;
+                }
+                if (isset($allowed[strtolower($label)])) {
+                    return true;
+                }
+                $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($label);
+                if ($resolved !== '' && isset($allowed[DepartmentProgrammeCatalog::normalizeCode($resolved)])) {
+                    return true;
+                }
+
+                return false;
+            }));
+        }
+
+        return $this->sortLabels($this->dedupeProgrammeBranchLabels($labels));
     }
 
     /**
@@ -170,10 +297,18 @@ final class PlacementFilterService
     {
         $canonical = [];
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
-        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
-            (string) ($dept['code'] ?? ''),
-            (string) ($dept['name'] ?? '')
-        );
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        if ($deptCode !== '' && preg_match('/^\d+$/', $deptCode) === 1) {
+            $deptCode = '';
+        }
+        $parentAesId = $this->resolveParentDeptAesId($ctx);
+        if ($parentAesId !== '') {
+            foreach ($this->programmeLabelsFromChildDepartments(new AesApiService(), $parentAesId) as $label) {
+                $canonical[] = $label;
+            }
+        }
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment($deptCode, $deptName);
         if ($group !== null) {
             foreach (DepartmentProgrammeCatalog::programmeCodesForGroup($group) as $code) {
                 $code = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($code));
@@ -187,11 +322,7 @@ final class PlacementFilterService
         if ($deptId !== '') {
             try {
                 $model = new StudentPlacementModel();
-                $deptFilter = ['$or' => [
-                    ['departmentId' => $deptId],
-                    ['departmentId' => ''],
-                ]];
-                foreach ($model->pluckField('programme', $deptFilter, 800) as $raw) {
+                foreach ($model->pluckField('programme', ['departmentId' => $deptId], 800) as $raw) {
                     $code = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($raw));
                     if ($code !== '') {
                         $canonical[] = $code;
@@ -207,6 +338,10 @@ final class PlacementFilterService
             if ($hint !== '') {
                 $canonical[] = $hint;
             }
+        }
+
+        foreach ($this->programmesFromPlacementDetailsTable($ctx) as $code) {
+            $canonical[] = $code;
         }
 
         if ($this->departmentProgrammeCodesForFilterScope($ctx) !== null) {
@@ -233,11 +368,11 @@ final class PlacementFilterService
         }
 
         $branches = $this->distinctFieldFromScopedRows($ctx, 'stud_branch', $program, '');
-        $skipAes = !empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes();
+        $skipAes = !empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx);
         $deptAesId = $this->resolveParentDeptAesId($ctx);
         $enrichFromAes = !$skipAes
             && $deptAesId !== ''
-            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']));
+            && (empty($ctx['filterMode']) || !empty($ctx['staffScope']) || !empty($ctx['placementStaffRegistryFilters']));
         if ($enrichFromAes) {
             try {
                 $branches = array_merge(
@@ -268,8 +403,28 @@ final class PlacementFilterService
         $branch = trim($branch);
         $program = trim($program);
 
+        if ($this->registryAesDepartmentActive($ctx)) {
+            return $this->fetchBatchOptionsFromAes($ctx, $program, $branch, $finalYearOnly);
+        }
+
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
+            $batches = $this->distinctClassBatchesFromLocalRegistry($ctx, $program, $branch);
+            $batches = $this->normalizeBatchLabelsForFilters($batches, $ctx);
+            if (!$finalYearOnly) {
+                return $batches;
+            }
+            $hint = trim($program . ' ' . $branch);
+            $classifier = new OfficerDataService();
+            $batches = array_values(array_filter(
+                $batches,
+                static fn (string $batch): bool => $classifier->isFinalYearClassBatch($batch, $hint)
+            ));
+
+            return $this->preferSpecificFinalYearBatches($batches);
+        }
+
         if ($this->placementStudRole($ctx) === 'all') {
-            if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+            if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
                 $studentCtx = array_merge($ctx, ['placementStudRole' => 'student']);
 
                 return $this->fetchBatchOptions($studentCtx, $program, $branch, $finalYearOnly);
@@ -507,7 +662,7 @@ final class PlacementFilterService
      */
     private function mergeAesStudyingClassBatchesForFilterDropdown(array $ctx, string $program, string $branch): array
     {
-        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
             return [];
         }
         if (empty($ctx['filterMode']) || $this->placementStudRole($ctx) === 'alumni') {
@@ -515,7 +670,7 @@ final class PlacementFilterService
         }
 
         if ($program === '' && !empty($ctx['placementStaffRegistryFilters'])) {
-            if (!empty($ctx['campusWide'])) {
+            if (!empty($ctx['campusWide']) && trim((string) ($ctx['departmentId'] ?? '')) === '') {
                 return [];
             }
             $programmes = $this->departmentProgrammeCodesForFilterScope($ctx) ?? [];
@@ -591,13 +746,316 @@ final class PlacementFilterService
     }
 
     /**
+     * Staff placements grid: department chosen and AES stud_deptcode is known.
+     *
      * @param array<string, mixed> $ctx
      */
-    private function staffRegistryFiltersSkipLiveAes(): bool
+    private function registryAesDepartmentActive(array $ctx): bool
+    {
+        if (empty($ctx['placementStaffRegistryFilters'])) {
+            return false;
+        }
+
+        return trim((string) ($ctx['departmentId'] ?? '')) !== ''
+            && $this->resolveParentDeptAesId($ctx) !== '';
+    }
+
+    /**
+     * Branch / programme list from getCourses4Placement for the selected AES department.
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function fetchProgramOptionsFromAes(array $ctx): array
+    {
+        $deptAesId = $this->resolveParentDeptAesId($ctx);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        try {
+            $courses = (new AesApiService())->fetchPlacementCourses($deptAesId);
+        } catch (\Throwable) {
+            $courses = [];
+        }
+
+        $labels = [];
+        foreach ($courses as $raw) {
+            $raw = trim((string) $raw);
+            if ($raw === '') {
+                continue;
+            }
+            // stud_deptcode already scopes AES; do not re-filter by local catalog (drops valid labels).
+            $labels[] = $raw;
+        }
+
+        $api = new AesApiService();
+        foreach ($this->programmeLabelsFromChildDepartments($api, $deptAesId) as $label) {
+            $labels[] = $label;
+        }
+
+        return $this->sortLabels($this->dedupeProgrammeBranchLabels($labels));
+    }
+
+    /**
+     * Branch programmes from getDepartments scoped to the parent stud_deptcode.
+     *
+     * @return list<string>
+     */
+    private function programmeLabelsFromChildDepartments(AesApiService $api, string $parentAesId): array
+    {
+        $labels = [];
+        foreach ($api->fetchChildAcademicDepartments($parentAesId) as $row) {
+            $name = trim((string) ($row['name'] ?? ''));
+            $code = trim((string) ($row['code'] ?? ''));
+            if ($name !== '' && !self::isExcludedPlacementBranchLabel($name)) {
+                $labels[] = $name;
+            }
+            if ($code !== '' && strcasecmp($code, $name) !== 0 && !self::isExcludedPlacementBranchLabel($code)) {
+                $labels[] = $code;
+            }
+        }
+
+        return $labels;
+    }
+
+    /**
+     * AES stud_deptcode for batch/stud-info calls — child programme dept when selected.
+     *
+     * @param array<string, mixed> $ctx
+     */
+    private function resolveStudDeptAesIdForProgramme(array $ctx, string $program): string
+    {
+        $parentAesId = $this->resolveParentDeptAesId($ctx);
+        $program = trim($program);
+        if ($program === '' || $parentAesId === '') {
+            return $parentAesId;
+        }
+
+        $api = new AesApiService();
+        $hints = array_values(array_unique(array_filter([
+            $program,
+            DepartmentProgrammeCatalog::resolveProgrammeCode($program),
+            DepartmentProgrammeCatalog::normalizeCode($program),
+        ], static fn (string $v): bool => $v !== '')));
+
+        foreach ($api->fetchChildAcademicDepartments($parentAesId) as $row) {
+            foreach ($hints as $hint) {
+                if (!$this->departmentRowMatchesProgrammeHint($row, $hint)) {
+                    continue;
+                }
+                $childId = trim((string) ($row['aesId'] ?? ''));
+                if ($childId !== '' && ctype_digit($childId)) {
+                    return $childId;
+                }
+            }
+        }
+
+        return $parentAesId;
+    }
+
+    /**
+     * @param array{code:string,name:string,short:string,aesId?:string} $row
+     */
+    private function departmentRowMatchesProgrammeHint(array $row, string $hint): bool
+    {
+        $hint = trim($hint);
+        if ($hint === '') {
+            return false;
+        }
+        $hintNorm = DepartmentProgrammeCatalog::normalizeCode($hint);
+        foreach (['name', 'code', 'short'] as $key) {
+            $value = trim((string) ($row[$key] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+            if (strcasecmp($value, $hint) === 0) {
+                return true;
+            }
+            if ($hintNorm !== '' && DepartmentProgrammeCatalog::normalizeCode($value) === $hintNorm) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Class batches from getStudInfo4Placement for dept + programme (+ AES stud_branch when needed).
+     *
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function fetchBatchOptionsFromAes(
+        array $ctx,
+        string $program,
+        string $branch,
+        bool $finalYearOnly
+    ): array {
+        $program = trim($program);
+        if ($program === '') {
+            if (!empty($ctx['placementStaffRegistryFilters'])) {
+                return [];
+            }
+            $programs = $this->fetchProgramOptions($ctx);
+            if ($programs === []) {
+                return [];
+            }
+            $collected = [];
+            foreach ($programs as $prog) {
+                $collected = array_merge(
+                    $collected,
+                    $this->fetchBatchOptionsFromAes($ctx, (string) $prog, $branch, $finalYearOnly)
+                );
+            }
+
+            return $this->sortLabels(array_values(array_unique($collected)));
+        }
+
+        $parentAesId = $this->resolveParentDeptAesId($ctx);
+        $deptAesId = $this->resolveStudDeptAesIdForProgramme($ctx, $program);
+        if ($deptAesId === '') {
+            return [];
+        }
+
+        if (!empty($ctx['placementStaffRegistryFilters'])) {
+            $local = $this->batchLabelsFromPlacementDetailsTable($ctx, $program);
+            $local = $this->refineStaffRegistryBatchOptions($local, $ctx, $program, $branch);
+            $local = $this->normalizeBatchLabelsForFilters($local, $ctx);
+            if ($local !== []) {
+                return $local;
+            }
+        }
+
+        $api = new AesApiService();
+        $branch = trim($branch);
+        $programmes = $this->resolveProgrammeList($program);
+        $collected = [];
+        foreach ($programmes as $prog) {
+            try {
+                $collected = array_merge(
+                    $collected,
+                    $api->fetchPlacementClassBatches($deptAesId, $prog, $branch)
+                );
+            } catch (\Throwable) {
+                // Try other programme variants.
+            }
+            if ($collected !== []) {
+                break;
+            }
+        }
+
+        $branchCandidates = $branch !== '' ? [$branch] : [];
+        if ($collected === [] && $branchCandidates === []) {
+            foreach ($programmes as $prog) {
+                try {
+                    $collected = array_merge(
+                        $collected,
+                        $api->fetchPlacementClassBatches($deptAesId, $prog, 'Regular')
+                    );
+                } catch (\Throwable) {
+                    // Try other programme variants.
+                }
+                if ($collected !== []) {
+                    break;
+                }
+            }
+        }
+        if ($collected === [] && $branchCandidates === []) {
+            try {
+                foreach ($programmes as $prog) {
+                    $branchCandidates = array_merge(
+                        $branchCandidates,
+                        $api->fetchPlacementBranches($deptAesId, $prog)
+                    );
+                }
+                $branchCandidates = array_values(array_unique(array_filter(array_map(
+                    static fn (string $v): string => trim($v),
+                    $branchCandidates
+                ), static fn (string $v): bool => $v !== '')));
+            } catch (\Throwable) {
+                $branchCandidates = [];
+            }
+        }
+        if ($collected === []) {
+            if ($branchCandidates === []) {
+                $branchCandidates = [''];
+            }
+            foreach ($programmes as $prog) {
+                foreach ($branchCandidates as $br) {
+                    $br = trim((string) $br);
+                    try {
+                        $collected = array_merge(
+                            $collected,
+                            $api->fetchPlacementClassBatches($deptAesId, $prog, $br)
+                        );
+                    } catch (\Throwable) {
+                        // Try other branch / programme variants.
+                    }
+                }
+                if ($collected !== []) {
+                    break;
+                }
+            }
+        }
+
+        $collected = $this->refineStaffRegistryBatchOptions($collected, $ctx, $program, $branch);
+        $collected = $this->normalizeBatchLabelsForFilters($collected, $ctx);
+        if ($collected === [] && $branch !== '') {
+            $relaxed = [];
+            foreach ($this->resolveProgrammeList($program) as $prog) {
+                try {
+                    $relaxed = array_merge(
+                        $relaxed,
+                        $api->fetchPlacementClassBatches($deptAesId, $prog, '')
+                    );
+                } catch (\Throwable) {
+                    // Try other programme variants.
+                }
+            }
+            $collected = $this->refineStaffRegistryBatchOptions($relaxed, $ctx, $program, '');
+            $collected = $this->normalizeBatchLabelsForFilters($collected, $ctx);
+        }
+        if ($collected === [] && !empty($ctx['placementStaffRegistryFilters'])) {
+            $collected = array_merge(
+                $collected,
+                $this->batchLabelsFromPlacementDetailsTable($ctx, $program)
+            );
+            $collected = $this->refineStaffRegistryBatchOptions($collected, $ctx, $program, $branch);
+            $collected = $this->normalizeBatchLabelsForFilters($collected, $ctx);
+        }
+        if (!$finalYearOnly) {
+            return $collected;
+        }
+
+        $hint = trim($program . ' ' . $branch);
+        $classifier = new OfficerDataService();
+        $collected = array_values(array_filter(
+            $collected,
+            static fn (string $batch): bool => $classifier->isFinalYearClassBatch($batch, $hint)
+        ));
+
+        return $this->preferSpecificFinalYearBatches($collected);
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     */
+    private function staffRegistryFiltersSkipLiveAes(array $ctx = []): bool
     {
         $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_FILTERS_SKIP_AES'] ?? '1')));
+        if (!in_array($v, ['0', 'false', 'no', 'off'], true)) {
+            if ($ctx !== [] && !empty($ctx['placementStaffRegistryFilters'])) {
+                $deptId = trim((string) ($ctx['departmentId'] ?? ''));
+                if ($deptId !== '' && $this->resolveParentDeptAesId($ctx) !== '') {
+                    return false;
+                }
+            }
 
-        return !in_array($v, ['0', 'false', 'no', 'off'], true);
+            return true;
+        }
+
+        return false;
     }
 
     private function placementStudRole(array $ctx): string
@@ -616,7 +1074,7 @@ final class PlacementFilterService
      */
     private function distinctAlumniClassBatches(array $ctx, string $program, string $branch): array
     {
-        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes()) {
+        if (!empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx)) {
             return $this->distinctClassBatchesFromLocalRegistry($ctx, $program, $branch);
         }
 
@@ -693,7 +1151,80 @@ final class PlacementFilterService
             }
         }
 
+        foreach ($this->batchLabelsFromPlacementDetailsTable($ctx, $program) as $label) {
+            $batches[] = $label;
+        }
+
         return $this->refineStaffRegistryBatchOptions($batches, $ctx, $program, $branch);
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function programmesFromPlacementDetailsTable(array $ctx): array
+    {
+        $table = new StudentPlacementDetailsTable();
+        if (!$table->isReady()) {
+            return [];
+        }
+        $scoped = $this->departmentProgrammeCodesForFilterScope($ctx);
+        $codes = [];
+        foreach ($table->distinctColumnValues('courseid', 500) as $raw) {
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode(trim($raw));
+            if ($code === '') {
+                continue;
+            }
+            if ($scoped !== null && !$this->programmeMatchesDepartmentFilterScope($code, $ctx)) {
+                continue;
+            }
+            $codes[] = $code;
+        }
+        foreach ($table->distinctColumnValues('year', 1500) as $year) {
+            $code = DepartmentProgrammeCatalog::programmeInferredFromBatchLabel(trim($year));
+            if ($code === '') {
+                continue;
+            }
+            if ($scoped !== null && !$this->programmeMatchesDepartmentFilterScope($code, $ctx)) {
+                continue;
+            }
+            $codes[] = $code;
+        }
+
+        return array_values(array_unique($codes));
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @return list<string>
+     */
+    private function batchLabelsFromPlacementDetailsTable(array $ctx, string $program): array
+    {
+        $table = new StudentPlacementDetailsTable();
+        if (!$table->isReady()) {
+            return [];
+        }
+        $program = trim($program);
+        $scoped = $this->departmentProgrammeCodesForFilterScope($ctx);
+        $batches = [];
+        foreach ($table->distinctColumnValues('year', 2000) as $year) {
+            $year = trim($year);
+            if ($year === '') {
+                continue;
+            }
+            $code = DepartmentProgrammeCatalog::programmeInferredFromBatchLabel($year);
+            if ($scoped !== null && $code !== '' && !$this->programmeMatchesDepartmentFilterScope($code, $ctx)) {
+                continue;
+            }
+            if ($program !== '' && $code !== '' && strcasecmp($code, DepartmentProgrammeCatalog::resolveProgrammeCode($program)) !== 0) {
+                if (!$this->batchMatchesProgramme($year, $program)) {
+                    continue;
+                }
+            }
+            $batches[] = $year;
+        }
+
+        return $batches;
     }
 
     /**
@@ -835,7 +1366,12 @@ final class PlacementFilterService
             return array_values(array_unique($codes));
         }
 
-        return [$program];
+        $tokens = DepartmentProgrammeCatalog::aesCourseParamTokens($program);
+        if ($tokens === []) {
+            return [$program];
+        }
+
+        return array_values(array_unique(array_merge([$program], $tokens)));
     }
 
     /**
@@ -910,7 +1446,7 @@ final class PlacementFilterService
         if ($filterMode) {
             $this->appendFilterModeStudInfoRows($ctx, $rows, $seen);
             $role = $this->placementStudRole($ctx);
-            $skipAlumniAes = !empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes();
+            $skipAlumniAes = !empty($ctx['placementStaffRegistryFilters']) && $this->staffRegistryFiltersSkipLiveAes($ctx);
             if (!$skipAlumniAes && ($role === 'alumni' || $role === 'all')) {
                 $this->appendAlumniDirectoryFilterRows($ctx, $rows, $seen);
             }
@@ -1101,14 +1637,16 @@ final class PlacementFilterService
 
         $dept = is_array($ctx['department'] ?? null) ? $ctx['department'] : [];
         $codes = [];
-        $group = DepartmentProgrammeCatalog::findGroupForDepartment(
-            (string) ($dept['code'] ?? ''),
-            (string) ($dept['name'] ?? '')
-        );
+        $deptCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $deptName = trim((string) ($dept['name'] ?? ''));
+        if ($deptCode !== '' && preg_match('/^\d+$/', $deptCode) === 1) {
+            $deptCode = '';
+        }
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment($deptCode, $deptName);
         if ($group !== null) {
             $codes = array_merge($codes, DepartmentProgrammeCatalog::programmeCodesForGroup($group));
         }
-        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode((string) ($dept['code'] ?? ''));
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($deptCode);
         if ($resolved !== '') {
             $codes[] = $resolved;
         }
@@ -1429,19 +1967,23 @@ final class PlacementFilterService
             return true;
         }
 
+        $hasBatchRow = false;
         foreach ($this->collectScopedStudInfoRows($ctx) as $row) {
             if (strcasecmp($row['stud_class'], $batchLabel) !== 0) {
                 continue;
             }
+            $hasBatchRow = true;
             if (!$this->rowMatchesProgramme($row, $program)) {
                 continue;
             }
-            if ($row['stud_branch'] !== '' && strcasecmp($row['stud_branch'], $branch) === 0) {
+            $rowBranch = trim((string) ($row['stud_branch'] ?? ''));
+            if ($rowBranch === '' || strcasecmp($rowBranch, $branch) === 0) {
                 return true;
             }
         }
 
-        return false;
+        // Batches from live AES calls are already scoped by stud_branch; keep them when no local row.
+        return !$hasBatchRow;
     }
 
     private function programmeCodeFromBatch(string $batchLabel): string
@@ -1531,6 +2073,85 @@ final class PlacementFilterService
         }
 
         return '';
+    }
+
+    /**
+     * Exam Cell, AIT, and other non-programme rows must not appear under a department's branches.
+     */
+    private static function isExcludedPlacementBranchLabel(string $label): bool
+    {
+        $label = trim($label);
+        if ($label === '') {
+            return true;
+        }
+        $norm = DepartmentProgrammeCatalog::normalizeCode($label);
+        static $block = [
+            'AIT', 'EXAMCELL', 'EXAM', 'ADM', 'ADMIN', 'ADMINISTRATION', 'OFFICE', 'LIBRARY', 'HOSTEL',
+        ];
+        if ($norm !== '' && in_array($norm, $block, true)) {
+            return true;
+        }
+        if (preg_match('/\bexam\s*cell\b/i', $label) === 1) {
+            return true;
+        }
+        if (preg_match('/\b(examination\s*cell|exam\s*cell)\b/i', $label) === 1) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * One dropdown entry per programme (MCA, BCA, Integrated MCA / INMCA, …).
+     *
+     * @param list<string> $labels
+     * @return list<string>
+     */
+    private function dedupeProgrammeBranchLabels(array $labels): array
+    {
+        $byKey = [];
+        foreach ($labels as $label) {
+            $label = trim((string) $label);
+            if ($label === '' || self::isExcludedPlacementBranchLabel($label)) {
+                continue;
+            }
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode($label);
+            $key = $code !== ''
+                ? DepartmentProgrammeCatalog::normalizeCode($code)
+                : DepartmentProgrammeCatalog::normalizeCode($label);
+            if ($key === '') {
+                $key = strtolower($label);
+            }
+            $display = $this->preferredProgrammeBranchLabel($label);
+            if (!isset($byKey[$key]) || strlen($display) >= strlen($byKey[$key])) {
+                $byKey[$key] = $display;
+            }
+        }
+
+        return array_values($byKey);
+    }
+
+    private function preferredProgrammeBranchLabel(string $label): string
+    {
+        $label = trim($label);
+        $code = DepartmentProgrammeCatalog::resolveProgrammeCode($label);
+        if ($code === '') {
+            return $label;
+        }
+        $want = DepartmentProgrammeCatalog::normalizeCode($code);
+        foreach (DepartmentProgrammeCatalog::groups() as $group) {
+            foreach ($group['programmes'] as $programme) {
+                $pCode = DepartmentProgrammeCatalog::normalizeCode((string) ($programme['code'] ?? ''));
+                if ($pCode !== $want) {
+                    continue;
+                }
+                $catalogLabel = trim((string) ($programme['label'] ?? ''));
+
+                return $catalogLabel !== '' ? $catalogLabel : $label;
+            }
+        }
+
+        return $label;
     }
 
     /**

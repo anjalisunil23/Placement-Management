@@ -6,6 +6,8 @@ namespace PMS\Services;
 
 use PMS\Models\DepartmentModel;
 use PMS\Models\RecruitmentResultModel;
+use PMS\Models\StudentDirectoryTable;
+use PMS\Models\StudentDetailsModel;
 use PMS\Models\StudentModel;
 use PMS\Models\StudentPlacementModel;
 use PMS\Utils\DocumentHelper;
@@ -22,6 +24,10 @@ final class StaffPlacementRegistryService
     /** @var array<string, array<string, array<string, mixed>>> */
     private array $placementsIndexCache = [];
 
+    /** @var array<string, string>|null admno (upper) => local department id */
+    private ?array $admnoDepartmentIdIndex = null;
+
+
     public function __construct()
     {
         $this->officerData = new OfficerDataService();
@@ -37,7 +43,16 @@ final class StaffPlacementRegistryService
      */
     public function departmentFilterOptions(): array
     {
-        return $this->loadAllDepartments();
+        try {
+            $rows = $this->loadAllDepartments(false);
+            if ($rows !== []) {
+                return $rows;
+            }
+        } catch (\Throwable) {
+            // Fall back to local catalog when AES is unreachable.
+        }
+
+        return $this->loadAllDepartments(true);
     }
 
     /**
@@ -65,7 +80,10 @@ final class StaffPlacementRegistryService
         $dept = is_array($listCtx['department'] ?? null) ? $listCtx['department'] : null;
         $deptId = trim((string) ($listCtx['departmentId'] ?? ''));
         $filterCtx = StaffContext::officerCompatible($listCtx);
-        $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($filterCtx);
+        $deptAesId = trim((string) ($dept['aesId'] ?? ''));
+        if (($deptAesId === '' || !ctype_digit($deptAesId)) && !$this->placementFiltersSkipLiveAes()) {
+            $deptAesId = (new PlacementFilterService())->resolveParentDeptAesId($filterCtx);
+        }
 
         return [
             'departmentId'     => $deptId,
@@ -78,19 +96,36 @@ final class StaffPlacementRegistryService
 
     public function list(array $staffCtx, array $filters = []): array
     {
-        @set_time_limit(max(60, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 90)));
+        @ini_set('memory_limit', '256M');
+        @set_time_limit(max(120, (int) ($_ENV['STAFF_PLACEMENT_LIST_TIME_LIMIT'] ?? 120)));
+        if (empty($staffCtx['isAdmin'])) {
         StaffContext::requireDepartmentScope($staffCtx);
+        }
         $filters = $this->normalizeRegistryScopeFilters($filters);
+        $requestedDept = trim((string) ($filters['departmentId'] ?? ''));
         $listCtx = $this->resolveRegistryListContext($staffCtx, $filters);
         $batch = trim((string) ($filters['batch'] ?? ''));
+        if ($requestedDept !== '') {
+            $filters['departmentId'] = $requestedDept;
+        } elseif (!empty($staffCtx['isAdmin']) || !empty($listCtx['campusWide'])) {
+            $filters['departmentId'] = '';
+        } else {
+            $filters['departmentId'] = trim((string) ($listCtx['departmentId'] ?? ''));
+        }
 
-        $filters['departmentId'] = trim((string) ($listCtx['departmentId'] ?? $filters['departmentId'] ?? ''));
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        try {
+            $details->ensureDirectoryShell();
+        } catch (\Throwable) {
+            // Show whatever is already stored. Do not scan student_placements or call AES on this request.
+        }
+        $filters['placementDetails'] = '1';
 
         return $this->buildRegistryResponse(
             $staffCtx,
             $listCtx,
             $filters,
-            $this->listFromStudentPlacements($listCtx, $filters, !$this->registryListLiveRosterEnabled())
+            $this->listFromPlacementDetails($details)
         );
     }
 
@@ -264,8 +299,8 @@ final class StaffPlacementRegistryService
                 $aesClassRows = $this->syncRosterRowsForExpandedBatch(
                     $classCtx,
                     $deptAesId,
-                    $program,
-                    $batch,
+                $program,
+                $batch,
                     $isAlumni
                 );
             }
@@ -292,8 +327,8 @@ final class StaffPlacementRegistryService
         }
 
         return $isAlumni
-            ? $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx)
-            : $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
+                        ? $this->officerData->listAlumniStudentsForPlacementRegistry($directoryCtx)
+                        : $this->officerData->listStudyingStudentsForPlacementRegistry($directoryCtx);
     }
 
     private function registryListMergeAesEnabled(): bool
@@ -674,24 +709,270 @@ final class StaffPlacementRegistryService
      * @param array<string, string> $filters
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * One row per student_details person. Name, admission number, and batch come from that
+     * directory. Placement columns are filled when student_placement_details has the same admno.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function listFromStudentDirectory(\PMS\Models\StudentPlacementDetailsTable $details): array
+    {
+        $directory = new StudentDirectoryTable();
+        $people = $directory->listAll(20000);
+        if ($people === []) {
+            return $this->listFromPlacementDetails($details);
+        }
+        $placements = $details->mapLatestByAdmno();
+        unset($directory);
+        $rows = [];
+        $matchedAdmnos = [];
+        foreach ($people as $index => $person) {
+            $admno = $person['admno'];
+            $placement = $admno !== '' ? ($placements[strtoupper($admno)] ?? []) : [];
+            if ($admno !== '' && $placement !== []) {
+                $matchedAdmnos[strtoupper($admno)] = true;
+            }
+            $role = $person['studRole'];
+            if (strtolower(trim((string) ($placement['stud_role'] ?? ''))) === 'alumni') {
+                $role = 'alumni';
+            }
+            $placementYear = trim((string) ($placement['year'] ?? ''));
+            $year = $person['batch'] !== '' ? $person['batch'] : $placementYear;
+            $student = $person['name'];
+            $studentId = $admno !== '' ? $admno : ($person['action'] !== '' ? $person['action'] : $student);
+            $employer = trim((string) ($placement['employer'] ?? ''));
+            $type = trim((string) ($placement['type'] ?? ''));
+            $status = trim((string) ($placement['status'] ?? ''));
+            $rows[] = [
+                'id' => $studentId,
+                'studentId' => $studentId,
+                'student' => $student,
+                'studentName' => $student,
+                'admno' => $admno,
+                'admissionNo' => $admno,
+                'registerNumber' => $admno,
+                'department' => $person['department'],
+                'stud_role' => $role,
+                'studRole' => $role,
+                'cno' => trim((string) ($placement['cno'] ?? '')),
+                'phone' => trim((string) ($placement['cno'] ?? '')),
+                'email' => trim((string) ($placement['email'] ?? '')),
+                'year' => $year,
+                'classBatch' => $year,
+                'batch' => $year,
+                'courseid' => trim((string) ($placement['courseid'] ?? '')),
+                'courseId' => trim((string) ($placement['courseid'] ?? '')),
+                'branchid' => trim((string) ($placement['branchid'] ?? '')),
+                'branchId' => trim((string) ($placement['branchid'] ?? '')),
+                'employer' => $employer,
+                'company' => $employer,
+                'empcno' => trim((string) ($placement['empcno'] ?? '')),
+                'employerContact' => trim((string) ($placement['empcno'] ?? '')),
+                'empadr' => trim((string) ($placement['empadr'] ?? '')),
+                'address' => trim((string) ($placement['empadr'] ?? '')),
+                'payscale' => trim((string) ($placement['payscale'] ?? '')),
+                'package' => trim((string) ($placement['payscale'] ?? '')),
+                'status' => $status,
+                'placementStatus' => $status,
+                'createdBy' => trim((string) ($placement['createdBy'] ?? '')),
+                'updatedBy' => trim((string) ($placement['updatedBy'] ?? '')),
+                'updatedate' => trim((string) ($placement['updatedate'] ?? '')),
+                'updatedAt' => trim((string) ($placement['updatedate'] ?? '')),
+                'fordvv' => trim((string) ($placement['fordvv'] ?? '')),
+                'type' => $type,
+                'recordType' => $type,
+                'includedvv' => trim((string) ($placement['includedvv'] ?? '')),
+                'createdate' => trim((string) ($placement['createdate'] ?? '')),
+                'createdAt' => trim((string) ($placement['createdate'] ?? '')),
+                'source' => 'student_details',
+            ];
+            unset($people[$index], $person, $placement);
+        }
+        unset($people, $placements);
+        foreach ($details->listAlumniRows(10000) as $placement) {
+            $admno = strtoupper(trim((string) ($placement['admno'] ?? '')));
+            if ($admno !== '' && isset($matchedAdmnos[$admno])) {
+                    continue;
+                }
+            $rows[] = $this->placementDetailGridRow($placement);
+            }
+        unset($matchedAdmnos);
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $placement
+     * @return array<string, mixed>
+     */
+    private function placementDetailGridRow(array $placement): array
+    {
+        $id = trim((string) ($placement['id'] ?? ''));
+        $admno = trim((string) ($placement['admno'] ?? ''));
+        $student = trim((string) ($placement['student'] ?? ''));
+        $year = trim((string) ($placement['year'] ?? ''));
+        $employer = trim((string) ($placement['employer'] ?? ''));
+        $type = trim((string) ($placement['type'] ?? ''));
+        $status = trim((string) ($placement['status'] ?? ''));
+        $studentId = $admno !== '' ? $admno : ($id !== '' ? $id : $student);
+
+        return [
+            'id' => $studentId,
+            'studentId' => $studentId,
+            'student' => $student,
+            'studentName' => $student,
+            'admno' => $admno,
+            'admissionNo' => $admno,
+            'registerNumber' => $admno,
+            'department' => '',
+            'stud_role' => 'alumni',
+            'studRole' => 'alumni',
+            'cno' => trim((string) ($placement['cno'] ?? '')),
+            'phone' => trim((string) ($placement['cno'] ?? '')),
+            'email' => trim((string) ($placement['email'] ?? '')),
+            'year' => $year,
+            'classBatch' => $year,
+            'batch' => $year,
+            'courseid' => trim((string) ($placement['courseid'] ?? '')),
+            'courseId' => trim((string) ($placement['courseid'] ?? '')),
+            'branchid' => trim((string) ($placement['branchid'] ?? '')),
+            'branchId' => trim((string) ($placement['branchid'] ?? '')),
+            'employer' => $employer,
+            'company' => $employer,
+            'empcno' => trim((string) ($placement['empcno'] ?? '')),
+            'employerContact' => trim((string) ($placement['empcno'] ?? '')),
+            'empadr' => trim((string) ($placement['empadr'] ?? '')),
+            'address' => trim((string) ($placement['empadr'] ?? '')),
+            'payscale' => trim((string) ($placement['payscale'] ?? '')),
+            'package' => trim((string) ($placement['payscale'] ?? '')),
+            'status' => $status,
+            'placementStatus' => $status,
+            'createdBy' => trim((string) ($placement['createdBy'] ?? '')),
+            'updatedBy' => trim((string) ($placement['updatedBy'] ?? '')),
+            'updatedate' => trim((string) ($placement['updatedate'] ?? '')),
+            'updatedAt' => trim((string) ($placement['updatedate'] ?? '')),
+            'fordvv' => trim((string) ($placement['fordvv'] ?? '')),
+            'type' => $type,
+            'recordType' => $type,
+            'includedvv' => trim((string) ($placement['includedvv'] ?? '')),
+            'createdate' => trim((string) ($placement['createdate'] ?? '')),
+            'createdAt' => trim((string) ($placement['createdate'] ?? '')),
+            'source' => 'student_placement_details',
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function listFromPlacementDetails(\PMS\Models\StudentPlacementDetailsTable $details): array
+    {
+        $limit = max(100, min(30000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 30000)));
+        $rows = [];
+        $contacts = (new StudentDirectoryTable())->contactByAdmno();
+        foreach ($details->listRows($limit) as $row) {
+            $id = trim((string) ($row['id'] ?? ''));
+            $admno = trim((string) ($row['admno'] ?? ''));
+            $student = trim((string) ($row['student'] ?? ''));
+            $year = trim((string) ($row['year'] ?? ''));
+            $employer = trim((string) ($row['employer'] ?? ''));
+            $type = trim((string) ($row['type'] ?? ''));
+            $status = trim((string) ($row['status'] ?? ''));
+            $studentId = $admno !== '' ? $admno : $id;
+            $role = strtolower(trim((string) ($row['stud_role'] ?? '')));
+            $directoryContact = $contacts[strtoupper($admno)] ?? null;
+            $cno = is_array($directoryContact) && trim((string) ($directoryContact['cno'] ?? '')) !== ''
+                ? trim((string) $directoryContact['cno'])
+                : trim((string) ($row['cno'] ?? ''));
+            $email = is_array($directoryContact) && trim((string) ($directoryContact['email'] ?? '')) !== ''
+                ? trim((string) $directoryContact['email'])
+                : trim((string) ($row['email'] ?? ''));
+            $rows[] = [
+                'id' => $studentId,
+                'studentId' => $studentId,
+                'student' => $student,
+                'studentName' => $student,
+                'admno' => $admno,
+                'admissionNo' => $admno,
+                'registerNumber' => $admno,
+                'stud_role' => $role,
+                'studRole' => $role,
+                'cno' => $cno,
+                'phone' => $cno,
+                'email' => $email,
+                'year' => $year,
+                'classBatch' => $year,
+                'batch' => $year,
+                'courseid' => trim((string) ($row['courseid'] ?? '')),
+                'courseId' => trim((string) ($row['courseid'] ?? '')),
+                'branchid' => trim((string) ($row['branchid'] ?? '')),
+                'branchId' => trim((string) ($row['branchid'] ?? '')),
+                'employer' => $employer,
+                'company' => $employer,
+                'empcno' => trim((string) ($row['empcno'] ?? '')),
+                'employerContact' => trim((string) ($row['empcno'] ?? '')),
+                'empadr' => trim((string) ($row['empadr'] ?? '')),
+                'address' => trim((string) ($row['empadr'] ?? '')),
+                'payscale' => trim((string) ($row['payscale'] ?? '')),
+                'package' => trim((string) ($row['payscale'] ?? '')),
+                'status' => $status,
+                'placementStatus' => $status,
+                'createdBy' => trim((string) ($row['createdBy'] ?? '')),
+                'updatedBy' => trim((string) ($row['updatedBy'] ?? '')),
+                'updatedate' => trim((string) ($row['updatedate'] ?? '')),
+                'updatedAt' => trim((string) ($row['updatedate'] ?? '')),
+                'fordvv' => trim((string) ($row['fordvv'] ?? '')),
+                'type' => $type,
+                'recordType' => $type,
+                'includedvv' => trim((string) ($row['includedvv'] ?? '')),
+                'createdate' => trim((string) ($row['createdate'] ?? '')),
+                'createdAt' => trim((string) ($row['createdate'] ?? '')),
+                'offerLetter' => trim((string) ($row['offer_letter'] ?? '')),
+                'hasOfferLetter' => trim((string) ($row['offer_letter'] ?? '')) !== '',
+                'source' => 'student_placement_details',
+            ];
+        }
+        usort($rows, static function (array $a, array $b): int {
+            $byName = strcasecmp((string) ($a['student'] ?? ''), (string) ($b['student'] ?? ''));
+
+            return $byName !== 0 ? $byName : strcasecmp((string) ($a['admno'] ?? ''), (string) ($b['admno'] ?? ''));
+        });
+
+        $seen = [];
+        $unique = [];
+        foreach ($rows as $row) {
+            $key = strtoupper(trim((string) ($row['admno'] ?? '')));
+            if ($key !== '') {
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+            }
+            $unique[] = $row;
+        }
+
+        return $unique;
+    }
+
     private function listFromStudentPlacements(array $listCtx, array $filters, bool $tableOnly = true): array
     {
         $studRole = $this->normalizeRegistryStudRoleFilter((string) ($filters['studRole'] ?? 'all'));
-        $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
-        $program = trim((string) ($filters['program'] ?? ''));
-        $batch = trim((string) ($filters['batch'] ?? ''));
+            $departmentId = trim((string) ($filters['departmentId'] ?? $listCtx['departmentId'] ?? ''));
+            $program = trim((string) ($filters['program'] ?? ''));
+            $batch = trim((string) ($filters['batch'] ?? ''));
 
         $tableLimit = max(100, min(5000, (int) ($_ENV['STAFF_PLACEMENT_TABLE_LIST_MAX'] ?? 2500)));
-        if ($departmentId === '' && $batch === '') {
+        $campusWide = $departmentId === '' && !empty($listCtx['campusWide']);
+        if ($departmentId === '' && $batch === '' && !$campusWide) {
             return [];
         }
 
         $tableRows = (new StudentPlacementModel())->listRosterRowsForRegistryScope(
-            $departmentId,
-            $program,
-            $batch,
+                $departmentId,
+                $program,
+                $batch,
             $tableLimit,
-            $batch !== ''
+            $batch !== '',
+            $campusWide
         );
         if (!$tableOnly) {
             $aesRows = $this->fetchAesRosterForRegistryFilters($listCtx, $filters);
@@ -740,38 +1021,38 @@ final class StaffPlacementRegistryService
             if ($id !== '' && Security::isValidId($id)) {
                 $needIds[$id][] = $idx;
             }
-        }
+            }
         if ($needIds === []) {
             return $rows;
         }
 
-        $students = (new StudentModel())->findByIds(array_keys($needIds));
-        foreach ($needIds as $id => $indexes) {
-            $student = $students[$id] ?? null;
-            if (!is_array($student)) {
-                continue;
-            }
-            $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
-            $patch = [
-                'displayName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
-                'studentName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
-                'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
-                'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
-                'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
-                'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
-                'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
-            ];
-            foreach ($indexes as $idx) {
-                foreach ($patch as $key => $value) {
-                    if ($value === '') {
-                        continue;
-                    }
-                    $existing = trim((string) ($rows[$idx][$key] ?? ''));
-                    if ($existing === '') {
-                        $rows[$idx][$key] = $value;
-                    }
+            $students = (new StudentModel())->findByIds(array_keys($needIds));
+            foreach ($needIds as $id => $indexes) {
+                $student = $students[$id] ?? null;
+                if (!is_array($student)) {
+                    continue;
+                }
+        $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+        $patch = [
+            'displayName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+            'studentName'    => trim((string) ($student['displayName'] ?? $personal['fullName'] ?? $personal['name'] ?? '')),
+            'registerNumber' => strtoupper(trim((string) ($student['registerNumber'] ?? ''))),
+            'classBatch'     => trim((string) ($student['classBatch'] ?? '')),
+            'phone'          => trim((string) ($personal['phone'] ?? $student['phone'] ?? '')),
+            'collegeEmail'   => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+            'email'          => trim((string) ($personal['collegeEmail'] ?? $student['collegeEmail'] ?? '')),
+        ];
+        foreach ($indexes as $idx) {
+            foreach ($patch as $key => $value) {
+                if ($value === '') {
+                    continue;
+                }
+                $existing = trim((string) ($rows[$idx][$key] ?? ''));
+                if ($existing === '') {
+                    $rows[$idx][$key] = $value;
                 }
             }
+        }
         }
 
         return $rows;
@@ -855,30 +1136,31 @@ final class StaffPlacementRegistryService
     }
 
     /**
-     * Registry grid — columns mirror student_placements JSON payload (+ Sl#).
+     * Registry grid headers match student_placement_details.
      *
      * @return list<array{key:string,label:string,sortable:bool,sortKey?:string,source:string,group?:string,payloadField?:string}>
      */
     public static function registryTableColumns(): array
     {
-        return [
-            ['key' => '_sl', 'label' => 'Sl#', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_placements', 'group' => 'snapshot'],
-            ['key' => 'studentName', 'label' => 'Student name', 'sortable' => true, 'sortKey' => 'studentName', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'studentName'],
-            ['key' => 'registerNumber', 'label' => 'Register no.', 'sortable' => true, 'sortKey' => 'registerNumber', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'registerNumber'],
-            ['key' => 'classBatch', 'label' => 'Class batch', 'sortable' => true, 'sortKey' => 'classBatch', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'classBatch'],
-            ['key' => 'programme', 'label' => 'Programme', 'sortable' => true, 'sortKey' => 'programme', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'programme'],
-            ['key' => 'phone', 'label' => 'Phone', 'sortable' => true, 'sortKey' => 'phone', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'phone'],
-            ['key' => 'email', 'label' => 'Email', 'sortable' => true, 'sortKey' => 'email', 'source' => 'student_placements', 'group' => 'snapshot', 'payloadField' => 'email'],
-            ['key' => 'company', 'label' => 'Company / institution', 'sortable' => true, 'sortKey' => 'company', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'company'],
-            ['key' => 'recordType', 'label' => 'Record type', 'sortable' => true, 'sortKey' => 'recordType', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'recordType'],
-            ['key' => 'role', 'label' => 'Role', 'sortable' => true, 'sortKey' => 'role', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'role'],
-            ['key' => 'employerContact', 'label' => 'Contact', 'sortable' => true, 'sortKey' => 'employerContact', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'employerContact'],
-            ['key' => 'address', 'label' => 'Address', 'sortable' => true, 'sortKey' => 'address', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'address'],
-            ['key' => 'package', 'label' => 'Package', 'sortable' => true, 'sortKey' => 'package', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'package'],
-            ['key' => 'placementStatus', 'label' => 'Status', 'sortable' => true, 'sortKey' => 'placementStatus', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'placementStatus'],
-            ['key' => 'fordvv', 'label' => 'For DVV', 'sortable' => true, 'sortKey' => 'fordvv', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'fordvv'],
-            ['key' => 'includedvv', 'label' => 'Included DVV', 'sortable' => true, 'sortKey' => 'includedvv', 'source' => 'student_placements', 'group' => 'placement', 'payloadField' => 'includedvv'],
+        $keys = [
+            'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
+            'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy',
+            'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
         ];
+        $columns = [];
+        foreach ($keys as $key) {
+            $columns[] = [
+                'key' => $key,
+                'label' => $key,
+                'sortable' => true,
+                'sortKey' => $key,
+                'source' => 'student_placement_details',
+                'group' => 'record',
+                'payloadField' => $key,
+            ];
+        }
+
+        return $columns;
     }
 
     /**
@@ -1183,6 +1465,10 @@ final class StaffPlacementRegistryService
             'branch'          => $branch,
             'batch'           => $batch,
             'classBatch'      => $batch,
+            'createdBy'       => trim((string) ($row['createdBy'] ?? '')),
+            'updatedBy'       => trim((string) ($row['updatedBy'] ?? '')),
+            'createdAt'       => $row['createdAt'] ?? '',
+            'updatedAt'       => $row['updatedAt'] ?? '',
         ];
 
         $entries = [];
@@ -1447,12 +1733,40 @@ final class StaffPlacementRegistryService
         $row['registerNumber'] = strtoupper(trim((string) ($row['registerNumber'] ?? $row['admissionNo'] ?? '')));
         $row['classBatch'] = trim((string) ($row['classBatch'] ?? $row['batch'] ?? ''));
         $row['programme'] = trim((string) ($row['programme'] ?? $row['program'] ?? ''));
-        $row['phone'] = trim((string) ($row['phone'] ?? ''));
+        $row['phone'] = trim((string) ($row['phone'] ?? $row['cno'] ?? ''));
         $row['email'] = trim((string) ($row['email'] ?? ''));
         $row['role'] = trim((string) ($row['role'] ?? ''));
-        $row['placementStatus'] = trim((string) ($row['placementStatus'] ?? ''));
+        $row['placementStatus'] = trim((string) ($row['placementStatus'] ?? $row['status'] ?? ''));
+        $row['student'] = trim((string) ($row['student'] ?? $row['studentName'] ?? ''));
+        $row['admno'] = trim((string) ($row['admno'] ?? $row['admissionNo'] ?? $row['registerNumber'] ?? ''));
+        $row['cno'] = trim((string) ($row['cno'] ?? $row['phone'] ?? ''));
+        $row['year'] = trim((string) ($row['year'] ?? $row['classBatch'] ?? $row['batch'] ?? ''));
+        $row['courseid'] = trim((string) ($row['courseid'] ?? $row['courseId'] ?? ''));
+        $row['branchid'] = trim((string) ($row['branchid'] ?? $row['branchId'] ?? ''));
+        $row['empcno'] = trim((string) ($row['empcno'] ?? $row['empco'] ?? $row['employerContact'] ?? ''));
+        $row['empadr'] = trim((string) ($row['empadr'] ?? $row['address'] ?? ''));
+        $row['payscale'] = trim((string) ($row['payscale'] ?? $row['package'] ?? ''));
+        $row['status'] = trim((string) ($row['status'] ?? $row['placementStatus'] ?? ''));
+        $row['createdBy'] = trim((string) ($row['createdBy'] ?? ''));
+        $row['updatedBy'] = trim((string) ($row['updatedBy'] ?? ''));
+        $row['createdate'] = $this->registryDateText($row['createdate'] ?? $row['createdAt'] ?? $row['createdDate'] ?? '');
+        $row['updatedate'] = $this->registryDateText($row['updatedate'] ?? $row['updatedAt'] ?? $row['updatedDate'] ?? '');
 
         return $row;
+    }
+
+    private function registryDateText(mixed $value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+        $text = trim((string) $value);
+        if ($text === '') {
+            return '';
+        }
+        $ts = strtotime($text);
+
+        return $ts === false ? $text : date('Y-m-d H:i:s', $ts);
     }
 
     /**
@@ -1834,7 +2148,7 @@ final class StaffPlacementRegistryService
             'programs'    => $programs,
             'branches'    => $program !== '' ? $filterSvc->fetchBranchOptions($filterCtx, $program) : [],
             'batches'     => $batches,
-            'departments' => $this->loadAllDepartments(),
+            'departments' => $this->departmentFilterOptions(),
         ];
     }
 
@@ -1910,7 +2224,11 @@ final class StaffPlacementRegistryService
 
         $dept = (new DepartmentModel())->findById($selectedDeptId);
         if (!is_array($dept) || $dept === []) {
-            return $staffCtx;
+            return array_merge($staffCtx, [
+                'departmentId' => $selectedDeptId,
+                'department'   => null,
+                'campusWide'   => false,
+            ]);
         }
 
         return array_merge($staffCtx, [
@@ -1971,69 +2289,285 @@ final class StaffPlacementRegistryService
     /**
      * @return array<int, array{id:string,code:string,name:string}>
      */
-    private function loadAllDepartments(): array
+    private function loadAllDepartments(bool $localOnly = false): array
     {
         $api = new AesApiService();
+        $catalog = [];
+        if (!$localOnly) {
         try {
             $api->syncDepartmentsToLocal();
         } catch (\Throwable) {
             // Serve local departments when AES is unreachable.
         }
-
-        $catalog = [];
         try {
             $catalog = $api->listDepartments();
         } catch (\Throwable) {
             $catalog = [];
+            }
         }
 
         $model = new DepartmentModel();
         $rows = [];
 
+        $byId = [];
+
         if ($catalog !== []) {
             foreach ($catalog as $aesRow) {
                 $code = strtoupper(trim((string) ($aesRow['code'] ?? '')));
                 $name = trim((string) ($aesRow['name'] ?? ''));
-                if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
+                if ($name === '') {
                     continue;
                 }
-                if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+                if (!DepartmentModel::isPlacementParentDepartment($code, $name)) {
                     continue;
                 }
+                $aesId = trim((string) ($aesRow['aesId'] ?? ''));
                 $local = $model->findByCode($code);
+                if ($local === null && $aesId !== '') {
+                    $local = $model->findByAesId($aesId);
+                }
+                if ($local === null && $code !== '' && preg_match('/^\d+$/', $code) === 1) {
+                    $local = $model->findByAesId($code);
+                }
                 if ($local === null) {
                     continue;
                 }
-                $rows[] = [
-                    'id'   => (string) ($local['_id'] ?? ''),
-                    'code' => $code,
-                    'name' => $name,
-                ];
-            }
-        } else {
-            foreach ($model->findAll([], 200) as $dept) {
-            $code = strtoupper(trim((string) ($dept['code'] ?? '')));
-            $name = trim((string) ($dept['name'] ?? ''));
-            if ($code === '' || $name === '' || preg_match('/^\d+$/', $code) === 1) {
-                continue;
-            }
-                if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+                $id = (string) ($local['_id'] ?? $local['id'] ?? '');
+                if ($id === '') {
                     continue;
                 }
-                if (empty($dept['aesAcademic']) && trim((string) ($dept['aesId'] ?? '')) === '') {
-                continue;
-            }
-            $rows[] = [
-                'id'   => (string) ($dept['_id'] ?? ''),
-                'code' => $code,
-                'name' => $name,
-            ];
+                $localCode = strtoupper(trim((string) ($local['code'] ?? $code)));
+                $localName = trim((string) ($local['name'] ?? $name));
+                $displayName = $name !== '' ? $name : $localName;
+                $byId[$id] = [
+                    'id'   => $id,
+                    'code' => $localCode !== '' && preg_match('/^\d+$/', $localCode) !== 1 ? $localCode : $code,
+                    'name' => $displayName !== '' ? $displayName : $localName,
+                ];
             }
         }
 
-        usort($rows, static fn (array $a, array $b): int => strcmp($a['code'], $b['code']));
+        if ($catalog === []) {
+            foreach ($model->findAll([], 500) as $dept) {
+                $option = DepartmentModel::toPlacementFilterOption($dept);
+                if ($option === null) {
+                    continue;
+                }
+                $byId[$option['id']] = $option;
+            }
+        }
+
+        $rows = array_values($byId);
+        usort($rows, static fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']));
 
         return $rows;
+    }
+
+    private function placementFiltersSkipLiveAes(): bool
+    {
+        $v = strtolower(trim((string) ($_ENV['STAFF_PLACEMENT_FILTERS_SKIP_AES'] ?? '1')));
+
+        return !in_array($v, ['0', 'false', 'no', 'off'], true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function programmeCodesForDepartmentId(string $departmentId): array
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return [];
+        }
+        static $cache = [];
+        if (isset($cache[$departmentId])) {
+            return $cache[$departmentId];
+        }
+        $dept = (new DepartmentModel())->findById($departmentId);
+        if (!is_array($dept)) {
+            $cache[$departmentId] = [];
+
+            return [];
+        }
+        $codes = [];
+        [$deptCode, $deptName] = $this->departmentCatalogKeys($dept);
+        $group = DepartmentProgrammeCatalog::findGroupForDepartment($deptCode, $deptName);
+        if ($group !== null) {
+            $codes = DepartmentProgrammeCatalog::programmeCodesForGroup($group);
+        }
+        $resolved = DepartmentProgrammeCatalog::resolveProgrammeCode($deptCode);
+        if ($resolved !== '') {
+            $codes[] = $resolved;
+        }
+        $codes = array_values(array_unique(array_filter(array_map(
+            static fn (string $c): string => DepartmentProgrammeCatalog::resolveProgrammeCode($c),
+            $codes
+        ), static fn (string $c): bool => $c !== '')));
+        $cache[$departmentId] = $codes;
+
+        return $codes;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function placementDetailRowMatchesDepartment(array $row, string $departmentId): bool
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return true;
+        }
+        $codes = $this->programmeCodesForDepartmentId($departmentId);
+        if ($codes === []) {
+            return $this->placementDetailRowMatchesDepartmentByDirectory($row, $departmentId);
+        }
+        $courseId = trim((string) ($row['courseid'] ?? $row['courseId'] ?? ''));
+        $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
+        $fromCourse = $courseId !== ''
+            ? DepartmentProgrammeCatalog::resolveProgrammeCode($courseId)
+            : '';
+        $fromYear = $year !== ''
+            ? DepartmentProgrammeCatalog::programmeInferredFromBatchLabel($year)
+            : '';
+        $yearNorm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $year) ?? '');
+
+        foreach ($codes as $code) {
+            $code = DepartmentProgrammeCatalog::resolveProgrammeCode($code);
+            if ($code === '') {
+                    continue;
+                }
+            if ($fromCourse !== '' && strcasecmp($fromCourse, $code) === 0) {
+                return true;
+            }
+            if ($fromYear !== '' && strcasecmp($fromYear, $code) === 0) {
+                return true;
+            }
+            if ($yearNorm !== '' && str_contains($yearNorm, strtoupper($code))) {
+                return true;
+            }
+        }
+
+        return $this->placementDetailRowMatchesDepartmentByDirectory($row, $departmentId);
+    }
+
+    /**
+     * @param array<string, mixed> $dept
+     * @return array{0:string,1:string} catalog code and name (numeric AES codes ignored)
+     */
+    private function departmentCatalogKeys(array $dept): array
+    {
+        $code = strtoupper(trim((string) ($dept['code'] ?? '')));
+        $name = trim((string) ($dept['name'] ?? ''));
+        if ($code !== '' && preg_match('/^\d+$/', $code) === 1) {
+            $code = '';
+        }
+
+        return [$code, $name];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function placementDetailRowMatchesDepartmentByDirectory(array $row, string $departmentId): bool
+    {
+        $departmentId = trim($departmentId);
+        if ($departmentId === '') {
+            return true;
+        }
+        $admno = strtoupper(trim((string) ($row['admno'] ?? $row['admissionNo'] ?? '')));
+        if ($admno === '') {
+            return false;
+        }
+        $index = $this->admnoDepartmentIdIndex();
+        $rowDeptId = trim((string) ($index[$admno] ?? ''));
+        if ($rowDeptId !== '' && strcasecmp($rowDeptId, $departmentId) === 0) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @return array<string, string> upper admno => department id
+     */
+    private function admnoDepartmentIdIndex(): array
+    {
+        if ($this->admnoDepartmentIdIndex !== null) {
+            return $this->admnoDepartmentIdIndex;
+        }
+        $this->admnoDepartmentIdIndex = (new StudentDetailsModel())->mapAdmnoToDepartmentId();
+
+        return $this->admnoDepartmentIdIndex;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function placementDetailRowMatchesProgram(array $row, string $program): bool
+    {
+        $program = trim($program);
+        if ($program === '') {
+            return true;
+        }
+        $wantProgram = DepartmentProgrammeCatalog::resolveProgrammeCode($program);
+        $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
+        $courseId = trim((string) ($row['courseid'] ?? $row['courseId'] ?? ''));
+        if ($courseId !== '') {
+            $fromCourse = DepartmentProgrammeCatalog::resolveProgrammeCode($courseId);
+            if ($fromCourse !== '' && $wantProgram !== '' && strcasecmp($fromCourse, $wantProgram) === 0) {
+                return true;
+            }
+            if (strcasecmp($courseId, $program) === 0) {
+                return true;
+            }
+            if (strcasecmp(
+                DepartmentProgrammeCatalog::normalizeCode($courseId),
+                DepartmentProgrammeCatalog::normalizeCode($program)
+            ) === 0) {
+                return true;
+            }
+        }
+        if ($year === '') {
+            return false;
+        }
+        $fromYear = DepartmentProgrammeCatalog::programmeInferredFromBatchLabel($year);
+        if ($fromYear !== '' && $wantProgram !== '' && strcasecmp($fromYear, $wantProgram) === 0) {
+            return true;
+        }
+        $yearNorm = DepartmentProgrammeCatalog::normalizeCode($year);
+        $progNorm = DepartmentProgrammeCatalog::normalizeCode($program);
+        if ($progNorm !== '' && $yearNorm !== '' && str_contains($yearNorm, $progNorm)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function placementDetailRowMatchesType(array $row, string $type): bool
+    {
+        $type = strtolower(trim($type));
+        if ($type === '') {
+            return true;
+        }
+        $rowType = strtolower(trim((string) ($row['type'] ?? $row['recordType'] ?? '')));
+        if ($rowType === '') {
+            return $type === 'placement';
+        }
+        $want = match ($type) {
+            'higher_education' => ['higher education', 'higher_education', 'highereducation'],
+            'research' => ['research'],
+            default => ['placement', 'placed', 'job'],
+        };
+
+        foreach ($want as $token) {
+            if ($rowType === $token || str_contains($rowType, $token)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -2086,6 +2620,9 @@ final class StaffPlacementRegistryService
      */
     private function applyFilters(array $rows, array $filters): array
     {
+        if (!empty($filters['placementDetails'])) {
+            return $this->applyPlacementDetailsFilters($rows, $filters);
+        }
         if (!empty($filters['allFromTable'])) {
             $rows = $this->applyOptionalRegistrySearchFilters($rows, $filters);
             if ($this->hasRegistryScopeFilters($filters)) {
@@ -2117,10 +2654,62 @@ final class StaffPlacementRegistryService
     }
 
     /**
+     * Filters that exist on student_placement_details: year, type, and search.
+     * Programme is matched from the year label when that label contains a course code.
+     *
      * @param array<int, array<string, mixed>> $rows
      * @param array<string, string> $filters
      * @return array<int, array<string, mixed>>
      */
+    private function applyPlacementDetailsFilters(array $rows, array $filters): array
+    {
+        $departmentId = trim((string) ($filters['departmentId'] ?? ''));
+        $program = trim((string) ($filters['program'] ?? ''));
+        $batch = trim((string) ($filters['batch'] ?? ''));
+        $type = trim((string) ($filters['type'] ?? ''));
+        $q = strtolower(trim((string) ($filters['q'] ?? $filters['search'] ?? '')));
+        if ($departmentId === '' && $program === '' && $batch === '' && $type === '' && $q === '') {
+            return $rows;
+        }
+
+        return array_values(array_filter($rows, function (array $row) use ($departmentId, $program, $batch, $type, $q): bool {
+            if ($departmentId !== '' && !$this->placementDetailRowMatchesDepartment($row, $departmentId)) {
+                    return false;
+                }
+            $year = trim((string) ($row['year'] ?? $row['classBatch'] ?? ''));
+            if ($batch !== '' && !StudentPlacementModel::matchesClassBatchSelection($year, $batch)) {
+                return false;
+            }
+            if ($program !== '' && !$this->placementDetailRowMatchesProgram($row, $program)) {
+                return false;
+            }
+            if (!$this->placementDetailRowMatchesType($row, $type)) {
+                return false;
+            }
+            if ($q === '') {
+                return true;
+            }
+            $hay = strtolower(implode(' ', [
+                (string) ($row['student'] ?? ''),
+                (string) ($row['admno'] ?? ''),
+                (string) ($row['cno'] ?? ''),
+                (string) ($row['email'] ?? ''),
+                (string) ($row['year'] ?? ''),
+                (string) ($row['courseid'] ?? ''),
+                (string) ($row['branchid'] ?? ''),
+                (string) ($row['employer'] ?? ''),
+                (string) ($row['empcno'] ?? ''),
+                (string) ($row['empadr'] ?? ''),
+                (string) ($row['payscale'] ?? ''),
+                (string) ($row['status'] ?? ''),
+                (string) ($row['type'] ?? ''),
+                (string) ($row['department'] ?? ''),
+            ]));
+
+            return str_contains($hay, $q);
+        }));
+    }
+
     private function applyScopedRegistryFilters(array $rows, array $filters): array
     {
         $program = trim((string) ($filters['program'] ?? ''));
@@ -2476,6 +3065,12 @@ final class StaffPlacementRegistryService
      */
     public function updatePlacement(array $staffCtx, string $studentId, array $input): array
     {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existingDetails = $details->findByAdmnoOrId($studentId);
+        if (is_array($existingDetails)) {
+            return $this->updateDetailsPlacement($staffCtx, $existingDetails, $input, $details);
+        }
+
         $student = $this->officerData->resolveStudentRef($studentId);
         if (!$student) {
             Response::notFound('Student not found.');
@@ -2570,6 +3165,270 @@ final class StaffPlacementRegistryService
             'studentId' => (string) ($student['_id'] ?? $registryId),
             'placement' => DocumentHelper::serialize($placement),
         ];
+    }
+
+    /**
+     * Save an edit onto one student_placement_details row.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, mixed> $existing
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function updateDetailsPlacement(
+        array $staffCtx,
+        array $existing,
+        array $input,
+        \PMS\Models\StudentPlacementDetailsTable $details
+    ): array {
+        if (empty($staffCtx['isAdmin'])) {
+            $batch = trim((string) ($existing['year'] ?? ''));
+            $admnoCheck = strtoupper(trim((string) ($existing['admno'] ?? '')));
+            StaffContext::assertCanEditClassPlacement([
+                'classBatch' => $batch,
+                'batch' => $batch,
+                'admno' => $admnoCheck,
+                'registerNumber' => $admnoCheck,
+            ], $staffCtx);
+        }
+        $employer = trim((string) ($input['employer'] ?? $input['companyName'] ?? $input['company'] ?? ''));
+        if ($employer === '') {
+            Response::error('Employer / institution name is required.', 422);
+        }
+        $typeRaw = strtolower(trim((string) ($input['type'] ?? 'Placement')));
+        if (str_contains($typeRaw, 'higher') || str_contains($typeRaw, 'education')) {
+            $recordType = 'Higher Education';
+        } elseif (str_contains($typeRaw, 'research')) {
+            $recordType = 'Research';
+        } else {
+            $recordType = 'Placement';
+        }
+        $fields = [
+            'employer' => $employer,
+            'empcno' => trim((string) ($input['employerContact'] ?? '')),
+            'empadr' => trim((string) ($input['address'] ?? $input['companyAddress'] ?? '')),
+            'payscale' => trim((string) ($input['package'] ?? '')),
+            'status' => trim((string) ($input['placementStatus'] ?? '')),
+            'fordvv' => $this->normalizeVvValue($input['fordvv'] ?? ''),
+            'includedvv' => $this->normalizeVvValue($input['includedvv'] ?? ''),
+            'type' => $recordType,
+        ];
+        $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+        $entryId = (int) ($input['entryId'] ?? 0);
+        $saved = $entryId > 0
+            ? $details->saveFieldsById($admno, $entryId, $fields)
+            : $details->saveFieldsForAdmno($admno !== '' ? $admno : (string) ($existing['id'] ?? ''), $fields);
+        if (!$saved) {
+            Response::error('Could not update this entry.', 500);
+        }
+
+        return [
+            'studentId' => $admno !== '' ? $admno : (string) ($existing['id'] ?? ''),
+            'entryId' => $entryId > 0 ? $entryId : (int) ($existing['id'] ?? 0),
+        ];
+    }
+
+    /**
+     * Clear placement columns for this admission number. The student row stays.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    public function deletePlacement(array $staffCtx, string $studentId): array
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $this->editableDetailsRow($staffCtx, $studentId, $details);
+        $entryId = (int) ($_GET['entryId'] ?? 0);
+        if ($entryId <= 0) {
+            $entryId = (int) ($existing['id'] ?? 0);
+        }
+        $admno = (string) ($existing['admno'] ?? '');
+        if (!$details->deleteEntry($admno, $entryId)) {
+            Response::error('Could not delete this placement.', 500);
+        }
+
+        return ['studentId' => $this->detailsRowKey($existing), 'entryId' => $entryId];
+    }
+
+    /**
+     * Store one more placement, higher-education, or research entry for this student.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    public function addPlacementEntry(array $staffCtx, string $studentId, array $input): array
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $this->editableDetailsRow($staffCtx, $studentId, $details);
+        $employer = trim((string) ($input['employer'] ?? ''));
+        if ($employer === '') {
+            Response::error('Employer / institution name is required.', 422);
+        }
+        $typeRaw = strtolower(trim((string) ($input['type'] ?? 'Placement')));
+        if (str_contains($typeRaw, 'higher') || str_contains($typeRaw, 'education')) {
+            $recordType = 'Higher Education';
+        } elseif (str_contains($typeRaw, 'research')) {
+            $recordType = 'Research';
+        } else {
+            $recordType = 'Placement';
+        }
+        $key = $this->detailsRowKey($existing);
+        $admno = (string) ($existing['admno'] ?? '');
+        $candidate = [
+            'type' => $recordType,
+            'employer' => $employer,
+            'empcno' => trim((string) ($input['employerContact'] ?? '')),
+            'empadr' => trim((string) ($input['address'] ?? '')),
+            'payscale' => trim((string) ($input['package'] ?? '')),
+            'status' => trim((string) ($input['placementStatus'] ?? '')),
+            'fordvv' => trim((string) ($input['fordvv'] ?? '')),
+            'includedvv' => trim((string) ($input['includedvv'] ?? '')),
+        ];
+        foreach ($details->listEntriesByAdmno($admno) as $entry) {
+            $same = true;
+            foreach ($candidate as $column => $value) {
+                if (strcasecmp(trim((string) ($entry[$column] ?? '')), $value) !== 0) {
+                    $same = false;
+                    break;
+                }
+            }
+            if ($same) {
+                Response::error('This entry is already in the list. Change the details to add another.', 422);
+            }
+        }
+        $entryId = $details->addAnotherEntry($key, [
+            'employer' => $candidate['employer'],
+            'empcno' => $candidate['empcno'],
+            'empadr' => $candidate['empadr'],
+            'payscale' => $candidate['payscale'],
+            'status' => $candidate['status'],
+            'fordvv' => $candidate['fordvv'],
+            'includedvv' => $candidate['includedvv'],
+            'type' => $candidate['type'],
+        ]);
+        if ($entryId <= 0) {
+            Response::error('Could not add this entry.', 500);
+        }
+
+        return [
+            'studentId' => $key,
+            'entryId' => $entryId,
+            'entries' => $details->listEntriesByAdmno((string) ($existing['admno'] ?? '')),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listPlacementEntries(string $studentId): array
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $details->findByAdmnoOrId($studentId);
+        if ($existing === null) {
+            Response::notFound('This student is not in student_placement_details.');
+        }
+
+        return [
+            'studentId' => $this->detailsRowKey($existing),
+            'entries' => $details->listEntriesByAdmno((string) ($existing['admno'] ?? '')),
+        ];
+    }
+
+    /**
+     * Store an offer-letter PDF on the student_placement_details row.
+     *
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    public function uploadOfferLetter(array $staffCtx, string $studentId): array
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $this->editableDetailsRow($staffCtx, $studentId, $details);
+        $file = $_FILES['offerLetter'] ?? null;
+        if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            Response::error('Choose an offer letter PDF.', 400);
+        }
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $error = Security::validateUploadedFile($file, $config['uploads']['max_resume'], ['pdf']);
+        if ($error) {
+            Response::error($error, 400);
+        }
+        $admno = $this->detailsRowKey($existing);
+        $safe = preg_replace('/[^A-Za-z0-9_-]+/', '_', $admno) ?: 'student';
+        $storedName = $safe . '_offer_' . time() . '.pdf';
+        try {
+            $path = (new ObjectStorageService($config))->putUploadedFile(
+                ObjectStorageService::FOLDER_OFFER_LETTERS,
+                $storedName,
+                $file
+            );
+        } catch (\Throwable $e) {
+            Response::error('Failed to save offer letter: ' . $e->getMessage(), 500);
+        }
+        $entryId = (int) ($_POST['entryId'] ?? 0);
+        $stored = $entryId > 0
+            ? $details->saveOfferLetterOnEntry((string) ($existing['admno'] ?? ''), $entryId, $path)
+            : $details->saveOfferLetterPath($admno, $path);
+        if (!$stored) {
+            Response::error('Could not store the offer letter on this student.', 500);
+        }
+
+        return [
+            'studentId' => $admno,
+            'hasOfferLetter' => true,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     */
+    public function downloadOfferLetter(array $staffCtx, string $studentId): void
+    {
+        $details = new \PMS\Models\StudentPlacementDetailsTable();
+        $existing = $details->findByAdmnoOrId($studentId);
+        if ($existing === null) {
+            Response::notFound('This student is not in student_placement_details.');
+        }
+        $path = trim((string) ($existing['offer_letter'] ?? ''));
+        if ($path === '') {
+            Response::notFound('No offer letter uploaded.');
+        }
+        (new ObjectStorageService())->stream($path, 'offer-letter.pdf', 'application/pdf', false);
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     * @return array<string, mixed>
+     */
+    private function editableDetailsRow(array $staffCtx, string $studentId, \PMS\Models\StudentPlacementDetailsTable $details): array
+    {
+        $existing = $details->findByAdmnoOrId($studentId);
+        if ($existing === null) {
+            Response::notFound('This student is not in student_placement_details.');
+        }
+        if (empty($staffCtx['isAdmin'])) {
+            $batch = trim((string) ($existing['year'] ?? ''));
+            $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+            StaffContext::assertCanEditClassPlacement([
+                'classBatch' => $batch,
+                'batch' => $batch,
+                'admno' => $admno,
+                'registerNumber' => $admno,
+            ], $staffCtx);
+        }
+
+        return $existing;
+    }
+
+    /**
+     * @param array<string, mixed> $existing
+     */
+    private function detailsRowKey(array $existing): string
+    {
+        $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+
+        return $admno !== '' ? $admno : (string) ($existing['id'] ?? '');
     }
 
     /**

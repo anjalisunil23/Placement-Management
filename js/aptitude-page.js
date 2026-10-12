@@ -6528,20 +6528,20 @@
           <div class="d-flex align-items-start gap-2 min-w-0 flex-grow-1 text-start">
             ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
             <div class="min-w-0 flex-grow-1 text-start">
-            <strong>${esc(t.title)}</strong>
+          <strong>${esc(t.title)}</strong>
             <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
             ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
-            ${showContestBadge ? contestBadgeHtml(t) : ''}
+          ${showContestBadge ? contestBadgeHtml(t) : ''}
             ${showContestBadge ? contestScheduleControls(t) : ''}
-            </div>
+        </div>
           </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 ms-auto">
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(docSetId)}">Document</button>` : ''}
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(docSetId)}">Questions</button>` : ''}
             ${docSetId ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>`}
-            <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
+          <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
             <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
-          </div>
+        </div>
         </div>
         ${docSetId ? `<div class="d-none mt-3" data-jd-doc-panel="${esc(docSetId)}"></div><div class="d-none mt-3" data-jd-questions="${esc(docSetId)}"></div>` : ''}
       </div>`;
@@ -7887,8 +7887,8 @@
       } else {
         testsBulkBar?.classList.remove('d-none');
         testsRoot.innerHTML = regular.map((t) => renderManageRow(t, { selectable: true })).join('');
-        bindManageListActions(testsRoot);
-      }
+      bindManageListActions(testsRoot);
+    }
       updateManageTestsSelectionToolbar();
     }
 

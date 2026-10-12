@@ -961,6 +961,68 @@ class StudentDetailsModel extends BaseModel
     }
 
     /**
+     * Uppercase admission number → local departments.id for placement registry filters.
+     *
+     * @return array<string, string>
+     */
+    public function mapAdmnoToDepartmentId(): array
+    {
+        if (!$this->bootstrapTable()) {
+            return [];
+        }
+
+        $aesToLocal = [];
+        foreach ((new DepartmentModel())->findAll([], 500) as $dept) {
+            $localId = trim((string) ($dept['_id'] ?? ''));
+            if ($localId === '') {
+                continue;
+            }
+            $aesId = trim((string) ($dept['aesId'] ?? ''));
+            if ($aesId !== '' && preg_match('/^\d+$/', $aesId) === 1) {
+                $aesToLocal[$aesId] = $localId;
+            }
+            $code = trim((string) ($dept['code'] ?? ''));
+            if ($code !== '' && preg_match('/^\d+$/', $code) === 1) {
+                $aesToLocal[$code] = $localId;
+            }
+        }
+
+        try {
+            $stmt = $this->db->query(
+                'SELECT aes_admno, dept_aes_id,
+                        JSON_UNQUOTE(JSON_EXTRACT(payload, \'$.departmentId\')) AS department_id
+                 FROM `student_details`
+                 WHERE aes_admno IS NOT NULL AND aes_admno <> \'\''
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $map = [];
+        while ($row = $stmt->fetch()) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $admno = strtoupper(trim((string) ($row['aes_admno'] ?? '')));
+            if ($admno === '') {
+                continue;
+            }
+            $deptId = trim((string) ($row['department_id'] ?? ''));
+            if ($deptId === '' || $deptId === 'null') {
+                $aesDept = trim((string) ($row['dept_aes_id'] ?? ''));
+                if ($aesDept !== '' && isset($aesToLocal[$aesDept])) {
+                    $deptId = $aesToLocal[$aesDept];
+                }
+            }
+            if ($deptId !== '' && $deptId !== 'null') {
+                $map[$admno] = $deptId;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
      * Distinct stored stud_role values for sync diagnostics.
      *
      * @return list<array{studRole:string,count:int}>

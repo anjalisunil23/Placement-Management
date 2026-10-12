@@ -475,21 +475,147 @@ const OfficerApi = {
 
   async fetchPlacementFilters(params = {}) {
     const qs = new URLSearchParams();
+    if (params.departmentId) qs.set('departmentId', params.departmentId);
     if (params.program) qs.set('program', params.program);
     if (params.branch) qs.set('branch', params.branch);
+    qs.set('studRole', params.studRole || 'all');
+    const lite = params.lite === true || params.lite === 1 || params.lite === '1';
+    if (lite) qs.set('lite', '1');
     const q = qs.toString();
+    const cacheKey = lite
+      ? ('ph_officer_placement_filters_lite_v1_' + q)
+      : ('ph_officer_placement_filters_v6_' + q);
+    const cacheTtl = lite && String(params.program || '').trim() ? 600000 : 300000;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (lite) {
+          const programScoped = !!String(params.program || '').trim();
+          const batches = parsed?.data?.batches;
+          const programs = parsed?.data?.programs;
+          const ok = programScoped
+            ? Array.isArray(batches)
+            : Array.isArray(programs);
+          if (parsed && parsed._at && (Date.now() - parsed._at) < cacheTtl && parsed.data && ok) {
+            return parsed.data;
+          }
+        } else {
+          const depts = parsed?.data?.departments;
+          const deptOk = Array.isArray(depts) && depts.length > 0;
+          const deptScoped = !!String(params.departmentId || '').trim();
+          const programScoped = !!String(params.program || '').trim();
+          const programs = parsed?.data?.programs;
+          const programsOk = !deptScoped || Array.isArray(programs);
+          const batches = parsed?.data?.batches;
+          const batchesOk = !programScoped || Array.isArray(batches);
+          if (parsed && parsed._at && (Date.now() - parsed._at) < cacheTtl && parsed.data && deptOk && programsOk && batchesOk) {
+            return parsed.data;
+          }
+        }
+      }
+    } catch (_) { /* ignore */ }
     const res = await api('/officer/placement-filters' + (q ? `?${q}` : ''));
-    return res.success && res.data ? res.data : null;
+    const data = res.success && res.data ? res.data : null;
+    if (lite) {
+      const programScoped = !!String(params.program || '').trim();
+      const ok = programScoped
+        ? Array.isArray(data?.batches)
+        : Array.isArray(data?.programs);
+      if (data && ok) {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
+        } catch (_) { /* ignore */ }
+      }
+      return data;
+    }
+    const deptScoped = !!String(params.departmentId || '').trim();
+    const programScoped = !!String(params.program || '').trim();
+    const programsOk = !deptScoped || Array.isArray(data?.programs);
+    const batchesOk = !programScoped || Array.isArray(data?.batches);
+    if (data && Array.isArray(data.departments) && data.departments.length && programsOk && batchesOk) {
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
+      } catch (_) { /* ignore */ }
+    }
+    return data;
+  },
+
+  async updateStudentPlacement(studentId, body) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement`, {
+      method: 'PUT',
+      body,
+    });
+  },
+
+  async deleteStudentPlacement(studentId, entryId) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    const query = entryId ? `?entryId=${encodeURIComponent(entryId)}` : '';
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement${query}`, { method: 'DELETE' });
+  },
+
+  async addPlacementEntry(studentId, body) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement/entries`, {
+      method: 'POST',
+      body,
+    });
+  },
+
+  async listPlacementEntries(studentId) {
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement/entries`);
+  },
+
+  async uploadPlacementOfferLetter(studentId, formData) {
+    if (typeof OfficerApi.clearPlacementsCache === 'function') OfficerApi.clearPlacementsCache();
+    return api(`/officer/students/${encodeURIComponent(studentId)}/placement/offer-letter`, {
+      method: 'POST',
+      body: formData,
+    });
   },
 
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
-    ['program', 'branch', 'batch', 'studRole', 'type', 'q'].forEach(k => {
+    ['departmentId', 'program', 'branch', 'batch', 'type', 'q'].forEach(k => {
       if (params[k]) qs.set(k, params[k]);
     });
+    qs.set('studRole', params.studRole || 'all');
+    qs.set('omitFilters', params.omitFilters !== false ? '1' : '0');
     const q = qs.toString();
+    const cacheKey = 'ph_officer_placements_v16_' + q;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed._at && (Date.now() - parsed._at) < 180000 && parsed.data) {
+          return parsed.data;
+        }
+      }
+    } catch (_) { /* ignore */ }
+    OfficerApi._lastPlacementsFetchError = '';
     const res = await api('/officer/placements-higher-education' + (q ? `?${q}` : ''));
-    return res.success ? res.data : null;
+    if (res.success && res.data) {
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data: res.data }));
+      } catch (_) { /* ignore quota */ }
+      return res.data;
+    }
+    OfficerApi._lastPlacementsFetchError = res?.message || 'Request failed';
+    return null;
+  },
+
+  clearPlacementsCache() {
+    try {
+      const keys = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && (k.startsWith('ph_officer_placements') || k.startsWith('ph_officer_placement_filters'))) {
+          keys.push(k);
+        }
+      }
+      keys.forEach(k => sessionStorage.removeItem(k));
+    } catch (_) { /* ignore */ }
   },
 
   async fetchExtendedAnalytics() {

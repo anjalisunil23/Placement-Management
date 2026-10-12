@@ -501,7 +501,7 @@ const PAGE_PERMS = {
   'alumni-success-stories.html': ['alumni'],
   'staff-jobs.html':        ['staff'],
   'staff-recommend.html':   ['staff'],
-  'staff-placements.html':  ['staff'],
+  'staff-placements.html':  ['admin', 'placement_officer', 'staff'],
   'staff-courses.html':     ['admin', 'placement_officer', 'staff'],
   'autonomous-mcq.html':    ['student'],
   'admin-companies.html':   ['admin','placement_officer','staff'],

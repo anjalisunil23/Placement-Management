@@ -87,6 +87,14 @@ final class DepartmentProgrammeCatalog
                     ['code' => 'MG', 'label' => 'MG — Metallurgical & Materials Engineering', 'aliases' => ['MET', 'MME']],
                 ],
             ],
+            [
+                'parent' => 'Media Technology',
+                'programmes' => [
+                    ['code' => 'BAJ', 'label' => 'BA Journalism & Mass Communication', 'aliases' => ['BAJMC', 'JOURNALISM']],
+                    ['code' => 'BSCVC', 'label' => 'B.Sc Visual Communication', 'aliases' => ['VISCOM', 'BSCVISCOM', 'VC']],
+                    ['code' => 'BSCMMT', 'label' => 'B.Sc Multimedia Technology', 'aliases' => ['MULTIMEDIA', 'MMT']],
+                ],
+            ],
         ];
     }
 
@@ -211,6 +219,44 @@ final class DepartmentProgrammeCatalog
     }
 
     /**
+     * Programme / course rows (BCA, BT, …) — not parent AES departments from getDepartments.
+     */
+    public static function isProgrammeBranchDepartmentRow(string $code, string $name = ''): bool
+    {
+        $name = trim($name);
+        $codeNorm = self::normalizeCode($code);
+        $nameNorm = self::normalizeCode($name);
+
+        if ($name !== '' && self::findGroupByParentName($name) !== null) {
+            return false;
+        }
+
+        foreach ([$codeNorm, $nameNorm] as $token) {
+            if ($token !== '' && in_array($token, ['BT', 'MT', 'BTECH', 'MTECH'], true)) {
+                return true;
+            }
+        }
+
+        if ($codeNorm !== '' && self::findGroupByProgramme($codeNorm) !== null) {
+            if ($nameNorm === $codeNorm) {
+                return true;
+            }
+            if ($name !== '' && !preg_match(
+                '/engineering|technology|applications|sciences|school|humanities|business|metallurgical|materials|food|chemical|civil|mechanical|electrical|electronics|computer/i',
+                $name
+            )) {
+                return true;
+            }
+        }
+
+        if ($nameNorm !== '' && self::findGroupByProgramme($nameNorm) !== null) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * @return array{parent:string,programmes:list<array{code:string,label:string,aliases:list<string>}>}|null
      */
     public static function findGroupForDepartment(string $code, string $name = ''): ?array
@@ -269,7 +315,9 @@ final class DepartmentProgrammeCatalog
             $canonical = self::normalizeCode($codeOrAlias);
         }
         if ($canonical === '') {
-            return [];
+            $raw = trim($codeOrAlias);
+
+            return $raw !== '' ? [$raw] : [];
         }
 
         $tokens = [];

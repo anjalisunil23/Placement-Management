@@ -44,8 +44,8 @@ final class AesApiService
     {
         $aes = require dirname(__DIR__) . '/config/aes.php';
         $this->apiUrl = rtrim((string) ($aes['api_url'] ?? 'https://api.aesajce.in/'), '/') . '/';
-        $this->origin = (string) ($aes['api_origin'] ?? 'https://www.aesajce.in');
-        $this->referer = (string) ($aes['api_referer'] ?? 'https://www.aesajce.in/');
+        $this->origin = (string) ($aes['api_origin'] ?? 'https://placements.amaljyothi.ac.in');
+        $this->referer = (string) ($aes['api_referer'] ?? 'https://placements.amaljyothi.ac.in/');
         $this->authKey = (string) ($aes['auth_key'] ?? '');
         $this->refHost = trim((string) ($aes['ref_host'] ?? ''));
         $sslVerify = $aes['ssl_verify'] ?? true;
@@ -1337,12 +1337,153 @@ final class AesApiService
             return self::$departmentCache;
         }
 
-        $rows = $this->normalizeDepartmentRows($this->getAcademicDepartments($params));
+        $rows = [];
+        if ($params === []) {
+            foreach ([
+                fn (): array => $this->callAESApi('getDepartments', $params),
+                fn (): array => $this->getAcademicDepartments($params),
+                fn (): array => $this->callAESApi('get_departments', $params),
+            ] as $fetch) {
+                $rows = $this->normalizeDepartmentRows($fetch());
+                if ($rows !== []) {
+                    break;
+                }
+            }
+        } else {
+            foreach ([
+                fn (): array => $this->callAESApi('getDepartments', $params),
+                fn (): array => $this->getAcademicDepartments($params),
+                fn (): array => $this->callAESApi('getAcademicDepartments', $params),
+            ] as $fetch) {
+                $rows = $this->normalizeDepartmentRows($fetch());
+                if ($rows !== []) {
+                    break;
+                }
+            }
+        }
         if ($params === []) {
             self::$departmentCache = $rows;
         }
 
         return $rows;
+    }
+
+    /**
+     * Programme / branch rows under a parent AES department (getDepartments with stud_deptcode).
+     *
+     * @return list<array{code:string,name:string,short:string,aesId:string}>
+     */
+    public function fetchChildAcademicDepartments(string $parentAesId): array
+    {
+        $parentAesId = trim($parentAesId);
+        if ($parentAesId === '' || !ctype_digit($parentAesId)) {
+            return [];
+        }
+
+        $paramSets = [
+            ['stud_deptcode' => $parentAesId],
+            ['deptCode' => $parentAesId],
+            ['dept_code' => $parentAesId],
+            ['deptId' => $parentAesId],
+            ['parentDeptCode' => $parentAesId],
+        ];
+
+        $best = [];
+        foreach ($paramSets as $params) {
+            try {
+                $rows = $this->loadDepartmentsFromApi($params);
+            } catch (\Throwable) {
+                continue;
+            }
+            $filtered = $this->filterBranchDepartmentRows($rows, $parentAesId);
+            if ($filtered === []) {
+                continue;
+            }
+            if ($best === [] || count($filtered) < count($best)) {
+                $best = $filtered;
+            }
+            if (count($best) > 0 && count($best) <= 12) {
+                break;
+            }
+        }
+
+        // AES sometimes returns the full campus catalog when a scope param is ignored.
+        if (count($best) > 15) {
+            return [];
+        }
+
+        usort($best, static fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']));
+
+        return $best;
+    }
+
+    /**
+     * Programme rows under a parent — exclude parent centres (Computer Applications, CSE, …).
+     *
+     * @param list<array{code:string,name:string,short:string,aesId?:string}> $rows
+     * @return list<array{code:string,name:string,short:string,aesId:string}>
+     */
+    private function filterBranchDepartmentRows(array $rows, string $parentAesId): array
+    {
+        $out = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            $aesId = trim((string) ($row['aesId'] ?? ''));
+            if ($aesId !== '' && $aesId === $parentAesId) {
+                continue;
+            }
+            $code = strtoupper(trim((string) ($row['code'] ?? '')));
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name === '' && $code === '') {
+                continue;
+            }
+            if (!DepartmentModel::isStudentAcademicDepartment($code, $name)) {
+                continue;
+            }
+            if (DepartmentModel::isPlacementParentDepartment($code, $name)) {
+                continue;
+            }
+            if ($this->isExcludedPlacementBranchDepartment($code, $name)) {
+                continue;
+            }
+            $key = strtolower($aesId . '|' . $code . '|' . $name);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = [
+                'code'  => $code,
+                'name'  => $name,
+                'short' => trim((string) ($row['short'] ?? $code)),
+                'aesId' => $aesId,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Non-programme AES rows that must not appear in the Branch dropdown (Exam Cell, other dept codes, …).
+     */
+    private function isExcludedPlacementBranchDepartment(string $code, string $name): bool
+    {
+        $code = strtoupper(trim($code));
+        $name = trim($name);
+        $blob = strtoupper($code . ' ' . $name);
+        static $blockCodes = [
+            'AIT', 'EXAMCELL', 'EXAM', 'ADM', 'ADMIN', 'ADMINISTRATION', 'OFFICE', 'LIBRARY', 'HOSTEL',
+        ];
+        if ($code !== '' && in_array($code, $blockCodes, true)) {
+            return true;
+        }
+        if (preg_match('/\bEXAM\s*CELL\b/i', $name) === 1 || preg_match('/\bEXAM\s*CELL\b/i', $code) === 1) {
+            return true;
+        }
+        if (preg_match('/\b(EXAMINATION|EXAM\s*CELL)\b/i', $blob) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -3212,6 +3353,25 @@ final class AesApiService
             }
         }
 
+        try {
+            $fromStudInfo = $this->fetchStudInfoFieldLabels(
+                ['stud_deptcode' => $deptAesId],
+                'stud_course'
+            );
+            if ($fromStudInfo !== []) {
+                return $fromStudInfo;
+            }
+            $fromStudInfo = $this->fetchStudInfoFieldLabels(
+                ['stud_deptcode' => $deptAesId],
+                'stud_cource_short'
+            );
+            if ($fromStudInfo !== []) {
+                return $fromStudInfo;
+            }
+        } catch (\Throwable) {
+            // Caller may fall back to local registry options.
+        }
+
         return [];
     }
 
@@ -3267,10 +3427,17 @@ final class AesApiService
 
         $programmeCode = trim($programmeCode);
         $branch = trim($branch);
+        $cacheKey = 'placement_class_batches_' . md5($deptAesId . '|' . $programmeCode . '|' . $branch);
+        $cached = $this->readSharedListCache($cacheKey, 900);
+        if (is_array($cached) && $cached !== []) {
+            return $cached;
+        }
+
         $courseVariants = $programmeCode !== ''
             ? $this->placementCourseParamVariants($programmeCode)
             : [[]];
 
+        $collected = [];
         foreach ($courseVariants as $courseParams) {
             $params = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
             if ($branch !== '') {
@@ -3279,19 +3446,34 @@ final class AesApiService
 
             $labels = $this->fetchStudInfoFieldLabels($params, 'stud_class', $programmeCode, $branch);
             if ($labels !== []) {
-                return $labels;
+                $collected = array_merge($collected, $labels);
             }
 
             if ($branch !== '') {
                 $withoutBranch = array_merge(['stud_deptcode' => $deptAesId], $courseParams);
                 $labels = $this->fetchStudInfoFieldLabels($withoutBranch, 'stud_class', $programmeCode);
                 if ($labels !== []) {
-                    return $labels;
+                    $collected = array_merge($collected, $labels);
                 }
             }
         }
 
-        return $this->fetchLegacyPlacementClassBatches($deptAesId, $programmeCode, $branch);
+        $collected = array_values(array_unique(array_filter(array_map(
+            static fn (string $v): string => trim($v),
+            $collected
+        ), static fn (string $v): bool => $v !== '')));
+        if ($collected !== []) {
+            $this->writeSharedListCache($cacheKey, $collected);
+
+            return $collected;
+        }
+
+        $legacy = $this->fetchLegacyPlacementClassBatches($deptAesId, $programmeCode, $branch);
+        if ($legacy !== []) {
+            $this->writeSharedListCache($cacheKey, $legacy);
+        }
+
+        return $legacy;
     }
 
     /**

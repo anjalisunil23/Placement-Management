@@ -438,6 +438,24 @@ final class AptitudeController
         Response::success($this->service->submit($user, $id, $answers, $meta), 'Attempt submitted.');
     }
 
+    public function reportMalpractice(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->reportMalpracticeIncident($user, $id, $this->body()));
+    }
+
+    public function acknowledgeMalpractice(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->acknowledgeMalpractice($user, $id, $this->body()));
+    }
+
+    public function malpracticeState(string $id): void
+    {
+        $user = AuthMiddleware::authenticate();
+        Response::success($this->service->malpracticeState($user, $id));
+    }
+
     /** GET /api/aptitude/attempts/{id}/result */
     public function attemptResult(string $id): void
     {

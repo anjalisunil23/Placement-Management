@@ -22,16 +22,20 @@
     line-height:1.35;
   }
   .profile-email-value .profile-email-line + .profile-email-line{margin-top:.2rem}
-  .tab-content .dataTables_wrapper .dataTables_filter input,
-  .tab-content .dataTables_wrapper .dt-search input,
-  .tab-content .dataTables_wrapper .dataTables_length select,
-  .tab-content .dataTables_wrapper .dt-length select{
+  #tabFinalYearPending .dataTables_wrapper .dataTables_filter input,
+  #tabFinalYearPending .dataTables_wrapper .dataTables_length select{
     font-size:.875rem;
   }
-  .tab-content .dataTables_wrapper .dataTables_info,
-  .tab-content .dataTables_wrapper .dt-info,
-  .tab-content .dataTables_wrapper .dataTables_paginate,
-  .tab-content .dataTables_wrapper .dt-paging{
+  #tabFinalYearPending .dataTables_wrapper .dataTables_info,
+  #tabFinalYearPending .dataTables_wrapper .dataTables_paginate{
+    font-size:.8125rem;
+  }
+  #tabAlumni .dataTables_wrapper .dataTables_filter input,
+  #tabAlumni .dataTables_wrapper .dataTables_length select{
+    font-size:.875rem;
+  }
+  #tabAlumni .dataTables_wrapper .dataTables_info,
+  #tabAlumni .dataTables_wrapper .dataTables_paginate{
     font-size:.8125rem;
   }
   #pcaOfferLetterModal .modal-dialog{
@@ -237,8 +241,12 @@
         </div>
         <span class="badge-soft success" id="finalYearRegisteredCount">0</span>
       </div>
+      <div class="search-with-icon mb-3 pb-1">
+        <i class="bi bi-search"></i>
+        <input class="form-control" id="searchFinalYearRegistered" placeholder="Search by name, admission no., department, or batch…" autocomplete="off"/>
+      </div>
       <div class="table-wrap">
-        <table class="table-modern w-100" id="finalYearRegisteredTable">
+        <table class="table-modern">
           <thead>
             <tr>
               <th>Student</th>
@@ -295,7 +303,7 @@
         <span class="badge-soft warning" id="selfPlacementReviewCount">0</span>
       </div>
       <div class="table-wrap mb-0">
-        <table class="table-modern table-sm mb-0 w-100" id="selfPlacementReviewTable">
+        <table class="table-modern table-sm mb-0">
           <thead>
             <tr><th>Student</th><th>Adm. No.</th><th>Company</th><th></th></tr>
           </thead>
@@ -311,8 +319,12 @@
         </div>
         <span class="badge-soft success" id="placedCount">0</span>
       </div>
+      <div class="search-with-icon mb-3 pb-1">
+        <i class="bi bi-search"></i>
+        <input class="form-control" id="searchPlaced" placeholder="Search by name, admission no., department, or company…" autocomplete="off"/>
+      </div>
       <div class="table-wrap">
-        <table class="table-modern w-100" id="placedTable">
+        <table class="table-modern">
           <thead>
             <tr>
               <th>Student</th>
@@ -383,7 +395,7 @@
             <h6 class="fw-bold mb-0">Applications to Campus Drives</h6>
           </div>
           <div class="table-wrap">
-            <table class="table-modern w-100" id="appTable"><thead><tr>
+            <table class="table-modern"><thead><tr>
               <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>Resume</th><th>Stage</th><th>Status</th><th>Applied</th><th>Actions</th>
             </tr></thead><tbody id="appRows"></tbody></table>
           </div>
@@ -418,7 +430,7 @@
             <span class="badge-soft success" id="shortlistedCountLabel">0 Shortlisted</span>
           </div>
           <div class="table-wrap">
-            <table class="table-modern w-100" id="shortlistedTable"><thead><tr>
+            <table class="table-modern"><thead><tr>
               <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>Resume</th><th>Status</th><th>Applied</th>
             </tr></thead><tbody id="shortlistedRows"></tbody></table>
           </div>
@@ -432,7 +444,7 @@
           <div class="col-6 col-md-3"><div class="card-surface stat-card"><div class="lbl">Invalid Format</div><div class="val" id="resumeStatInvalid">0</div></div></div>
         </div>
         <div class="card-surface">
-          <ul class="nav nav-tabs px-3 pt-2" role="tablist" id="resumeSubTabs">
+          <ul class="nav nav-tabs px-3 pt-2" role="tablist">
             <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#resumePending">Pending <span class="badge-soft warning ms-1" id="resumePendingBadge">0</span></a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#resumeApproved">Approved</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#resumeRejected">Rejected</a></li>
@@ -440,22 +452,22 @@
           </ul>
           <div class="tab-content">
             <div class="tab-pane fade show active" id="resumePending">
-              <div class="table-wrap"><table class="table-modern w-100" id="resumePendingTable"><thead><tr>
+              <div class="table-wrap"><table class="table-modern"><thead><tr>
                 <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>File Name</th><th>Format</th><th>Submitted</th><th>Actions</th>
               </tr></thead><tbody id="resumePendingRows"></tbody></table></div>
             </div>
             <div class="tab-pane fade" id="resumeApproved">
-              <div class="table-wrap"><table class="table-modern w-100" id="resumeApprovedTable"><thead><tr>
+              <div class="table-wrap"><table class="table-modern"><thead><tr>
                 <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>File Name</th><th>Format</th><th>Submitted</th>
               </tr></thead><tbody id="resumeApprovedRows"></tbody></table></div>
             </div>
             <div class="tab-pane fade" id="resumeRejected">
-              <div class="table-wrap"><table class="table-modern w-100" id="resumeRejectedTable"><thead><tr>
+              <div class="table-wrap"><table class="table-modern"><thead><tr>
                 <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>File Name</th><th>Format</th><th>Submitted</th>
               </tr></thead><tbody id="resumeRejectedRows"></tbody></table></div>
             </div>
             <div class="tab-pane fade" id="resumeAll">
-              <div class="table-wrap"><table class="table-modern w-100" id="resumeAllTable"><thead><tr>
+              <div class="table-wrap"><table class="table-modern"><thead><tr>
                 <th>Student</th><th>Register No.</th><th>Dept</th><th>Company</th><th>Role</th><th>File Name</th><th>Format</th><th>Status</th><th>Submitted</th><th>Actions</th>
               </tr></thead><tbody id="resumeAllRows"></tbody></table></div>
             </div>
@@ -480,7 +492,7 @@
             <div class="small text-muted-2" id="nonApplicantMeta">Choose an open drive to list eligible non-applicants.</div>
           </div>
           <div class="table-wrap">
-            <table class="table-modern w-100" id="nonApplicantTable">
+            <table class="table-modern">
               <thead>
                 <tr>
                   <th>Student</th>
@@ -516,7 +528,7 @@
             </div>
           </div>
           <div class="table-wrap">
-            <table class="table-modern w-100" id="exTable">
+            <table class="table-modern">
               <thead>
                 <tr>
                   <th>Student</th>
@@ -550,8 +562,12 @@
           <button type="button" class="btn btn-sm btn-primary" id="btnOpenAssignVolunteer"><i class="bi bi-person-plus me-1"></i>Assign representative</button>
         </div>
       </div>
+      <div class="search-with-icon mb-3 pb-1">
+        <i class="bi bi-search"></i>
+        <input class="form-control" id="searchVolunteers" placeholder="Search representatives by name, admission no., or batch…" autocomplete="off"/>
+      </div>
       <div class="table-wrap">
-        <table class="table-modern w-100" id="volunteerTable">
+        <table class="table-modern">
           <thead>
             <tr>
               <th>Student</th>
@@ -619,7 +635,7 @@
             <span class="badge-soft danger" id="blStatCount">0 Active</span>
           </div>
           <div class="table-wrap">
-            <table class="table-modern w-100" id="blTable"><thead><tr><th>Student</th><th>Register No.</th><th>Reason</th><th>Added</th><th></th></tr></thead>
+            <table class="table-modern"><thead><tr><th>Student</th><th>Register No.</th><th>Reason</th><th>Added</th><th></th></tr></thead>
             <tbody id="blRows"></tbody></table>
           </div>
         </div>
@@ -890,7 +906,7 @@
 <script src="js/admin-api.js?v=20261004aessync2"></script>
 <script src="js/officer-api.js?v=20260920pca"></script>
 <script src="js/api.js?v=20260926sync"></script>
-<script src="js/app.js?v=20261001mcqroles"></script>
+<script src="js/app.js?v=20261008phe"></script>
 <script>
 const role = Auth.role();
 const isHodRole = typeof Auth !== 'undefined' && !!Auth.isHod?.();
@@ -1794,11 +1810,11 @@ function renderSelfPlacementReviewPanel() {
   if (countEl) countEl.textContent = String(pending.length);
   if (!pending.length) {
     panel.classList.add('d-none');
-    plainStudentsTable('selfPlacementReviewTable', 'selfPlacementReviewRows', 4, '');
+    rowsEl.innerHTML = '';
     return;
   }
   panel.classList.remove('d-none');
-  const reviewRows = pending.map(s => {
+  rowsEl.innerHTML = pending.map(s => {
     const name = esc(s.displayName || s.name || '—');
     const admno = esc(s.registerNumber || s.admno || '—');
     const company = esc(s.selfPlacement?.companyName || s.placementCompany || '—');
@@ -1813,15 +1829,7 @@ function renderSelfPlacementReviewPanel() {
       <td>${company}</td>
       <td class="text-end">${reviewBtn}</td>
     </tr>`;
-  });
-  mountStudentsDataTable('selfPlacementReviewTable', 'selfPlacementReviewRows', reviewRows, {
-    colspan: 4,
-    actionTargets: [3],
-    order: [[0, 'asc']],
-    searchPlaceholder: 'Search name, adm. no., or company…',
-    emptyTable: 'No placements under review.',
-    zeroRecords: 'No reviews match your search.',
-  });
+  }).join('');
 }
 
 async function loadPendingSelfPlacements(force = false) {
@@ -2397,17 +2405,20 @@ function filteredFinalYearStudents(kind) {
   });
 }
 
-const studentsDataTables = new Map();
+let finalYearPendingDataTable = null;
 
-function studentsDataTableOptions(options = {}) {
-  const actionTargets = options.actionTargets || [];
+function finalYearPendingEmptyMessage() {
+  return role === 'staff'
+    ? 'All students in your class have registered the placement policy.'
+    : 'All listed students have registered the placement policy.';
+}
+
+function finalYearPendingDataTableOptions() {
   return {
     pageLength: 25,
     lengthMenu: [10, 25, 50, 100, 250],
-    order: options.order || [[0, 'asc']],
-    columnDefs: actionTargets.length
-      ? [{ orderable: false, searchable: false, targets: actionTargets }]
-      : [],
+    order: [[1, 'asc']],
+    columnDefs: [{ orderable: false, searchable: false, targets: 4 }],
     layout: {
       topStart: 'pageLength',
       topEnd: 'search',
@@ -2416,117 +2427,85 @@ function studentsDataTableOptions(options = {}) {
     },
     language: {
       search: '',
-      searchPlaceholder: options.searchPlaceholder || 'Search…',
-      emptyTable: options.emptyTable || 'No records.',
-      zeroRecords: options.zeroRecords || 'No records match your search.',
+      searchPlaceholder: 'Search name, adm. no., department, batch…',
+      emptyTable: finalYearPendingEmptyMessage(),
+      zeroRecords: 'No students match your search.',
       lengthMenu: 'Show _MENU_ rows',
     },
   };
 }
 
-function destroyStudentsDataTable(tableId) {
-  const tableEl = document.getElementById(tableId);
-  const api = studentsDataTables.get(tableId);
-  studentsDataTables.delete(tableId);
-  if (typeof DataTable === 'undefined') return;
+function destroyFinalYearPendingDataTable() {
+  const tableEl = document.getElementById('finalYearPendingTable');
+  if (typeof DataTable === 'undefined') {
+    finalYearPendingDataTable = null;
+    return;
+  }
   try {
-    if (api && typeof api.destroy === 'function') api.destroy();
+    if (finalYearPendingDataTable && typeof finalYearPendingDataTable.destroy === 'function') {
+      finalYearPendingDataTable.destroy();
+    }
   } catch (_) { /* ignore */ }
+  finalYearPendingDataTable = null;
   if (!tableEl) return;
   try {
-    if (DataTable.isDataTable(tableEl)) DataTable.api(tableEl).destroy();
+    if (DataTable.isDataTable(tableEl)) {
+      DataTable.api(tableEl).destroy();
+    }
   } catch (_) { /* ignore */ }
 }
 
-function plainStudentsTable(tableId, tbodyId, colspan, message) {
-  destroyStudentsDataTable(tableId);
-  const tbody = document.getElementById(tbodyId);
-  if (tbody) {
-    tbody.innerHTML = `<tr><td colspan="${colspan}" class="text-muted-2 p-4 text-center">${message}</td></tr>`;
-  }
-}
-
-function rowCellsFromHtml(html) {
+function finalYearPendingRowCells(s) {
   const tmp = document.createElement('tbody');
-  tmp.innerHTML = html;
+  tmp.innerHTML = finalYearRowHtml(s, 'pending');
   const tr = tmp.querySelector('tr');
   if (!tr) return null;
   return Array.from(tr.cells).map((td) => td.innerHTML);
 }
 
-function mountStudentsDataTable(tableId, tbodyId, rowHtmlList, options = {}) {
-  const tbody = document.getElementById(tbodyId);
-  const tableEl = document.getElementById(tableId);
-  if (!tbody || !tableEl) return;
-  const rows = rowHtmlList || [];
-  if (!rows.length || typeof DataTable === 'undefined') {
-    plainStudentsTable(tableId, tbodyId, options.colspan || 1, options.emptyTable || 'No records.');
-    if (rows.length && typeof DataTable === 'undefined') tbody.innerHTML = rows.join('');
-    return;
-  }
-  if (DataTable.isDataTable(tableEl)) {
-    const api = studentsDataTables.get(tableId) || DataTable.api(tableEl);
-    api.clear();
-    rows.forEach((html) => {
-      const cells = rowCellsFromHtml(html);
-      if (cells) api.row.add(cells);
-    });
-    api.draw(false);
-    studentsDataTables.set(tableId, api);
-    return;
-  }
-  destroyStudentsDataTable(tableId);
-  tbody.innerHTML = rows.join('');
-  studentsDataTables.set(tableId, new DataTable(tableEl, studentsDataTableOptions(options)));
-}
-
-function adjustVisibleDataTables() {
-  if (typeof DataTable === 'undefined') return;
-  document.querySelectorAll('.tab-pane.active table').forEach((table) => {
-    if (!DataTable.isDataTable(table)) return;
-    try { DataTable.api(table).columns.adjust(); } catch (_) { /* ignore */ }
-  });
-}
-
-function finalYearPendingEmptyMessage() {
-  return role === 'staff'
-    ? 'All students in your class have registered the placement policy.'
-    : 'All listed students have registered the placement policy.';
-}
-
-function destroyFinalYearPendingDataTable() {
-  destroyStudentsDataTable('finalYearPendingTable');
+function setFinalYearPendingPlainTable(html) {
+  destroyFinalYearPendingDataTable();
+  const tbody = document.getElementById('finalYearPendingRows');
+  if (tbody) tbody.innerHTML = html;
 }
 
 function renderFinalYearPendingDataTable(list) {
+  const tbody = document.getElementById('finalYearPendingRows');
+  const tableEl = document.getElementById('finalYearPendingTable');
   const countEl = document.getElementById('finalYearPendingCount');
+  if (!tbody || !tableEl) return;
   if (countEl) countEl.textContent = String(list.length);
+
   if (!finalYearLoaded) {
-    plainStudentsTable('finalYearPendingTable', 'finalYearPendingRows', 5, 'Loading…');
+    setFinalYearPendingPlainTable('<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>');
     return;
   }
   if (!list.length) {
-    plainStudentsTable(
-      'finalYearPendingTable',
-      'finalYearPendingRows',
-      5,
-      finalYearPendingEmptyMessage() + adminFinalYearEmptyHint()
-    );
+    const pendingEmpty = finalYearPendingEmptyMessage() + adminFinalYearEmptyHint();
+    setFinalYearPendingPlainTable(`<tr><td colspan="5" class="text-muted-2 p-4 text-center">${pendingEmpty}</td></tr>`);
     return;
   }
-  mountStudentsDataTable(
-    'finalYearPendingTable',
-    'finalYearPendingRows',
-    list.map((s) => finalYearRowHtml(s, 'pending')),
-    {
-      colspan: 5,
-      actionTargets: [4],
-      order: [[1, 'asc']],
-      searchPlaceholder: 'Search name, adm. no., department, batch…',
-      emptyTable: finalYearPendingEmptyMessage(),
-      zeroRecords: 'No students match your search.',
-    }
-  );
+
+  if (typeof DataTable === 'undefined') {
+    tbody.innerHTML = list.map((s) => finalYearRowHtml(s, 'pending')).join('');
+    return;
+  }
+
+  if (DataTable.isDataTable(tableEl)) {
+    const api = finalYearPendingDataTable || DataTable.api(tableEl);
+    api.clear();
+    list.forEach((s) => {
+      const cells = finalYearPendingRowCells(s);
+      if (cells) api.row.add(cells);
+    });
+    api.draw(false);
+    finalYearPendingDataTable = api;
+    return;
+  }
+
+  destroyFinalYearPendingDataTable();
+  tbody.innerHTML = list.map((s) => finalYearRowHtml(s, 'pending')).join('');
+  finalYearPendingDataTable = new DataTable(tableEl, finalYearPendingDataTableOptions());
 }
 
 let volunteersAll = [];
@@ -2662,8 +2641,23 @@ function filteredVolunteers() {
   });
 }
 
-function volunteerRowHtml(v) {
-  return `<tr>
+function renderVolunteersTab() {
+  const tbody = document.getElementById('volunteerRows');
+  const countEl = document.getElementById('volunteersCount');
+  if (!tbody) return;
+  const list = filteredVolunteers();
+  const colCount = isAdminRole ? 6 : 5;
+  if (countEl) countEl.textContent = String(list.length);
+  if (!volunteersLoaded) {
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-muted-2 p-4 text-center">Loading…</td></tr>`;
+    return;
+  }
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-muted-2 p-4 text-center">No placement representatives assigned yet. Use Assign representative to add students.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map((v) => `
+    <tr>
       <td><strong>${esc(v.name || '—')}</strong>${v.email ? `<div class="small text-muted-2">${esc(v.email)}</div>` : ''}</td>
       <td>${esc(v.registerNumber || '—')}</td>
       ${isAdminRole ? `<td>${esc(v.departmentName || v.departmentCode || '—')}</td>` : ''}
@@ -2674,30 +2668,7 @@ function volunteerRowHtml(v) {
         <button type="button" class="btn btn-sm btn-outline-primary me-1 offer-letter-btn" data-volunteer-id="${esc(v.id)}" data-student-name="${esc(v.name || '')}" title="Edit and publish PCA offer letter"><i class="bi bi-file-earmark-text"></i> Offer letter</button>
         <button type="button" class="btn btn-sm btn-outline-danger remove-volunteer-btn" data-volunteer-id="${esc(v.id)}">Remove</button>
       </td>
-    </tr>`;
-}
-
-function renderVolunteersTab() {
-  const countEl = document.getElementById('volunteersCount');
-  const list = filteredVolunteers();
-  const colCount = isAdminRole ? 6 : 5;
-  if (countEl) countEl.textContent = String(volunteersAll.length);
-  if (!volunteersLoaded) {
-    plainStudentsTable('volunteerTable', 'volunteerRows', colCount, 'Loading…');
-    return;
-  }
-  if (!list.length) {
-    plainStudentsTable('volunteerTable', 'volunteerRows', colCount, 'No placement representatives assigned yet. Use Assign representative to add students.');
-    return;
-  }
-  mountStudentsDataTable('volunteerTable', 'volunteerRows', list.map(volunteerRowHtml), {
-    colspan: colCount,
-    actionTargets: [colCount - 1],
-    order: [[0, 'asc']],
-    searchPlaceholder: 'Search name, adm. no., or batch…',
-    emptyTable: 'No placement representatives assigned yet.',
-    zeroRecords: 'No representatives match your search.',
-  });
+    </tr>`).join('');
 }
 
 async function loadVolunteers(force = false) {
@@ -2707,13 +2678,14 @@ async function loadVolunteers(force = false) {
     renderVolunteersTab();
     return;
   }
-  plainStudentsTable('volunteerTable', 'volunteerRows', colCount, 'Loading placement representatives…');
+  const tbody = document.getElementById('volunteerRows');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-muted-2 p-4 text-center">Loading placement representatives…</td></tr>`;
   const api = volunteerMgmtApi();
   const rows = api?.fetchVolunteers ? await api.fetchVolunteers() : null;
   if (!rows) {
     volunteersAll = [];
     volunteersLoaded = true;
-    plainStudentsTable('volunteerTable', 'volunteerRows', colCount, '<span class="text-danger">Could not load placement representatives.</span>');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="${colCount}" class="text-danger p-4 text-center">Could not load placement representatives.</td></tr>`;
     return;
   }
   volunteersAll = rows;
@@ -2842,33 +2814,26 @@ function renderFinalYearList(kind) {
     renderFinalYearPendingDataTable(filteredFinalYearStudents('pending'));
     return;
   }
+  const tbody = document.getElementById('finalYearRegisteredRows');
   const countEl = document.getElementById('finalYearRegisteredCount');
+  if (!tbody) return;
   const list = filteredFinalYearStudents('registered');
   if (countEl) countEl.textContent = String(list.length);
   if (!finalYearLoaded) {
-    plainStudentsTable('finalYearRegisteredTable', 'finalYearRegisteredRows', 5, 'Loading…');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
     return;
   }
   if (!list.length) {
-    const emptyMsg = role === 'staff'
-      ? 'No students in your class have registered the placement policy yet.'
-      : ('No students have registered the placement policy yet.' + adminFinalYearEmptyHint());
-    plainStudentsTable('finalYearRegisteredTable', 'finalYearRegisteredRows', 5, emptyMsg);
+    const q = document.getElementById('searchFinalYearRegistered')?.value.trim() || '';
+    const emptyMsg = q
+      ? 'No students match your search.'
+      : (role === 'staff'
+        ? 'No students in your class have registered the placement policy yet.'
+        : ('No students have registered the placement policy yet.' + adminFinalYearEmptyHint()));
+    tbody.innerHTML = `<tr><td colspan="5" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
     return;
   }
-  mountStudentsDataTable(
-    'finalYearRegisteredTable',
-    'finalYearRegisteredRows',
-    list.map((s) => finalYearRowHtml(s, 'registered')),
-    {
-      colspan: 5,
-      actionTargets: [4],
-      order: [[1, 'asc']],
-      searchPlaceholder: 'Search name, adm. no., department, batch…',
-      emptyTable: 'No students have registered the placement policy yet.',
-      zeroRecords: 'No students match your search.',
-    }
-  );
+  tbody.innerHTML = list.map((s) => finalYearRowHtml(s, 'registered')).join('');
 }
 
 function renderFinalYearTab() {
@@ -2882,10 +2847,11 @@ async function loadFinalYearStudents(force = false) {
     renderFinalYearTab();
     return;
   }
-  destroyStudentsDataTable('finalYearRegisteredTable');
   destroyFinalYearPendingDataTable();
-  plainStudentsTable('finalYearRegisteredTable', 'finalYearRegisteredRows', 5, 'Loading students list…');
-  plainStudentsTable('finalYearPendingTable', 'finalYearPendingRows', 5, 'Loading students list…');
+  const regBody = document.getElementById('finalYearRegisteredRows');
+  if (regBody) regBody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading students list…</td></tr>';
+  const pendingBody = document.getElementById('finalYearPendingRows');
+  if (pendingBody) pendingBody.innerHTML = '<tr><td colspan="5" class="text-muted-2 p-4 text-center">Loading students list…</td></tr>';
   let rows = null;
   if (role === 'admin' && typeof AdminApi !== 'undefined') {
     rows = await AdminApi.fetchFinalYearStudents();
@@ -2897,8 +2863,11 @@ async function loadFinalYearStudents(force = false) {
   if (!rows) {
     finalYearStudentsAll = [];
     finalYearLoaded = true;
-    plainStudentsTable('finalYearRegisteredTable', 'finalYearRegisteredRows', 5, '<span class="text-danger">Could not load students. Try again.</span>');
-    plainStudentsTable('finalYearPendingTable', 'finalYearPendingRows', 5, '<span class="text-danger">Could not load students. Try again.</span>');
+    destroyFinalYearPendingDataTable();
+    const regErr = document.getElementById('finalYearRegisteredRows');
+    if (regErr) regErr.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load students. Try again.</td></tr>';
+    const pendingErr = document.getElementById('finalYearPendingRows');
+    if (pendingErr) pendingErr.innerHTML = '<tr><td colspan="5" class="text-danger p-4 text-center">Could not load students. Try again.</td></tr>';
     document.getElementById('finalYearRegisteredCount').textContent = '0';
     document.getElementById('finalYearPendingCount').textContent = '0';
     return;
@@ -2950,26 +2919,22 @@ function placedRowHtml(s) {
 }
 
 function renderPlacedTab() {
+  const tbody = document.getElementById('placedRows');
   const countEl = document.getElementById('placedCount');
+  if (!tbody) return;
   const list = filteredPlacedStudents();
   if (countEl) countEl.textContent = String(list.length);
   renderSelfPlacementReviewPanel();
   if (!placedLoaded) {
-    plainStudentsTable('placedTable', 'placedRows', 6, 'Loading…');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
     return;
   }
   if (!list.length) {
-    plainStudentsTable('placedTable', 'placedRows', 6, 'No placed students found.');
+    const q = document.getElementById('searchPlaced')?.value.trim() || '';
+    tbody.innerHTML = `<tr><td colspan="6" class="text-muted-2 p-4 text-center">${q ? 'No placed students match your search.' : 'No placed students found.'}</td></tr>`;
     return;
   }
-  mountStudentsDataTable('placedTable', 'placedRows', list.map(placedRowHtml), {
-    colspan: 6,
-    actionTargets: [5],
-    order: [[0, 'asc']],
-    searchPlaceholder: 'Search name, adm. no., department, or company…',
-    emptyTable: 'No placed students found.',
-    zeroRecords: 'No placed students match your search.',
-  });
+  tbody.innerHTML = list.map(placedRowHtml).join('');
 }
 
 let alumniStudentsAll = [];
@@ -3126,7 +3091,8 @@ async function loadPlacedStudents(force = false) {
     renderPlacedTab();
     return;
   }
-  plainStudentsTable('placedTable', 'placedRows', 6, 'Loading placed students…');
+  const tbody = document.getElementById('placedRows');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading placed students…</td></tr>';
   let rows = null;
   if (role === 'admin' && typeof AdminApi !== 'undefined') {
     rows = await AdminApi.fetchPlacedStudents();
@@ -3138,7 +3104,7 @@ async function loadPlacedStudents(force = false) {
   if (!rows) {
     placedStudentsAll = [];
     placedLoaded = true;
-    plainStudentsTable('placedTable', 'placedRows', 6, '<span class="text-danger">Could not load placed students. Try again.</span>');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-danger p-4 text-center">Could not load placed students. Try again.</td></tr>';
     const countEl = document.getElementById('placedCount');
     if (countEl) countEl.textContent = '0';
     return;
@@ -3413,9 +3379,14 @@ document.getElementById('placedRows')?.addEventListener('click', (e) => {
   openFinalYearStudent(btn.dataset.reg || '').catch(() => {});
 });
 
-document.getElementById('mainTabs')?.addEventListener('shown.bs.tab', () => adjustVisibleDataTables());
-document.getElementById('appSubTabs')?.addEventListener('shown.bs.tab', () => adjustVisibleDataTables());
-document.getElementById('resumeSubTabs')?.addEventListener('shown.bs.tab', () => adjustVisibleDataTables());
+document.getElementById('searchFinalYearRegistered')?.addEventListener('input', () => {
+  clearTimeout(finalYearSearchTimer);
+  finalYearSearchTimer = setTimeout(() => renderFinalYearList('registered'), 160);
+});
+document.getElementById('searchPlaced')?.addEventListener('input', () => {
+  clearTimeout(placedSearchTimer);
+  placedSearchTimer = setTimeout(() => renderPlacedTab(), 160);
+});
 
 document.getElementById('searchStudent')?.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -3664,6 +3635,7 @@ function populateShortlistCompanyFilter() {
 }
 
 function renderShortlistedRows(list) {
+  const rows = document.getElementById('shortlistedRows');
   const badge = document.getElementById('shortlistedTabBadge');
   const label = document.getElementById('shortlistedCountLabel');
   const sub = document.getElementById('shortlistTableSub');
@@ -3681,11 +3653,11 @@ function renderShortlistedRows(list) {
       ? `Showing shortlists for ${company}`
       : 'Students shortlisted from drive applicants';
   }
-  if (!document.getElementById('shortlistedRows')) return;
+  if (!rows) return;
   const emptyMsg = company
     ? `No shortlisted students for ${esc(company)} yet. Shortlist them from Placement Drives.`
     : 'No company shortlists yet. Open a drive → All applicants → Shortlist selected.';
-  const rowHtml = list.map(a => `
+  rows.innerHTML = list.length ? list.map(a => `
     <tr>
       <td class="fw-semibold small">${esc(a.studentName)}</td>
       <td>${esc(a.registerNumber)}</td>
@@ -3695,18 +3667,7 @@ function renderShortlistedRows(list) {
       <td>${resumeCell(a)}</td>
       <td>${appStatusBadge(a.status)}</td>
       <td>${formatDate(a.appliedAt)}</td>
-    </tr>`);
-  if (!rowHtml.length) {
-    plainStudentsTable('shortlistedTable', 'shortlistedRows', 8, emptyMsg);
-    return;
-  }
-  mountStudentsDataTable('shortlistedTable', 'shortlistedRows', rowHtml, {
-    colspan: 8,
-    order: [[0, 'asc']],
-    searchPlaceholder: 'Search name, register no., or company…',
-    emptyTable: emptyMsg,
-    zeroRecords: 'No shortlisted students match your search.',
-  });
+    </tr>`).join('') : `<tr><td colspan="8" class="text-muted-2 p-4">${emptyMsg}</td></tr>`;
 }
 
 function refreshShortlistedPanel() {
@@ -3765,34 +3726,22 @@ function renderApplications() {
   if (shortlistedStat) shortlistedStat.textContent = shortlisted.length;
   document.getElementById('statRejected').textContent = all.filter(a => a.stage === 'rejected' || a.status === 'rejected').length;
 
-  const appRowHtml = all.map(a => `
+  document.getElementById('appRows').innerHTML = all.length ? all.map(a => `
     <tr>
-      <td class="fw-semibold small">${esc(a.studentName)}</td>
-      <td>${esc(a.registerNumber)}</td>
-      <td>${esc(a.department)}</td>
-      <td>${esc(a.company)}</td>
-      <td>${esc(a.role)}</td>
+      <td class="fw-semibold small">${a.studentName}</td>
+      <td>${a.registerNumber}</td>
+      <td>${a.department}</td>
+      <td>${a.company}</td>
+      <td>${a.role}</td>
       <td>${resumeCell(a)}</td>
       <td>${stageBadge(a.stage)}</td>
       <td>${appStatusBadge(a.status)}</td>
       <td>${formatDate(a.appliedAt)}</td>
       <td>${canActApp(a) ? `<div class="d-flex gap-1">
-        <button class="btn btn-sm btn-success" onclick="approveApp('${esc(a.id)}')" title="Approve"><i class="bi bi-check2"></i></button>
-        <button class="btn btn-sm btn-outline-danger" onclick="rejectApp('${esc(a.id)}')" title="Reject"><i class="bi bi-x"></i></button>
+        <button class="btn btn-sm btn-success" onclick="approveApp('${a.id}')" title="Approve"><i class="bi bi-check2"></i></button>
+        <button class="btn btn-sm btn-outline-danger" onclick="rejectApp('${a.id}')" title="Reject"><i class="bi bi-x"></i></button>
       </div>` : '<span class="small text-muted-2">—</span>'}</td>
-    </tr>`);
-  if (!appRowHtml.length) {
-    plainStudentsTable('appTable', 'appRows', 10, 'No drive applications in the pipeline yet.');
-  } else {
-    mountStudentsDataTable('appTable', 'appRows', appRowHtml, {
-      colspan: 10,
-      actionTargets: [9],
-      order: [[0, 'asc']],
-      searchPlaceholder: 'Search name, register no., or company…',
-      emptyTable: 'No drive applications in the pipeline yet.',
-      zeroRecords: 'No applications match your search.',
-    });
-  }
+    </tr>`).join('') : '<tr><td colspan="10" class="text-muted-2 p-4">No drive applications in the pipeline yet.</td></tr>';
 
   refreshShortlistedPanel();
 }
@@ -3861,12 +3810,13 @@ let nonApplicantCache = { driveId: '', students: [] };
 let nonApplicantsWired = false;
 
 function renderNonApplicantRows(list) {
-  if (!document.getElementById('nonApplicantRows')) return;
+  const rowsEl = document.getElementById('nonApplicantRows');
+  if (!rowsEl) return;
   if (!list.length) {
-    plainStudentsTable('nonApplicantTable', 'nonApplicantRows', 6, 'No eligible students pending application for this drive.');
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">No eligible students pending application for this drive.</td></tr>';
     return;
   }
-  const rowHtml = list.map((s) => {
+  rowsEl.innerHTML = list.map((s) => {
     const cgpa = Number(s.cgpa);
     const cgpaLabel = Number.isFinite(cgpa) && cgpa > 0 ? cgpa.toFixed(cgpa % 1 ? 2 : 1) : '—';
     const resume = s.hasResume
@@ -3880,14 +3830,7 @@ function renderNonApplicantRows(list) {
       <td>${resume}</td>
       <td>${Number(s.chancesRemaining) || 0}</td>
     </tr>`;
-  });
-  mountStudentsDataTable('nonApplicantTable', 'nonApplicantRows', rowHtml, {
-    colspan: 6,
-    order: [[0, 'asc']],
-    searchPlaceholder: 'Search name, register no., or department…',
-    emptyTable: 'No eligible students pending application for this drive.',
-    zeroRecords: 'No students match your search.',
-  });
+  }).join('');
 }
 
 async function loadNonApplicants(driveId) {
@@ -3900,17 +3843,17 @@ async function loadNonApplicants(driveId) {
     nonApplicantCache = { driveId: '', students: [] };
     if (countEl) countEl.textContent = '0 Pending';
     if (metaEl) metaEl.textContent = 'Choose an open drive to list eligible non-applicants.';
-    plainStudentsTable('nonApplicantTable', 'nonApplicantRows', 6, 'Select a Drive to load students.');
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Select a Drive to load students.</td></tr>';
     return;
   }
 
-  plainStudentsTable('nonApplicantTable', 'nonApplicantRows', 6, 'Loading eligible non-applicants…');
+  rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Loading eligible non-applicants…</td></tr>';
 
   const data = typeof OfficerApi !== 'undefined' && OfficerApi.fetchNonApplicants
     ? await OfficerApi.fetchNonApplicants(driveId)
     : null;
   if (!data) {
-    plainStudentsTable('nonApplicantTable', 'nonApplicantRows', 6, 'Could not load non-applicants. Try again.');
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Could not load non-applicants. Try again.</td></tr>';
     if (countEl) countEl.textContent = '—';
     if (metaEl) metaEl.textContent = 'Request failed.';
     return;
@@ -3940,7 +3883,7 @@ async function initNonApplicants() {
 
   if (!(Auth.hasRealAuth() && !Auth.isDemo())) {
     driveSelect.innerHTML = '<option value="">Sign in to load drives</option>';
-    plainStudentsTable('nonApplicantTable', 'nonApplicantRows', 6, 'Sign in to track eligible students who have not applied.');
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Sign in to track eligible students who have not applied.</td></tr>';
     return;
   }
 
@@ -3987,24 +3930,25 @@ async function loadOpenDrivesIntoSelect(selectEl) {
 }
 
 async function loadDriveExceptions(driveId) {
-  if (!document.getElementById('exRows')) return;
+  const rowsEl = document.getElementById('exRows');
+  if (!rowsEl) return;
   if (!driveId) {
-    plainStudentsTable('exTable', 'exRows', 6, 'Select a drive to view open exceptions.');
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Select a drive to view open exceptions.</td></tr>';
     return;
   }
-  plainStudentsTable('exTable', 'exRows', 6, 'Loading…');
+  rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Loading…</td></tr>';
   const rows = typeof OfficerApi !== 'undefined' && OfficerApi.fetchDriveExceptions
     ? await OfficerApi.fetchDriveExceptions(driveId)
     : null;
   if (!rows) {
-    plainStudentsTable('exTable', 'exRows', 6, 'Could not load exceptions.');
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">Could not load exceptions.</td></tr>';
     return;
   }
   if (!rows.length) {
-    plainStudentsTable('exTable', 'exRows', 6, 'No active exceptions for this drive.');
+    rowsEl.innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4">No active exceptions for this drive.</td></tr>';
     return;
   }
-  mountStudentsDataTable('exTable', 'exRows', rows.map((r) => {
+  rowsEl.innerHTML = rows.map((r) => {
     const opened = r.grantedAt ? String(r.grantedAt).slice(0, 10) : '—';
     return `<tr>
       <td><strong>${esc(r.studentName || '—')}</strong></td>
@@ -4014,14 +3958,7 @@ async function loadDriveExceptions(driveId) {
       <td class="small">${esc(opened)}</td>
       <td><button type="button" class="btn btn-sm btn-outline-danger ex-revoke" data-id="${esc(r.id)}">Revoke</button></td>
     </tr>`;
-  }), {
-    colspan: 6,
-    actionTargets: [5],
-    order: [[0, 'asc']],
-    searchPlaceholder: 'Search name, admission no., or drive…',
-    emptyTable: 'No active exceptions for this drive.',
-    zeroRecords: 'No exceptions match your search.',
-  });
+  }).join('');
 }
 
 async function initDriveExceptions() {
@@ -4090,27 +4027,10 @@ async function initDriveExceptions() {
 }
 
 function renderResumeTable(id, list, showActions, showStatus) {
-  const tableIds = {
-    resumePendingRows: 'resumePendingTable',
-    resumeApprovedRows: 'resumeApprovedTable',
-    resumeRejectedRows: 'resumeRejectedTable',
-    resumeAllRows: 'resumeAllTable',
-  };
-  const tableId = tableIds[id];
-  const cols = showStatus ? 10 : (showActions ? 9 : 8);
-  const rowHtml = list.map(r => `<tr>${resumeRowCells(r, showActions, showStatus)}</tr>`);
-  if (!tableId || !rowHtml.length) {
-    if (tableId) plainStudentsTable(tableId, id, cols, 'No resumes in this queue.');
-    return;
-  }
-  mountStudentsDataTable(tableId, id, rowHtml, {
-    colspan: cols,
-    actionTargets: showActions ? [cols - 1] : [],
-    order: [[0, 'asc']],
-    searchPlaceholder: 'Search name, register no., or company…',
-    emptyTable: 'No resumes in this queue.',
-    zeroRecords: 'No resumes match your search.',
-  });
+  const cols = showStatus ? 10 : 9;
+  document.getElementById(id).innerHTML = list.length
+    ? list.map(r => `<tr>${resumeRowCells(r, showActions, showStatus)}</tr>`).join('')
+    : `<tr><td colspan="${cols}" class="text-muted-2 p-4">No resumes in this queue.</td></tr>`;
 }
 
 function renderResumes() {
@@ -4154,26 +4074,14 @@ function renderBlacklist() {
   if (!canManageBlacklist) return;
   const list = activeBlacklist();
   document.getElementById('blStatCount').textContent = list.length + ' Active';
-  const rowHtml = list.map(b => `
+  document.getElementById('blRows').innerHTML = list.length ? list.map(b => `
     <tr>
-      <td><strong>${esc(b.studentName)}</strong></td>
-      <td>${esc(b.registerNumber)}</td>
-      <td class="small">${esc(b.reason || '—')}</td>
+      <td><strong>${b.studentName}</strong></td>
+      <td>${b.registerNumber}</td>
+      <td class="small">${b.reason || '—'}</td>
       <td>${b.addedAt ? formatDate(b.addedAt) : '—'}</td>
-      <td><button class="btn btn-sm btn-outline-secondary" onclick="removeBlacklistEntry('${esc(b.id)}')"><i class="bi bi-x-lg me-1"></i>Remove</button></td>
-    </tr>`);
-  if (!rowHtml.length) {
-    plainStudentsTable('blTable', 'blRows', 5, 'No blacklisted students.');
-    return;
-  }
-  mountStudentsDataTable('blTable', 'blRows', rowHtml, {
-    colspan: 5,
-    actionTargets: [4],
-    order: [[0, 'asc']],
-    searchPlaceholder: 'Search name, register no., or reason…',
-    emptyTable: 'No blacklisted students.',
-    zeroRecords: 'No blacklisted students match your search.',
-  });
+      <td><button class="btn btn-sm btn-outline-secondary" onclick="removeBlacklistEntry('${b.id}')"><i class="bi bi-x-lg me-1"></i>Remove</button></td>
+    </tr>`).join('') : '<tr><td colspan="5" class="text-muted-2 p-4">No blacklisted students.</td></tr>';
 }
 
 document.getElementById('blacklistForm')?.addEventListener('submit', async e => {
@@ -4351,6 +4259,10 @@ onAppReady(async () => {
     }
   });
   document.getElementById('btnOpenAssignVolunteer')?.addEventListener('click', () => openAssignVolunteerModal());
+  document.getElementById('searchVolunteers')?.addEventListener('input', () => {
+    clearTimeout(volunteerSearchTimer);
+    volunteerSearchTimer = setTimeout(() => renderVolunteersTab(), 150);
+  });
   document.getElementById('assignVolunteerSearch')?.addEventListener('input', () => renderAssignVolunteerPicker());
   document.getElementById('volunteerRows')?.addEventListener('click', (e) => {
     const offerBtn = e.target.closest('.offer-letter-btn');

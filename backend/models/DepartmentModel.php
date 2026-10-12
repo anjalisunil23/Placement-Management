@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Models;
 
 use PMS\Schemas\Collections;
+use PMS\Services\DepartmentProgrammeCatalog;
 
 class DepartmentModel extends BaseModel
 {
@@ -51,6 +52,12 @@ class DepartmentModel extends BaseModel
     {
         $code = strtoupper(trim($code));
         $name = strtoupper(trim($name));
+        if ($code !== '' && preg_match('/^\d+$/', $code) === 1) {
+            $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? '');
+        }
+        if ($code === '' && $name !== '') {
+            $code = strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? '');
+        }
         if ($code === '' || preg_match('/^\d+$/', $code) === 1) {
             return false;
         }
@@ -78,5 +85,49 @@ class DepartmentModel extends BaseModel
         }
 
         return true;
+    }
+
+    /** Parent academic unit from AES getDepartments — excludes programme rows like BCA / BT. */
+    public static function isPlacementParentDepartment(string $code, string $name = ''): bool
+    {
+        if (!self::isStudentAcademicDepartment($code, $name)) {
+            return false;
+        }
+
+        return !DepartmentProgrammeCatalog::isProgrammeBranchDepartmentRow($code, $name);
+    }
+
+    /**
+     * Dropdown label/code for placement filters (handles AES numeric codes).
+     *
+     * @param array<string, mixed> $dept
+     * @return array{id:string,code:string,name:string}|null
+     */
+    public static function toPlacementFilterOption(array $dept): ?array
+    {
+        $name = trim((string) ($dept['name'] ?? ''));
+        if ($name === '') {
+            return null;
+        }
+        $rawCode = strtoupper(trim((string) ($dept['code'] ?? '')));
+        if (!self::isPlacementParentDepartment($rawCode, $name)) {
+            return null;
+        }
+        $id = trim((string) ($dept['_id'] ?? $dept['id'] ?? ''));
+        if ($id === '') {
+            return null;
+        }
+        $displayCode = $rawCode !== '' && preg_match('/^\d+$/', $rawCode) !== 1
+            ? $rawCode
+            : strtoupper(preg_replace('/[^A-Z0-9]/', '', $name) ?? '');
+        if ($displayCode === '') {
+            $displayCode = 'DEPT';
+        }
+
+        return [
+            'id'   => $id,
+            'code' => $displayCode,
+            'name' => $name,
+        ];
     }
 }

@@ -385,15 +385,28 @@ final class StaffController
         ];
         $filterCtx = $registrySvc->placementFilterContext($ctx, $filterPayload);
         $svc = new PlacementFilterService();
+        $departmentSelected = $departmentId !== '';
+        $lite = filter_var($_GET['lite'] ?? '0', FILTER_VALIDATE_BOOLEAN);
+        if ($lite) {
+            $payload = [];
+            if ($program !== '') {
+                $payload['batches'] = $svc->fetchBatchOptions($filterCtx, $program, $branch, false);
+            } elseif ($departmentSelected) {
+                $payload['programs'] = $svc->fetchProgramOptions($filterCtx);
+            }
+            Response::success(DocumentHelper::jsonSafe($payload));
+
+            return;
+        }
         $assigned = StaffContext::assignedClassBatches($filterCtx);
         if ($assigned === [] && $this->staffPlacementRefreshCtFromAesEnabled()) {
             $assigned = (new StaffService())->refreshAssignedClassBatchesFromAes($ctx);
         }
         Response::success(DocumentHelper::jsonSafe([
             'departments' => $registrySvc->departmentFilterOptions(),
-            'programs' => $svc->fetchProgramOptions($filterCtx),
+            'programs' => $departmentSelected ? $svc->fetchProgramOptions($filterCtx) : [],
             'branches' => $program !== '' ? $svc->fetchBranchOptions($filterCtx, $program) : [],
-            'batches'  => $svc->fetchBatchOptions($filterCtx, $program, $branch, false),
+            'batches'  => $program !== '' ? $svc->fetchBatchOptions($filterCtx, $program, $branch, false) : [],
             'assignedClassBatches' => $assigned,
             'scope'    => $registrySvc->resolvedRegistryScope($ctx, $filterPayload),
         ]));
@@ -501,6 +514,60 @@ final class StaffController
         Response::success(DocumentHelper::jsonSafe(
             (new StaffPlacementRegistryService())->updatePlacement($ctx, $studentId, $input)
         ), 'Placement details updated.');
+    }
+
+    /** DELETE /api/staff/students/{id}/placement */
+    public function deleteStudentPlacement(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->deletePlacement($ctx, $studentId)
+        ), 'Placement details deleted.');
+    }
+
+    /** POST /api/staff/students/{id}/placement/entries */
+    public function addStudentPlacementEntry(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        if (!is_array($input)) {
+            $input = [];
+        }
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->addPlacementEntry($ctx, $studentId, $input)
+        ), 'Placement entry added.');
+    }
+
+    /** GET /api/staff/students/{id}/placement/entries */
+    public function listStudentPlacementEntries(string $studentId): void
+    {
+        RBACMiddleware::requireStaff();
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->listPlacementEntries($studentId)
+        ));
+    }
+
+    /** POST /api/staff/students/{id}/placement/offer-letter */
+    public function uploadPlacementOfferLetter(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        Response::success(DocumentHelper::jsonSafe(
+            (new StaffPlacementRegistryService())->uploadOfferLetter($ctx, $studentId)
+        ), 'Offer letter uploaded.');
+    }
+
+    /** GET /api/staff/students/{id}/placement/offer-letter */
+    public function downloadPlacementOfferLetter(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        (new StaffPlacementRegistryService())->downloadOfferLetter($ctx, $studentId);
     }
 
     /** POST /api/staff/students/{id}/placement/documents */

@@ -258,20 +258,61 @@ const StaffApi = {
     if (params.program) qs.set('program', params.program);
     if (params.branch) qs.set('branch', params.branch);
     qs.set('studRole', params.studRole || 'all');
+    const lite = params.lite === true || params.lite === 1 || params.lite === '1';
+    if (lite) qs.set('lite', '1');
     const q = qs.toString();
-    const cacheKey = 'ph_staff_placement_filters_' + q;
+    const cacheKey = lite
+      ? ('ph_staff_placement_filters_lite_v1_' + q)
+      : ('ph_staff_placement_filters_v5_' + q);
+    const cacheTtl = lite && String(params.program || '').trim() ? 600000 : 300000;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed && parsed._at && (Date.now() - parsed._at) < 300000 && parsed.data) {
-          return parsed.data;
+        if (lite) {
+          const programScoped = !!String(params.program || '').trim();
+          const batches = parsed?.data?.batches;
+          const programs = parsed?.data?.programs;
+          const ok = programScoped
+            ? Array.isArray(batches)
+            : Array.isArray(programs);
+          if (parsed && parsed._at && (Date.now() - parsed._at) < cacheTtl && parsed.data && ok) {
+            return parsed.data;
+          }
+        } else {
+          const depts = parsed?.data?.departments;
+          const deptOk = Array.isArray(depts) && depts.length > 0;
+          const deptScoped = !!String(params.departmentId || '').trim();
+          const programScoped = !!String(params.program || '').trim();
+          const programs = parsed?.data?.programs;
+          const programsOk = !deptScoped || Array.isArray(programs);
+          const batches = parsed?.data?.batches;
+          const batchesOk = !programScoped || Array.isArray(batches);
+          if (parsed && parsed._at && (Date.now() - parsed._at) < cacheTtl && parsed.data && deptOk && programsOk && batchesOk) {
+            return parsed.data;
+          }
         }
       }
     } catch (_) { /* ignore */ }
     const res = await api('/staff/placement-filters' + (q ? `?${q}` : ''));
     const data = res.success && res.data ? res.data : null;
-    if (data) {
+    if (lite) {
+      const programScoped = !!String(params.program || '').trim();
+      const ok = programScoped
+        ? Array.isArray(data?.batches)
+        : Array.isArray(data?.programs);
+      if (data && ok) {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
+        } catch (_) { /* ignore */ }
+      }
+      return data;
+    }
+    const deptScoped = !!String(params.departmentId || '').trim();
+    const programScoped = !!String(params.program || '').trim();
+    const programsOk = !deptScoped || Array.isArray(data?.programs);
+    const batchesOk = !programScoped || Array.isArray(data?.batches);
+    if (data && Array.isArray(data.departments) && data.departments.length && programsOk && batchesOk) {
       try {
         sessionStorage.setItem(cacheKey, JSON.stringify({ _at: Date.now(), data }));
       } catch (_) { /* ignore */ }
@@ -303,7 +344,7 @@ const StaffApi = {
     qs.set('studRole', params.studRole || 'all');
     qs.set('omitFilters', params.omitFilters !== false ? '1' : '0');
     const q = qs.toString();
-    const cacheKey = 'ph_staff_placements_v9_' + q;
+    const cacheKey = 'ph_staff_placements_v24_' + q;
     try {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
@@ -346,6 +387,32 @@ const StaffApi = {
       body,
     });
     return res;
+  },
+
+  async deleteStudentPlacement(studentId, entryId) {
+    if (typeof StaffApi.clearPlacementsCache === 'function') StaffApi.clearPlacementsCache();
+    const query = entryId ? `?entryId=${encodeURIComponent(entryId)}` : '';
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement${query}`, { method: 'DELETE' });
+  },
+
+  async addPlacementEntry(studentId, body) {
+    if (typeof StaffApi.clearPlacementsCache === 'function') StaffApi.clearPlacementsCache();
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement/entries`, {
+      method: 'POST',
+      body,
+    });
+  },
+
+  async listPlacementEntries(studentId) {
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement/entries`);
+  },
+
+  async uploadPlacementOfferLetter(studentId, formData) {
+    if (typeof StaffApi.clearPlacementsCache === 'function') StaffApi.clearPlacementsCache();
+    return api(`/staff/students/${encodeURIComponent(studentId)}/placement/offer-letter`, {
+      method: 'POST',
+      body: formData,
+    });
   },
 
   async updateStudentProfile(studentId, body) {
