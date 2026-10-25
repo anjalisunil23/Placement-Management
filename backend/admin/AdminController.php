@@ -2325,6 +2325,26 @@ final class AdminController
         Response::success($saved, 'System settings saved.');
     }
 
+    /** PUT /api/admin/settings/nav-sections — show or hide Practice and Autonomous MCQ in every sidebar */
+    public function updateNavSections(): void
+    {
+        RBACMiddleware::requireAdmin();
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $current = (new SystemSettingsModel())->get();
+        $saved = (new SystemSettingsModel())->save([
+            'practiceNavEnabled' => array_key_exists('practice', $input)
+                ? (bool) $input['practice']
+                : (bool) ($current['practiceNavEnabled'] ?? true),
+            'autonomousMcqNavEnabled' => array_key_exists('autonomousMcq', $input)
+                ? (bool) $input['autonomousMcq']
+                : (bool) ($current['autonomousMcqNavEnabled'] ?? true),
+        ]);
+        Response::success([
+            'practice' => (bool) ($saved['practiceNavEnabled'] ?? true),
+            'autonomousMcq' => (bool) ($saved['autonomousMcqNavEnabled'] ?? true),
+        ], 'Sidebar sections updated.');
+    }
+
     /** GET /api/admin/mail/status */
     public function mailStatus(): void
     {

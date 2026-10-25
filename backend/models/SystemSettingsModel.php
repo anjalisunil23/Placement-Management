@@ -31,8 +31,13 @@ class SystemSettingsModel extends BaseModel
      */
     public function save(array $data): array
     {
-        $allowed = ['placementYear', 'emailFrom', 'maxUploadMb', 'smtpEnabled', 'notifyOnApproval', 'elasticEmailApiKey'];
+        $allowed = ['placementYear', 'emailFrom', 'maxUploadMb', 'smtpEnabled', 'notifyOnApproval', 'elasticEmailApiKey', 'practiceNavEnabled', 'autonomousMcqNavEnabled'];
         $update = array_intersect_key($data, array_flip($allowed));
+        foreach (['practiceNavEnabled', 'autonomousMcqNavEnabled'] as $flag) {
+            if (array_key_exists($flag, $update)) {
+                $update[$flag] = self::boolFlag($update[$flag], true);
+            }
+        }
 
         // Keep existing secret when client sends blank / masked value.
         if (array_key_exists('elasticEmailApiKey', $update)) {
@@ -71,6 +76,8 @@ class SystemSettingsModel extends BaseModel
             'smtpEnabled'         => true,
             'notifyOnApproval'    => true,
             'elasticEmailApiKey'  => '',
+            'practiceNavEnabled'  => true,
+            'autonomousMcqNavEnabled' => true,
         ];
         foreach ($defaults as $key => $value) {
             if (!array_key_exists($key, $doc)) {
@@ -93,6 +100,8 @@ class SystemSettingsModel extends BaseModel
             'maxUploadMb'      => 10,
             'smtpEnabled'      => true,
             'notifyOnApproval' => true,
+            'practiceNavEnabled' => true,
+            'autonomousMcqNavEnabled' => true,
         ];
 
         foreach ($defaults as $key => $value) {
@@ -107,8 +116,31 @@ class SystemSettingsModel extends BaseModel
             ? ('••••••••' . substr($rawKey, -4))
             : '';
 
+        $doc['practiceNavEnabled'] = self::boolFlag($doc['practiceNavEnabled'] ?? true, true);
+        $doc['autonomousMcqNavEnabled'] = self::boolFlag($doc['autonomousMcqNavEnabled'] ?? true, true);
+
         unset($doc['_id'], $doc['key'], $doc['createdAt'], $doc['updatedAt']);
 
         return $doc;
+    }
+
+    private static function boolFlag(mixed $value, bool $default): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_int($value) || is_float($value)) {
+            return ((int) $value) !== 0;
+        }
+        if (is_string($value)) {
+            $v = strtolower(trim($value));
+            if (in_array($v, ['1', 'true', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($v, ['0', 'false', 'no', 'off', ''], true)) {
+                return $v === '' ? $default : false;
+            }
+        }
+        return $default;
     }
 }

@@ -223,6 +223,16 @@ final class PublicController
         Response::success(DocumentHelper::jsonSafe($service->getPublicStats()));
     }
 
+    /** GET /api/public/nav-sections — sidebar visibility for Practice and Autonomous MCQ */
+    public function navSections(): void
+    {
+        $system = (new SystemSettingsModel())->get();
+        Response::success([
+            'practice' => (bool) ($system['practiceNavEnabled'] ?? true),
+            'autonomousMcq' => (bool) ($system['autonomousMcqNavEnabled'] ?? true),
+        ]);
+    }
+
     /** GET /api/public/site-content — landing page stats + news (no auth) */
     public function siteContent(): void
     {

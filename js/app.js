@@ -412,8 +412,52 @@ function navItemHidden(n) {
   return href === 'departments.html' || href.includes('departments') || label === 'Departments';
 }
 
+const NAV_SECTIONS_KEY = 'ph-nav-sections';
+let navSections = { practice: true, autonomousMcq: true };
+try {
+  const stored = JSON.parse(localStorage.getItem(NAV_SECTIONS_KEY) || 'null');
+  if (stored && typeof stored === 'object') {
+    navSections = {
+      practice: stored.practice !== false,
+      autonomousMcq: stored.autonomousMcq !== false,
+    };
+  }
+} catch (_) { /* keep both sections visible until settings load */ }
+
+function navSectionAllowed(n) {
+  const group = String(n?.group || '');
+  const href = String(n?.href || '').split('#')[0];
+  if (group === 'mock' || group === 'mock-aptitude' || group === 'mock-coding' || group === 'certifications' || group === 'tutorials') {
+    return navSections.practice !== false;
+  }
+  if (href === 'staff-courses.html' || href === 'autonomous-mcq.html') {
+    return navSections.autonomousMcq !== false;
+  }
+  return true;
+}
+
+function applyNavSections(flags) {
+  navSections = {
+    practice: !flags || flags.practice !== false,
+    autonomousMcq: !flags || flags.autonomousMcq !== false,
+  };
+  try { localStorage.setItem(NAV_SECTIONS_KEY, JSON.stringify(navSections)); } catch (_) { /* ignore */ }
+  if (document.getElementById('sidebar') && document.body?.dataset?.page) {
+    renderShell(shellActivePage());
+  }
+}
+
+async function refreshNavSections() {
+  if (typeof api !== 'function') return;
+  try {
+    const res = await api('/public/nav-sections', { skipAuthRedirect: true });
+    if (res?.success && res.data) applyNavSections(res.data);
+  } catch (_) { /* keep the last known sidebar visibility */ }
+}
+
 function navItemVisible(n, role) {
   if (navItemHidden(n)) return false;
+  if (!navSectionAllowed(n)) return false;
   if (n.staffSyllabus) {
     return role === 'admin' || role === 'placement_officer' || role === 'staff';
   }
@@ -973,6 +1017,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Cold path: first paint here. Warm path: refresh shell after /auth/me or soft boot.
   paintShell();
   revealApp();
+  refreshNavSections();
 
   if (Auth.hasRealAuth() && pageBase !== 'settings.html' && pageBase !== 'placement-registration.html') {
     const enrichOpts = {};
