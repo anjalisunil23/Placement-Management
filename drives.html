@@ -357,7 +357,7 @@
         <div class="col-12">
           <label class="form-label small fw-semibold">Eligible departments</label>
           <div class="border rounded p-2" id="editDriveDepartments" style="max-height:12rem;overflow:auto"></div>
-          <div class="form-text">Tick one or more departments. Use Select all for every department.</div>
+          <div class="form-text">Tick a department to choose its branches. Select all includes every branch.</div>
           <select class="d-none" id="editDriveBranches" multiple aria-hidden="true"></select>
         </div>
 
@@ -615,7 +615,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261027driveopt"></script>
+<script src="js/api.js?v=20261027branches"></script>
 <script src="js/app.js?v=20261025navsec"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -2613,13 +2613,15 @@ function updateCreateDriveBranchesHint() {
       : 'Select “Select departments” to choose one or more departments.';
     return;
   }
-  const parents = selectedDepartmentParents(document.getElementById('createDriveDepartments'));
-  if (!parents.length) {
-    hint.textContent = 'Tick at least one department.';
+  const box = document.getElementById('createDriveDepartments');
+  const parents = selectedDepartmentParents(box);
+  const codes = programmeCodesFromDepartmentCheckboxes(box);
+  if (!codes.length) {
+    hint.textContent = 'Tick a department, then choose its branches.';
   } else if (parents.length === 1) {
-    hint.textContent = `Open to ${parents[0]} only.`;
+    hint.textContent = `Open to ${parents[0]}: ${codes.join(', ')}.`;
   } else {
-    hint.textContent = `Open to ${parents.length} departments: ${parents.join(', ')}.`;
+    hint.textContent = `Open to ${codes.length} branches in ${parents.length} departments.`;
   }
 }
 

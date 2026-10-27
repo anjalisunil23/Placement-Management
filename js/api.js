@@ -3566,53 +3566,107 @@ function renderEligibleDepartmentCheckboxes(container, { selectedParents = null,
       .map(c => resolveCollegeProgrammeCode(c) || String(c).trim().toUpperCase())
       .filter(Boolean)
   );
+  const useCodes = codeSet.size > 0;
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
   const uid = `deptchk-${Math.random().toString(36).slice(2, 8)}`;
   const rows = groups.map((group, idx) => {
     const codes = group.programmes || [];
-    const checked = [...parentSet].some(p => departmentNamesMatch(p, group.parent))
-      || (codeSet.size > 0 && codes.some(c => codeSet.has(c)));
-    const id = `${uid}-${idx}`;
-    const parentAttr = String(group.parent).replace(/"/g, '&quot;');
-    const value = codes.join('|').replace(/"/g, '&quot;');
-    const label = codes.length ? `${group.parent} (${codes.join(', ')})` : group.parent;
-    return { id, parentAttr, value, label, checked };
+    const parentOn = [...parentSet].some(p => departmentNamesMatch(p, group.parent));
+    const branches = codes.map((code, branchIdx) => {
+      const normalized = resolveCollegeProgrammeCode(code) || String(code).trim().toUpperCase();
+      const checked = useCodes ? codeSet.has(normalized) : parentOn;
+      const label = resolveCollegeProgrammeLabel(normalized) || normalized;
+      return {
+        id: `${uid}-${idx}-b${branchIdx}`,
+        code: normalized,
+        label,
+        checked,
+      };
+    }).filter(b => b.code);
+    const checkedCount = branches.filter(b => b.checked).length;
+    return {
+      id: `${uid}-${idx}`,
+      parent: group.parent,
+      branches,
+      checkedCount,
+    };
   });
-  const allChecked = rows.length > 0 && rows.every(g => g.checked);
+  const branchTotal = rows.reduce((n, g) => n + g.branches.length, 0);
+  const branchOn = rows.reduce((n, g) => n + g.checkedCount, 0);
+  const allChecked = branchTotal > 0 && branchOn === branchTotal;
   container.innerHTML = rows.length
     ? [
       `<div class="form-check border-bottom pb-2 mb-2">
         <input class="form-check-input drive-dept-select-all" type="checkbox" id="${uid}-all"${allChecked ? ' checked' : ''}>
         <label class="form-check-label fw-semibold" for="${uid}-all">Select all</label>
       </div>`,
-      ...rows.map(g =>
-        `<div class="form-check">
-          <input class="form-check-input drive-dept-check" type="checkbox" name="driveDepartments" value="${g.value}" data-parent="${g.parentAttr}" id="${g.id}"${g.checked ? ' checked' : ''}>
-          <label class="form-check-label small" for="${g.id}">${g.label.replace(/</g, '&lt;')}</label>
-        </div>`
-      ),
+      ...rows.map(g => {
+        const parentAttr = esc(g.parent);
+        const showBranches = g.checkedCount > 0;
+        const branchHtml = g.branches.map(b =>
+          `<div class="form-check form-check-inline me-2 mb-1">
+            <input class="form-check-input drive-branch-check" type="checkbox" value="${esc(b.code)}" data-parent="${parentAttr}" id="${b.id}"${b.checked ? ' checked' : ''}>
+            <label class="form-check-label small" for="${b.id}">${esc(b.label)}</label>
+          </div>`
+        ).join('');
+        return `<div class="drive-dept-group mb-2">
+          <div class="form-check mb-1">
+            <input class="form-check-input drive-dept-check" type="checkbox" data-parent="${parentAttr}" id="${g.id}">
+            <label class="form-check-label small" for="${g.id}">${esc(g.parent)}</label>
+          </div>
+          <div class="drive-branch-list ps-4 ms-1 border-start${showBranches ? '' : ' d-none'}">${branchHtml}</div>
+        </div>`;
+      }),
     ].join('')
     : '<span class="small text-muted-2">No departments returned from the server. Refresh and try again.</span>';
 
   const selectAll = container.querySelector('.drive-dept-select-all');
-  const checks = () => [...container.querySelectorAll('.drive-dept-check')];
+  const groupsEls = () => [...container.querySelectorAll('.drive-dept-group')];
+  const syncGroup = (group) => {
+    const dept = group.querySelector('.drive-dept-check');
+    const branches = [...group.querySelectorAll('.drive-branch-check')];
+    const on = branches.filter(b => b.checked);
+    if (dept) {
+      dept.checked = branches.length > 0 && on.length === branches.length;
+      dept.indeterminate = on.length > 0 && on.length < branches.length;
+    }
+    group.querySelector('.drive-branch-list')?.classList.toggle('d-none', on.length === 0);
+  };
   const syncSelectAll = () => {
     if (!selectAll) return;
-    const list = checks();
-    const on = list.filter(c => c.checked);
-    selectAll.checked = list.length > 0 && on.length === list.length;
-    selectAll.indeterminate = on.length > 0 && on.length < list.length;
+    const branches = [...container.querySelectorAll('.drive-branch-check')];
+    const on = branches.filter(b => b.checked);
+    selectAll.checked = branches.length > 0 && on.length === branches.length;
+    selectAll.indeterminate = on.length > 0 && on.length < branches.length;
   };
+  groupsEls().forEach(syncGroup);
   syncSelectAll();
   selectAll?.addEventListener('change', () => {
     const on = !!selectAll.checked;
-    checks().forEach(c => { c.checked = on; });
     selectAll.indeterminate = false;
+    container.querySelectorAll('.drive-branch-check').forEach(b => { b.checked = on; });
+    groupsEls().forEach(syncGroup);
     container.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  container.querySelectorAll('.drive-dept-check').forEach(cb => {
-    cb.addEventListener('change', () => {
+  groupsEls().forEach(group => {
+    const dept = group.querySelector('.drive-dept-check');
+    dept?.addEventListener('change', () => {
+      const on = !!dept.checked;
+      dept.indeterminate = false;
+      group.querySelectorAll('.drive-branch-check').forEach(b => { b.checked = on; });
+      group.querySelector('.drive-branch-list')?.classList.toggle('d-none', !on);
       syncSelectAll();
       container.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    group.querySelectorAll('.drive-branch-check').forEach(branch => {
+      branch.addEventListener('change', () => {
+        syncGroup(group);
+        syncSelectAll();
+        container.dispatchEvent(new Event('change', { bubbles: true }));
+      });
     });
   });
 }
@@ -3632,6 +3686,14 @@ function programmeCodesFromDepartmentSelect(selectEl) {
 function programmeCodesFromDepartmentCheckboxes(container) {
   if (!container) return [];
   const codes = [];
+  const branchBoxes = container.querySelectorAll('.drive-branch-check');
+  if (branchBoxes.length) {
+    container.querySelectorAll('.drive-branch-check:checked').forEach(cb => {
+      const code = String(cb.value || '').trim();
+      if (code) codes.push(code);
+    });
+    return [...new Set(codes)];
+  }
   container.querySelectorAll('.drive-dept-check:checked').forEach(cb => {
     String(cb.value || '').split('|').map(s => s.trim()).filter(Boolean).forEach(c => codes.push(c));
   });
@@ -3643,6 +3705,10 @@ function selectedDepartmentParents(container) {
   if (container.tagName === 'SELECT') {
     return [...container.selectedOptions].map(o => o.dataset.parent || o.textContent).filter(Boolean);
   }
+  const fromBranches = [...container.querySelectorAll('.drive-branch-check:checked')]
+    .map(cb => cb.dataset.parent || '')
+    .filter(Boolean);
+  if (container.querySelector('.drive-branch-check')) return [...new Set(fromBranches)];
   return [...container.querySelectorAll('.drive-dept-check:checked')]
     .map(cb => cb.dataset.parent || '')
     .filter(Boolean);
@@ -3651,15 +3717,30 @@ function selectedDepartmentParents(container) {
 function setDepartmentCheckboxParents(container, parents) {
   if (!container) return;
   const want = new Set((Array.isArray(parents) ? parents : []).map(p => String(p || '').trim()).filter(Boolean));
-  container.querySelectorAll('.drive-dept-check').forEach(cb => {
-    cb.checked = want.has(String(cb.dataset.parent || '').trim());
-  });
+  const matches = (parent) => [...want].some(p => p === parent || departmentNamesMatch(p, parent));
+  if (container.querySelector('.drive-branch-check')) {
+    container.querySelectorAll('.drive-dept-group').forEach(group => {
+      const dept = group.querySelector('.drive-dept-check');
+      const on = matches(String(dept?.dataset.parent || '').trim());
+      group.querySelectorAll('.drive-branch-check').forEach(cb => { cb.checked = on; });
+      if (dept) {
+        dept.checked = on;
+        dept.indeterminate = false;
+      }
+      group.querySelector('.drive-branch-list')?.classList.toggle('d-none', !on);
+    });
+  } else {
+    container.querySelectorAll('.drive-dept-check').forEach(cb => {
+      cb.checked = matches(String(cb.dataset.parent || '').trim());
+    });
+  }
   const selectAll = container.querySelector('.drive-dept-select-all');
   if (selectAll) {
-    const list = [...container.querySelectorAll('.drive-dept-check')];
-    const on = list.filter(c => c.checked);
-    selectAll.checked = list.length > 0 && on.length === list.length;
-    selectAll.indeterminate = on.length > 0 && on.length < list.length;
+    const list = [...container.querySelectorAll('.drive-branch-check')];
+    const boxes = list.length ? list : [...container.querySelectorAll('.drive-dept-check')];
+    const on = boxes.filter(c => c.checked);
+    selectAll.checked = boxes.length > 0 && on.length === boxes.length;
+    selectAll.indeterminate = on.length > 0 && on.length < boxes.length;
   }
 }
 
