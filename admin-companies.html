@@ -79,11 +79,11 @@
       </div>
       <div class="col-12 d-none" id="regLoginFields">
         <div class="border rounded-3 p-3">
-          <div class="fw-semibold mb-1">Company module login</div>
-          <div class="small text-muted-2 mb-3">Create credentials for the company and share them securely with the recruiter.</div>
+          <div class="fw-semibold mb-1">Company module login (optional)</div>
+          <div class="small text-muted-2 mb-3">Leave both fields blank to register the company without a login. If you create one, share the credentials securely with the recruiter.</div>
           <div class="row g-3">
             <div class="col-md-6"><label class="form-label small fw-semibold">Username (email)</label><input class="form-control" type="email" name="loginEmail" id="regLoginEmail" autocomplete="username"/></div>
-            <div class="col-md-6"><label class="form-label small fw-semibold">Initial password</label><input class="form-control" type="password" name="loginPassword" id="regLoginPassword" minlength="8" maxlength="128" autocomplete="new-password"/><div class="form-text">Minimum 8 characters. The company can change it in Settings.</div></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Initial password</label><input class="form-control" type="password" name="loginPassword" id="regLoginPassword" minlength="8" maxlength="128" autocomplete="new-password"/><div class="form-text">Optional. Minimum 8 characters when set. The company can change it in Settings.</div></div>
           </div>
         </div>
       </div>
@@ -603,6 +603,17 @@ document.getElementById('registerForm').addEventListener('submit', async e => {
   if (!isAdmin()) {
     delete data.loginEmail;
     delete data.loginPassword;
+  } else {
+    const loginEmail = String(data.loginEmail || '').trim();
+    const loginPassword = String(data.loginPassword || '');
+    const syncedOnly = document.getElementById('regLoginEmail')?.dataset.synced === 'true';
+    if (!loginPassword && (!loginEmail || syncedOnly)) {
+      delete data.loginEmail;
+      delete data.loginPassword;
+    } else if (!loginEmail || !loginPassword) {
+      toast('Enter both a username and a password to create a company login, or leave both blank.', 'warn');
+      return;
+    }
   }
   if (!(await confirmAction({ title: 'Register company', message: `Register ${data.companyName || 'this company'}?`, confirmText: 'Register', variant: 'primary' }))) return;
   if (!data.sourceRecommendationId) delete data.sourceRecommendationId;
@@ -676,8 +687,8 @@ async function initCompaniesPage() {
   const loginEmail = document.getElementById('regLoginEmail');
   const loginPassword = document.getElementById('regLoginPassword');
   loginFields?.classList.toggle('d-none', !isAdmin());
-  if (loginEmail) loginEmail.required = isAdmin();
-  if (loginPassword) loginPassword.required = isAdmin();
+  if (loginEmail) loginEmail.required = false;
+  if (loginPassword) loginPassword.required = false;
   document.querySelectorAll('[data-admin-only]').forEach(el => {
     el.classList.toggle('d-none', !canMutateCompanies());
   });
