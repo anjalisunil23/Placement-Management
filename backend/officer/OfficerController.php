@@ -174,8 +174,6 @@ final class OfficerController
 
             'type'      => 'required|in:exclusive,pooled,direct',
 
-            'date'      => 'required',
-
             'time'      => 'required',
 
         ]);

@@ -121,7 +121,7 @@ class DriveModel extends BaseModel
             'title'       => $data['title'],
             'companyId'   => Security::toObjectId($data['companyId']),
             'type'        => $data['type'],
-            'date'        => $data['date'],
+            'date'        => trim((string) ($data['date'] ?? '')),
             'time'        => $data['time'],
             'branches'    => $data['branches'] ?? [],
             'eligibility' => $data['eligibility'] ?? [],

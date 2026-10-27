@@ -101,7 +101,6 @@ final class AdminController
             'title'     => 'required',
             'companyId' => 'required',
             'type'      => 'required|in:exclusive,pooled,direct',
-            'date'      => 'required',
             'time'      => 'required',
         ]);
         if (!empty($errors)) {

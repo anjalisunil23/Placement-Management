@@ -5080,8 +5080,13 @@ const DriveStore = {
       body.applicationFields = existing.applicationFields;
     }
     if (companyId) body.companyId = companyId;
-    const recruitmentDate = String(p.date ?? p.recruitmentDate ?? existing?.date ?? '').trim();
-    if (recruitmentDate && recruitmentDate !== '—' && recruitmentDate !== 'TBD') body.date = recruitmentDate;
+    if (p.date !== undefined || p.recruitmentDate !== undefined) {
+      const recruitmentDate = String(p.date ?? p.recruitmentDate ?? '').trim();
+      body.date = (!recruitmentDate || recruitmentDate === '—' || recruitmentDate === 'TBD') ? '' : recruitmentDate;
+    } else {
+      const recruitmentDate = String(existing?.date ?? '').trim();
+      if (recruitmentDate && recruitmentDate !== '—' && recruitmentDate !== 'TBD') body.date = recruitmentDate;
+    }
     if (p.status) body.status = this._driveStatusToApi(p.status);
     return body;
   },
@@ -5303,7 +5308,7 @@ const DriveStore = {
     const role = String(p.role || p.title || '').trim();
     const company = String(p.company || '').trim();
     const title = String(p.title || (company && role ? `${company} — ${role}` : role || company)).trim();
-    const date = String(p.date || p.recruitmentDate || p.deadline || '').trim();
+    const date = String(p.date ?? p.recruitmentDate ?? '').trim();
     const time = String(p.time || '10:00').trim();
 
     if (!companyId) {
@@ -5312,10 +5317,6 @@ const DriveStore = {
     }
     if (!title) {
       toast('Job role is required.', 'error');
-      return null;
-    }
-    if (!date) {
-      toast('Recruitment date is required.', 'error');
       return null;
     }
 
