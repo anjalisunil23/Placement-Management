@@ -1927,11 +1927,14 @@ final class AdminController
     {
         RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        foreach (['hrName', 'hrEmail', 'contactNumber', 'companyName'] as $field) {
+            if (array_key_exists($field, $input)) {
+                $input[$field] = trim((string) $input[$field]);
+            }
+        }
         $rules = [
-            'companyName'   => 'required',
-            'hrName'        => 'required',
-            'hrEmail'       => 'required|email',
-            'contactNumber' => 'required',
+            'companyName' => 'required',
+            'hrEmail'     => 'email',
         ];
         $loginEmail = strtolower(trim((string) ($input['loginEmail'] ?? '')));
         $loginPassword = (string) ($input['loginPassword'] ?? '');
@@ -1966,10 +1969,11 @@ final class AdminController
             );
         }
 
+        $hrName = trim((string) ($input['hrName'] ?? ''));
         $companyUserId = '';
         if ($provisionLogin) {
             $companyUserId = $this->userModel->createUser([
-                'name'     => trim((string) $input['hrName']),
+                'name'     => $hrName !== '' ? $hrName : $companyName,
                 'email'    => $loginEmail,
                 'password' => $loginPassword,
                 'role'     => 'company',
@@ -1986,9 +1990,9 @@ final class AdminController
                 'category'          => $input['category'] ?? 'Software',
                 'tier'              => $input['tier'] ?? 'Tier 2',
                 'contacts'          => [[
-                    'name'  => $input['hrName'],
-                    'email' => $input['hrEmail'],
-                    'phone' => $input['contactNumber'],
+                    'name'  => $hrName,
+                    'email' => trim((string) ($input['hrEmail'] ?? '')),
+                    'phone' => trim((string) ($input['contactNumber'] ?? '')),
                 ]],
                 'associationStatus' => 'active',
             ]);
