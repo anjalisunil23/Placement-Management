@@ -94,6 +94,11 @@
   .drive-extra-requirement{
     white-space:pre-line;color:var(--text,#0f172a);font-size:.92rem;line-height:1.5;
     background:var(--surface-2,#f1f5f9);border-radius:8px;padding:.65rem .75rem;margin:0;
+    overflow-wrap:anywhere;
+  }
+  .drive-apply-requirement a,
+  .drive-extra-requirement a{
+    color:var(--primary,#2563EB);text-decoration:underline;overflow-wrap:anywhere;
   }
   .drive-detail-field .form-select{margin-top:-.15rem;font-size:.9rem}
   @media (max-width:480px){
@@ -948,7 +953,7 @@ function renderApplyCustomFields(drive) {
       <label class="form-label fw-semibold" for="applyCustom_${escapeApplyHtml(field.id)}">
         ${escapeApplyHtml(field.title)}${field.required ? ' <span class="text-danger">*</span>' : ''}
       </label>
-      ${field.requirement ? `<div class="drive-apply-requirement mb-2">${escapeApplyHtml(field.requirement)}</div>` : ''}
+      ${field.requirement ? `<div class="drive-apply-requirement mb-2">${linkifyPlainText(field.requirement)}</div>` : ''}
       <textarea class="form-control" rows="4" id="applyCustom_${escapeApplyHtml(field.id)}"
         data-custom-field-id="${escapeApplyHtml(field.id)}"
         data-custom-field-title="${escapeApplyHtml(field.title)}"
@@ -974,6 +979,30 @@ function escapeApplyHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function linkifyPlainText(value) {
+  const raw = String(value ?? '');
+  const re = /https?:\/\/[^\s<>"']+/gi;
+  let html = '';
+  let last = 0;
+  for (const match of raw.matchAll(re)) {
+    const index = match.index ?? 0;
+    html += escapeApplyHtml(raw.slice(last, index));
+    let url = match[0];
+    let trail = '';
+    const trimmed = url.replace(/[),.;:!?]+$/g, '');
+    if (trimmed.length >= 8 && trimmed !== url) {
+      trail = url.slice(trimmed.length);
+      url = trimmed;
+    }
+    const safe = escapeApplyHtml(url);
+    html += `<a href="${safe}" target="_blank" rel="noopener noreferrer">${safe}</a>`;
+    html += escapeApplyHtml(trail);
+    last = index + match[0].length;
+  }
+  html += escapeApplyHtml(raw.slice(last));
+  return html;
 }
 
 function ageFromDob(dobStr) {
@@ -1490,7 +1519,7 @@ function applicationFieldsDetailHtml(drive) {
     ${fields.map((field) => `
       <article class="drive-extra-field">
         <div class="drive-extra-title">${escapeApplyHtml(field.title)}${field.required ? ' <span class="text-danger">*</span>' : ''}</div>
-        ${field.requirement ? `<div class="drive-extra-requirement">${driveDetailMultiline(field.requirement)}</div>` : ''}
+        ${field.requirement ? `<div class="drive-extra-requirement">${linkifyPlainText(field.requirement)}</div>` : ''}
       </article>
     `).join('')}
   </section>`;
