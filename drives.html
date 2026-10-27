@@ -86,11 +86,6 @@
     padding:.85rem 1rem;background:var(--surface,#fff);
   }
   .drive-extra-fields h6{margin:0 0 .7rem;font-size:.95rem}
-  .drive-detail-stack{display:flex;flex-direction:column;gap:.8rem}
-  .drive-stack-item{display:flex;flex-direction:column;gap:.15rem}
-  .drive-stack-label{font-size:.82rem;font-weight:600;color:var(--muted,#64748b)}
-  .drive-stack-value{color:var(--text,#0f172a);word-break:break-word}
-  .drive-stack-value.drive-detail-multiline{white-space:pre-line}
   .drive-extra-field + .drive-extra-field{
     margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--border,#e2e8f0);
   }
@@ -1490,7 +1485,8 @@ function driveUploadLabel(drive) {
 function applicationFieldsDetailHtml(drive) {
   const fields = normalizeApplicationFieldRows(drive?.applicationFields);
   if (!fields.length) return '';
-  return `<section class="drive-extra-fields">
+  return `<section class="drive-extra-fields mt-3">
+    <h6>Additional details</h6>
     ${fields.map((field) => `
       <article class="drive-extra-field">
         <div class="drive-extra-title">${escapeApplyHtml(field.title)}${field.required ? ' <span class="text-danger">*</span>' : ''}</div>
@@ -1579,23 +1575,14 @@ function fillDriveDetailPanel(list, selectedId) {
     : driveDetailValue(list[0].role);
 
   const instructions = !pending ? applicationFieldsDetailHtml(display) : '';
-  const stackField = (label, value, multiline = false) => `
-    <div class="drive-stack-item">
-      <div class="drive-stack-label">${label}</div>
-      <div class="drive-stack-value${multiline ? ' drive-detail-multiline' : ''}">${value}</div>
-    </div>`;
-  const field = (label, value, multiline = false) => instructions
-    ? stackField(label, value, multiline)
-    : `
+  const field = (label, value, multiline = false) => `
     <div class="drive-detail-field">
       <dt>${label}</dt>
       <dd${multiline ? ' class="drive-detail-multiline"' : ''}>${value}</dd>
     </div>`;
   const detailRows = `
       ${field('Company name', name)}
-      ${instructions
-        ? stackField('Role', roleControl)
-        : `<div class="drive-detail-field"><dt>Role</dt><dd>${roleControl}</dd></div>`}
+      <div class="drive-detail-field"><dt>Role</dt><dd>${roleControl}</dd></div>
       ${field('Package', pending ? 'Select a role' : driveDetailValue(display.package))}
       ${!pending && driveDetailFilled(display.vacancies) ? field('Vacancies', driveDetailValue(display.vacancies)) : ''}
       ${!pending && driveUploadLabel(display) ? field('Uploaded file', (isStudent && display.id) ? `<a href="${API_BASE}/student/jds/${encodeURIComponent(display.id)}/document" target="_blank" rel="noopener noreferrer">${escapeApplyHtml(driveUploadLabel(display))}</a>` : escapeApplyHtml(driveUploadLabel(display))) : ''}
@@ -1626,10 +1613,8 @@ function fillDriveDetailPanel(list, selectedId) {
       </div>
       <span class="badge-soft ${display.statusCls || driveStatusCls(display.status)}">${display.status || '—'}</span>
     </div>
+    <dl class="drive-detail-fields mb-0">${detailRows}</dl>
     ${instructions}
-    ${instructions
-      ? `<section class="drive-extra-fields"><h6>Additional details</h6><div class="drive-detail-stack">${detailRows}</div></section>`
-      : `<dl class="drive-detail-fields mb-0">${detailRows}</dl>`}
     ${!multi && display.profile && canApplyToDrives() ? `<div class="small text-muted-2">${display.profile}</div>` : ''}
     ${applied && canApplyToDrives() ? `<div>${applyAction(active)}</div>` : ''}`;
 
