@@ -80,6 +80,7 @@
     margin:0;font-weight:600;color:var(--muted,#64748b);
   }
   .drive-detail-field > dd{margin:0;color:var(--text,#0f172a);word-break:break-word}
+  .drive-detail-field > dd.drive-detail-multiline{white-space:pre-line}
   .drive-detail-field .form-select{margin-top:-.15rem;font-size:.9rem}
   @media (max-width:480px){
     .drive-detail-field{grid-template-columns:1fr;gap:.15rem}
@@ -285,7 +286,13 @@
             <div class="col-md-6"><label class="form-label small fw-semibold">Location</label><input class="form-control" name="location" placeholder="e.g. Bengaluru"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Recruitment date</label><input type="date" class="form-control" name="recruitmentDate" required/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" name="description" rows="3" placeholder="Role overview, responsibilities…"></textarea></div>
-            <div class="col-12"><label class="form-label small fw-semibold">Technical stack <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" name="technicalStack" placeholder="e.g. React, Node.js, MySQL"/></div>
+            <div class="col-12"><label class="form-label small fw-semibold">Technical stack <span class="text-muted fw-normal">(optional)</span></label><textarea class="form-control" name="technicalStack" rows="7" placeholder="Technology Stack:
+* JavaScript and Python
+* Node.js and REST APIs
+* React.js and Vue.js
+* Flutter and Dart
+* SQL/NoSQL databases
+* Git and GitHub"></textarea></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Internship duration <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" name="internshipDuration" placeholder="e.g. 6 months"/></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Date of joining <span class="text-muted fw-normal">(optional)</span></label><input type="date" class="form-control" name="dateOfJoining"/></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Internship stipend <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" name="internshipStipend" placeholder="e.g. ₹15,000 / month"/></div>
@@ -374,7 +381,13 @@
         <div class="col-md-3"><label class="form-label small fw-semibold">Gender</label><select class="form-select" id="editGender"><option value="any">Any</option><option value="male">Male only</option><option value="female">Female only</option></select></div>
 
         <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="editDescription" rows="3"></textarea></div>
-        <div class="col-12"><label class="form-label small fw-semibold">Technical stack <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" id="editTechnicalStack" placeholder="e.g. React, Node.js, MySQL"/></div>
+        <div class="col-12"><label class="form-label small fw-semibold">Technical stack <span class="text-muted fw-normal">(optional)</span></label><textarea class="form-control" id="editTechnicalStack" rows="7" placeholder="Technology Stack:
+* JavaScript and Python
+* Node.js and REST APIs
+* React.js and Vue.js
+* Flutter and Dart
+* SQL/NoSQL databases
+* Git and GitHub"></textarea></div>
         <div class="col-md-4"><label class="form-label small fw-semibold">Internship duration <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" id="editInternshipDuration" placeholder="e.g. 6 months"/></div>
         <div class="col-md-4"><label class="form-label small fw-semibold">Date of joining <span class="text-muted fw-normal">(optional)</span></label><input type="date" class="form-control" id="editDateOfJoining"/></div>
         <div class="col-md-4"><label class="form-label small fw-semibold">Internship stipend <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" id="editInternshipStipend" placeholder="e.g. ₹15,000 / month"/></div>
@@ -1393,6 +1406,15 @@ function driveDetailFilled(v) {
   return s !== '' && s !== '—';
 }
 
+function driveDetailMultiline(v) {
+  const s = String(v ?? '').trim();
+  if (!s || s === '—') return '—';
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function fillDriveDetailPanel(list, selectedId) {
   const panel = document.getElementById('driveDetailPanel') || document.getElementById('driveDetailBody');
   const applyBtn = document.getElementById('driveDetailApplyBtn');
@@ -1464,10 +1486,10 @@ function fillDriveDetailPanel(list, selectedId) {
       </dd>`
     : `<dd>${driveDetailValue(list[0].role)}</dd>`;
 
-  const field = (label, value) => `
+  const field = (label, value, multiline = false) => `
     <div class="drive-detail-field">
       <dt>${label}</dt>
-      <dd>${value}</dd>
+      <dd${multiline ? ' class="drive-detail-multiline"' : ''}>${value}</dd>
     </div>`;
 
   panel.innerHTML = `
@@ -1494,12 +1516,12 @@ function fillDriveDetailPanel(list, selectedId) {
       ${!pending && display.branches && display.branches !== '—' ? field('Eligible branches', driveDetailValue(display.branches)) : ''}
       ${!pending && display.minCgpa !== '' && display.minCgpa != null ? field('Minimum CGPA', driveDetailValue(display.minCgpa)) : ''}
       ${!pending && display.maxBacklogs !== '' && display.maxBacklogs != null ? field('Maximum backlogs', driveDetailValue(display.maxBacklogs)) : ''}
-      ${!pending && display.description ? field('Job description', driveDetailValue(display.description)) : ''}
-      ${!pending && driveDetailFilled(display.technicalStack) ? field('Technical stack', driveDetailValue(display.technicalStack)) : ''}
+      ${!pending && display.description ? field('Job description', driveDetailMultiline(display.description), true) : ''}
+      ${!pending && driveDetailFilled(display.technicalStack) ? field('Technical stack', driveDetailMultiline(display.technicalStack), true) : ''}
       ${!pending && driveDetailFilled(display.internshipDuration) ? field('Internship duration', driveDetailValue(display.internshipDuration)) : ''}
       ${!pending && driveDetailFilled(display.dateOfJoining) ? field('Date of joining', driveDetailValue(display.dateOfJoining)) : ''}
       ${!pending && driveDetailFilled(display.internshipStipend) ? field('Internship stipend', driveDetailValue(display.internshipStipend)) : ''}
-      ${!pending && driveDetailFilled(display.selectionProcess) ? field('Selection process', driveDetailValue(display.selectionProcess)) : ''}
+      ${!pending && driveDetailFilled(display.selectionProcess) ? field('Selection process', driveDetailMultiline(display.selectionProcess), true) : ''}
     </dl>
     ${!multi && display.profile && canApplyToDrives() ? `<div class="small text-muted-2">${display.profile}</div>` : ''}
     ${applied && canApplyToDrives() ? `<div>${applyAction(active)}</div>` : ''}`;
