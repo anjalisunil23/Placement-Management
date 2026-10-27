@@ -676,7 +676,7 @@ final class Collections
                 ],
                 'selectionRounds' => 'array[{order:int,type:string,label:string}]',
                 'roundProgression' => 'string (sequential|parallel)',
-                'applicationFields' => 'array[{id:string,title:string,required:bool}]',
+                'applicationFields' => 'array[{id:string,title:string,requirement:string,required:bool}]',
                 'tier'        => 'string',
                 'jdFile'      => 'string|null',
                 'shortlistDocument' => 'string|null (server path; stripped from API)',

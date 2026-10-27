@@ -214,7 +214,7 @@ class DriveModel extends BaseModel
      * Extra text fields students fill when applying to this drive.
      *
      * @param mixed $raw
-     * @return list<array{id:string,title:string,required:bool}>
+     * @return list<array{id:string,title:string,requirement:string,required:bool}>
      */
     public static function normalizeApplicationFields(mixed $raw): array
     {
@@ -250,9 +250,11 @@ class DriveModel extends BaseModel
                 || $requiredRaw === 1
                 || $requiredRaw === '1'
                 || strtolower((string) $requiredRaw) === 'true';
+            $requirement = trim((string) ($row['requirement'] ?? $row['description'] ?? ''));
             $out[] = [
                 'id' => $id,
                 'title' => mb_substr($title, 0, 120),
+                'requirement' => mb_substr($requirement, 0, 4000),
                 'required' => $required,
             ];
             $n++;

@@ -315,12 +315,12 @@
             <div class="col-md-3"><label class="form-label small fw-semibold">Gender restriction</label><select class="form-select" name="gender" id="createDriveGender"><option value="any" selected>Any</option><option value="male">Male only</option><option value="female">Female only</option></select><div class="form-text">Only matching students see this drive</div></div>
           </div>
           <div class="row g-3">
-            <div class="col-md-6"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" name="deadline"/></div>
+            <div class="col-md-6"><label class="form-label small fw-semibold">Registration deadline <span class="text-muted fw-normal">(optional)</span></label><input type="date" class="form-control" name="deadline"/></div>
             <div class="col-md-6"><label class="form-label small fw-semibold">Mode</label><select class="form-select" name="mode"><option>On-campus</option><option>Virtual</option><option>Hybrid</option></select></div>
           </div>
 
           <h6 class="fw-bold mb-2 mt-4">Additional application fields <span class="text-muted fw-normal small">(optional)</span></h6>
-          <p class="small text-muted-2 mb-2">Add custom title + textbox fields students must fill when applying to this drive.</p>
+          <p class="small text-muted-2 mb-2">Add a title and the requirement students should read. They answer in a text area when applying.</p>
           <div id="createApplicationFields" class="d-flex flex-column gap-2 mb-2"></div>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddCreateAppField">
             <i class="bi bi-plus-lg me-1"></i>Add field
@@ -364,7 +364,7 @@
 
         <div class="col-md-4"><label class="form-label small fw-semibold">Recruitment date <span class="text-muted fw-normal">(optional)</span></label><input type="date" class="form-control" id="editRecruitmentDate"/></div>
 
-        <div class="col-md-4"><label class="form-label small fw-semibold">Registration deadline</label><input type="date" class="form-control" id="editDeadline"/></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Registration deadline <span class="text-muted fw-normal">(optional)</span></label><input type="date" class="form-control" id="editDeadline"/></div>
 
         <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="editStatus"><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
 
@@ -383,7 +383,7 @@
 
         <div class="col-12">
           <h6 class="fw-bold mb-2 mt-1">Additional application fields <span class="text-muted fw-normal small">(optional)</span></h6>
-          <p class="small text-muted-2 mb-2">Students see these title + textbox fields when applying.</p>
+          <p class="small text-muted-2 mb-2">Students see the title, the requirement, and a text area when applying.</p>
           <div id="editApplicationFields" class="d-flex flex-column gap-2 mb-2"></div>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddEditAppField">
             <i class="bi bi-plus-lg me-1"></i>Add field
@@ -807,6 +807,7 @@ function normalizeApplicationFieldRows(raw) {
   return list.map((row, i) => ({
     id: String(row?.id || `field_${i + 1}`).trim() || `field_${i + 1}`,
     title: String(row?.title || row?.label || '').trim(),
+    requirement: String(row?.requirement || row?.description || '').trim(),
     required: !!(row?.required),
   })).filter(row => row.title);
 }
@@ -827,7 +828,10 @@ function renderApplicationFieldsEditor(containerId, rows, { onChange } = {}) {
       </div>
       <label class="form-label small fw-semibold mb-1">Field title</label>
       <input type="text" class="form-control form-control-sm mb-2" data-app-field-title="${index}"
-        placeholder="e.g. Preferred location / GitHub URL" value="${escapeApplyHtml(row.title || '')}" maxlength="120"/>
+        placeholder="e.g. Important instructions" value="${escapeApplyHtml(row.title || '')}" maxlength="120"/>
+      <label class="form-label small fw-semibold mb-1">Requirement</label>
+      <textarea class="form-control form-control-sm mb-2" rows="4" data-app-field-requirement="${index}"
+        maxlength="4000">${escapeApplyHtml(row.requirement || '')}</textarea>
       <div class="form-check">
         <input class="form-check-input" type="checkbox" id="${containerId}_req_${index}" data-app-field-required="${index}" ${row.required ? 'checked' : ''}/>
         <label class="form-check-label small" for="${containerId}_req_${index}">Required when applying</label>
@@ -840,6 +844,14 @@ function renderApplicationFieldsEditor(containerId, rows, { onChange } = {}) {
       const idx = Number(input.getAttribute('data-app-field-title'));
       if (!Number.isFinite(idx) || !list[idx]) return;
       list[idx].title = String(input.value || '').trim();
+      onChange?.(list);
+    });
+  });
+  el.querySelectorAll('[data-app-field-requirement]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const idx = Number(input.getAttribute('data-app-field-requirement'));
+      if (!Number.isFinite(idx) || !list[idx]) return;
+      list[idx].requirement = String(input.value || '');
       onChange?.(list);
     });
   });
@@ -866,6 +878,7 @@ function readApplicationFieldsFromEditor(rows) {
   return normalizeApplicationFieldRows(rows).map((row, i) => ({
     id: row.id || `field_${i + 1}`,
     title: row.title,
+    requirement: row.requirement,
     required: !!row.required,
   }));
 }
@@ -886,11 +899,12 @@ function renderApplyCustomFields(drive) {
       <label class="form-label small fw-semibold" for="applyCustom_${escapeApplyHtml(field.id)}">
         ${escapeApplyHtml(field.title)}${field.required ? ' <span class="text-danger">*</span>' : ''}
       </label>
-      <input type="text" class="form-control" id="applyCustom_${escapeApplyHtml(field.id)}"
+      ${field.requirement ? `<div class="small text-muted-2 mb-1 drive-detail-multiline">${escapeApplyHtml(field.requirement)}</div>` : ''}
+      <textarea class="form-control" rows="4" id="applyCustom_${escapeApplyHtml(field.id)}"
         data-custom-field-id="${escapeApplyHtml(field.id)}"
         data-custom-field-title="${escapeApplyHtml(field.title)}"
         data-custom-field-required="${field.required ? '1' : '0'}"
-        ${field.required ? 'required' : ''} maxlength="2000" autocomplete="off"/>
+        ${field.required ? 'required' : ''} maxlength="4000" autocomplete="off"></textarea>
     </div>
   `).join('');
 }
