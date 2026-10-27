@@ -116,6 +116,11 @@ const OfficerApi = {
       minCgpa,
       maxBacklogs,
       description: String(elig.description || d.description || '').trim(),
+      technicalStack: String(elig.technicalStack || d.technicalStack || '').trim(),
+      internshipDuration: String(elig.internshipDuration || d.internshipDuration || '').trim(),
+      dateOfJoining: String(elig.dateOfJoining || d.dateOfJoining || '').trim(),
+      internshipStipend: String(elig.internshipStipend || d.internshipStipend || '').trim(),
+      selectionProcess: String(elig.selectionProcess || d.selectionProcess || '').trim(),
       branches: typeof formatDriveBranches === 'function'
         ? formatDriveBranches(d.branches ?? elig.branches ?? '')
         : (Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '')),

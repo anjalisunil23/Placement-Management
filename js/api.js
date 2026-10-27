@@ -1610,10 +1610,14 @@ const RegisteredCompanies = {
       tier: payload.tier || 'Tier 2',
       contacts: [{ name: hrName, email: hrEmail, phone: contactNumber }],
     };
+    const loginEmail = String(payload.loginEmail || '').trim();
+    const loginPassword = String(payload.loginPassword || '');
+    if (loginEmail) body.loginEmail = loginEmail;
+    if (loginPassword) body.loginPassword = loginPassword;
     const res = await api(`/admin/companies/${encodeURIComponent(companyId)}`, { method: 'PUT', body });
     if (res.success) {
       await this.fetch();
-      return true;
+      return res.data || true;
     }
     toast(res.message || 'Could not update company.', res.status === 409 ? 'warn' : 'error');
     return null;
@@ -4958,6 +4962,10 @@ const DriveStore = {
       description: String(p.description ?? prevElig.description ?? existing?.description ?? '').trim(),
       location: String(p.location ?? prevElig.location ?? '').trim(),
     };
+    ['technicalStack', 'internshipDuration', 'dateOfJoining', 'internshipStipend', 'selectionProcess'].forEach((key) => {
+      if (p[key] === undefined) return;
+      eligibility[key] = String(p[key] ?? '').trim();
+    });
     if (p.minCgpa !== undefined && p.minCgpa !== '') eligibility.minCgpa = parseFloat(p.minCgpa) || 0;
     if (p.maxBacklogs !== undefined && p.maxBacklogs !== '') eligibility.maxBacklogs = parseInt(p.maxBacklogs, 10) || 0;
     if (p.minPercentAllClasses !== undefined && p.minPercentAllClasses !== '') {
@@ -5024,6 +5032,11 @@ const DriveStore = {
     const tier = String(d.tier || '').trim();
     const location = String(d.location || elig.location || '').trim();
     const description = String(d.description || elig.description || '').trim();
+    const technicalStack = String(d.technicalStack || elig.technicalStack || '').trim();
+    const internshipDuration = String(d.internshipDuration || elig.internshipDuration || '').trim();
+    const dateOfJoining = String(d.dateOfJoining || elig.dateOfJoining || '').trim();
+    const internshipStipend = String(d.internshipStipend || elig.internshipStipend || '').trim();
+    const selectionProcess = String(d.selectionProcess || elig.selectionProcess || '').trim();
     const branches = formatDriveBranches(d.branches ?? elig.branches ?? '');
     if (status !== 'Completed' && /^\d{4}-\d{2}-\d{2}/.test(regDeadline)) {
       const today = new Date();
@@ -5054,6 +5067,11 @@ const DriveStore = {
       recruitmentDate: recruitmentDate || '—',
       location: location || '—',
       description,
+      technicalStack,
+      internshipDuration,
+      dateOfJoining,
+      internshipStipend,
+      selectionProcess,
       branches,
       minCgpa: elig.minCgpa ?? '',
       maxBacklogs: elig.maxBacklogs ?? '',
@@ -5247,6 +5265,11 @@ const DriveStore = {
         mode: p.mode || '',
         deadline: (p.deadline && p.deadline !== 'TBD') ? p.deadline : '',
         description: p.description || '',
+        technicalStack: String(p.technicalStack || '').trim(),
+        internshipDuration: String(p.internshipDuration || '').trim(),
+        dateOfJoining: String(p.dateOfJoining || '').trim(),
+        internshipStipend: String(p.internshipStipend || '').trim(),
+        selectionProcess: String(p.selectionProcess || '').trim(),
       },
       selectionRounds: Array.isArray(p.selectionRounds) ? p.selectionRounds : [],
       roundProgression: String(p.roundProgression || 'sequential').toLowerCase() === 'parallel' ? 'parallel' : 'sequential',
