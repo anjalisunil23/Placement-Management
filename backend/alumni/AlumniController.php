@@ -470,6 +470,10 @@ final class AlumniController
       }
 
       $drives = array_slice(array_values($byId), 0, 50);
+      $drives = array_values(array_filter(
+        $drives,
+        static fn (array $drive): bool => !\PMS\Services\DriveLifecycle::isDraft($drive)
+      ));
     } else {
       $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
       $drives = array_values(array_filter(

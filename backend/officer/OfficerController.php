@@ -222,30 +222,15 @@ final class OfficerController
             );
         }
 
-        if (isset($_FILES['jd'])) {
-
-            $config = require dirname(__DIR__) . '/config/app.php';
-
-            $err = Security::validateUploadedFile($_FILES['jd'], $config['uploads']['max_jd'], ['pdf', 'doc', 'docx']);
-
-            if ($err) {
-
-                Response::error($err, 400);
-
+        if (isset($input['eligibility']) && is_array($input['eligibility'])) {
+            $vacancyError = \PMS\Models\DriveModel::normalizeVacancyCount($input['eligibility']);
+            if ($vacancyError !== null) {
+                Response::error($vacancyError, 422);
             }
-
-            $storedName = time() . '_' . basename((string) $_FILES['jd']['name']);
-            $storage = new ObjectStorageService($config);
-            try {
-                $input['jdFile'] = $storage->putUploadedFile(
-                    ObjectStorageService::FOLDER_JD,
-                    $storedName,
-                    $_FILES['jd']
-                );
-            } catch (\Throwable $e) {
-                Response::error('Failed to save JD to S3: ' . $e->getMessage(), 500);
-            }
-
+        }
+        $uploadError = \PMS\Models\DriveModel::attachOptionalJdUpload($input);
+        if ($uploadError !== null) {
+            Response::error($uploadError, 400);
         }
 
         if (array_key_exists('selectionRounds', $input)) {
@@ -260,9 +245,11 @@ final class OfficerController
 
         $id = (new DriveModel())->createDrive($input, (string) $user['_id']);
 
-        $notifyUserIds = $ctx['isAdmin'] ? null : PlacementOfficerContext::userIdsInDepartment($ctx);
+        if (\PMS\Models\DriveModel::initialStatus($input['status'] ?? '') !== 'draft') {
+            $notifyUserIds = $ctx['isAdmin'] ? null : PlacementOfficerContext::userIdsInDepartment($ctx);
 
-        (new NotificationService())->announceDrive($input['title'], $input['date'], $notifyUserIds);
+            (new NotificationService())->announceDrive($input['title'], $input['date'], $notifyUserIds);
+        }
 
         Response::success(['id' => $id], 'Drive created.', 201);
 
@@ -361,6 +348,34 @@ final class OfficerController
         Response::success(null, 'Drive exception revoked.');
     }
 
+    /** POST /api/officer/drives/{id}/jd */
+    public function uploadDriveJd(string $id): void
+    {
+        $user = RBACMiddleware::requirePlacementOfficer();
+        $ctx = PlacementOfficerContext::resolve($user);
+        $model = new DriveModel();
+        $drive = $model->findById($id);
+        if (!$drive) {
+            Response::notFound('Drive not found.');
+        }
+        if (!$ctx['isAdmin'] && !PlacementOfficerContext::driveMatchesDepartment($drive, $ctx)) {
+            Response::forbidden('This drive is not for your department.');
+        }
+        $input = [];
+        $uploadError = DriveModel::attachOptionalJdUpload($input);
+        if ($uploadError !== null) {
+            Response::error($uploadError, 400);
+        }
+        if (trim((string) ($input['jdFile'] ?? '')) === '') {
+            Response::error('Choose a PDF, DOC, or DOCX file.', 422);
+        }
+        $model->update($id, [
+            'jdFile' => $input['jdFile'],
+            'jdFileName' => (string) ($input['jdFileName'] ?? ''),
+        ]);
+        Response::success(['jdFileName' => (string) ($input['jdFileName'] ?? '')], 'File uploaded.');
+    }
+
     /** POST /api/officer/drives/{id}/shortlist-upload */
     public function uploadDriveShortlist(string $id): void
     {
@@ -442,7 +457,8 @@ final class OfficerController
             Response::forbidden('This drive is not for your department.');
         }
 
-        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $posted = !empty($_POST) ? $_POST : null;
+        $input = is_array($posted) ? $posted : (json_decode(file_get_contents('php://input') ?: '{}', true) ?? []);
         if (isset($input['eligibility']) && is_string($input['eligibility'])) {
             $input['eligibility'] = json_decode($input['eligibility'], true) ?? [];
         }
@@ -454,7 +470,13 @@ final class OfficerController
                 $input['branches'] = array_values(array_filter(array_map('trim', explode(',', $input['branches']))));
             }
         }
-        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','roundProgression','applicationFields','tier','jdFile','status','departmentId'];
+        if (isset($input['eligibility']) && is_array($input['eligibility'])) {
+            $vacancyError = \PMS\Models\DriveModel::normalizeVacancyCount($input['eligibility']);
+            if ($vacancyError !== null) {
+                Response::error($vacancyError, 422);
+            }
+        }
+        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','roundProgression','applicationFields','tier','jdFile','jdFileName','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
         if (isset($update['eligibility']) && is_array($update['eligibility'])) {
             $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);

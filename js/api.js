@@ -4923,12 +4923,12 @@ function canManageDrives() {
 }
 
 function driveStatusCls(status) {
-  const map = { Open:'success', Ongoing:'info', Completed:'primary', Closed:'muted' };
+  const map = { Open:'success', Ongoing:'info', Completed:'primary', Closed:'muted', 'Not published':'warning', Draft:'warning' };
   return map[status] || 'muted';
 }
 
 function driveUiStatusToApi(status) {
-  const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed' };
+  const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed', 'Not published': 'draft', Draft: 'draft', Unpublished: 'draft' };
   return map[status] || String(status || '').toLowerCase();
 }
 
@@ -5003,7 +5003,7 @@ const DriveStore = {
     return this.catalogEntry(id);
   },
   _driveStatusToApi(status) {
-    const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed' };
+    const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed', 'Not published': 'draft', Draft: 'draft', Unpublished: 'draft' };
     return map[status] || String(status || '').toLowerCase();
   },
   _normalizeBranches(branches) {
@@ -5043,7 +5043,7 @@ const DriveStore = {
       description: String(p.description ?? prevElig.description ?? existing?.description ?? '').trim(),
       location: String(p.location ?? prevElig.location ?? '').trim(),
     };
-    ['technicalStack', 'internshipDuration', 'dateOfJoining', 'internshipStipend', 'selectionProcess'].forEach((key) => {
+    ['technicalStack', 'internshipDuration', 'dateOfJoining', 'internshipStipend', 'selectionProcess', 'vacancies'].forEach((key) => {
       if (p[key] === undefined) return;
       eligibility[key] = String(p[key] ?? '').trim();
     });
@@ -5091,7 +5091,7 @@ const DriveStore = {
     return body;
   },
   mapStudentDrive(d) {
-    const statusMap = { scheduled: 'Open', open: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
+    const statusMap = { scheduled: 'Open', open: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed', draft: 'Not published', unpublished: 'Not published' };
     const rawStatus = (d.status || '').toLowerCase();
     let status = statusMap[rawStatus] || d.status || 'Open';
     const title = String(d.title || d.role || '').trim();
@@ -5123,13 +5123,16 @@ const DriveStore = {
     const dateOfJoining = String(d.dateOfJoining || elig.dateOfJoining || '').trim();
     const internshipStipend = String(d.internshipStipend || elig.internshipStipend || '').trim();
     const selectionProcess = String(d.selectionProcess || elig.selectionProcess || '').trim();
+    const vacancies = String(d.vacancies ?? elig.vacancies ?? '').trim();
+    const jdFileName = String(d.jdFileName || '').trim();
+    const jdFile = String(d.jdFile || '').trim();
     const branches = formatDriveBranches(d.branches ?? elig.branches ?? '');
-    if (status !== 'Completed' && /^\d{4}-\d{2}-\d{2}/.test(regDeadline)) {
+    if (status !== 'Completed' && status !== 'Not published' && /^\d{4}-\d{2}-\d{2}/.test(regDeadline)) {
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       if (todayStr > regDeadline.slice(0, 10)) status = 'Closed';
     }
-    if (status !== 'Completed' && status !== 'Closed' && /^\d{4}-\d{2}-\d{2}/.test(recruitmentDate)) {
+    if (status !== 'Completed' && status !== 'Closed' && status !== 'Not published' && /^\d{4}-\d{2}-\d{2}/.test(recruitmentDate)) {
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       if (todayStr > recruitmentDate.slice(0, 10)) status = 'Closed';
@@ -5158,6 +5161,9 @@ const DriveStore = {
       dateOfJoining,
       internshipStipend,
       selectionProcess,
+      vacancies,
+      jdFileName,
+      jdFile,
       branches,
       minCgpa: elig.minCgpa ?? '',
       maxBacklogs: elig.maxBacklogs ?? '',
@@ -5169,7 +5175,7 @@ const DriveStore = {
       applicationStatus: d.applicationStatus || null,
       eligible,
       eligibilityReasons,
-      applicationFields: Array.isArray(d.applicationFields) ? d.applicationFields : [],
+      applicationFields: (Array.isArray(d.applicationFields) ? d.applicationFields : (Array.isArray(elig.applicationFields) ? elig.applicationFields : [])),
       eligibility: { ...elig, deadline: (regDeadline && regDeadline !== 'TBD') ? regDeadline.slice(0, 10) : (elig.deadline || '') },
       _fromApi: true,
     };
@@ -5194,7 +5200,7 @@ const DriveStore = {
     return (Array.isArray(list) ? list : []).filter((d) => {
       if (!d) return false;
       const st = String(d.status || '').trim().toLowerCase();
-      if (st === 'closed' || st === 'completed') return false;
+      if (st === 'closed' || st === 'completed' || st === 'draft' || st === 'unpublished' || st === 'not published') return false;
       if (st !== '' && st !== 'open' && st !== 'ongoing' && st !== 'scheduled') return false;
       const elig = d.eligibility && typeof d.eligibility === 'object' ? d.eligibility : {};
       if (ymdPast(elig.deadline || d.registrationDeadline || d.deadline || '')) return false;
@@ -5291,6 +5297,28 @@ const DriveStore = {
     }
     return this.allWithCatalog();
   },
+  _withOptionalUpload(driveBody, file) {
+    if (!(file instanceof File)) return driveBody;
+    const form = new FormData();
+    Object.entries(driveBody).forEach(([key, value]) => {
+      if (value == null) return;
+      form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    });
+    form.append('jd', file, file.name);
+    return form;
+  },
+  async _uploadDriveDocument(id, file) {
+    if (!(file instanceof File)) return true;
+    const form = new FormData();
+    form.append('jd', file, file.name);
+    const path = Auth.role() === 'placement_officer'
+      ? `/officer/drives/${encodeURIComponent(id)}/jd`
+      : `/admin/drives/${encodeURIComponent(id)}/jd`;
+    const res = await api(path, { method: 'POST', body: form });
+    if (res.success) return true;
+    toast(res.message || 'Drive saved, but the file could not be uploaded.', 'warn');
+    return false;
+  },
   async add(p) {
     if (!canManageDrives()) return null;
     if (!(await requireWriteSession())) return null;
@@ -5332,6 +5360,7 @@ const DriveStore = {
       time,
       branches,
       tier: p.tier || 'Tier 2',
+      status: this._driveStatusToApi(p.status || 'Open'),
       eligibility: {
         minCgpa: parseFloat(p.minCgpa) || 0,
         maxBacklogs: parseInt(p.maxBacklogs, 10) || 0,
@@ -5352,6 +5381,7 @@ const DriveStore = {
         dateOfJoining: String(p.dateOfJoining || '').trim(),
         internshipStipend: String(p.internshipStipend || '').trim(),
         selectionProcess: String(p.selectionProcess || '').trim(),
+        vacancies: String(p.vacancies ?? '').trim(),
       },
       selectionRounds: Array.isArray(p.selectionRounds) ? p.selectionRounds : [],
       roundProgression: String(p.roundProgression || 'sequential').toLowerCase() === 'parallel' ? 'parallel' : 'sequential',
@@ -5365,14 +5395,15 @@ const DriveStore = {
       return res?.message || 'Could not create drive.';
     };
 
+    const requestBody = this._withOptionalUpload(driveBody, p.jdFile);
     if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
-      const res = await api('/officer/drives', { method: 'POST', body: driveBody });
+      const res = await api('/officer/drives', { method: 'POST', body: requestBody });
       if (res.success) { await this.fetch(); DriveStore._studentCache = null; return res.data; }
       toast(formatErrors(res), res.status === 409 ? 'warn' : 'error');
       return null;
     }
     if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
-      const res = await api('/admin/drives', { method: 'POST', body: driveBody });
+      const res = await api('/admin/drives', { method: 'POST', body: requestBody });
       if (res.success) { await this.fetch(); DriveStore._studentCache = null; return res.data; }
       toast(formatErrors(res), res.status === 409 ? 'warn' : 'error');
       return null;
@@ -5396,6 +5427,8 @@ const DriveStore = {
       if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
         const res = await api(`/officer/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
         if (res.success) {
+          const uploaded = await this._uploadDriveDocument(id, p.jdFile);
+          if (uploaded === false) return null;
           this._apiCache = null;
           await this.fetch();
           return true;
@@ -5406,6 +5439,8 @@ const DriveStore = {
       if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
         const res = await api(`/admin/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
         if (res.success) {
+          const uploaded = await this._uploadDriveDocument(id, p.jdFile);
+          if (uploaded === false) return null;
           this._apiCache = null;
           await this.fetch();
           return true;

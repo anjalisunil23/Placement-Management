@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PMS\Models;
 
 use PMS\Schemas\Collections;
+use PMS\Services\ObjectStorageService;
 use PMS\Utils\Security;
 
 class DriveModel extends BaseModel
@@ -15,8 +16,18 @@ class DriveModel extends BaseModel
     }
 
     /**
-     * Normalize drive titles for duplicate detection.
+     * New drives are published unless the creator chooses not to publish.
      */
+    public static function initialStatus(mixed $raw): string
+    {
+        $value = strtolower(trim((string) $raw));
+        if (in_array($value, ['draft', 'unpublished', 'not published', 'not_published'], true)) {
+            return 'draft';
+        }
+
+        return 'scheduled';
+    }
+
     public static function normalizeDriveTitle(string $title): string
     {
         $title = strtolower(trim($title));
@@ -130,9 +141,10 @@ class DriveModel extends BaseModel
             'applicationFields' => self::normalizeApplicationFields($data['applicationFields'] ?? []),
             'tier'        => $data['tier'] ?? 'Tier 2',
             'jdFile'      => $data['jdFile'] ?? null,
+            'jdFileName'  => trim((string) ($data['jdFileName'] ?? '')) ?: null,
             'attendance'  => [],
             'results'     => [],
-            'status'      => 'scheduled',
+            'status'      => self::initialStatus($data['status'] ?? null),
             'createdBy'   => Security::toObjectId($createdBy),
             'departmentId'=> isset($data['departmentId']) ? Security::toObjectId($data['departmentId']) : null,
         ];
@@ -307,5 +319,60 @@ class DriveModel extends BaseModel
     public function updateEligibility(string $driveId, array $eligibility): bool
     {
         return $this->update($driveId, ['eligibility' => $eligibility]);
+    }
+
+    /**
+     * Blank is allowed. A filled value must be a whole number of at least 1.
+     *
+     * @param array<string, mixed> $eligibility
+     */
+    public static function normalizeVacancyCount(array &$eligibility): ?string
+    {
+        if (!array_key_exists('vacancies', $eligibility)) {
+            return null;
+        }
+        $raw = trim((string) $eligibility['vacancies']);
+        if ($raw === '') {
+            $eligibility['vacancies'] = '';
+
+            return null;
+        }
+        if (!preg_match('/^\d+$/', $raw) || (int) $raw < 1 || (int) $raw > 100000) {
+            return 'Number of vacancies must be a whole number, or left blank.';
+        }
+        $eligibility['vacancies'] = (string) (int) $raw;
+
+        return null;
+    }
+
+    /**
+     * Optional job-description upload. No file is a success.
+     *
+     * @param array<string, mixed> $input
+     */
+    public static function attachOptionalJdUpload(array &$input): ?string
+    {
+        if (!isset($_FILES['jd']) || (int) ($_FILES['jd']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+        if ((int) ($_FILES['jd']['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            return 'Upload failed. Try a smaller PDF, DOC, or DOCX file.';
+        }
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $err = Security::validateUploadedFile($_FILES['jd'], $config['uploads']['max_jd'], ['pdf', 'doc', 'docx']);
+        if ($err) {
+            return $err;
+        }
+        $original = basename((string) ($_FILES['jd']['name'] ?? 'document'));
+        $storedName = time() . '_' . $original;
+        try {
+            $storage = new ObjectStorageService($config);
+            $input['jdFile'] = $storage->putUploadedFile(ObjectStorageService::FOLDER_JD, $storedName, $_FILES['jd']);
+            $input['jdFileName'] = $original;
+        } catch (\Throwable) {
+            return 'Failed to save the uploaded file.';
+        }
+
+        return null;
     }
 }

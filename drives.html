@@ -81,6 +81,20 @@
   }
   .drive-detail-field > dd{margin:0;color:var(--text,#0f172a);word-break:break-word}
   .drive-detail-field > dd.drive-detail-multiline{white-space:pre-line}
+  .drive-extra-fields{
+    border:1px solid var(--border,#e2e8f0);border-radius:10px;
+    padding:.85rem 1rem;background:var(--surface,#fff);
+  }
+  .drive-extra-fields h6{margin:0 0 .7rem;font-size:.95rem}
+  .drive-extra-field + .drive-extra-field{
+    margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--border,#e2e8f0);
+  }
+  .drive-extra-title{font-weight:650;margin-bottom:.35rem}
+  .drive-apply-requirement,
+  .drive-extra-requirement{
+    white-space:pre-line;color:var(--text,#0f172a);font-size:.92rem;line-height:1.5;
+    background:var(--surface-2,#f1f5f9);border-radius:8px;padding:.65rem .75rem;margin:0;
+  }
   .drive-detail-field .form-select{margin-top:-.15rem;font-size:.9rem}
   @media (max-width:480px){
     .drive-detail-field{grid-template-columns:1fr;gap:.15rem}
@@ -291,6 +305,8 @@
             <div class="col-md-4"><label class="form-label small fw-semibold">Date of joining <span class="text-muted fw-normal">(optional)</span></label><input type="date" class="form-control" name="dateOfJoining"/></div>
             <div class="col-md-4"><label class="form-label small fw-semibold">Internship stipend <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" name="internshipStipend" placeholder="e.g. ₹15,000 / month"/></div>
             <div class="col-12"><label class="form-label small fw-semibold">Selection process <span class="text-muted fw-normal">(optional)</span></label><textarea class="form-control" name="selectionProcess" rows="2" placeholder="e.g. Online test, technical interview, HR"></textarea></div>
+            <div class="col-md-4"><label class="form-label small fw-semibold" for="createDriveVacancies">Number of vacancies <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" type="number" min="1" step="1" name="vacancies" id="createDriveVacancies" inputmode="numeric"/></div>
+            <div class="col-md-8"><label class="form-label small fw-semibold" for="createDriveUpload">Upload <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" type="file" id="createDriveUpload" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"/><div class="form-text">PDF, DOC, or DOCX. Leave this empty if there is nothing to upload.</div></div>
           </div>
           <h6 class="fw-bold mb-3">Eligibility & schedule</h6>
           <div class="row g-3 border rounded p-3 mb-2 bg-light">
@@ -325,6 +341,15 @@
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddCreateAppField">
             <i class="bi bi-plus-lg me-1"></i>Add field
           </button>
+
+          <div class="mt-4">
+            <label class="form-label small fw-semibold" for="createDrivePublish">Publish</label>
+            <select class="form-select" name="publish" id="createDrivePublish">
+              <option value="yes" selected>Publish</option>
+              <option value="no">Do not publish</option>
+            </select>
+            <div class="form-text">Published drives are visible to students. Unpublished drives stay hidden until the status is changed to Open.</div>
+          </div>
         </div>
         <div class="modal-footer border-top">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -366,7 +391,7 @@
 
         <div class="col-md-4"><label class="form-label small fw-semibold">Registration deadline <span class="text-muted fw-normal">(optional)</span></label><input type="date" class="form-control" id="editDeadline"/></div>
 
-        <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="editStatus"><option>Open</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="editStatus"><option>Open</option><option>Not published</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
 
         <div class="col-12"><h6 class="fw-bold mb-2 mt-1">Eligibility</h6></div>
         <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" id="editMinCgpa" type="number" step="0.1" min="0" max="10"/></div>
@@ -380,6 +405,8 @@
         <div class="col-md-4"><label class="form-label small fw-semibold">Date of joining <span class="text-muted fw-normal">(optional)</span></label><input type="date" class="form-control" id="editDateOfJoining"/></div>
         <div class="col-md-4"><label class="form-label small fw-semibold">Internship stipend <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" id="editInternshipStipend" placeholder="e.g. ₹15,000 / month"/></div>
         <div class="col-12"><label class="form-label small fw-semibold">Selection process <span class="text-muted fw-normal">(optional)</span></label><textarea class="form-control" id="editSelectionProcess" rows="2" placeholder="e.g. Online test, technical interview, HR"></textarea></div>
+        <div class="col-md-4"><label class="form-label small fw-semibold" for="editVacancies">Number of vacancies <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" type="number" min="1" step="1" id="editVacancies" inputmode="numeric"/></div>
+        <div class="col-md-8"><label class="form-label small fw-semibold" for="editDriveUpload">Upload <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" type="file" id="editDriveUpload" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"/><div class="form-text" id="editDriveUploadHint">PDF, DOC, or DOCX. Leave empty to keep the current file.</div></div>
 
         <div class="col-12">
           <h6 class="fw-bold mb-2 mt-1">Additional application fields <span class="text-muted fw-normal small">(optional)</span></h6>
@@ -410,6 +437,11 @@
 
     <p class="small text-muted-2 mb-3" id="applyDriveInfo"></p>
 
+    <div id="applyCustomFieldsWrap" class="d-none mb-3">
+      <h6 class="fw-bold mb-2">Additional details</h6>
+      <div id="applyCustomFields" class="d-flex flex-column gap-3"></div>
+    </div>
+
     <label class="form-label small fw-semibold">Select resume for this job profile</label>
 
     <select class="form-select mb-2" id="applyResumeSelect"></select>
@@ -433,11 +465,6 @@
         <label class="form-label small fw-semibold" for="applyAge">Age</label>
         <input type="text" class="form-control" id="applyAge" readonly placeholder="—" tabindex="-1"/>
       </div>
-    </div>
-
-    <div id="applyCustomFieldsWrap" class="d-none mt-3">
-      <label class="form-label small fw-semibold mb-2">Additional details</label>
-      <div id="applyCustomFields" class="d-flex flex-column gap-2"></div>
     </div>
 
     <label class="form-label small fw-semibold mt-3">Certificates <span class="text-muted fw-normal">(optional)</span></label>
@@ -616,7 +643,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261027dateopt"></script>
+<script src="js/api.js?v=20261027vacancy"></script>
 <script src="js/app.js?v=20261025navsec"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -627,7 +654,7 @@ async function loadDriveRoleScripts() {
   if (typeof OfficerApi !== 'undefined' && typeof AdminApi !== 'undefined' && typeof StaffApi !== 'undefined') return;
   const tags = [
     'js/admin-api.js?v=20260720appview',
-    'js/officer-api.js?v=20261027driveopt',
+    'js/officer-api.js?v=20261027vacancy',
     'js/staff-api.js?v=20260713w',
   ];
   await Promise.all(tags.map((src) => new Promise((resolve) => {
@@ -807,7 +834,7 @@ function normalizeApplicationFieldRows(raw) {
   return list.map((row, i) => ({
     id: String(row?.id || `field_${i + 1}`).trim() || `field_${i + 1}`,
     title: String(row?.title || row?.label || '').trim(),
-    requirement: String(row?.requirement || row?.description || '').trim(),
+    requirement: String(row?.requirement || row?.details || row?.description || '').trim(),
     required: !!(row?.required),
   })).filter(row => row.title);
 }
@@ -874,6 +901,28 @@ function renderApplicationFieldsEditor(containerId, rows, { onChange } = {}) {
   });
 }
 
+function syncApplicationFieldRowsFromDom(containerId, rows) {
+  const el = document.getElementById(containerId);
+  const list = Array.isArray(rows) ? rows : [];
+  if (!el) return list;
+  el.querySelectorAll('[data-app-field-title]').forEach((input) => {
+    const idx = Number(input.getAttribute('data-app-field-title'));
+    if (!list[idx]) return;
+    list[idx].title = String(input.value || '').trim();
+  });
+  el.querySelectorAll('[data-app-field-requirement]').forEach((input) => {
+    const idx = Number(input.getAttribute('data-app-field-requirement'));
+    if (!list[idx]) return;
+    list[idx].requirement = String(input.value || '');
+  });
+  el.querySelectorAll('[data-app-field-required]').forEach((input) => {
+    const idx = Number(input.getAttribute('data-app-field-required'));
+    if (!list[idx]) return;
+    list[idx].required = !!input.checked;
+  });
+  return list;
+}
+
 function readApplicationFieldsFromEditor(rows) {
   return normalizeApplicationFieldRows(rows).map((row, i) => ({
     id: row.id || `field_${i + 1}`,
@@ -895,11 +944,11 @@ function renderApplyCustomFields(drive) {
   }
   wrap.classList.remove('d-none');
   host.innerHTML = fields.map((field) => `
-    <div>
-      <label class="form-label small fw-semibold" for="applyCustom_${escapeApplyHtml(field.id)}">
+    <div class="drive-extra-field">
+      <label class="form-label fw-semibold" for="applyCustom_${escapeApplyHtml(field.id)}">
         ${escapeApplyHtml(field.title)}${field.required ? ' <span class="text-danger">*</span>' : ''}
       </label>
-      ${field.requirement ? `<div class="small text-muted-2 mb-1 drive-detail-multiline">${escapeApplyHtml(field.requirement)}</div>` : ''}
+      ${field.requirement ? `<div class="drive-apply-requirement mb-2">${escapeApplyHtml(field.requirement)}</div>` : ''}
       <textarea class="form-control" rows="4" id="applyCustom_${escapeApplyHtml(field.id)}"
         data-custom-field-id="${escapeApplyHtml(field.id)}"
         data-custom-field-title="${escapeApplyHtml(field.title)}"
@@ -1301,7 +1350,9 @@ async function copyTextToClipboard(text) {
 
 function updateDriveShareLinkUi(driveId) {
   const id = String(driveId || activeDriveId || '').trim();
-  const url = id ? buildDriveShareUrl(id) : '';
+  const drive = (typeof allDrives !== 'undefined' ? allDrives : []).find(d => String(d.id || d._id || '') === id);
+  const unpublished = ['not published', 'draft', 'unpublished'].includes(String(drive?.status || '').trim().toLowerCase());
+  const url = id && !unpublished ? buildDriveShareUrl(id) : '';
   const bar = document.getElementById('driveShareLinkBar');
   const input = document.getElementById('driveShareUrlInput');
   const headerBtn = document.getElementById('btnCopyDriveShareFromModal');
@@ -1408,6 +1459,43 @@ function driveDetailFilled(v) {
   return s !== '' && s !== '—';
 }
 
+function optionalVacancyCount(raw) {
+  const value = String(raw ?? '').trim();
+  if (!value) return '';
+  if (!/^\d+$/.test(value) || Number(value) < 1) return null;
+  return String(Number(value));
+}
+
+function optionalDriveUpload(input) {
+  const file = input?.files?.[0] || null;
+  if (!file) return null;
+  if (!/\.(pdf|doc|docx)$/i.test(file.name)) return false;
+  return file;
+}
+
+function driveUploadLabel(drive) {
+  const named = String(drive?.jdFileName || '').trim();
+  if (named) return named;
+  const uri = String(drive?.jdFile || '').trim();
+  if (!uri) return '';
+  const base = decodeURIComponent(uri.split('/').pop() || '').replace(/^\d+_/, '');
+  return base || 'Uploaded file';
+}
+
+function applicationFieldsDetailHtml(drive) {
+  const fields = normalizeApplicationFieldRows(drive?.applicationFields);
+  if (!fields.length) return '';
+  return `<section class="drive-extra-fields">
+    <h6>Additional details</h6>
+    ${fields.map((field) => `
+      <article class="drive-extra-field">
+        <div class="drive-extra-title">${escapeApplyHtml(field.title)}${field.required ? ' <span class="text-danger">*</span>' : ''}</div>
+        ${field.requirement ? `<div class="drive-extra-requirement">${driveDetailMultiline(field.requirement)}</div>` : ''}
+      </article>
+    `).join('')}
+  </section>`;
+}
+
 function driveDetailMultiline(v) {
   const s = String(v ?? '').trim();
   if (!s || s === '—') return '—';
@@ -1505,10 +1593,13 @@ function fillDriveDetailPanel(list, selectedId) {
       </div>
       <span class="badge-soft ${display.statusCls || driveStatusCls(display.status)}">${display.status || '—'}</span>
     </div>
+    ${!pending ? applicationFieldsDetailHtml(display) : ''}
     <dl class="drive-detail-fields mb-0">
       ${field('Company name', name)}
       ${`<div class="drive-detail-field"><dt>Role</dt>${roleField}</div>`}
       ${field('Package', pending ? 'Select a role' : driveDetailValue(display.package))}
+      ${!pending && driveDetailFilled(display.vacancies) ? field('Vacancies', driveDetailValue(display.vacancies)) : ''}
+      ${!pending && driveUploadLabel(display) ? field('Uploaded file', (isStudent && display.id) ? `<a href="${API_BASE}/student/jds/${encodeURIComponent(display.id)}/document" target="_blank" rel="noopener noreferrer">${escapeApplyHtml(driveUploadLabel(display))}</a>` : escapeApplyHtml(driveUploadLabel(display))) : ''}
       ${field('Job type', pending ? '—' : driveDetailValue(display.jobType))}
       ${field('Tier', pending ? '—' : driveDetailValue(display.tier))}
       ${field('Recruitment date', pending ? '—' : driveDetailValue(display.recruitmentDate))}
@@ -1611,7 +1702,7 @@ function setupStatusFilter() {
     statusWrap?.classList.remove('d-none');
     exportWrap?.classList.remove('d-none');
     if (jobWrap) jobWrap.className = 'col-6 col-md-4';
-    sel.innerHTML = '<option value="Active" selected>Active</option><option value="Open">Open</option><option value="Ongoing">Ongoing</option><option value="Closed">Closed</option><option value="Completed">Completed</option>';
+    sel.innerHTML = '<option value="Active" selected>Active</option><option value="Open">Open</option><option value="Not published">Not published</option><option value="Ongoing">Ongoing</option><option value="Closed">Closed</option><option value="Completed">Completed</option>';
     sel.value = 'Active';
   }
 }
@@ -1699,6 +1790,8 @@ function filteredDrives() {
     // Do not re-filter by local hay — company legal names often differ from the query
     // (e.g. "TCS" vs "Tata Consultancy Services").
     if (statusLookup) {
+      const lookupStatus = String(d.status || '').trim().toLowerCase();
+      if (lookupStatus === 'not published' || lookupStatus === 'draft' || lookupStatus === 'unpublished') return false;
       if (jobType && (d.jobType || '') !== jobType && (d.jobType || '') !== '—') return false;
       return true;
     }
@@ -1711,7 +1804,8 @@ function filteredDrives() {
 
     if (openOnly) {
       const st = String(d.status || '').trim().toLowerCase();
-      if (st !== 'open' && st !== 'ongoing') return false;
+      const officerDraft = role === 'placement_officer' && (st === 'not published' || st === 'draft' || st === 'unpublished');
+      if (st !== 'open' && st !== 'ongoing' && !officerDraft) return false;
     } else if (adminSeesClosed) {
       if (status === 'Active' || status === '') {
         if (String(d.status || '') === 'Completed') return false;
@@ -2689,6 +2783,16 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
   const role = String(fd.get('role') || '').trim();
   const recruitmentDate = String(fd.get('recruitmentDate') || '').trim();
   const deadline = String(fd.get('deadline') || '').trim();
+  const vacancies = optionalVacancyCount(fd.get('vacancies'));
+  if (vacancies === null) {
+    toast('Number of vacancies must be a whole number, or left blank.', 'warn');
+    return;
+  }
+  const upload = optionalDriveUpload(document.getElementById('createDriveUpload'));
+  if (upload === false) {
+    toast('Upload a PDF, DOC, or DOCX file, or leave the upload empty.', 'warn');
+    return;
+  }
 
   if (!companyId) {
     toast('Select a registered company for this drive.', 'warn');
@@ -2728,16 +2832,19 @@ document.getElementById('createDriveForm')?.addEventListener('submit', async e =
     dateOfJoining: String(fd.get('dateOfJoining') || '').trim(),
     internshipStipend: String(fd.get('internshipStipend') || '').trim(),
     selectionProcess: String(fd.get('selectionProcess') || '').trim(),
-    applicationFields: readApplicationFieldsFromEditor(createApplicationFieldRows),
+    vacancies,
+    jdFile: upload,
+    applicationFields: readApplicationFieldsFromEditor(syncApplicationFieldRowsFromDom('createApplicationFields', createApplicationFieldRows)),
     profile: 'General',
-    status: 'Open',
-    statusCls: 'success',
+    status: String(fd.get('publish') || 'yes') === 'no' ? 'Not published' : 'Open',
+    statusCls: String(fd.get('publish') || 'yes') === 'no' ? 'warning' : 'success',
   });
   if (!result) return;
   bootstrap.Modal.getInstance(document.getElementById('createModal'))?.hide();
   const newDriveId = String(result.id || result._id || '').trim();
-  if (newDriveId) showDriveShareLinkModal(newDriveId);
-  else toast('Drive published successfully.', 'success');
+  const published = String(fd.get('publish') || 'yes') !== 'no';
+  if (newDriveId && published) showDriveShareLinkModal(newDriveId);
+  else toast(published ? 'Drive published successfully.' : 'Drive saved. Students cannot see it until you publish it.', 'success');
   await DriveStore.fetch();
   await loadDrives();
 });
@@ -2791,6 +2898,17 @@ window.openEditDrive = id => {
   document.getElementById('editDateOfJoining').value = String(d.dateOfJoining || elig.dateOfJoining || '').slice(0, 10);
   document.getElementById('editInternshipStipend').value = d.internshipStipend || elig.internshipStipend || '';
   document.getElementById('editSelectionProcess').value = d.selectionProcess || elig.selectionProcess || '';
+  const editVacancies = document.getElementById('editVacancies');
+  if (editVacancies) editVacancies.value = String(d.vacancies || elig.vacancies || '').replace(/[^\d]/g, '');
+  const editUpload = document.getElementById('editDriveUpload');
+  if (editUpload) editUpload.value = '';
+  const editUploadHint = document.getElementById('editDriveUploadHint');
+  if (editUploadHint) {
+    const currentFile = driveUploadLabel(d);
+    editUploadHint.textContent = currentFile
+      ? `Current file: ${currentFile}. Choose a new PDF, DOC, or DOCX to replace it, or leave this empty.`
+      : 'PDF, DOC, or DOCX. Leave empty if there is nothing to upload.';
+  }
 
   editApplicationFieldRows = normalizeApplicationFieldRows(d.applicationFields).map((row, i) => ({
     ...row,
@@ -2835,6 +2953,16 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
 
   const id = document.getElementById('editDriveId').value;
   const editModalEl = document.getElementById('editModal');
+  const editVacancies = optionalVacancyCount(document.getElementById('editVacancies')?.value);
+  if (editVacancies === null) {
+    toast('Number of vacancies must be a whole number, or left blank.', 'warn');
+    return;
+  }
+  const editUpload = optionalDriveUpload(document.getElementById('editDriveUpload'));
+  if (editUpload === false) {
+    toast('Upload a PDF, DOC, or DOCX file, or leave the upload empty.', 'warn');
+    return;
+  }
 
   if (!(await confirmAction({
     title: 'Update drive',
@@ -2876,8 +3004,10 @@ document.getElementById('editDriveForm')?.addEventListener('submit', async e => 
       dateOfJoining: document.getElementById('editDateOfJoining').value.trim(),
       internshipStipend: document.getElementById('editInternshipStipend').value.trim(),
       selectionProcess: document.getElementById('editSelectionProcess').value.trim(),
+      vacancies: editVacancies,
+      jdFile: editUpload,
 
-      applicationFields: readApplicationFieldsFromEditor(editApplicationFieldRows),
+      applicationFields: readApplicationFieldsFromEditor(syncApplicationFieldRowsFromDom('editApplicationFields', editApplicationFieldRows)),
 
     }, editingDrive || DriveStore.get(id));
   } catch (err) {

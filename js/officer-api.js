@@ -74,8 +74,9 @@ const OfficerApi = {
   },
 
   mapDrive(d) {
-    const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
-    let status = statusMap[(d.status || '').toLowerCase()] || d.status || 'Open';
+    const rawStatus = String(d.status || '').toLowerCase();
+    const statusMap = { scheduled: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed', draft: 'Not published', unpublished: 'Not published' };
+    let status = statusMap[rawStatus] || d.status || 'Open';
     const meta = typeof driveResultMeta === 'function' ? driveResultMeta(d) : { company: d.companyName || d.company || '', role: d.title || d.role || '' };
     const elig = (d.eligibility && typeof d.eligibility === 'object') ? d.eligibility : {};
     const pkg = String(elig.package || d.package || '').trim();
@@ -88,7 +89,7 @@ const OfficerApi = {
     const minCgpa = elig.minCgpa ?? d.minCgpa ?? '';
     const maxBacklogs = elig.maxBacklogs ?? d.maxBacklogs ?? '';
     // After registration deadline → Closed (unless already Completed).
-    if (status !== 'Completed' && /^\d{4}-\d{2}-\d{2}/.test(deadline)) {
+    if (status !== 'Completed' && status !== 'Not published' && /^\d{4}-\d{2}-\d{2}/.test(deadline)) {
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       if (todayStr > deadline.slice(0, 10)) status = 'Closed';
@@ -121,6 +122,9 @@ const OfficerApi = {
       dateOfJoining: String(elig.dateOfJoining || d.dateOfJoining || '').trim(),
       internshipStipend: String(elig.internshipStipend || d.internshipStipend || '').trim(),
       selectionProcess: String(elig.selectionProcess || d.selectionProcess || '').trim(),
+      vacancies: String(elig.vacancies ?? d.vacancies ?? '').trim(),
+      jdFile: String(d.jdFile || '').trim(),
+      jdFileName: String(d.jdFileName || '').trim(),
       branches: typeof formatDriveBranches === 'function'
         ? formatDriveBranches(d.branches ?? elig.branches ?? '')
         : (Array.isArray(d.branches) ? d.branches.join(', ') : (d.branches || '')),

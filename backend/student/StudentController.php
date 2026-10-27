@@ -1246,6 +1246,10 @@ final class StudentController
       }
 
       $drives = array_slice(array_values($byId), 0, 50);
+      $drives = array_values(array_filter(
+        $drives,
+        static fn (array $drive): bool => !\PMS\Services\DriveLifecycle::isDraft($drive)
+      ));
     } else {
       $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
       $drives = array_values(array_filter(
@@ -1367,6 +1371,9 @@ final class StudentController
     $engine = new EligibilityEngine();
     $eligibility = $engine->checkForDrive($studentId, $driveId);
     $alreadyApplied = (bool) $appModel->findByStudentAndDrive($studentId, $driveId);
+    if (\PMS\Services\DriveLifecycle::isDraft($drive) && !$alreadyApplied) {
+      Response::notFound('Drive not found.');
+    }
     // Allow closed drives for status lookup when the student is eligible to see the company/role.
     if (!$alreadyApplied && !$engine->driveVisibleToStudent($profile, $drive)) {
         Response::notFound('Drive not found.');
