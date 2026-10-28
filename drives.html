@@ -330,9 +330,9 @@
               <div class="form-text mt-1" id="createDriveBranchesHint"></div>
               <select class="d-none" id="createDriveBranches" multiple aria-hidden="true"></select>
             </div>
-            <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" name="minCgpa" type="number" step="0.1" value="7.0"/></div>
-            <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" name="maxBacklogs" type="number" value="0"/></div>
-            <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes)</label><input class="form-control" name="minPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG</div></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" name="minCgpa" type="number" step="0.1" min="0" max="10" placeholder="e.g. 7.0"/></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" name="maxBacklogs" type="number" min="0" step="1" placeholder="e.g. 0"/></div>
+            <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes) <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" name="minPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG. Leave blank for no limit.</div></div>
             <div class="col-md-3"><label class="form-label small fw-semibold">Gender restriction</label><select class="form-select" name="gender" id="createDriveGender"><option value="any" selected>Any</option><option value="male">Male only</option><option value="female">Female only</option></select><div class="form-text">Only matching students see this drive</div></div>
           </div>
           <div class="row g-3">
@@ -399,9 +399,9 @@
         <div class="col-md-4"><label class="form-label small fw-semibold">Status</label><select class="form-select" id="editStatus"><option>Open</option><option>Not published</option><option>Ongoing</option><option>Completed</option><option>Closed</option></select></div>
 
         <div class="col-12"><h6 class="fw-bold mb-2 mt-1">Eligibility</h6></div>
-        <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA</label><input class="form-control" id="editMinCgpa" type="number" step="0.1" min="0" max="10"/></div>
-        <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs</label><input class="form-control" id="editMaxBacklogs" type="number" min="0"/></div>
-        <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes)</label><input class="form-control" id="editMinPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG</div></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Min CGPA <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" id="editMinCgpa" type="number" step="0.1" min="0" max="10" placeholder="e.g. 7.0"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Max backlogs <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" id="editMaxBacklogs" type="number" min="0" step="1" placeholder="e.g. 0"/></div>
+        <div class="col-md-3"><label class="form-label small fw-semibold">Min % (all classes) <span class="text-muted fw-normal">(optional)</span></label><input class="form-control" id="editMinPercentAllClasses" type="number" step="0.01" min="0" max="100" placeholder="e.g. 60"/><div class="form-text">10th, 12th, UG &amp; PG. Leave blank for no limit.</div></div>
         <div class="col-md-3"><label class="form-label small fw-semibold">Gender</label><select class="form-select" id="editGender"><option value="any">Any</option><option value="male">Male only</option><option value="female">Female only</option></select></div>
 
         <div class="col-12"><label class="form-label small fw-semibold">Description</label><textarea class="form-control" id="editDescription" rows="3"></textarea></div>
@@ -648,7 +648,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261027vacancy"></script>
+<script src="js/api.js?v=20261028elig"></script>
 <script src="js/app.js?v=20261025navsec"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -1622,8 +1622,9 @@ function fillDriveDetailPanel(list, selectedId) {
       ${field('Mode', pending ? '—' : driveDetailValue(display.mode))}
       ${display.location && display.location !== '—' ? field('Location', driveDetailValue(display.location)) : ''}
       ${!pending && display.branches && display.branches !== '—' ? field('Eligible branches', driveDetailValue(display.branches)) : ''}
-      ${!pending && display.minCgpa !== '' && display.minCgpa != null ? field('Minimum CGPA', driveDetailValue(display.minCgpa)) : ''}
-      ${!pending && display.maxBacklogs !== '' && display.maxBacklogs != null ? field('Maximum backlogs', driveDetailValue(display.maxBacklogs)) : ''}
+      ${!pending && driveDetailFilled(display.minCgpa) ? field('Minimum CGPA', driveDetailValue(display.minCgpa)) : ''}
+      ${!pending && driveDetailFilled(display.maxBacklogs) ? field('Maximum backlogs', driveDetailValue(display.maxBacklogs)) : ''}
+      ${!pending && driveDetailFilled(elig.minPercentAllClasses) ? field('Min % (all classes)', driveDetailValue(elig.minPercentAllClasses)) : ''}
       ${!pending && display.description ? field('Job description', driveDetailMultiline(display.description), true) : ''}
       ${!pending && driveDetailFilled(display.technicalStack) ? field('Technical stack', driveDetailMultiline(display.technicalStack), true) : ''}
       ${!pending && driveDetailFilled(display.internshipDuration) ? field('Internship duration', driveDetailValue(display.internshipDuration)) : ''}

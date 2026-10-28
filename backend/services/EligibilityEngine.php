@@ -174,16 +174,16 @@ final class EligibilityEngine
         $cgpa = (float) ($academic['cgpa'] ?? 0);
         $backlogs = (int) ($academic['backlogs'] ?? 0);
 
-        // Global placement rules
+        // A blank drive field means this drive sets no limit. Older drives that
+        // omit the key still use the campus placement rule.
         $rule = $this->ruleModel->getActiveRule();
-        $minCgpa = (float) ($criteria['minCgpa'] ?? $rule['minCgpa'] ?? 0);
-        $maxBacklogs = (int) ($criteria['maxBacklogs'] ?? $rule['maxBacklogs'] ?? 99);
-
-        if ($cgpa < $minCgpa) {
+        $minCgpa = $this->driveCriteriaNumber($criteria, 'minCgpa', $rule['minCgpa'] ?? 0);
+        if ($minCgpa !== null && $cgpa < $minCgpa) {
             $reasons[] = "CGPA {$cgpa} is below required minimum {$minCgpa}.";
         }
 
-        if ($backlogs > $maxBacklogs) {
+        $maxBacklogs = $this->driveCriteriaNumber($criteria, 'maxBacklogs', $rule['maxBacklogs'] ?? 99);
+        if ($maxBacklogs !== null && $backlogs > $maxBacklogs) {
             $reasons[] = "Backlogs ({$backlogs}) exceed maximum allowed ({$maxBacklogs}).";
         }
 
@@ -412,6 +412,30 @@ final class EligibilityEngine
                 $reasons[] = "{$label} marks ({$actual}%) are below the required minimum ({$min}%).";
             }
         }
+    }
+
+    /**
+     * Drive limit when set. Blank means this drive has no limit. A missing key
+     * keeps the campus-rule fallback for drives saved before the field was optional.
+     *
+     * @param array<string, mixed> $criteria
+     */
+    private function driveCriteriaNumber(array $criteria, string $key, mixed $fallback): ?float
+    {
+        if (!array_key_exists($key, $criteria) || $criteria[$key] === null) {
+            if ($fallback === null || $fallback === '' || !is_numeric($fallback)) {
+                return null;
+            }
+
+            return (float) $fallback;
+        }
+
+        $value = $criteria[$key];
+        if ($value === '' || !is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
     }
 
     /**

@@ -5006,6 +5006,12 @@ const DriveStore = {
     const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed', 'Not published': 'draft', Draft: 'draft', Unpublished: 'draft' };
     return map[status] || String(status || '').toLowerCase();
   },
+  _optionalCriteriaNumber(value) {
+    const raw = String(value ?? '').trim();
+    if (raw === '') return '';
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : '';
+  },
   _normalizeBranches(branches) {
     if (!branches) return [];
     return Array.isArray(branches)
@@ -5047,11 +5053,9 @@ const DriveStore = {
       if (p[key] === undefined) return;
       eligibility[key] = String(p[key] ?? '').trim();
     });
-    if (p.minCgpa !== undefined && p.minCgpa !== '') eligibility.minCgpa = parseFloat(p.minCgpa) || 0;
-    if (p.maxBacklogs !== undefined && p.maxBacklogs !== '') eligibility.maxBacklogs = parseInt(p.maxBacklogs, 10) || 0;
-    if (p.minPercentAllClasses !== undefined && p.minPercentAllClasses !== '') {
-      eligibility.minPercentAllClasses = parseFloat(p.minPercentAllClasses) || 0;
-    }
+    if (p.minCgpa !== undefined) eligibility.minCgpa = this._optionalCriteriaNumber(p.minCgpa);
+    if (p.maxBacklogs !== undefined) eligibility.maxBacklogs = this._optionalCriteriaNumber(p.maxBacklogs);
+    if (p.minPercentAllClasses !== undefined) eligibility.minPercentAllClasses = this._optionalCriteriaNumber(p.minPercentAllClasses);
     if (p.min10th !== undefined && p.min10th !== '') eligibility.min10th = parseFloat(p.min10th) || 0;
     if (p.min12th !== undefined && p.min12th !== '') eligibility.min12th = parseFloat(p.min12th) || 0;
     if (p.minUg !== undefined && p.minUg !== '') eligibility.minUg = parseFloat(p.minUg) || 0;
@@ -5362,9 +5366,9 @@ const DriveStore = {
       tier: p.tier || 'Tier 2',
       status: this._driveStatusToApi(p.status || 'Open'),
       eligibility: {
-        minCgpa: parseFloat(p.minCgpa) || 0,
-        maxBacklogs: parseInt(p.maxBacklogs, 10) || 0,
-        minPercentAllClasses: parseFloat(p.minPercentAllClasses) || 0,
+        minCgpa: this._optionalCriteriaNumber(p.minCgpa),
+        maxBacklogs: this._optionalCriteriaNumber(p.maxBacklogs),
+        minPercentAllClasses: this._optionalCriteriaNumber(p.minPercentAllClasses),
         min10th: parseFloat(p.min10th) || 0,
         min12th: parseFloat(p.min12th) || 0,
         minUg: parseFloat(p.minUg) || 0,
