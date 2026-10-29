@@ -209,10 +209,6 @@ final class ApplicationUploadService
                 continue;
             }
             $value = trim((string) ($byId[$fieldId] ?? ''));
-            $required = !empty($field['required']);
-            if ($required && $value === '') {
-                throw new \RuntimeException('Please fill in: ' . $title);
-            }
             if ($value === '') {
                 continue;
             }

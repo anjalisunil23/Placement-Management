@@ -341,7 +341,7 @@
           </div>
 
           <h6 class="fw-bold mb-2 mt-4">Additional application fields <span class="text-muted fw-normal small">(optional)</span></h6>
-          <p class="small text-muted-2 mb-2">Add a title and the requirement students should read. They answer in a text area when applying.</p>
+          <p class="small text-muted-2 mb-2">Add a title and the requirement students should read when they apply.</p>
           <div id="createApplicationFields" class="d-flex flex-column gap-2 mb-2"></div>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddCreateAppField">
             <i class="bi bi-plus-lg me-1"></i>Add field
@@ -415,7 +415,7 @@
 
         <div class="col-12">
           <h6 class="fw-bold mb-2 mt-1">Additional application fields <span class="text-muted fw-normal small">(optional)</span></h6>
-          <p class="small text-muted-2 mb-2">Students see the title, the requirement, and a text area when applying.</p>
+          <p class="small text-muted-2 mb-2">Students see the title and the requirement when they apply.</p>
           <div id="editApplicationFields" class="d-flex flex-column gap-2 mb-2"></div>
           <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAddEditAppField">
             <i class="bi bi-plus-lg me-1"></i>Add field
@@ -950,26 +950,12 @@ function renderApplyCustomFields(drive) {
   wrap.classList.remove('d-none');
   host.innerHTML = fields.map((field) => `
     <div class="drive-extra-field">
-      <label class="form-label fw-semibold" for="applyCustom_${escapeApplyHtml(field.id)}">
+      <div class="form-label fw-semibold mb-2">
         ${escapeApplyHtml(field.title)}${field.required ? ' <span class="text-danger">*</span>' : ''}
-      </label>
-      ${field.requirement ? `<div class="drive-apply-requirement mb-2">${linkifyPlainText(field.requirement)}</div>` : ''}
-      <textarea class="form-control" rows="4" id="applyCustom_${escapeApplyHtml(field.id)}"
-        data-custom-field-id="${escapeApplyHtml(field.id)}"
-        data-custom-field-title="${escapeApplyHtml(field.title)}"
-        data-custom-field-required="${field.required ? '1' : '0'}"
-        ${field.required ? 'required' : ''} maxlength="4000" autocomplete="off"></textarea>
+      </div>
+      ${field.requirement ? `<div class="drive-apply-requirement">${linkifyPlainText(field.requirement)}</div>` : ''}
     </div>
   `).join('');
-}
-
-function collectApplyCustomAnswers() {
-  return [...document.querySelectorAll('#applyCustomFields [data-custom-field-id]')].map((input) => ({
-    fieldId: String(input.getAttribute('data-custom-field-id') || '').trim(),
-    title: String(input.getAttribute('data-custom-field-title') || '').trim(),
-    value: String(input.value || '').trim(),
-    required: input.getAttribute('data-custom-field-required') === '1',
-  })).filter((row) => row.fieldId);
 }
 
 function escapeApplyHtml(value) {
@@ -1331,6 +1317,7 @@ function companyDriveCardHtml(drives) {
     <div class="drive-card-role">${roleSummary}</div>
     ${roleNames}
     <div class="drive-card-meta">${meta}</div>
+    ${!multi && (isStudent || alumniSeeking) && first.eligible === false ? studentEligibilityReasonHtml(first) : ''}
     <div class="drive-card-actions"><span class="btn btn-sm btn-outline-primary">${actionLabel}</span></div>
   </article>`;
 }
@@ -1650,6 +1637,7 @@ function fillDriveDetailPanel(list, selectedId) {
     </div>
     <dl class="drive-detail-fields mb-0">${detailRows}</dl>
     ${instructions}
+    ${!pending && (isStudent || alumniSeeking) && active?.eligible === false ? studentEligibilityReasonHtml(active) : ''}
     ${!multi && display.profile && canApplyToDrives() ? `<div class="small text-muted-2">${display.profile}</div>` : ''}
     ${applied && canApplyToDrives() ? `<div>${applyAction(active)}</div>` : ''}`;
 
@@ -1665,7 +1653,7 @@ function fillDriveDetailPanel(list, selectedId) {
       applyBtn.classList.remove('d-none');
       applyBtn.disabled = true;
       applyBtn.textContent = 'Not eligible';
-      applyBtn.title = (Array.isArray(active.eligibilityReasons) ? active.eligibilityReasons : []).join(' ') || 'Not eligible for this drive';
+      applyBtn.title = studentEligibilityReasons(active).join(' ') || 'Not eligible for this drive';
     } else {
       applyBtn.classList.remove('d-none');
       applyBtn.disabled = multi && !detailSelectedDriveId;
@@ -1928,6 +1916,18 @@ window.markDriveCompleted = markDriveCompleted;
 
 
 
+function studentEligibilityReasons(drive) {
+  return (Array.isArray(drive?.eligibilityReasons) ? drive.eligibilityReasons : [])
+    .map((reason) => String(reason || '').trim())
+    .filter(Boolean);
+}
+
+function studentEligibilityReasonHtml(drive) {
+  const reasons = studentEligibilityReasons(drive);
+  const lines = reasons.length ? reasons : ['You are not eligible for this drive.'];
+  return `<div class="small text-danger mt-2">${lines.map((reason) => escapeApplyHtml(reason)).join('<br>')}</div>`;
+}
+
 function applyAction(d) {
 
   const appliedStudent = isStudent && (StudentApps.hasApplied(d.id) || d.applied);
@@ -1943,8 +1943,7 @@ function applyAction(d) {
   }
 
   if ((isStudent || alumniSeeking) && d.eligible === false) {
-    const why = (Array.isArray(d.eligibilityReasons) ? d.eligibilityReasons : []).join(' ') || 'Not eligible for this drive';
-    return `<span class="badge-soft muted" title="${String(why).replace(/"/g, '&quot;')}">Not eligible</span>`;
+    return `<div><span class="badge-soft muted">Not eligible</span>${studentEligibilityReasonHtml(d)}</div>`;
   }
 
   if (isStudent) return `<button class="btn btn-sm btn-primary" onclick="openApply('${d.id}')">Apply</button>`;
@@ -3397,17 +3396,10 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
     return;
   }
 
-  const customAnswers = collectApplyCustomAnswers();
-  const missingRequired = customAnswers.find((row) => row.required && !row.value);
-  if (missingRequired) {
-    toast(`Please fill in: ${missingRequired.title}`, 'warn');
-    return;
-  }
-
   const certEntries = collectApplyCertificateEntries();
   const extras = {
     dob,
-    customAnswers: customAnswers.map(({ fieldId, title, value }) => ({ fieldId, title, value })),
+    customAnswers: [],
   };
   const app = alumniSeeking
     ? await AlumniApps.apply(pendingDrive, resumeId, certEntries, extras)
