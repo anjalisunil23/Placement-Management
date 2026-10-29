@@ -6,6 +6,7 @@ namespace PMS\Services;
 
 use PMS\Models\ResumeModel;
 use PMS\Models\StudentModel;
+use PMS\Utils\DocumentHelper;
 use PMS\Utils\Security;
 
 /**
@@ -35,6 +36,11 @@ final class ApplicationUploadService
      */
     public function resolveResume(array $input, array $profile, string $studentId): ?array
     {
+        $manual = $this->storeManualResume($profile, $studentId);
+        if ($manual !== null) {
+            return $manual;
+        }
+
         $resumeId = (string) ($input['resumeId'] ?? '');
         $resume = null;
 
@@ -69,6 +75,84 @@ final class ApplicationUploadService
         }
 
         return $resume;
+    }
+
+    /**
+     * A PDF chosen on the apply form. Saved into the resume bucket and attached to the application.
+     *
+     * @param array<string, mixed> $profile
+     * @return array<string, mixed>|null
+     */
+    private function storeManualResume(array $profile, string $studentId): ?array
+    {
+        if (!isset($_FILES['resumeFile']) || !is_array($_FILES['resumeFile'])) {
+            return null;
+        }
+        if (($_FILES['resumeFile']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+
+        $error = Security::validatePdfExtensionOnly($_FILES['resumeFile']);
+        if ($error) {
+            throw new \RuntimeException($error);
+        }
+
+        $config = require dirname(__DIR__) . '/config/app.php';
+        $registerNo = (string) ($profile['registerNumber'] ?? '');
+        $original = basename((string) ($_FILES['resumeFile']['name'] ?? 'resume.pdf'));
+        $ext = strtolower(pathinfo($original, PATHINFO_EXTENSION)) ?: 'pdf';
+        $hintName = ($registerNo !== '' ? $registerNo . '_' : '') . 'apply_' . time() . '.' . $ext;
+        $storage = new ObjectStorageService($config);
+        try {
+            $path = $storage->putUploadedFile(
+                ObjectStorageService::FOLDER_RESUMES,
+                $hintName,
+                $_FILES['resumeFile']
+            );
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('Failed to save resume: ' . $e->getMessage());
+        }
+        $storedName = $storage->storedNameFromUri($path);
+        $label = trim((string) pathinfo($original, PATHINFO_FILENAME)) ?: 'Uploaded resume';
+        $userId = Security::toObjectId((string) ($profile['userId'] ?? ''));
+        $studentOid = Security::toObjectId($studentId);
+
+        $doc = [
+            'studentId' => $studentOid,
+            'label' => $label,
+            'profileType' => 'General',
+            'fileName' => $original,
+            'fileSize' => (int) ($_FILES['resumeFile']['size'] ?? 0),
+            'mime' => (string) ($_FILES['resumeFile']['type'] ?? 'application/pdf'),
+            'storedName' => $storedName,
+            'path' => $path,
+            'verified' => false,
+            'isDefault' => false,
+            'uploadedAt' => DocumentHelper::now(),
+        ];
+        if ($userId !== null) {
+            $doc['userId'] = $userId;
+        }
+
+        $id = (new ResumeModel())->insert($doc);
+        if ($studentOid !== null) {
+            (new StudentModel())->update($studentId, [
+                'resume' => [
+                    'filename' => $original,
+                    'path' => $path,
+                    'storedName' => $storedName,
+                    'verified' => false,
+                    'uploadedAt' => DocumentHelper::now(),
+                ],
+            ]);
+        }
+
+        return [
+            'resumeId' => $id,
+            'label' => $label,
+            'fileName' => $original,
+            'path' => $path,
+        ];
     }
 
     /**
@@ -209,10 +293,6 @@ final class ApplicationUploadService
                 continue;
             }
             $value = trim((string) ($byId[$fieldId] ?? ''));
-            $required = !empty($field['required']);
-            if ($required && $value === '') {
-                throw new \RuntimeException('Please fill in: ' . $title);
-            }
             if ($value === '') {
                 continue;
             }

@@ -1260,6 +1260,10 @@ final class StudentController
       }
 
       $drives = array_slice(array_values($byId), 0, 50);
+      $drives = array_values(array_filter(
+        $drives,
+        static fn (array $drive): bool => !\PMS\Services\DriveLifecycle::isDraft($drive)
+      ));
     } else {
       $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
       $drives = array_values(array_filter(
@@ -1381,6 +1385,9 @@ final class StudentController
     $engine = new EligibilityEngine();
     $eligibility = $engine->checkForDrive($studentId, $driveId);
     $alreadyApplied = (bool) $appModel->findByStudentAndDrive($studentId, $driveId);
+    if (\PMS\Services\DriveLifecycle::isDraft($drive) && !$alreadyApplied) {
+      Response::notFound('Drive not found.');
+    }
     // Allow closed drives for status lookup when the student is eligible to see the company/role.
     if (!$alreadyApplied && !$engine->driveVisibleToStudent($profile, $drive)) {
         Response::notFound('Drive not found.');
@@ -1440,7 +1447,11 @@ final class StudentController
 
     $profile = $this->studentModel->findById($studentId) ?? $profile;
     $profile = $uploads->applyDobToProfile($profile, $input, $this->studentModel);
-    $resume = $uploads->resolveResume($input, $profile, $studentId);
+    try {
+      $resume = $uploads->resolveResume($input, $profile, $studentId);
+    } catch (\RuntimeException $e) {
+      Response::error($e->getMessage(), 422);
+    }
 
     try {
       $certificates = $uploads->storeCertificates((string) ($profile['registerNumber'] ?? ''));

@@ -9,7 +9,6 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\DriveApplicationExceptionModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
-use PMS\Models\ResumeModel;
 use PMS\Models\RuleModel;
 use PMS\Models\StudentModel;
 use PMS\Utils\Security;
@@ -174,16 +173,16 @@ final class EligibilityEngine
         $cgpa = (float) ($academic['cgpa'] ?? 0);
         $backlogs = (int) ($academic['backlogs'] ?? 0);
 
-        // Global placement rules
+        // A blank drive field means this drive sets no limit. Older drives that
+        // omit the key still use the campus placement rule.
         $rule = $this->ruleModel->getActiveRule();
-        $minCgpa = (float) ($criteria['minCgpa'] ?? $rule['minCgpa'] ?? 0);
-        $maxBacklogs = (int) ($criteria['maxBacklogs'] ?? $rule['maxBacklogs'] ?? 99);
-
-        if ($cgpa < $minCgpa) {
+        $minCgpa = $this->driveCriteriaNumber($criteria, 'minCgpa', $rule['minCgpa'] ?? 0);
+        if ($minCgpa !== null && $cgpa < $minCgpa) {
             $reasons[] = "CGPA {$cgpa} is below required minimum {$minCgpa}.";
         }
 
-        if ($backlogs > $maxBacklogs) {
+        $maxBacklogs = $this->driveCriteriaNumber($criteria, 'maxBacklogs', $rule['maxBacklogs'] ?? 99);
+        if ($maxBacklogs !== null && $backlogs > $maxBacklogs) {
             $reasons[] = "Backlogs ({$backlogs}) exceed maximum allowed ({$maxBacklogs}).";
         }
 
@@ -209,11 +208,6 @@ final class EligibilityEngine
         // Blacklist
         if ($this->blacklistModel->isBlacklisted($studentId)) {
             $reasons[] = 'Student is blacklisted.';
-        }
-
-        // Resume must be uploaded (profile field or resume library)
-        if (!$this->studentHasResume($student, $resumeId)) {
-            $reasons[] = 'Resume not uploaded.';
         }
 
         // Placement chances — tier cost must be affordable
@@ -415,6 +409,30 @@ final class EligibilityEngine
     }
 
     /**
+     * Drive limit when set. Blank means this drive has no limit. A missing key
+     * keeps the campus-rule fallback for drives saved before the field was optional.
+     *
+     * @param array<string, mixed> $criteria
+     */
+    private function driveCriteriaNumber(array $criteria, string $key, mixed $fallback): ?float
+    {
+        if (!array_key_exists($key, $criteria) || $criteria[$key] === null) {
+            if ($fallback === null || $fallback === '' || !is_numeric($fallback)) {
+                return null;
+            }
+
+            return (float) $fallback;
+        }
+
+        $value = $criteria[$key];
+        if ($value === '' || !is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    /**
      * @param array<string, mixed> $criteria
      */
     private function criteriaMinPercent(array $criteria, string ...$keys): float
@@ -544,28 +562,6 @@ final class EligibilityEngine
         }
 
         return array_values(array_unique(array_filter($codes)));
-    }
-
-    /**
-     * @param array<string, mixed> $student
-     */
-    private function studentHasResume(array $student, ?string $resumeId = null): bool
-    {
-        $studentId = (string) ($student['_id'] ?? '');
-
-        if ($resumeId !== null && $resumeId !== '') {
-            $resume = (new ResumeModel())->findById($resumeId);
-            if ($resume && (string) ($resume['studentId'] ?? '') === $studentId) {
-                return true;
-            }
-        }
-
-        $profileResume = $student['resume'] ?? null;
-        if (is_array($profileResume) && !empty($profileResume['path'])) {
-            return true;
-        }
-
-        return (new ResumeModel())->findByStudent($studentId, 1) !== [];
     }
 
     /**

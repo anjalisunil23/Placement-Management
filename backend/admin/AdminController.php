@@ -96,12 +96,12 @@ final class AdminController
     public function createDrive(): void
     {
         $admin = RBACMiddleware::requireAdmin();
-        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $posted = !empty($_POST) ? $_POST : null;
+        $input = is_array($posted) ? $posted : (json_decode(file_get_contents('php://input') ?: '{}', true) ?? []);
         $errors = Validator::validate($input, [
             'title'     => 'required',
             'companyId' => 'required',
             'type'      => 'required|in:exclusive,pooled,direct',
-            'date'      => 'required',
             'time'      => 'required',
         ]);
         if (!empty($errors)) {
@@ -121,6 +121,16 @@ final class AdminController
         }
         if (array_key_exists('applicationFields', $input)) {
             $input['applicationFields'] = DriveModel::normalizeApplicationFields($input['applicationFields']);
+        }
+        if (isset($input['eligibility']) && is_array($input['eligibility'])) {
+            $vacancyError = DriveModel::normalizeVacancyCount($input['eligibility']);
+            if ($vacancyError !== null) {
+                Response::error($vacancyError, 422);
+            }
+        }
+        $uploadError = DriveModel::attachOptionalJdUpload($input);
+        if ($uploadError !== null) {
+            Response::error($uploadError, 400);
         }
         $companyModel = new CompanyModel();
         $companyId = (string) ($input['companyId'] ?? '');
@@ -142,10 +152,12 @@ final class AdminController
             );
         }
         $id = (new DriveModel())->createDrive($input, (string) $admin['_id']);
-        (new NotificationService())->announceDrive(
-            (string) $input['title'],
-            (string) ($input['date'] ?? '')
-        );
+        if (DriveModel::initialStatus($input['status'] ?? '') !== 'draft') {
+            (new NotificationService())->announceDrive(
+                (string) $input['title'],
+                (string) ($input['date'] ?? '')
+            );
+        }
         Response::success(['id' => $id], 'Drive created.', 201);
     }
 
@@ -158,14 +170,21 @@ final class AdminController
         if (!$drive) {
             Response::notFound('Drive not found.');
         }
-        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        $posted = !empty($_POST) ? $_POST : null;
+        $input = is_array($posted) ? $posted : (json_decode(file_get_contents('php://input') ?: '{}', true) ?? []);
         if (isset($input['eligibility']) && is_string($input['eligibility'])) {
             $input['eligibility'] = json_decode($input['eligibility'], true) ?? [];
         }
         if (isset($input['branches']) && is_string($input['branches'])) {
             $input['branches'] = json_decode($input['branches'], true) ?? [];
         }
-        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','roundProgression','applicationFields','tier','jdFile','status','departmentId'];
+        if (isset($input['eligibility']) && is_array($input['eligibility'])) {
+            $vacancyError = DriveModel::normalizeVacancyCount($input['eligibility']);
+            if ($vacancyError !== null) {
+                Response::error($vacancyError, 422);
+            }
+        }
+        $allowed = ['title','companyId','type','date','time','branches','eligibility','selectionRounds','roundProgression','applicationFields','tier','jdFile','jdFileName','status','departmentId'];
         $update = array_intersect_key($input, array_flip($allowed));
         if (isset($update['eligibility']) && is_array($update['eligibility'])) {
             $update['eligibility'] = array_merge($drive['eligibility'] ?? [], $update['eligibility']);
@@ -191,6 +210,29 @@ final class AdminController
             Response::notFound('Drive not found.');
         }
         Response::success(null, 'Drive deleted.');
+    }
+
+    /** POST /api/admin/drives/{id}/jd */
+    public function uploadDriveJd(string $id): void
+    {
+        RBACMiddleware::requireAdmin();
+        $model = new DriveModel();
+        if (!$model->findById($id)) {
+            Response::notFound('Drive not found.');
+        }
+        $input = [];
+        $uploadError = DriveModel::attachOptionalJdUpload($input);
+        if ($uploadError !== null) {
+            Response::error($uploadError, 400);
+        }
+        if (trim((string) ($input['jdFile'] ?? '')) === '') {
+            Response::error('Choose a PDF, DOC, or DOCX file.', 422);
+        }
+        $model->update($id, [
+            'jdFile' => $input['jdFile'],
+            'jdFileName' => (string) ($input['jdFileName'] ?? ''),
+        ]);
+        Response::success(['jdFileName' => (string) ($input['jdFileName'] ?? '')], 'File uploaded.');
     }
 
     /** POST /api/admin/drives/{id}/shortlist-upload */
@@ -1927,11 +1969,14 @@ final class AdminController
     {
         RBACMiddleware::requirePlacementOfficer();
         $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        foreach (['hrName', 'hrEmail', 'contactNumber', 'companyName'] as $field) {
+            if (array_key_exists($field, $input)) {
+                $input[$field] = trim((string) $input[$field]);
+            }
+        }
         $rules = [
-            'companyName'   => 'required',
-            'hrName'        => 'required',
-            'hrEmail'       => 'required|email',
-            'contactNumber' => 'required',
+            'companyName' => 'required',
+            'hrEmail'     => 'email',
         ];
         $loginEmail = strtolower(trim((string) ($input['loginEmail'] ?? '')));
         $loginPassword = (string) ($input['loginPassword'] ?? '');
@@ -1966,10 +2011,11 @@ final class AdminController
             );
         }
 
+        $hrName = trim((string) ($input['hrName'] ?? ''));
         $companyUserId = '';
         if ($provisionLogin) {
             $companyUserId = $this->userModel->createUser([
-                'name'     => trim((string) $input['hrName']),
+                'name'     => $hrName !== '' ? $hrName : $companyName,
                 'email'    => $loginEmail,
                 'password' => $loginPassword,
                 'role'     => 'company',
@@ -1986,9 +2032,9 @@ final class AdminController
                 'category'          => $input['category'] ?? 'Software',
                 'tier'              => $input['tier'] ?? 'Tier 2',
                 'contacts'          => [[
-                    'name'  => $input['hrName'],
-                    'email' => $input['hrEmail'],
-                    'phone' => $input['contactNumber'],
+                    'name'  => $hrName,
+                    'email' => trim((string) ($input['hrEmail'] ?? '')),
+                    'phone' => trim((string) ($input['contactNumber'] ?? '')),
                 ]],
                 'associationStatus' => 'active',
             ]);

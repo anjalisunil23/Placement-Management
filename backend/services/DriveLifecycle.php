@@ -82,8 +82,18 @@ final class DriveLifecycle
     /**
      * @param array<string, mixed> $drive
      */
+    public static function isDraft(array $drive): bool
+    {
+        $raw = strtolower(trim((string) ($drive['status'] ?? '')));
+
+        return in_array($raw, ['draft', 'unpublished', 'not published', 'not_published'], true);
+    }
+
     public static function effectiveStatus(array $drive): string
     {
+        if (self::isDraft($drive)) {
+            return 'draft';
+        }
         $raw = strtolower(trim((string) ($drive['status'] ?? 'scheduled')));
         if ($raw === 'open') {
             $raw = 'scheduled';
@@ -130,7 +140,11 @@ final class DriveLifecycle
      */
     public static function isVisibleToRole(array $drive, string $role): bool
     {
-        if (strtolower(trim($role)) === 'admin') {
+        $role = strtolower(trim($role));
+        if ($role === 'admin') {
+            return true;
+        }
+        if ($role === 'placement_officer' && self::isDraft($drive)) {
             return true;
         }
 
@@ -149,7 +163,7 @@ final class DriveLifecycle
 
         return array_values(array_filter(
             $drives,
-            static fn (array $drive): bool => self::isOpenForStudents($drive)
+            static fn (array $drive): bool => self::isVisibleToRole($drive, $role)
         ));
     }
 
@@ -158,6 +172,6 @@ final class DriveLifecycle
      */
     public static function isRegistrationOpen(array $drive): bool
     {
-        return !in_array(self::effectiveStatus($drive), ['completed', 'closed'], true);
+        return !in_array(self::effectiveStatus($drive), ['completed', 'closed', 'draft'], true);
     }
 }

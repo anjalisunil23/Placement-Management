@@ -470,6 +470,10 @@ final class AlumniController
       }
 
       $drives = array_slice(array_values($byId), 0, 50);
+      $drives = array_values(array_filter(
+        $drives,
+        static fn (array $drive): bool => !\PMS\Services\DriveLifecycle::isDraft($drive)
+      ));
     } else {
       $allDrives = $driveModel->findAll([], 200, 0, ['date' => -1, 'createdAt' => -1]);
       $drives = array_values(array_filter(
@@ -628,7 +632,11 @@ final class AlumniController
 
     $student = (new StudentModel())->findById($studentId) ?? $student;
     $student = $uploads->applyDobToProfile($student, $input, new StudentModel());
-    $resume = $uploads->resolveResume($input, $student, $studentId);
+    try {
+      $resume = $uploads->resolveResume($input, $student, $studentId);
+    } catch (\RuntimeException $e) {
+      Response::error($e->getMessage(), 422);
+    }
 
     try {
       $certificates = $uploads->storeCertificates((string) ($student['registerNumber'] ?? ''));

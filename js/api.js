@@ -1610,10 +1610,14 @@ const RegisteredCompanies = {
       tier: payload.tier || 'Tier 2',
       contacts: [{ name: hrName, email: hrEmail, phone: contactNumber }],
     };
+    const loginEmail = String(payload.loginEmail || '').trim();
+    const loginPassword = String(payload.loginPassword || '');
+    if (loginEmail) body.loginEmail = loginEmail;
+    if (loginPassword) body.loginPassword = loginPassword;
     const res = await api(`/admin/companies/${encodeURIComponent(companyId)}`, { method: 'PUT', body });
     if (res.success) {
       await this.fetch();
-      return true;
+      return res.data || true;
     }
     toast(res.message || 'Could not update company.', res.status === 409 ? 'warn' : 'error');
     return null;
@@ -2352,16 +2356,18 @@ const StudentApps = {
       : [];
     const dob = String(extras?.dob || '').trim();
     const customAnswers = Array.isArray(extras?.customAnswers) ? extras.customAnswers : [];
+    const resumeFile = extras?.resumeFile instanceof File ? extras.resumeFile : null;
 
     if (Auth.role() === 'student' && Auth.hasSession() && !Auth.isDemo()) {
       let res;
-      if (entries.length || dob || customAnswers.length) {
+      if (entries.length || dob || customAnswers.length || resumeFile) {
         const form = new FormData();
         form.append('driveId', drive.id);
-        form.append('resumeId', resumeId || '');
+        form.append('resumeId', resumeFile ? '' : (resumeId || ''));
         form.append('resumeLabel', resume?.label || '');
-        form.append('resumeFileName', resume?.fileName || '');
-        form.append('resumePath', resumePath || '');
+        form.append('resumeFileName', resumeFile?.name || resume?.fileName || '');
+        form.append('resumePath', resumeFile ? '' : (resumePath || ''));
+        if (resumeFile) form.append('resumeFile', resumeFile, resumeFile.name);
         if (dob) form.append('dob', dob);
         if (customAnswers.length) form.append('customAnswers', JSON.stringify(customAnswers));
         entries.forEach((entry) => {
@@ -2484,15 +2490,17 @@ const AlumniApps = {
       : [];
     const dob = String(extras?.dob || '').trim();
     const customAnswers = Array.isArray(extras?.customAnswers) ? extras.customAnswers : [];
+    const resumeFile = extras?.resumeFile instanceof File ? extras.resumeFile : null;
 
     let res;
-    if (entries.length || dob || customAnswers.length) {
+    if (entries.length || dob || customAnswers.length || resumeFile) {
       const form = new FormData();
       form.append('driveId', drive.id);
-      form.append('resumeId', resumeId || '');
+      form.append('resumeId', resumeFile ? '' : (resumeId || ''));
       form.append('resumeLabel', resume?.label || '');
-      form.append('resumeFileName', resume?.fileName || '');
-      form.append('resumePath', resumePath || '');
+      form.append('resumeFileName', resumeFile?.name || resume?.fileName || '');
+      form.append('resumePath', resumeFile ? '' : (resumePath || ''));
+      if (resumeFile) form.append('resumeFile', resumeFile, resumeFile.name);
       if (dob) form.append('dob', dob);
       if (customAnswers.length) form.append('customAnswers', JSON.stringify(customAnswers));
       entries.forEach((entry) => {
@@ -3562,53 +3570,107 @@ function renderEligibleDepartmentCheckboxes(container, { selectedParents = null,
       .map(c => resolveCollegeProgrammeCode(c) || String(c).trim().toUpperCase())
       .filter(Boolean)
   );
+  const useCodes = codeSet.size > 0;
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
   const uid = `deptchk-${Math.random().toString(36).slice(2, 8)}`;
   const rows = groups.map((group, idx) => {
     const codes = group.programmes || [];
-    const checked = [...parentSet].some(p => departmentNamesMatch(p, group.parent))
-      || (codeSet.size > 0 && codes.some(c => codeSet.has(c)));
-    const id = `${uid}-${idx}`;
-    const parentAttr = String(group.parent).replace(/"/g, '&quot;');
-    const value = codes.join('|').replace(/"/g, '&quot;');
-    const label = codes.length ? `${group.parent} (${codes.join(', ')})` : group.parent;
-    return { id, parentAttr, value, label, checked };
+    const parentOn = [...parentSet].some(p => departmentNamesMatch(p, group.parent));
+    const branches = codes.map((code, branchIdx) => {
+      const normalized = resolveCollegeProgrammeCode(code) || String(code).trim().toUpperCase();
+      const checked = useCodes ? codeSet.has(normalized) : parentOn;
+      const label = resolveCollegeProgrammeLabel(normalized) || normalized;
+      return {
+        id: `${uid}-${idx}-b${branchIdx}`,
+        code: normalized,
+        label,
+        checked,
+      };
+    }).filter(b => b.code);
+    const checkedCount = branches.filter(b => b.checked).length;
+    return {
+      id: `${uid}-${idx}`,
+      parent: group.parent,
+      branches,
+      checkedCount,
+    };
   });
-  const allChecked = rows.length > 0 && rows.every(g => g.checked);
+  const branchTotal = rows.reduce((n, g) => n + g.branches.length, 0);
+  const branchOn = rows.reduce((n, g) => n + g.checkedCount, 0);
+  const allChecked = branchTotal > 0 && branchOn === branchTotal;
   container.innerHTML = rows.length
     ? [
       `<div class="form-check border-bottom pb-2 mb-2">
         <input class="form-check-input drive-dept-select-all" type="checkbox" id="${uid}-all"${allChecked ? ' checked' : ''}>
         <label class="form-check-label fw-semibold" for="${uid}-all">Select all</label>
       </div>`,
-      ...rows.map(g =>
-        `<div class="form-check">
-          <input class="form-check-input drive-dept-check" type="checkbox" name="driveDepartments" value="${g.value}" data-parent="${g.parentAttr}" id="${g.id}"${g.checked ? ' checked' : ''}>
-          <label class="form-check-label small" for="${g.id}">${g.label.replace(/</g, '&lt;')}</label>
-        </div>`
-      ),
+      ...rows.map(g => {
+        const parentAttr = esc(g.parent);
+        const showBranches = g.checkedCount > 0;
+        const branchHtml = g.branches.map(b =>
+          `<div class="form-check form-check-inline me-2 mb-1">
+            <input class="form-check-input drive-branch-check" type="checkbox" value="${esc(b.code)}" data-parent="${parentAttr}" id="${b.id}"${b.checked ? ' checked' : ''}>
+            <label class="form-check-label small" for="${b.id}">${esc(b.label)}</label>
+          </div>`
+        ).join('');
+        return `<div class="drive-dept-group mb-2">
+          <div class="form-check mb-1">
+            <input class="form-check-input drive-dept-check" type="checkbox" data-parent="${parentAttr}" id="${g.id}">
+            <label class="form-check-label small" for="${g.id}">${esc(g.parent)}</label>
+          </div>
+          <div class="drive-branch-list ps-4 ms-1 border-start${showBranches ? '' : ' d-none'}">${branchHtml}</div>
+        </div>`;
+      }),
     ].join('')
     : '<span class="small text-muted-2">No departments returned from the server. Refresh and try again.</span>';
 
   const selectAll = container.querySelector('.drive-dept-select-all');
-  const checks = () => [...container.querySelectorAll('.drive-dept-check')];
+  const groupsEls = () => [...container.querySelectorAll('.drive-dept-group')];
+  const syncGroup = (group) => {
+    const dept = group.querySelector('.drive-dept-check');
+    const branches = [...group.querySelectorAll('.drive-branch-check')];
+    const on = branches.filter(b => b.checked);
+    if (dept) {
+      dept.checked = branches.length > 0 && on.length === branches.length;
+      dept.indeterminate = on.length > 0 && on.length < branches.length;
+    }
+    group.querySelector('.drive-branch-list')?.classList.toggle('d-none', on.length === 0);
+  };
   const syncSelectAll = () => {
     if (!selectAll) return;
-    const list = checks();
-    const on = list.filter(c => c.checked);
-    selectAll.checked = list.length > 0 && on.length === list.length;
-    selectAll.indeterminate = on.length > 0 && on.length < list.length;
+    const branches = [...container.querySelectorAll('.drive-branch-check')];
+    const on = branches.filter(b => b.checked);
+    selectAll.checked = branches.length > 0 && on.length === branches.length;
+    selectAll.indeterminate = on.length > 0 && on.length < branches.length;
   };
+  groupsEls().forEach(syncGroup);
   syncSelectAll();
   selectAll?.addEventListener('change', () => {
     const on = !!selectAll.checked;
-    checks().forEach(c => { c.checked = on; });
     selectAll.indeterminate = false;
+    container.querySelectorAll('.drive-branch-check').forEach(b => { b.checked = on; });
+    groupsEls().forEach(syncGroup);
     container.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  container.querySelectorAll('.drive-dept-check').forEach(cb => {
-    cb.addEventListener('change', () => {
+  groupsEls().forEach(group => {
+    const dept = group.querySelector('.drive-dept-check');
+    dept?.addEventListener('change', () => {
+      const on = !!dept.checked;
+      dept.indeterminate = false;
+      group.querySelectorAll('.drive-branch-check').forEach(b => { b.checked = on; });
+      group.querySelector('.drive-branch-list')?.classList.toggle('d-none', !on);
       syncSelectAll();
       container.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    group.querySelectorAll('.drive-branch-check').forEach(branch => {
+      branch.addEventListener('change', () => {
+        syncGroup(group);
+        syncSelectAll();
+        container.dispatchEvent(new Event('change', { bubbles: true }));
+      });
     });
   });
 }
@@ -3628,6 +3690,14 @@ function programmeCodesFromDepartmentSelect(selectEl) {
 function programmeCodesFromDepartmentCheckboxes(container) {
   if (!container) return [];
   const codes = [];
+  const branchBoxes = container.querySelectorAll('.drive-branch-check');
+  if (branchBoxes.length) {
+    container.querySelectorAll('.drive-branch-check:checked').forEach(cb => {
+      const code = String(cb.value || '').trim();
+      if (code) codes.push(code);
+    });
+    return [...new Set(codes)];
+  }
   container.querySelectorAll('.drive-dept-check:checked').forEach(cb => {
     String(cb.value || '').split('|').map(s => s.trim()).filter(Boolean).forEach(c => codes.push(c));
   });
@@ -3639,6 +3709,10 @@ function selectedDepartmentParents(container) {
   if (container.tagName === 'SELECT') {
     return [...container.selectedOptions].map(o => o.dataset.parent || o.textContent).filter(Boolean);
   }
+  const fromBranches = [...container.querySelectorAll('.drive-branch-check:checked')]
+    .map(cb => cb.dataset.parent || '')
+    .filter(Boolean);
+  if (container.querySelector('.drive-branch-check')) return [...new Set(fromBranches)];
   return [...container.querySelectorAll('.drive-dept-check:checked')]
     .map(cb => cb.dataset.parent || '')
     .filter(Boolean);
@@ -3647,15 +3721,30 @@ function selectedDepartmentParents(container) {
 function setDepartmentCheckboxParents(container, parents) {
   if (!container) return;
   const want = new Set((Array.isArray(parents) ? parents : []).map(p => String(p || '').trim()).filter(Boolean));
-  container.querySelectorAll('.drive-dept-check').forEach(cb => {
-    cb.checked = want.has(String(cb.dataset.parent || '').trim());
-  });
+  const matches = (parent) => [...want].some(p => p === parent || departmentNamesMatch(p, parent));
+  if (container.querySelector('.drive-branch-check')) {
+    container.querySelectorAll('.drive-dept-group').forEach(group => {
+      const dept = group.querySelector('.drive-dept-check');
+      const on = matches(String(dept?.dataset.parent || '').trim());
+      group.querySelectorAll('.drive-branch-check').forEach(cb => { cb.checked = on; });
+      if (dept) {
+        dept.checked = on;
+        dept.indeterminate = false;
+      }
+      group.querySelector('.drive-branch-list')?.classList.toggle('d-none', !on);
+    });
+  } else {
+    container.querySelectorAll('.drive-dept-check').forEach(cb => {
+      cb.checked = matches(String(cb.dataset.parent || '').trim());
+    });
+  }
   const selectAll = container.querySelector('.drive-dept-select-all');
   if (selectAll) {
-    const list = [...container.querySelectorAll('.drive-dept-check')];
-    const on = list.filter(c => c.checked);
-    selectAll.checked = list.length > 0 && on.length === list.length;
-    selectAll.indeterminate = on.length > 0 && on.length < list.length;
+    const list = [...container.querySelectorAll('.drive-branch-check')];
+    const boxes = list.length ? list : [...container.querySelectorAll('.drive-dept-check')];
+    const on = boxes.filter(c => c.checked);
+    selectAll.checked = boxes.length > 0 && on.length === boxes.length;
+    selectAll.indeterminate = on.length > 0 && on.length < boxes.length;
   }
 }
 
@@ -4838,12 +4927,12 @@ function canManageDrives() {
 }
 
 function driveStatusCls(status) {
-  const map = { Open:'success', Ongoing:'info', Completed:'primary', Closed:'muted' };
+  const map = { Open:'success', Ongoing:'info', Completed:'primary', Closed:'muted', 'Not published':'warning', Draft:'warning' };
   return map[status] || 'muted';
 }
 
 function driveUiStatusToApi(status) {
-  const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed' };
+  const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed', 'Not published': 'draft', Draft: 'draft', Unpublished: 'draft' };
   return map[status] || String(status || '').toLowerCase();
 }
 
@@ -4918,8 +5007,14 @@ const DriveStore = {
     return this.catalogEntry(id);
   },
   _driveStatusToApi(status) {
-    const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed' };
+    const map = { Open: 'scheduled', Ongoing: 'ongoing', Completed: 'completed', Closed: 'closed', 'Not published': 'draft', Draft: 'draft', Unpublished: 'draft' };
     return map[status] || String(status || '').toLowerCase();
+  },
+  _optionalCriteriaNumber(value) {
+    const raw = String(value ?? '').trim();
+    if (raw === '') return '';
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : '';
   },
   _normalizeBranches(branches) {
     if (!branches) return [];
@@ -4958,11 +5053,13 @@ const DriveStore = {
       description: String(p.description ?? prevElig.description ?? existing?.description ?? '').trim(),
       location: String(p.location ?? prevElig.location ?? '').trim(),
     };
-    if (p.minCgpa !== undefined && p.minCgpa !== '') eligibility.minCgpa = parseFloat(p.minCgpa) || 0;
-    if (p.maxBacklogs !== undefined && p.maxBacklogs !== '') eligibility.maxBacklogs = parseInt(p.maxBacklogs, 10) || 0;
-    if (p.minPercentAllClasses !== undefined && p.minPercentAllClasses !== '') {
-      eligibility.minPercentAllClasses = parseFloat(p.minPercentAllClasses) || 0;
-    }
+    ['technicalStack', 'internshipDuration', 'dateOfJoining', 'internshipStipend', 'selectionProcess', 'vacancies'].forEach((key) => {
+      if (p[key] === undefined) return;
+      eligibility[key] = String(p[key] ?? '').trim();
+    });
+    if (p.minCgpa !== undefined) eligibility.minCgpa = this._optionalCriteriaNumber(p.minCgpa);
+    if (p.maxBacklogs !== undefined) eligibility.maxBacklogs = this._optionalCriteriaNumber(p.maxBacklogs);
+    if (p.minPercentAllClasses !== undefined) eligibility.minPercentAllClasses = this._optionalCriteriaNumber(p.minPercentAllClasses);
     if (p.min10th !== undefined && p.min10th !== '') eligibility.min10th = parseFloat(p.min10th) || 0;
     if (p.min12th !== undefined && p.min12th !== '') eligibility.min12th = parseFloat(p.min12th) || 0;
     if (p.minUg !== undefined && p.minUg !== '') eligibility.minUg = parseFloat(p.minUg) || 0;
@@ -4991,13 +5088,18 @@ const DriveStore = {
       body.applicationFields = existing.applicationFields;
     }
     if (companyId) body.companyId = companyId;
-    const recruitmentDate = String(p.date ?? p.recruitmentDate ?? existing?.date ?? '').trim();
-    if (recruitmentDate && recruitmentDate !== '—' && recruitmentDate !== 'TBD') body.date = recruitmentDate;
+    if (p.date !== undefined || p.recruitmentDate !== undefined) {
+      const recruitmentDate = String(p.date ?? p.recruitmentDate ?? '').trim();
+      body.date = (!recruitmentDate || recruitmentDate === '—' || recruitmentDate === 'TBD') ? '' : recruitmentDate;
+    } else {
+      const recruitmentDate = String(existing?.date ?? '').trim();
+      if (recruitmentDate && recruitmentDate !== '—' && recruitmentDate !== 'TBD') body.date = recruitmentDate;
+    }
     if (p.status) body.status = this._driveStatusToApi(p.status);
     return body;
   },
   mapStudentDrive(d) {
-    const statusMap = { scheduled: 'Open', open: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed' };
+    const statusMap = { scheduled: 'Open', open: 'Open', ongoing: 'Ongoing', completed: 'Completed', closed: 'Closed', draft: 'Not published', unpublished: 'Not published' };
     const rawStatus = (d.status || '').toLowerCase();
     let status = statusMap[rawStatus] || d.status || 'Open';
     const title = String(d.title || d.role || '').trim();
@@ -5024,24 +5126,33 @@ const DriveStore = {
     const tier = String(d.tier || '').trim();
     const location = String(d.location || elig.location || '').trim();
     const description = String(d.description || elig.description || '').trim();
+    const technicalStack = String(d.technicalStack || elig.technicalStack || '').trim();
+    const internshipDuration = String(d.internshipDuration || elig.internshipDuration || '').trim();
+    const dateOfJoining = String(d.dateOfJoining || elig.dateOfJoining || '').trim();
+    const internshipStipend = String(d.internshipStipend || elig.internshipStipend || '').trim();
+    const selectionProcess = String(d.selectionProcess || elig.selectionProcess || '').trim();
+    const vacancies = String(d.vacancies ?? elig.vacancies ?? '').trim();
+    const jdFileName = String(d.jdFileName || '').trim();
+    const jdFile = String(d.jdFile || '').trim();
     const branches = formatDriveBranches(d.branches ?? elig.branches ?? '');
-    if (status !== 'Completed' && /^\d{4}-\d{2}-\d{2}/.test(regDeadline)) {
+    if (status !== 'Completed' && status !== 'Not published' && /^\d{4}-\d{2}-\d{2}/.test(regDeadline)) {
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       if (todayStr > regDeadline.slice(0, 10)) status = 'Closed';
     }
-    if (status !== 'Completed' && status !== 'Closed' && /^\d{4}-\d{2}-\d{2}/.test(recruitmentDate)) {
+    if (status !== 'Completed' && status !== 'Closed' && status !== 'Not published' && /^\d{4}-\d{2}-\d{2}/.test(recruitmentDate)) {
       const today = new Date();
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       if (todayStr > recruitmentDate.slice(0, 10)) status = 'Closed';
     }
     const closedByDeadline = status === 'Closed';
+    const rawReasons = closedByDeadline
+      ? ['Registration closed.']
+      : (Array.isArray(check?.reasons) ? check.reasons : []);
+    const eligibilityReasons = rawReasons.filter((reason) => !/resume not uploaded/i.test(String(reason || '')));
     const eligible = closedByDeadline
       ? false
-      : (check ? check.eligible !== false : true);
-    const eligibilityReasons = closedByDeadline
-      ? ['Registration closed.']
-      : (check?.reasons || []);
+      : eligibilityReasons.length === 0 || (check ? check.eligible !== false : true);
     return {
       id: d._id || d.id,
       companyId: d.companyId || '',
@@ -5054,6 +5165,14 @@ const DriveStore = {
       recruitmentDate: recruitmentDate || '—',
       location: location || '—',
       description,
+      technicalStack,
+      internshipDuration,
+      dateOfJoining,
+      internshipStipend,
+      selectionProcess,
+      vacancies,
+      jdFileName,
+      jdFile,
       branches,
       minCgpa: elig.minCgpa ?? '',
       maxBacklogs: elig.maxBacklogs ?? '',
@@ -5065,7 +5184,7 @@ const DriveStore = {
       applicationStatus: d.applicationStatus || null,
       eligible,
       eligibilityReasons,
-      applicationFields: Array.isArray(d.applicationFields) ? d.applicationFields : [],
+      applicationFields: (Array.isArray(d.applicationFields) ? d.applicationFields : (Array.isArray(elig.applicationFields) ? elig.applicationFields : [])),
       eligibility: { ...elig, deadline: (regDeadline && regDeadline !== 'TBD') ? regDeadline.slice(0, 10) : (elig.deadline || '') },
       _fromApi: true,
     };
@@ -5090,7 +5209,7 @@ const DriveStore = {
     return (Array.isArray(list) ? list : []).filter((d) => {
       if (!d) return false;
       const st = String(d.status || '').trim().toLowerCase();
-      if (st === 'closed' || st === 'completed') return false;
+      if (st === 'closed' || st === 'completed' || st === 'draft' || st === 'unpublished' || st === 'not published') return false;
       if (st !== '' && st !== 'open' && st !== 'ongoing' && st !== 'scheduled') return false;
       const elig = d.eligibility && typeof d.eligibility === 'object' ? d.eligibility : {};
       if (ymdPast(elig.deadline || d.registrationDeadline || d.deadline || '')) return false;
@@ -5187,6 +5306,28 @@ const DriveStore = {
     }
     return this.allWithCatalog();
   },
+  _withOptionalUpload(driveBody, file) {
+    if (!(file instanceof File)) return driveBody;
+    const form = new FormData();
+    Object.entries(driveBody).forEach(([key, value]) => {
+      if (value == null) return;
+      form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    });
+    form.append('jd', file, file.name);
+    return form;
+  },
+  async _uploadDriveDocument(id, file) {
+    if (!(file instanceof File)) return true;
+    const form = new FormData();
+    form.append('jd', file, file.name);
+    const path = Auth.role() === 'placement_officer'
+      ? `/officer/drives/${encodeURIComponent(id)}/jd`
+      : `/admin/drives/${encodeURIComponent(id)}/jd`;
+    const res = await api(path, { method: 'POST', body: form });
+    if (res.success) return true;
+    toast(res.message || 'Drive saved, but the file could not be uploaded.', 'warn');
+    return false;
+  },
   async add(p) {
     if (!canManageDrives()) return null;
     if (!(await requireWriteSession())) return null;
@@ -5204,7 +5345,7 @@ const DriveStore = {
     const role = String(p.role || p.title || '').trim();
     const company = String(p.company || '').trim();
     const title = String(p.title || (company && role ? `${company} — ${role}` : role || company)).trim();
-    const date = String(p.date || p.recruitmentDate || p.deadline || '').trim();
+    const date = String(p.date ?? p.recruitmentDate ?? '').trim();
     const time = String(p.time || '10:00').trim();
 
     if (!companyId) {
@@ -5213,10 +5354,6 @@ const DriveStore = {
     }
     if (!title) {
       toast('Job role is required.', 'error');
-      return null;
-    }
-    if (!date) {
-      toast('Recruitment date is required.', 'error');
       return null;
     }
 
@@ -5232,10 +5369,11 @@ const DriveStore = {
       time,
       branches,
       tier: p.tier || 'Tier 2',
+      status: this._driveStatusToApi(p.status || 'Open'),
       eligibility: {
-        minCgpa: parseFloat(p.minCgpa) || 0,
-        maxBacklogs: parseInt(p.maxBacklogs, 10) || 0,
-        minPercentAllClasses: parseFloat(p.minPercentAllClasses) || 0,
+        minCgpa: this._optionalCriteriaNumber(p.minCgpa),
+        maxBacklogs: this._optionalCriteriaNumber(p.maxBacklogs),
+        minPercentAllClasses: this._optionalCriteriaNumber(p.minPercentAllClasses),
         min10th: parseFloat(p.min10th) || 0,
         min12th: parseFloat(p.min12th) || 0,
         minUg: parseFloat(p.minUg) || 0,
@@ -5247,6 +5385,12 @@ const DriveStore = {
         mode: p.mode || '',
         deadline: (p.deadline && p.deadline !== 'TBD') ? p.deadline : '',
         description: p.description || '',
+        technicalStack: String(p.technicalStack || '').trim(),
+        internshipDuration: String(p.internshipDuration || '').trim(),
+        dateOfJoining: String(p.dateOfJoining || '').trim(),
+        internshipStipend: String(p.internshipStipend || '').trim(),
+        selectionProcess: String(p.selectionProcess || '').trim(),
+        vacancies: String(p.vacancies ?? '').trim(),
       },
       selectionRounds: Array.isArray(p.selectionRounds) ? p.selectionRounds : [],
       roundProgression: String(p.roundProgression || 'sequential').toLowerCase() === 'parallel' ? 'parallel' : 'sequential',
@@ -5260,14 +5404,15 @@ const DriveStore = {
       return res?.message || 'Could not create drive.';
     };
 
+    const requestBody = this._withOptionalUpload(driveBody, p.jdFile);
     if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
-      const res = await api('/officer/drives', { method: 'POST', body: driveBody });
+      const res = await api('/officer/drives', { method: 'POST', body: requestBody });
       if (res.success) { await this.fetch(); DriveStore._studentCache = null; return res.data; }
       toast(formatErrors(res), res.status === 409 ? 'warn' : 'error');
       return null;
     }
     if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
-      const res = await api('/admin/drives', { method: 'POST', body: driveBody });
+      const res = await api('/admin/drives', { method: 'POST', body: requestBody });
       if (res.success) { await this.fetch(); DriveStore._studentCache = null; return res.data; }
       toast(formatErrors(res), res.status === 409 ? 'warn' : 'error');
       return null;
@@ -5291,6 +5436,8 @@ const DriveStore = {
       if (Auth.role() === 'placement_officer' && Auth.hasRealAuth()) {
         const res = await api(`/officer/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
         if (res.success) {
+          const uploaded = await this._uploadDriveDocument(id, p.jdFile);
+          if (uploaded === false) return null;
           this._apiCache = null;
           await this.fetch();
           return true;
@@ -5301,6 +5448,8 @@ const DriveStore = {
       if (Auth.role() === 'admin' && Auth.hasRealAuth()) {
         const res = await api(`/admin/drives/${encodeURIComponent(id)}`, { method: 'PUT', body });
         if (res.success) {
+          const uploaded = await this._uploadDriveDocument(id, p.jdFile);
+          if (uploaded === false) return null;
           this._apiCache = null;
           await this.fetch();
           return true;
