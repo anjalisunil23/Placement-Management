@@ -27,6 +27,7 @@ use PMS\Services\AesLoginService;
 use PMS\Services\EligibilityEngine;
 use PMS\Services\NotificationService;
 use PMS\Services\ObjectStorageService;
+use PMS\Services\OfferLetterTracking;
 use PMS\Services\StaffCourseQuestionService;
 use PMS\Services\StudentProfileEditService;
 use PMS\Utils\DocumentHelper;
@@ -467,6 +468,10 @@ final class StudentController
     }
     if (!empty($out['selfPlacement']) && is_array($out['selfPlacement'])) {
       unset($out['selfPlacement']['offerLetterPath']);
+      $out['selfPlacement'] = array_merge(
+        $out['selfPlacement'],
+        OfferLetterTracking::summarize($out['selfPlacement'])
+      );
     }
     if (!empty($out['placed'])) {
       $placement = is_array($out['placement'] ?? null) ? $out['placement'] : null;
@@ -484,6 +489,15 @@ final class StudentController
           'companyIdDoc'  => (string) ($sp['companyIdDoc'] ?? ''),
           'source'        => 'self_reported',
         ];
+      }
+      if (is_array($out['placement'] ?? null)) {
+        $out['placement'] = array_merge(
+          $out['placement'],
+          OfferLetterTracking::summarize($out['placement'])
+        );
+        $out['offerLetterStatus'] = (string) ($out['placement']['offerLetterStatus'] ?? '');
+        $out['offerLetterStatusLabel'] = (string) ($out['placement']['offerLetterStatusLabel'] ?? '');
+        $out['needsOfferLetterFollowUp'] = (bool) ($out['placement']['needsOfferLetterFollowUp'] ?? false);
       }
     }
 
@@ -1568,8 +1582,10 @@ final class StudentController
     $hasOffer = $this->hasUploadedFile('offerLetter');
     $hasJoining = $this->hasUploadedFile('joiningLetter');
     $hasCompanyId = $this->hasUploadedFile('companyIdDoc');
-    if (!$hasOffer && !$hasJoining && !$hasCompanyId) {
-      Response::error('Upload at least one document: offer letter, joining letter, or company ID.', 400);
+    $exceptionInput = OfferLetterTracking::parseExceptionInput($_POST);
+    $hasConfidentiality = $exceptionInput['exception'] === OfferLetterTracking::EXCEPTION_COMPANY_CONFIDENTIALITY;
+    if (!$hasOffer && !$hasJoining && !$hasCompanyId && !$hasConfidentiality) {
+      Response::error('Upload at least one document (offer letter preferred), or record a company confidentiality exception.', 400);
     }
 
     $config = require dirname(__DIR__) . '/config/app.php';
@@ -1641,10 +1657,14 @@ final class StudentController
       'endDate'        => $endDate,
       'status'         => 'pending',
       'submittedAt'    => DocumentHelper::now(),
+      'reportedBy'     => (string) ($user['name'] ?? 'Student'),
+      'reportedByRole' => 'student',
     ];
     if ($offerLetter !== null) {
       $report['offerLetter'] = $offerLetter;
+      $report['offerLetterVerified'] = false;
     }
+    $report = OfferLetterTracking::applyUploadState($report, $offerLetter, $_POST);
     if ($joiningLetter !== null) {
       $report['joiningLetter'] = $joiningLetter;
     }
@@ -1818,8 +1838,10 @@ final class StudentController
       $companyIdDoc = $newCompanyId;
     }
 
-    if ($offerLetter === '' && $joiningLetter === '' && $companyIdDoc === '') {
-      Response::error('At least one document is required: offer letter, joining letter, or company ID.', 422);
+    $exceptionInput = OfferLetterTracking::parseExceptionInput($_POST);
+    $hasConfidentiality = $exceptionInput['exception'] === OfferLetterTracking::EXCEPTION_COMPANY_CONFIDENTIALITY;
+    if ($offerLetter === '' && $joiningLetter === '' && $companyIdDoc === '' && !$hasConfidentiality) {
+      Response::error('At least one document is required: offer letter, joining letter, or company ID — or record a confidentiality exception.', 422);
     }
 
     $placement = array_merge($placement, [
@@ -1834,8 +1856,9 @@ final class StudentController
       'companyIdDoc'  => $companyIdDoc,
       'updatedAt'     => DocumentHelper::now(),
     ]);
+    $placement = OfferLetterTracking::applyUploadState($placement, $offerLetter !== '' ? $offerLetter : null, $_POST);
 
-    if ($self !== [] && in_array((string) ($self['status'] ?? ''), ['approved', 'placed'], true)) {
+    if ($self !== [] && in_array((string) ($self['status'] ?? ''), ['approved', 'placed', 'pending'], true)) {
       $self['companyName'] = $companyName;
       $self['companyAddress'] = $companyAddress;
       $self['role'] = $jobRole;
@@ -1851,6 +1874,7 @@ final class StudentController
       if ($companyIdDoc !== '') {
         $self['companyIdDoc'] = $companyIdDoc;
       }
+      $self = OfferLetterTracking::applyUploadState($self, $offerLetter !== '' ? $offerLetter : null, $_POST);
     }
 
     $saved = $this->studentModel->update((string) $profile['_id'], [

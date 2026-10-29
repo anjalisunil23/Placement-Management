@@ -98,6 +98,10 @@ class StudentPlacementDetailsTable
             'createdate' => 'DATETIME NULL',
             'source_id' => 'VARCHAR(64) NULL DEFAULT NULL',
             'offer_letter' => "VARCHAR(512) NOT NULL DEFAULT ''",
+            'offer_letter_exception' => "VARCHAR(64) NOT NULL DEFAULT ''",
+            'offer_letter_exception_note' => "VARCHAR(512) NOT NULL DEFAULT ''",
+            'offer_letter_followup_at' => "VARCHAR(32) NOT NULL DEFAULT ''",
+            'offer_letter_followup_note' => "VARCHAR(512) NOT NULL DEFAULT ''",
         ];
         foreach ($missing as $name => $definition) {
             if ($this->hasColumn($name)) {
@@ -561,10 +565,53 @@ class StudentPlacementDetailsTable
         if (strlen($path) > 512) {
             $path = substr($path, 0, 512);
         }
+        $this->ensureColumns();
         $statement = $this->db->prepare(
-            'UPDATE `student_placement_details` SET `offer_letter` = ?, `updatedate` = NOW() WHERE `id` = ?'
+            'UPDATE `student_placement_details` SET `offer_letter` = ?, `offer_letter_exception` = \'\', `offer_letter_exception_note` = \'\', `updatedate` = NOW() WHERE `id` = ?'
         );
         $statement->execute([$path, $id]);
+
+        return true;
+    }
+
+    public function saveOfferLetterException(string $key, string $exception, string $note = ''): bool
+    {
+        $row = $this->findByAdmnoOrId($key);
+        if ($row === null) {
+            return false;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        if ($id <= 0) {
+            return false;
+        }
+        $this->ensureColumns();
+        $exception = substr(trim($exception), 0, 64);
+        $note = substr(trim($note), 0, 512);
+        $statement = $this->db->prepare(
+            'UPDATE `student_placement_details` SET `offer_letter_exception` = ?, `offer_letter_exception_note` = ?, `updatedate` = NOW() WHERE `id` = ?'
+        );
+        $statement->execute([$exception, $note, $id]);
+
+        return true;
+    }
+
+    public function saveOfferLetterFollowUp(string $key, string $followUpAt, string $note = ''): bool
+    {
+        $row = $this->findByAdmnoOrId($key);
+        if ($row === null) {
+            return false;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        if ($id <= 0) {
+            return false;
+        }
+        $this->ensureColumns();
+        $followUpAt = substr(trim($followUpAt), 0, 32);
+        $note = substr(trim($note), 0, 512);
+        $statement = $this->db->prepare(
+            'UPDATE `student_placement_details` SET `offer_letter_followup_at` = ?, `offer_letter_followup_note` = ?, `updatedate` = NOW() WHERE `id` = ?'
+        );
+        $statement->execute([$followUpAt, $note, $id]);
 
         return true;
     }
@@ -673,8 +720,9 @@ class StudentPlacementDetailsTable
         if (strlen($path) > 512) {
             $path = substr($path, 0, 512);
         }
+        $this->ensureColumns();
         $statement = $this->db->prepare(
-            'UPDATE `student_placement_details` SET `offer_letter` = ?, `updatedate` = NOW()
+            'UPDATE `student_placement_details` SET `offer_letter` = ?, `offer_letter_exception` = \'\', `offer_letter_exception_note` = \'\', `updatedate` = NOW()
              WHERE `id` = ? AND UPPER(TRIM(`admno`)) = ?'
         );
         $statement->execute([$path, $entryId, $admno]);

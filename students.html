@@ -836,8 +836,16 @@
                 <span class="file-picker-name text-muted-2 small" data-file-picker-name="addSpSalary">No file chosen</span>
               </div>
             </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="addSpConfidentiality" name="offerLetterConfidentiality" value="1"/>
+                <label class="form-check-label small" for="addSpConfidentiality">Unable to upload offer letter — company confidentiality policy</label>
+              </div>
+              <textarea class="form-control form-control-sm mt-2 d-none" id="addSpConfidentialityNote" name="offerLetterExceptionNote" rows="2" placeholder="Optional note for follow-up"></textarea>
+              <p class="small text-warning mt-2 mb-0">Without an offer letter, this placement is saved as <strong>Offer Letter Pending</strong> and appears in the follow-up report.</p>
+            </div>
           </div>
-          <p class="small text-muted-2 mt-3 mb-0">The student will be marked as placed immediately. Documents are optional when recording on their behalf.</p>
+          <p class="small text-muted-2 mt-3 mb-0">The student will be marked as placed immediately. Offer letter is preferred for college records; joining / company ID remain optional.</p>
         </div>
         <div class="modal-footer border-0 pt-0">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -2082,6 +2090,12 @@ async function submitAddSelfPlacement(e) {
   if (offer) fd.append('offerLetter', offer, offer.name);
   if (companyId) fd.append('companyIdDoc', companyId, companyId.name);
   if (salary) fd.append('salarySlip', salary, salary.name);
+  if (document.getElementById('addSpConfidentiality')?.checked) {
+    fd.append('offerLetterConfidentiality', '1');
+    fd.append('offerLetterException', 'company_confidentiality');
+    const note = document.getElementById('addSpConfidentialityNote')?.value.trim() || '';
+    if (note) fd.append('offerLetterExceptionNote', note);
+  }
 
   const btn = document.getElementById('addSelfPlacementSubmit');
   if (btn) btn.disabled = true;
@@ -4108,6 +4122,9 @@ document.getElementById('blacklistForm')?.addEventListener('submit', async e => 
 
 onAppReady(async () => {
   if (typeof wireFilePickers === 'function') wireFilePickers('#addSelfPlacementModal');
+  document.getElementById('addSpConfidentiality')?.addEventListener('change', (e) => {
+    document.getElementById('addSpConfidentialityNote')?.classList.toggle('d-none', !e.target.checked);
+  });
   activateTabFromHash();
   if (canSyncCampusAesDirectory) {
     document.getElementById('btnSyncStudentsFromAes')?.addEventListener('click', () => {

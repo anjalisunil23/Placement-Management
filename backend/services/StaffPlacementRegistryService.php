@@ -928,6 +928,15 @@ final class StaffPlacementRegistryService
                 'createdAt' => trim((string) ($row['createdate'] ?? '')),
                 'offerLetter' => trim((string) ($row['offer_letter'] ?? '')),
                 'hasOfferLetter' => trim((string) ($row['offer_letter'] ?? '')) !== '',
+                'offerLetterException' => trim((string) ($row['offer_letter_exception'] ?? '')),
+                'offerLetterExceptionNote' => trim((string) ($row['offer_letter_exception_note'] ?? '')),
+                'offerLetterFollowUpAt' => trim((string) ($row['offer_letter_followup_at'] ?? '')),
+                'offerLetterFollowUpNote' => trim((string) ($row['offer_letter_followup_note'] ?? '')),
+                'offerLetterStatus' => OfferLetterTracking::status([
+                    'offerLetter' => trim((string) ($row['offer_letter'] ?? '')),
+                    'offerLetterException' => trim((string) ($row['offer_letter_exception'] ?? '')),
+                    'offerLetterVerified' => false,
+                ]),
                 'source' => 'student_placement_details',
             ];
         }
@@ -3374,9 +3383,30 @@ final class StaffPlacementRegistryService
             Response::error('Could not store the offer letter on this student.', 500);
         }
 
+        // Keep the student placement document in sync when a registry upload lands.
+        try {
+            $student = $this->officerData->resolveStudentRef($admno);
+            if (is_array($student) && (string) ($student['_id'] ?? '') !== '') {
+                $placement = is_array($student['placement'] ?? null) ? $student['placement'] : [];
+                $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : [];
+                $placement = OfferLetterTracking::applyUploadState($placement, $path, []);
+                if ($self !== []) {
+                    $self = OfferLetterTracking::applyUploadState($self, $path, []);
+                }
+                (new StudentModel())->update((string) $student['_id'], [
+                    'placement' => $placement,
+                    'selfPlacement' => $self !== [] ? $self : ($student['selfPlacement'] ?? null),
+                ]);
+            }
+        } catch (\Throwable) {
+            // Registry path is already saved; student sync is best-effort.
+        }
+
         return [
             'studentId' => $admno,
             'hasOfferLetter' => true,
+            'offerLetterStatus' => OfferLetterTracking::AWAITING_VERIFICATION,
+            'offerLetterStatusLabel' => OfferLetterTracking::label(OfferLetterTracking::AWAITING_VERIFICATION),
         ];
     }
 

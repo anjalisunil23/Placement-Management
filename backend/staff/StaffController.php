@@ -17,6 +17,7 @@ use PMS\Services\StaffDataService;
 use PMS\Services\SelfPlacementService;
 use PMS\Services\PlacementFilterService;
 use PMS\Services\StaffPlacementRegistryService;
+use PMS\Services\OfferLetterFollowUpService;
 use PMS\Services\StaffService;
 use PMS\Services\StaffCourseQuestionService;
 use PMS\Services\AesApiService;
@@ -568,6 +569,53 @@ final class StaffController
         $user = RBACMiddleware::requireStaff();
         $ctx = StaffContext::resolve($user);
         (new StaffPlacementRegistryService())->downloadOfferLetter($ctx, $studentId);
+    }
+
+    /** GET /api/staff/offer-letter-followup */
+    public function offerLetterFollowUp(): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $filters = [
+            'departmentId' => (string) ($_GET['departmentId'] ?? ''),
+            'batch' => (string) ($_GET['batch'] ?? ''),
+            'company' => (string) ($_GET['company'] ?? ''),
+            'studRole' => (string) ($_GET['studRole'] ?? 'all'),
+            'offerLetterStatus' => (string) ($_GET['offerLetterStatus'] ?? $_GET['status'] ?? 'follow_up'),
+            'q' => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+        ];
+        Response::success(DocumentHelper::jsonSafe(
+            (new OfferLetterFollowUpService())->list($ctx, $filters)
+        ));
+    }
+
+    /** PUT /api/staff/students/{id}/offer-letter-followup */
+    public function recordOfferLetterFollowUp(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        Response::success(DocumentHelper::jsonSafe(
+            (new OfferLetterFollowUpService())->recordFollowUp($studentId, $ctx, is_array($input) ? $input : [])
+        ), 'Follow-up recorded.');
+    }
+
+    /** PUT /api/staff/students/{id}/offer-letter-exception */
+    public function recordOfferLetterException(string $studentId): void
+    {
+        $user = RBACMiddleware::requireStaff();
+        $ctx = StaffContext::resolve($user);
+        StaffContext::requireDepartmentScope($ctx);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        Response::success(DocumentHelper::jsonSafe(
+            (new OfferLetterFollowUpService())->recordConfidentialityException(
+                $studentId,
+                $ctx,
+                is_array($input) ? $input : []
+            )
+        ), 'Confidentiality exception recorded.');
     }
 
     /** POST /api/staff/students/{id}/placement/documents */

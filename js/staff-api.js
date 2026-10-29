@@ -333,6 +333,30 @@ const StaffApi = {
     return res;
   },
 
+  async fetchOfferLetterFollowUp(params = {}) {
+    const qs = new URLSearchParams();
+    ['departmentId', 'batch', 'company', 'studRole', 'offerLetterStatus', 'q'].forEach((k) => {
+      if (params[k]) qs.set(k, params[k]);
+    });
+    const q = qs.toString();
+    const res = await api('/staff/offer-letter-followup' + (q ? `?${q}` : ''));
+    return res.success ? res.data : null;
+  },
+
+  async recordOfferLetterFollowUp(studentId, payload) {
+    return api(`/staff/students/${encodeURIComponent(studentId)}/offer-letter-followup`, {
+      method: 'PUT',
+      body: payload,
+    });
+  },
+
+  async recordOfferLetterException(studentId, payload) {
+    return api(`/staff/students/${encodeURIComponent(studentId)}/offer-letter-exception`, {
+      method: 'PUT',
+      body: payload,
+    });
+  },
+
   async fetchPlacementsHigherEducation(params = {}) {
     const qs = new URLSearchParams();
     if (params.scoped) {

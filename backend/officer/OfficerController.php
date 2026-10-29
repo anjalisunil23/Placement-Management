@@ -1370,6 +1370,50 @@ final class OfficerController
         (new \PMS\Services\StaffPlacementRegistryService())->downloadOfferLetter($ctx, $studentId);
     }
 
+    /** GET /api/officer/offer-letter-followup — placed students missing offer letters */
+    public function offerLetterFollowUp(): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $filters = [
+            'departmentId' => (string) ($_GET['departmentId'] ?? ''),
+            'batch' => (string) ($_GET['batch'] ?? ''),
+            'company' => (string) ($_GET['company'] ?? ''),
+            'studRole' => (string) ($_GET['studRole'] ?? 'all'),
+            'offerLetterStatus' => (string) ($_GET['offerLetterStatus'] ?? $_GET['status'] ?? 'follow_up'),
+            'q' => (string) ($_GET['q'] ?? $_GET['search'] ?? ''),
+        ];
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\OfferLetterFollowUpService())->list($ctx, $filters)
+        ));
+    }
+
+    /** PUT /api/officer/students/{id}/offer-letter-followup */
+    public function recordOfferLetterFollowUp(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\OfferLetterFollowUpService())->recordFollowUp($studentId, $ctx, is_array($input) ? $input : [])
+        ), 'Follow-up recorded.');
+    }
+
+    /** PUT /api/officer/students/{id}/offer-letter-exception */
+    public function recordOfferLetterException(string $studentId): void
+    {
+        $scope = (new OfficerDataService())->requireScope();
+        $ctx = $this->staffLikeFilterCtx($scope['ctx']);
+        $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?? [];
+        Response::success(DocumentHelper::jsonSafe(
+            (new \PMS\Services\OfferLetterFollowUpService())->recordConfidentialityException(
+                $studentId,
+                $ctx,
+                is_array($input) ? $input : []
+            )
+        ), 'Confidentiality exception recorded.');
+    }
+
     /**
      * Staff-shaped read context. Admin is campus-wide; a placement officer stays on their department.
      *

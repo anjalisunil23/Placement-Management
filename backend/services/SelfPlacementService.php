@@ -56,7 +56,8 @@ final class SelfPlacementService
         }
 
         $serialized = DocumentHelper::serialize($self) ?? [];
-        unset($serialized['offerLetterPath']);
+        unset($serialized['offerLetterPath'], $serialized['offerLetter']);
+        $tracking = OfferLetterTracking::summarize($self);
 
         return [
             'studentId'      => (string) ($student['_id'] ?? ''),
@@ -64,12 +65,15 @@ final class SelfPlacementService
             'studentName'    => $displayName,
             'department'     => $dept ? (string) ($dept['code'] ?? $dept['name'] ?? '') : '',
             'placed'         => ($student['placed'] ?? false) === true,
-            'report'         => $serialized,
-            'hasOfferLetter' => (string) ($self['offerLetter'] ?? '') !== '',
+            'report'         => array_merge($serialized, $tracking),
+            'hasOfferLetter' => (bool) ($tracking['hasOfferLetter'] ?? false),
             'offerLetterName'=> (string) ($self['offerLetter'] ?? ''),
             'hasCompanyIdDoc'=> (string) ($self['companyIdDoc'] ?? '') !== '',
             'hasSalarySlip'  => (string) ($self['salarySlip'] ?? '') !== '',
             'hasJoiningLetter'=> (string) ($self['joiningLetter'] ?? '') !== '',
+            'offerLetterStatus' => (string) ($tracking['offerLetterStatus'] ?? OfferLetterTracking::PENDING_UPLOAD),
+            'offerLetterStatusLabel' => (string) ($tracking['offerLetterStatusLabel'] ?? ''),
+            'needsOfferLetterFollowUp' => (bool) ($tracking['needsOfferLetterFollowUp'] ?? false),
         ];
     }
 
@@ -184,6 +188,7 @@ final class SelfPlacementService
         $reviewerId = (string) ($reviewer['_id'] ?? '');
         $reviewerName = (string) ($reviewer['name'] ?? 'Placement cell');
 
+        $exceptionInput = array_merge($input, $_POST);
         $self = [
             'companyName'     => $companyName,
             'companyAddress'  => $companyAddress,
@@ -194,10 +199,14 @@ final class SelfPlacementService
             'verifiedBy'      => $reviewerId,
             'verifiedByName'  => $reviewerName,
             'recordedByStaff' => true,
+            'reportedBy'      => $reviewerName,
+            'reportedByRole'  => 'placement_staff',
         ];
         if ($offerLetter !== null) {
             $self['offerLetter'] = $offerLetter;
+            $self['offerLetterVerified'] = false;
         }
+        $self = OfferLetterTracking::applyUploadState($self, $offerLetter, $exceptionInput);
         if ($companyIdDoc !== null) {
             $self['companyIdDoc'] = $companyIdDoc;
         }
@@ -216,6 +225,7 @@ final class SelfPlacementService
             'verifiedAt' => $now,
             'verifiedBy' => $reviewerId,
             'source'     => 'staff_recorded',
+            'offerLetterStatus' => OfferLetterTracking::status($self),
         ];
 
         $placement = [
@@ -224,7 +234,12 @@ final class SelfPlacementService
             'address'  => $companyAddress,
             'source'   => 'self_reported',
             'placedAt' => $now,
+            'offerLetter' => (string) ($self['offerLetter'] ?? ''),
+            'offerLetterVerified' => false,
+            'reportedBy' => $reviewerName,
+            'reportedByRole' => 'placement_staff',
         ];
+        $placement = OfferLetterTracking::applyUploadState($placement, $offerLetter, $exceptionInput);
 
         $saved = $this->studentModel->update($studentId, [
             'placed'           => true,
@@ -366,7 +381,22 @@ final class SelfPlacementService
             'companyIdDoc'  => (string) ($self['companyIdDoc'] ?? ''),
             'source'        => 'self_reported',
             'placedAt'      => $now,
+            'reportedBy'    => (string) ($self['reportedBy'] ?? $self['verifiedByName'] ?? 'Student'),
+            'reportedByRole'=> (string) ($self['reportedByRole'] ?? 'student'),
         ];
+        if (!empty($self['offerLetterException'])) {
+            $placement['offerLetterException'] = (string) $self['offerLetterException'];
+        }
+        if (!empty($self['offerLetterExceptionNote'])) {
+            $placement['offerLetterExceptionNote'] = (string) $self['offerLetterExceptionNote'];
+        }
+        if (!empty($self['offerLetterFollowUpAt'])) {
+            $placement['offerLetterFollowUpAt'] = (string) $self['offerLetterFollowUpAt'];
+        }
+        if (!empty($self['offerLetterFollowUpNote'])) {
+            $placement['offerLetterFollowUpNote'] = (string) $self['offerLetterFollowUpNote'];
+        }
+        $placement['offerLetterVerified'] = (bool) ($self['offerLetterVerified'] ?? false);
 
         $this->studentModel->update($studentId, [
             'placed'              => true,

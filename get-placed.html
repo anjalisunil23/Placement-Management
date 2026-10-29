@@ -151,7 +151,7 @@
             <div class="col-12 col-md-6"><label class="form-label small fw-semibold">Company address <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" name="companyAddress" id="placedCompanyAddress" placeholder="Office address"/></div>
             <div class="col-12 col-sm-6"><label class="form-label small fw-semibold">Join date</label><input class="form-control" type="date" name="joinDate" id="placedJoinDate"/></div>
             <div class="col-12 col-sm-6"><label class="form-label small fw-semibold">End date <span class="text-muted-2 fw-normal">(optional)</span></label><input class="form-control" type="date" name="endDate" id="placedEndDate"/></div>
-            <div class="col-12"><p class="small text-muted-2 mb-0">Documents — upload <strong>at least one</strong> (offer letter, joining letter, or company ID).</p></div>
+            <div class="col-12"><p class="small text-muted-2 mb-0">Documents — upload an <strong>offer letter</strong> when possible (required for college records). Otherwise upload joining letter / company ID, or record a confidentiality exception below.</p></div>
             <div class="col-12 col-md-4">
               <label class="form-label small fw-semibold">Offer letter</label>
               <div class="file-picker">
@@ -176,6 +176,14 @@
                 <button type="button" class="btn btn-outline-secondary btn-sm file-picker-btn" data-file-picker="placedCompanyIdDoc"><i class="bi bi-upload me-1"></i>Choose file</button>
                 <span class="file-picker-name text-muted-2 small" data-file-picker-name="placedCompanyIdDoc">No file chosen</span>
               </div>
+            </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="placedConfidentiality" name="offerLetterConfidentiality" value="1"/>
+                <label class="form-check-label small" for="placedConfidentiality">Unable to upload offer letter — company confidentiality policy</label>
+              </div>
+              <textarea class="form-control form-control-sm mt-2 d-none" id="placedConfidentialityNote" name="offerLetterExceptionNote" rows="2" placeholder="Optional note for the placement cell (no salary details needed)"></textarea>
+              <p class="small text-muted-2 mt-1 mb-0" id="placedOfferPendingHint">Without an offer letter, your placement stays recorded as <strong>Offer Letter Pending</strong> for college follow-up.</p>
             </div>
           </div>
         </div>
@@ -509,13 +517,25 @@ function applySelfPlacementState(profile) {
   const statusEl = document.getElementById('getPlacedStatus');
   if (statusEl) {
     statusEl.classList.add('d-none');
+    const offerDoc = placement || report || {};
+    const offerStatus = String(profile?.offerLetterStatus || offerDoc.offerLetterStatus || '');
+    const offerLabel = String(profile?.offerLetterStatusLabel || offerDoc.offerLetterStatusLabel || '');
     if (report?.status === 'pending') {
       statusEl.className = 'alert alert-info mb-3';
-      statusEl.innerHTML = `<strong>Under review.</strong> Your placement report for <strong>${escapeAttr(report.companyName || 'the company')}</strong> as <strong>${escapeAttr(report.role || '')}</strong> is awaiting verification.`;
+      statusEl.innerHTML = `<strong>Under review.</strong> Your placement report for <strong>${escapeAttr(report.companyName || 'the company')}</strong> as <strong>${escapeAttr(report.role || '')}</strong> is awaiting verification.`
+        + (offerStatus === 'pending_upload' ? ' Offer letter status: <strong>Pending Upload</strong> — please upload it when available.' : '')
+        + (offerStatus === 'confidentiality_exception' ? ' A company confidentiality exception was recorded for the offer letter.' : '');
       statusEl.classList.remove('d-none');
     } else if (placed) {
-      statusEl.className = 'alert alert-success mb-3';
-      statusEl.innerHTML = 'Your placements are listed below. Use <strong>New placement</strong> to add another after setting an end date on the current one.';
+      if (offerStatus === 'pending_upload' || offerStatus === 'confidentiality_exception') {
+        statusEl.className = 'alert alert-warning mb-3';
+        statusEl.innerHTML = `<strong>Offer letter:</strong> ${escapeAttr(offerLabel || 'Pending Upload')}. `
+          + 'The college needs this document for official records. Use <strong>New placement</strong> / update documents when you can upload it, or keep the confidentiality note on file.';
+      } else {
+        statusEl.className = 'alert alert-success mb-3';
+        statusEl.innerHTML = 'Your placements are listed below. Use <strong>New placement</strong> to add another after setting an end date on the current one.'
+          + (offerLabel ? ` Offer letter: <strong>${escapeAttr(offerLabel)}</strong>.` : '');
+      }
       statusEl.classList.remove('d-none');
     } else if (report?.status === 'rejected') {
       statusEl.className = 'alert alert-warning mb-3';
@@ -658,8 +678,10 @@ async function submitSelfPlacement(ev) {
     toast('End date cannot be before join date.', 'warn');
     return;
   }
-  if (!offerFile && !joiningFile && !companyIdFile) {
-    toast('Upload at least one document: offer letter, joining letter, or company ID.', 'warn');
+  const confidentiality = !!document.getElementById('placedConfidentiality')?.checked;
+  const confidentialityNote = document.getElementById('placedConfidentialityNote')?.value.trim() || '';
+  if (!offerFile && !joiningFile && !companyIdFile && !confidentiality) {
+    toast('Upload at least one document, or record a company confidentiality exception.', 'warn');
     return;
   }
   if (offerFile && !String(offerFile.name || '').toLowerCase().endsWith('.pdf')) {
@@ -700,6 +722,11 @@ async function submitSelfPlacement(ev) {
   if (offerFile) fd.append('offerLetter', offerFile, offerFile.name);
   if (joiningFile) fd.append('joiningLetter', joiningFile, joiningFile.name);
   if (companyIdFile) fd.append('companyIdDoc', companyIdFile, companyIdFile.name);
+  if (confidentiality) {
+    fd.append('offerLetterConfidentiality', '1');
+    fd.append('offerLetterException', 'company_confidentiality');
+    if (confidentialityNote) fd.append('offerLetterExceptionNote', confidentialityNote);
+  }
 
   const res = await api('/student/self-placement', {
     method: 'POST',
@@ -830,6 +857,10 @@ async function loadPlacementProfile() {
 }
 
 wirePlacementFilePickers();
+document.getElementById('placedConfidentiality')?.addEventListener('change', (e) => {
+  const note = document.getElementById('placedConfidentialityNote');
+  note?.classList.toggle('d-none', !e.target.checked);
+});
 document.getElementById('getPlacedForm')?.addEventListener('submit', submitSelfPlacement);
 document.getElementById('reportPlacementBtn')?.addEventListener('click', openReportModal);
 document.getElementById('newPlacementBtn')?.addEventListener('click', startNewPlacementFlow);
