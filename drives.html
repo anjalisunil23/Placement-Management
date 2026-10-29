@@ -1488,6 +1488,11 @@ function driveDetailFilled(v) {
   return s !== '' && s !== '—';
 }
 
+function driveDetailPositive(v) {
+  const n = Number(String(v ?? '').trim());
+  return Number.isFinite(n) && n > 0;
+}
+
 function optionalVacancyCount(raw) {
   const value = String(raw ?? '').trim();
   if (!value) return '';
@@ -1622,9 +1627,9 @@ function fillDriveDetailPanel(list, selectedId) {
       ${field('Mode', pending ? '—' : driveDetailValue(display.mode))}
       ${display.location && display.location !== '—' ? field('Location', driveDetailValue(display.location)) : ''}
       ${!pending && display.branches && display.branches !== '—' ? field('Eligible branches', driveDetailValue(display.branches)) : ''}
-      ${!pending && driveDetailFilled(display.minCgpa) ? field('Minimum CGPA', driveDetailValue(display.minCgpa)) : ''}
-      ${!pending && driveDetailFilled(display.maxBacklogs) ? field('Maximum backlogs', driveDetailValue(display.maxBacklogs)) : ''}
-      ${!pending && driveDetailFilled(elig.minPercentAllClasses) ? field('Min % (all classes)', driveDetailValue(elig.minPercentAllClasses)) : ''}
+      ${!pending && driveDetailPositive(display.minCgpa) ? field('Minimum CGPA', driveDetailValue(display.minCgpa)) : ''}
+      ${!pending && driveDetailPositive(display.maxBacklogs) ? field('Maximum backlogs', driveDetailValue(display.maxBacklogs)) : ''}
+      ${!pending && driveDetailPositive(elig.minPercentAllClasses) ? field('Min % (all classes)', driveDetailValue(elig.minPercentAllClasses)) : ''}
       ${!pending && display.description ? field('Job description', driveDetailMultiline(display.description), true) : ''}
       ${!pending && driveDetailFilled(display.technicalStack) ? field('Technical stack', driveDetailMultiline(display.technicalStack), true) : ''}
       ${!pending && driveDetailFilled(display.internshipDuration) ? field('Internship duration', driveDetailValue(display.internshipDuration)) : ''}
