@@ -632,7 +632,11 @@ final class AlumniController
 
     $student = (new StudentModel())->findById($studentId) ?? $student;
     $student = $uploads->applyDobToProfile($student, $input, new StudentModel());
-    $resume = $uploads->resolveResume($input, $student, $studentId);
+    try {
+      $resume = $uploads->resolveResume($input, $student, $studentId);
+    } catch (\RuntimeException $e) {
+      Response::error($e->getMessage(), 422);
+    }
 
     try {
       $certificates = $uploads->storeCertificates((string) ($student['registerNumber'] ?? ''));

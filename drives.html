@@ -447,9 +447,20 @@
       <div id="applyCustomFields" class="d-flex flex-column gap-3"></div>
     </div>
 
-    <label class="form-label small fw-semibold">Select resume for this job profile</label>
-
-    <select class="form-select mb-2" id="applyResumeSelect"></select>
+    <label class="form-label small fw-semibold">Resume for this application</label>
+    <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Resume source">
+      <input type="radio" class="btn-check" name="applyResumeSource" id="applyResumeFromBucket" value="bucket" checked>
+      <label class="btn btn-outline-secondary" for="applyResumeFromBucket">From resume bucket</label>
+      <input type="radio" class="btn-check" name="applyResumeSource" id="applyResumeUpload" value="upload">
+      <label class="btn btn-outline-secondary" for="applyResumeUpload">Upload a file</label>
+    </div>
+    <div id="applyResumeBucketWrap">
+      <select class="form-select mb-2" id="applyResumeSelect"></select>
+    </div>
+    <div id="applyResumeUploadWrap" class="d-none mb-2">
+      <input class="form-control" type="file" id="applyResumeFile" accept=".pdf,application/pdf"/>
+      <div class="form-text">PDF only. Used for this application and saved to your resume bucket.</div>
+    </div>
 
     <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
       <label class="form-label small fw-semibold mb-0">Resume preview</label>
@@ -480,7 +491,7 @@
     </button>
     <input type="file" id="applyCertificateFileInput" accept=".pdf,application/pdf" hidden/>
 
-    <div class="alert alert-info small mt-3 mb-0 d-none" id="applyResumeHint">Upload a resume in <a href="settings.html#resumes">Profile &amp; Resumes</a> before applying.</div>
+    <div class="alert alert-info small mt-3 mb-0 d-none" id="applyResumeHint">No saved resumes yet. Upload a PDF for this application.</div>
 
   </div>
 
@@ -648,7 +659,7 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="js/api.js?v=20261028elig"></script>
+<script src="js/api.js?v=20261029resume"></script>
 <script src="js/app.js?v=20261025navsec"></script>
 <script>
 window.__phDriveExtras = Promise.resolve();
@@ -3096,19 +3107,25 @@ window.openApply = async driveId => {
 
   const sel = document.getElementById('applyResumeSelect');
   const resumeHint = document.getElementById('applyResumeHint');
+  const uploadInput = document.getElementById('applyResumeFile');
+  const bucketRadio = document.getElementById('applyResumeFromBucket');
+  const uploadRadio = document.getElementById('applyResumeUpload');
 
   resetApplyCertificates();
   resetApplyDobAge();
   renderApplyCustomFields(pendingDrive);
+  if (uploadInput) uploadInput.value = '';
 
   if (!resumes.length) {
-    sel.innerHTML = '<option value="">No resumes found — upload one first</option>';
+    sel.innerHTML = '<option value="">No resumes in your bucket</option>';
     resumeHint?.classList.remove('d-none');
+    if (uploadRadio) uploadRadio.checked = true;
   } else {
-    sel.innerHTML = resumes.map(r => `<option value="${r.id}">${r.label} — ${r.fileName}</option>`).join('');
+    sel.innerHTML = resumes.map(r => `<option value="${r.id}">${escapeApplyHtml(r.label)} — ${escapeApplyHtml(r.fileName)}</option>`).join('');
     resumeHint?.classList.add('d-none');
+    if (bucketRadio) bucketRadio.checked = true;
   }
-  updateApplyResumePreview();
+  syncApplyResumeSource();
 
   const detailModalEl = document.getElementById('driveDetailModal');
   const detailModal = detailModalEl ? bootstrap.Modal.getInstance(detailModalEl) : null;
@@ -3144,6 +3161,17 @@ function resumePreviewApiPath(resume) {
 let applyResumePreviewObjectUrl = '';
 let applyResumePreviewRequest = 0;
 
+function applyResumeSource() {
+  return document.querySelector('input[name="applyResumeSource"]:checked')?.value || 'bucket';
+}
+
+function syncApplyResumeSource() {
+  const upload = applyResumeSource() === 'upload';
+  document.getElementById('applyResumeBucketWrap')?.classList.toggle('d-none', upload);
+  document.getElementById('applyResumeUploadWrap')?.classList.toggle('d-none', !upload);
+  updateApplyResumePreview();
+}
+
 function clearApplyResumePreview() {
   const frame = document.getElementById('applyResumePreviewFrame');
   const empty = document.getElementById('applyResumePreviewEmpty');
@@ -3166,12 +3194,61 @@ function clearApplyResumePreview() {
   }
 }
 
+function previewApplyResumeFile(file) {
+  applyResumePreviewRequest += 1;
+  const frame = document.getElementById('applyResumePreviewFrame');
+  const empty = document.getElementById('applyResumePreviewEmpty');
+  const link = document.getElementById('applyResumeOpenLink');
+  if (applyResumePreviewObjectUrl) {
+    URL.revokeObjectURL(applyResumePreviewObjectUrl);
+    applyResumePreviewObjectUrl = '';
+  }
+  if (!file) {
+    if (frame) {
+      frame.classList.add('d-none');
+      frame.removeAttribute('src');
+    }
+    if (link) {
+      link.classList.add('d-none');
+      link.removeAttribute('href');
+    }
+    if (empty) {
+      empty.classList.remove('d-none');
+      empty.textContent = 'Choose a PDF to preview.';
+    }
+    return;
+  }
+  const pdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+  if (!pdf) {
+    if (frame) frame.classList.add('d-none');
+    if (empty) {
+      empty.classList.remove('d-none');
+      empty.textContent = 'Resume must be a PDF.';
+    }
+    return;
+  }
+  applyResumePreviewObjectUrl = URL.createObjectURL(file);
+  if (empty) empty.classList.add('d-none');
+  if (frame) {
+    frame.classList.remove('d-none');
+    frame.setAttribute('src', applyResumePreviewObjectUrl);
+  }
+  if (link) {
+    link.href = applyResumePreviewObjectUrl;
+    link.classList.remove('d-none');
+  }
+}
+
 function looksLikePdf(bytes) {
   if (!bytes || bytes.length < 4) return false;
   return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // %PDF
 }
 
 async function updateApplyResumePreview() {
+  if (applyResumeSource() === 'upload') {
+    previewApplyResumeFile(document.getElementById('applyResumeFile')?.files?.[0] || null);
+    return;
+  }
   const sel = document.getElementById('applyResumeSelect');
   const resumeId = String(sel?.value || '');
   const resume = ResumeBucket.all().find(r => String(r.id) === resumeId)
@@ -3281,6 +3358,12 @@ async function updateApplyResumePreview() {
 document.getElementById('applyResumeSelect')?.addEventListener('change', () => {
   updateApplyResumePreview();
 });
+document.querySelectorAll('input[name="applyResumeSource"]').forEach((input) => {
+  input.addEventListener('change', syncApplyResumeSource);
+});
+document.getElementById('applyResumeFile')?.addEventListener('change', () => {
+  updateApplyResumePreview();
+});
 
 document.getElementById('applyModal')?.addEventListener('hidden.bs.modal', () => {
   applyResumePreviewRequest += 1;
@@ -3376,9 +3459,23 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
     return;
   }
 
-  const resumeId = document.getElementById('applyResumeSelect').value;
-
-  if (!resumeId) { toast('Upload a resume for this job profile first.', 'warn'); return; }
+  const resumeSource = applyResumeSource();
+  let resumeId = '';
+  let resumeFile = null;
+  if (resumeSource === 'upload') {
+    resumeFile = document.getElementById('applyResumeFile')?.files?.[0] || null;
+    const pdf = resumeFile && (resumeFile.type === 'application/pdf' || /\.pdf$/i.test(resumeFile.name || ''));
+    if (!pdf) {
+      toast('Upload a PDF resume, or choose one from your bucket.', 'warn');
+      return;
+    }
+  } else {
+    resumeId = document.getElementById('applyResumeSelect').value;
+    if (!resumeId) {
+      toast('Select a resume from your bucket, or upload a PDF.', 'warn');
+      return;
+    }
+  }
 
   const incompleteTile = applyCertificateTiles.find((tile) => {
     const hasTitle = String(tile.title || '').trim() !== '';
@@ -3400,6 +3497,7 @@ document.getElementById('confirmApply')?.addEventListener('click', async () => {
   const extras = {
     dob,
     customAnswers: [],
+    resumeFile,
   };
   const app = alumniSeeking
     ? await AlumniApps.apply(pendingDrive, resumeId, certEntries, extras)

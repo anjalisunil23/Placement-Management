@@ -1433,7 +1433,11 @@ final class StudentController
 
     $profile = $this->studentModel->findById($studentId) ?? $profile;
     $profile = $uploads->applyDobToProfile($profile, $input, $this->studentModel);
-    $resume = $uploads->resolveResume($input, $profile, $studentId);
+    try {
+      $resume = $uploads->resolveResume($input, $profile, $studentId);
+    } catch (\RuntimeException $e) {
+      Response::error($e->getMessage(), 422);
+    }
 
     try {
       $certificates = $uploads->storeCertificates((string) ($profile['registerNumber'] ?? ''));

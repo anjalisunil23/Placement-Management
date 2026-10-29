@@ -9,7 +9,6 @@ use PMS\Models\DepartmentModel;
 use PMS\Models\DriveApplicationExceptionModel;
 use PMS\Models\DriveModel;
 use PMS\Models\JobModel;
-use PMS\Models\ResumeModel;
 use PMS\Models\RuleModel;
 use PMS\Models\StudentModel;
 use PMS\Utils\Security;
@@ -209,11 +208,6 @@ final class EligibilityEngine
         // Blacklist
         if ($this->blacklistModel->isBlacklisted($studentId)) {
             $reasons[] = 'Student is blacklisted.';
-        }
-
-        // Resume must be uploaded (profile field or resume library)
-        if (!$this->studentHasResume($student, $resumeId)) {
-            $reasons[] = 'Resume not uploaded.';
         }
 
         // Placement chances — tier cost must be affordable
@@ -568,28 +562,6 @@ final class EligibilityEngine
         }
 
         return array_values(array_unique(array_filter($codes)));
-    }
-
-    /**
-     * @param array<string, mixed> $student
-     */
-    private function studentHasResume(array $student, ?string $resumeId = null): bool
-    {
-        $studentId = (string) ($student['_id'] ?? '');
-
-        if ($resumeId !== null && $resumeId !== '') {
-            $resume = (new ResumeModel())->findById($resumeId);
-            if ($resume && (string) ($resume['studentId'] ?? '') === $studentId) {
-                return true;
-            }
-        }
-
-        $profileResume = $student['resume'] ?? null;
-        if (is_array($profileResume) && !empty($profileResume['path'])) {
-            return true;
-        }
-
-        return (new ResumeModel())->findByStudent($studentId, 1) !== [];
     }
 
     /**

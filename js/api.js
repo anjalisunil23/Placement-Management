@@ -2356,16 +2356,18 @@ const StudentApps = {
       : [];
     const dob = String(extras?.dob || '').trim();
     const customAnswers = Array.isArray(extras?.customAnswers) ? extras.customAnswers : [];
+    const resumeFile = extras?.resumeFile instanceof File ? extras.resumeFile : null;
 
     if (Auth.role() === 'student' && Auth.hasSession() && !Auth.isDemo()) {
       let res;
-      if (entries.length || dob || customAnswers.length) {
+      if (entries.length || dob || customAnswers.length || resumeFile) {
         const form = new FormData();
         form.append('driveId', drive.id);
-        form.append('resumeId', resumeId || '');
+        form.append('resumeId', resumeFile ? '' : (resumeId || ''));
         form.append('resumeLabel', resume?.label || '');
-        form.append('resumeFileName', resume?.fileName || '');
-        form.append('resumePath', resumePath || '');
+        form.append('resumeFileName', resumeFile?.name || resume?.fileName || '');
+        form.append('resumePath', resumeFile ? '' : (resumePath || ''));
+        if (resumeFile) form.append('resumeFile', resumeFile, resumeFile.name);
         if (dob) form.append('dob', dob);
         if (customAnswers.length) form.append('customAnswers', JSON.stringify(customAnswers));
         entries.forEach((entry) => {
@@ -2488,15 +2490,17 @@ const AlumniApps = {
       : [];
     const dob = String(extras?.dob || '').trim();
     const customAnswers = Array.isArray(extras?.customAnswers) ? extras.customAnswers : [];
+    const resumeFile = extras?.resumeFile instanceof File ? extras.resumeFile : null;
 
     let res;
-    if (entries.length || dob || customAnswers.length) {
+    if (entries.length || dob || customAnswers.length || resumeFile) {
       const form = new FormData();
       form.append('driveId', drive.id);
-      form.append('resumeId', resumeId || '');
+      form.append('resumeId', resumeFile ? '' : (resumeId || ''));
       form.append('resumeLabel', resume?.label || '');
-      form.append('resumeFileName', resume?.fileName || '');
-      form.append('resumePath', resumePath || '');
+      form.append('resumeFileName', resumeFile?.name || resume?.fileName || '');
+      form.append('resumePath', resumeFile ? '' : (resumePath || ''));
+      if (resumeFile) form.append('resumeFile', resumeFile, resumeFile.name);
       if (dob) form.append('dob', dob);
       if (customAnswers.length) form.append('customAnswers', JSON.stringify(customAnswers));
       entries.forEach((entry) => {
@@ -5142,12 +5146,13 @@ const DriveStore = {
       if (todayStr > recruitmentDate.slice(0, 10)) status = 'Closed';
     }
     const closedByDeadline = status === 'Closed';
+    const rawReasons = closedByDeadline
+      ? ['Registration closed.']
+      : (Array.isArray(check?.reasons) ? check.reasons : []);
+    const eligibilityReasons = rawReasons.filter((reason) => !/resume not uploaded/i.test(String(reason || '')));
     const eligible = closedByDeadline
       ? false
-      : (check ? check.eligible !== false : true);
-    const eligibilityReasons = closedByDeadline
-      ? ['Registration closed.']
-      : (check?.reasons || []);
+      : eligibilityReasons.length === 0 || (check ? check.eligible !== false : true);
     return {
       id: d._id || d.id,
       companyId: d.companyId || '',
