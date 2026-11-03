@@ -2367,6 +2367,8 @@ function renderDriveApplicantRows() {
   const tbody = document.getElementById('driveApplicantRows');
   const shortlistBtn = document.getElementById('btnShortlistSelected');
   if (shortlistBtn) shortlistBtn.classList.toggle('d-none', !showSelect);
+  const downloadBtn = document.getElementById('btnDownloadApplicants');
+  if (downloadBtn) downloadBtn.classList.toggle('d-none', driveApplicantsTab !== 'applied');
   if (head) {
     head.innerHTML = `
       ${showSelect ? '<th class="col-check"><input type="checkbox" class="form-check-input applicant-select-all" aria-label="Select all applied students"></th>' : ''}
