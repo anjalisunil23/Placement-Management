@@ -35,7 +35,7 @@
           <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
             <div>
               <h5 class="fw-bold mb-1">Offer letter follow-up</h5>
-              <p class="small text-muted-2 mb-0">Placed students and alumni whose offer letter is still pending or under a company confidentiality exception. Default view shows cases that need follow-up.</p>
+              <p class="small text-muted-2 mb-0">Students and alumni who are placed and have not uploaded an offer letter. A confidentiality exception stays on this list and is not treated as an upload.</p>
             </div>
             <div class="small text-muted-2" id="offerFollowUpCount">0 pending</div>
           </div>
@@ -1974,6 +1974,7 @@
       canEditSelectedBatch = data.canEditBatch === true;
       updateClassTeacherBanner();
       applyClientFilter();
+      renderOfferLetterFollowUp();
       return true;
     }
 
@@ -2193,29 +2194,65 @@
       if (pheView === 'offer-followup') loadOfferLetterFollowUp().catch(() => {});
     }
 
-    async function loadOfferLetterFollowUp(opts = {}) {
-      const apiClient = placementRegistryApi();
-      if (!apiClient || typeof apiClient.fetchOfferLetterFollowUp !== 'function') return;
+    function placementNeedsOfferLetter(row) {
+      const employer = String(row?.employer || row?.company || '').trim();
+      const type = String(row?.type || row?.recordType || '').trim();
+      if (!employer || type === 'Higher Education' || type === 'Research') return false;
+      const status = String(row?.offerLetterStatus || '');
+      return status === 'pending_upload' || status === 'confidentiality_exception';
+    }
+
+    function offerFollowUpSourceRows() {
+      return allRows.filter((row) => {
+        const employer = String(row?.employer || row?.company || '').trim();
+        const type = String(row?.type || row?.recordType || '').trim();
+        return employer !== '' && type !== 'Higher Education' && type !== 'Research';
+      }).map((row) => ({
+        studentId: row.studentId || row.admno || '',
+        registerNumber: row.admno || row.registerNumber || '',
+        studentName: row.student || row.studentName || '',
+        department: row.branchid || row.branchId || row.courseid || '',
+        batch: row.year || row.batch || row.classBatch || '',
+        company: row.employer || row.company || '',
+        reportedAt: row.createdate || row.createdAt || '',
+        reportedBy: row.createdBy || 'Placement registry',
+        offerLetterStatus: row.offerLetterStatus || '',
+        offerLetterStatusLabel: row.offerLetterStatusLabel || row.offerLetterStatus || '',
+        offerLetterException: row.offerLetterException || '',
+        offerLetterExceptionNote: row.offerLetterExceptionNote || '',
+        offerLetterFollowUpAt: row.offerLetterFollowUpAt || '',
+        offerLetterFollowUpNote: row.offerLetterFollowUpNote || '',
+        needsOfferLetterFollowUp: placementNeedsOfferLetter(row),
+      }));
+    }
+
+    function renderOfferLetterFollowUp() {
       const tbody = document.getElementById('offerFollowUpRows');
-      if (tbody && !opts.quiet) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-muted-2 p-4 text-center">Loading…</td></tr>';
-      }
-      const data = await apiClient.fetchOfferLetterFollowUp({
-        departmentId: document.getElementById('filterDepartment')?.value || filterDepartmentId || '',
-        batch: document.getElementById('filterBatch')?.value || filterBatch || '',
-        company: document.getElementById('olfCompany')?.value.trim() || '',
-        offerLetterStatus: document.getElementById('olfStatus')?.value || 'follow_up',
-        q: document.getElementById('olfSearch')?.value.trim() || '',
-      });
-      const rows = Array.isArray(data?.rows) ? data.rows : [];
-      const pending = Number(data?.pendingCount ?? data?.counts?.follow_up ?? 0);
+      const source = offerFollowUpSourceRows();
+      const pending = source.filter((row) => row.needsOfferLetterFollowUp).length;
       const badge = document.getElementById('offerFollowUpBadge');
       if (badge) badge.textContent = String(pending);
       const countEl = document.getElementById('offerFollowUpCount');
-      if (countEl) countEl.textContent = `${pending} pending follow-up case${pending === 1 ? '' : 's'}`;
+      if (countEl) countEl.textContent = `${pending} placed without an offer letter`;
       if (!tbody) return;
+      const statusFilter = document.getElementById('olfStatus')?.value || 'follow_up';
+      const companyFilter = String(document.getElementById('olfCompany')?.value || '').trim().toLowerCase();
+      const query = String(document.getElementById('olfSearch')?.value || '').trim().toLowerCase();
+      const rows = source.filter((row) => {
+        const status = String(row.offerLetterStatus || '');
+        const include = statusFilter === 'all'
+          || ((statusFilter === 'follow_up' || statusFilter === 'pending') && row.needsOfferLetterFollowUp)
+          || status === statusFilter;
+        if (!include) return false;
+        if (companyFilter && !String(row.company || '').toLowerCase().includes(companyFilter)) return false;
+        if (query) {
+          const haystack = `${row.studentName} ${row.registerNumber} ${row.company}`.toLowerCase();
+          if (!haystack.includes(query)) return false;
+        }
+        return true;
+      });
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-muted-2 p-4 text-center">No matching offer-letter cases.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-muted-2 p-4 text-center">No placed students are waiting on an offer letter.</td></tr>';
         return;
       }
       tbody.innerHTML = rows.map((r) => {
@@ -2243,6 +2280,10 @@
           </td>
         </tr>`;
       }).join('');
+    }
+
+    async function loadOfferLetterFollowUp() {
+      renderOfferLetterFollowUp();
     }
 
     document.getElementById('pheViewNav')?.addEventListener('click', (e) => {

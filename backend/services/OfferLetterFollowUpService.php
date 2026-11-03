@@ -41,7 +41,12 @@ final class OfferLetterFollowUpService
         $company = strtolower(trim((string) ($filters['company'] ?? '')));
         $studRole = strtolower(trim((string) ($filters['studRole'] ?? 'all')));
 
-        $placed = $this->officerData->listPlacedStudents($ctx, $query !== '' ? $query : null);
+        $placed = [];
+        try {
+            $placed = $this->officerData->listPlacedStudents($ctx, $query !== '' ? $query : null);
+        } catch (\Throwable) {
+            $placed = [];
+        }
         $detailsByAdmno = $this->detailsOfferLetterMap();
         $offerIndex = AlumniEmploymentOfferIndex::load();
 
@@ -63,9 +68,6 @@ final class OfferLetterFollowUpService
             $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : [];
             $doc = array_merge($placement, $self);
 
-            if ($register !== '') {
-                $seenRegisters[$register] = true;
-            }
             $details = $register !== '' ? ($detailsByAdmno[$register] ?? null) : null;
             if (is_array($details)) {
                 if (trim((string) ($details['offer_letter'] ?? '')) !== '' && trim((string) ($doc['offerLetter'] ?? '')) === '') {
@@ -184,6 +186,9 @@ final class OfferLetterFollowUpService
                 'needsOfferLetterFollowUp' => OfferLetterTracking::needsFollowUp($status),
                 'studRole' => $roleHint !== '' ? $roleHint : 'student',
             ];
+            if ($register !== '' && OfferLetterTracking::needsFollowUp($status)) {
+                $seenRegisters[$register] = true;
+            }
         }
 
         $this->appendRegistryOfferRows(

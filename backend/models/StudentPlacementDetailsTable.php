@@ -885,7 +885,9 @@ class StudentPlacementDetailsTable
         $statement = $this->db->query(
             'SELECT `id`, `student`, `admno`, `stud_role`, `cno`, `email`, `year`, `courseid`, `branchid`,
                     `employer`, `empcno`, `empadr`, `payscale`, `status`, `createdBy`, `updatedBy`,
-                    `updatedate`, `fordvv`, `type`, `includedvv`, `createdate`
+                    `updatedate`, `fordvv`, `type`, `includedvv`, `createdate`,
+                    `offer_letter`, `offer_letter_exception`, `offer_letter_exception_note`,
+                    `offer_letter_followup_at`, `offer_letter_followup_note`
              FROM `student_placement_details`
              ORDER BY `updatedate` DESC, `id` DESC
              LIMIT ' . $limit
