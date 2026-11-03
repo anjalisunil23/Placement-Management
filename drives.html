@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 
 <link href="css/style.css?v=20260725responsive" rel="stylesheet"/>
+<link href="https://cdn.datatables.net/2.1.8/css/dataTables.bootstrap5.min.css" rel="stylesheet"/>
 <style>
   .drive-card-grid{
     display:grid;
@@ -167,8 +168,13 @@
   .drive-round-outcome-btns .btn.active{pointer-events:none}
   #driveRoundResultTabs .nav-link{font-size:.875rem}
   #driveApplicantsPanel .drive-applicants-table{
-    table-layout:fixed;width:100%;
+    width:100%;
   }
+  #driveApplicantsPanel .col-check{width:2.25rem}
+  #driveApplicantsPanel .dt-container{font-size:.875rem;max-width:100%}
+  #driveApplicantsPanel .dt-layout-row{flex-wrap:wrap!important;row-gap:.5rem}
+  #driveApplicantsPanel .dt-search{flex:1 1 14rem;max-width:100%}
+  #driveApplicantsPanel .dt-search input{width:100%;min-width:0}
   #driveApplicantsPanel .drive-applicants-table thead th{
     white-space:nowrap;font-size:.72rem;letter-spacing:.02em;
   }
@@ -558,9 +564,17 @@
             <li class="nav-item"><button type="button" class="nav-link" data-tab="rejected">Rejected <span class="badge bg-secondary ms-1" id="tabCountRejected">0</span></button></li>
           </ul>
           <p class="small text-muted-2 mb-2" id="driveShortlistHint">Applied applicants for this company drive.</p>
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <button type="button" class="btn btn-sm btn-primary d-none" id="btnShortlistSelected" disabled>
+              <i class="bi bi-check2-square me-1"></i>Shortlist selected
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnDownloadApplicants">
+              <i class="bi bi-download me-1"></i>Download applied list
+            </button>
+          </div>
 
-          <div class="table-wrap">
-            <table class="table-modern drive-applicants-table">
+          <div>
+            <table class="table table-hover table-modern drive-applicants-table w-100" id="driveApplicantsTable">
               <thead><tr id="driveApplicantHead">
                 <th class="col-si">#</th>
                 <th>Student</th>
@@ -659,6 +673,9 @@
 </main></div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js"></script>
 <script src="js/api.js?v=20261029resume"></script>
 <script src="js/app.js?v=20261025navsec"></script>
 <script>
@@ -2014,6 +2031,8 @@ function renderRows() {
 
 let driveApplicants = [];
 let driveApplicantsTab = 'applied';
+let driveApplicantsDataTable = null;
+const driveApplicantSelection = new Set();
 let driveDetailMainTab = 'applicants';
 let driveResultsRoundTab = null;
 let activeDriveId = null;
@@ -2271,7 +2290,7 @@ function updateDriveApplicantTabCounts() {
   const hint = document.getElementById('driveShortlistHint');
   if (hint) {
     hint.textContent = ({
-      applied: 'All students who applied to this company drive.',
+      applied: 'Select students, then shortlist them together. Each shortlisted student is notified.',
       shortlisted: 'Students shortlisted for this company drive.',
       pending: 'Waiting on a round, or awaiting resume / officer / company review.',
       rejected: 'Rejected at a company round or overall for this drive.',
@@ -2280,21 +2299,93 @@ function updateDriveApplicantTabCounts() {
   updateRecruitmentResultsTabCount();
 }
 
-function renderDriveApplicantRows() {
-  const groups = driveApplicantGroups(driveApplicants);
-  const list = groups[driveApplicantsTab] || [];
-  const tbody = document.getElementById('driveApplicantRows');
-  const cols = 6;
-  if (!list.length) {
-    const emptyMsg = ({
-      applied: 'No applicants for this company drive yet.',
-      shortlisted: 'No shortlisted / selected candidates yet.',
-      pending: 'No pending / waiting candidates.',
-      rejected: 'No rejected candidates.',
-    })[driveApplicantsTab] || 'No applicants.';
-    tbody.innerHTML = `<tr><td colspan="${cols}" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
+function destroyDriveApplicantsDataTable() {
+  const table = document.getElementById('driveApplicantsTable');
+  if (!table || typeof DataTable === 'undefined') {
+    driveApplicantsDataTable = null;
     return;
   }
+  const api = DataTable.isDataTable(table)
+    ? (typeof DataTable.api === 'function' ? new DataTable.api(table) : DataTable.Api(table))
+    : null;
+  if (api) api.destroy();
+  driveApplicantsDataTable = null;
+}
+
+function shortlistableApplicantIds() {
+  return (driveApplicantGroups(driveApplicants).applied || [])
+    .filter(canShortlistApplicant)
+    .map(a => String(a.id));
+}
+
+function visibleShortlistableIds() {
+  const allowed = new Set(shortlistableApplicantIds());
+  if (!driveApplicantsDataTable) return [...allowed];
+  const ids = [];
+  driveApplicantsDataTable.rows({ search: 'applied' }).every(function () {
+    const box = this.node()?.querySelector('.applicant-select');
+    const id = String(box?.dataset.appId || '');
+    if (id && allowed.has(id)) ids.push(id);
+  });
+  return ids;
+}
+
+function syncApplicantSelectionUi() {
+  const allowed = new Set(shortlistableApplicantIds());
+  [...driveApplicantSelection].forEach(id => {
+    if (!allowed.has(id)) driveApplicantSelection.delete(id);
+  });
+  const selected = [...driveApplicantSelection];
+  document.querySelectorAll('#driveApplicantsTable .applicant-select').forEach(box => {
+    box.checked = driveApplicantSelection.has(String(box.dataset.appId || ''));
+  });
+  const visible = visibleShortlistableIds();
+  const selectedVisible = visible.filter(id => driveApplicantSelection.has(id));
+  const allBox = document.querySelector('#driveApplicantsTable .applicant-select-all');
+  if (allBox) {
+    allBox.checked = visible.length > 0 && selectedVisible.length === visible.length;
+    allBox.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visible.length;
+    allBox.disabled = visible.length === 0;
+  }
+  const btn = document.getElementById('btnShortlistSelected');
+  if (btn && !btn.classList.contains('d-none')) {
+    btn.disabled = selected.length === 0;
+    btn.innerHTML = `<i class="bi bi-check2-square me-1"></i>Shortlist selected${selected.length ? ` (${selected.length})` : ''}`;
+  }
+  if (!driveApplicantsDataTable) return;
+  const start = driveApplicantsDataTable.page.info().start || 0;
+  driveApplicantsDataTable.rows({ page: 'current', order: 'applied', search: 'applied' }).every(function (rowIdx, tableLoop, rowLoop) {
+    const cell = this.node()?.querySelector('.col-si');
+    if (cell) cell.textContent = String(start + rowLoop + 1);
+  });
+}
+
+function renderDriveApplicantRows() {
+  destroyDriveApplicantsDataTable();
+  const showSelect = driveApplicantsTab === 'applied' && canManage;
+  const head = document.getElementById('driveApplicantHead');
+  const tbody = document.getElementById('driveApplicantRows');
+  const shortlistBtn = document.getElementById('btnShortlistSelected');
+  if (shortlistBtn) shortlistBtn.classList.toggle('d-none', !showSelect);
+  if (head) {
+    head.innerHTML = `
+      ${showSelect ? '<th class="col-check"><input type="checkbox" class="form-check-input applicant-select-all" aria-label="Select all applied students"></th>' : ''}
+      <th class="col-si">#</th>
+      <th>Student</th>
+      <th>Contact</th>
+      <th class="col-status">Status</th>
+      <th class="col-applied">Applied</th>
+      <th class="col-actions">Actions</th>`;
+  }
+  const groups = driveApplicantGroups(driveApplicants);
+  const list = groups[driveApplicantsTab] || [];
+  const emptyMsg = ({
+    applied: 'No applicants for this company drive yet.',
+    shortlisted: 'No shortlisted / selected candidates yet.',
+    pending: 'No pending / waiting candidates.',
+    rejected: 'No rejected candidates.',
+  })[driveApplicantsTab] || 'No applicants.';
+  if (!tbody) return;
   tbody.innerHTML = list.map((a, idx) => {
     const name = formatApplicantDisplayName(a.studentName);
     const reg = String(a.registerNumber || '').trim();
@@ -2303,10 +2394,14 @@ function renderDriveApplicantRows() {
     const phone = String(a.phone || '').trim();
     const meta = [reg, dept].filter(Boolean).join(' · ');
     const resumeBtn = driveApplicantResumeCell(a);
-    const shortlist = canShortlistApplicant(a)
-      ? `<button type="button" class="btn btn-sm btn-primary drive-shortlist-one" data-app-id="${a.id}">Shortlist</button>`
+    const selectable = showSelect && canShortlistApplicant(a);
+    const checkCell = showSelect
+      ? `<td class="col-check">${selectable
+        ? `<input type="checkbox" class="form-check-input applicant-select" data-app-id="${escapeApplyHtml(String(a.id))}" aria-label="Select ${escapeApplyHtml(name)}"${driveApplicantSelection.has(String(a.id)) ? ' checked' : ''}>`
+        : ''}</td>`
       : '';
-    return `<tr data-app-id="${a.id}">
+    return `<tr data-app-id="${escapeApplyHtml(String(a.id))}">
+    ${checkCell}
     <td class="col-si">${idx + 1}</td>
     <td>
       <div class="applicant-name">${escapeApplyHtml(name)}</div>
@@ -2320,15 +2415,81 @@ function renderDriveApplicantRows() {
     <td class="col-applied text-muted-2">${a.appliedAt ? new Date(a.appliedAt).toLocaleDateString() : '—'}</td>
     <td class="col-actions">
       <div class="applicant-actions">
-        <button type="button" class="btn btn-sm btn-outline-secondary drive-view-application" data-app-id="${a.id}" title="View application">
+        <button type="button" class="btn btn-sm btn-outline-secondary drive-view-application" data-app-id="${escapeApplyHtml(String(a.id))}" title="View application">
           <i class="bi bi-eye"></i>
         </button>
         ${resumeBtn}
-        ${shortlist}
       </div>
     </td>
   </tr>`;
   }).join('');
+  if (typeof DataTable === 'undefined') {
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="${showSelect ? 7 : 6}" class="text-muted-2 p-4 text-center">${emptyMsg}</td></tr>`;
+    }
+    syncApplicantSelectionUi();
+    return;
+  }
+  driveApplicantsDataTable = new DataTable('#driveApplicantsTable', {
+    pageLength: 10,
+    lengthMenu: [10, 25, 50, 100],
+    order: [[showSelect ? 2 : 1, 'asc']],
+    autoWidth: false,
+    columnDefs: [
+      { orderable: false, searchable: false, targets: showSelect ? [0, 1, 6] : [0, 5] },
+    ],
+    layout: {
+      topStart: 'pageLength',
+      topEnd: 'search',
+      bottomStart: 'info',
+      bottomEnd: 'paging',
+    },
+    language: {
+      search: '',
+      searchPlaceholder: 'Search students',
+      emptyTable: emptyMsg,
+      zeroRecords: 'No students match your search.',
+      lengthMenu: 'Show _MENU_',
+    },
+  });
+  driveApplicantsDataTable.on('draw', syncApplicantSelectionUi);
+  syncApplicantSelectionUi();
+  requestAnimationFrame(() => driveApplicantsDataTable?.columns?.adjust?.());
+}
+
+function csvDownloadCell(value) {
+  const text = String(value ?? '');
+  if (/[",\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function downloadAppliedStudentList() {
+  const list = driveApplicantGroups(driveApplicants).applied || [];
+  if (!list.length) {
+    toast('No applied students to download.', 'warn');
+    return;
+  }
+  const header = ['Name', 'Admission no.', 'Department', 'Email', 'Phone', 'Status', 'Applied'];
+  const rows = list.map(a => [
+    formatApplicantDisplayName(a.studentName),
+    a.registerNumber || '',
+    a.department || '',
+    a.email || '',
+    a.phone || '',
+    String(a.status || 'applied').replace(/_/g, ' '),
+    a.appliedAt ? new Date(a.appliedAt).toLocaleString() : '',
+  ]);
+  const csv = [header, ...rows].map(row => row.map(csvDownloadCell).join(',')).join('\r\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const slug = (value, fallback) => String(value || fallback).trim().replace(/[^\w.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || fallback;
+  link.href = url;
+  link.download = `${slug(activeDrive?.company, 'drive')}-${slug(activeDrive?.role, 'applicants')}-applicants.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function showDriveDetailPanel(panel) {
@@ -2564,6 +2725,12 @@ window.openDriveApplicants = async driveId => {
   document.getElementById('driveApplicantsSub').textContent = `${d.package || '—'} · ${d.status || '—'} · Deadline ${d.deadline || '—'}`;
   updateDriveShareLinkUi(d.id);
   syncMarkDriveCompletedButton(d);
+  driveApplicantSelection.clear();
+  destroyDriveApplicantsDataTable();
+  const loadingHead = document.getElementById('driveApplicantHead');
+  if (loadingHead) {
+    loadingHead.innerHTML = `<th class="col-si">#</th><th>Student</th><th>Contact</th><th class="col-status">Status</th><th class="col-applied">Applied</th><th class="col-actions">Actions</th>`;
+  }
   document.getElementById('driveApplicantRows').innerHTML = '<tr><td colspan="6" class="text-muted-2 p-4 text-center">Loading applicants…</td></tr>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('driveApplicantsModal')).show();
   try {
@@ -2577,15 +2744,51 @@ window.openDriveApplicants = async driveId => {
   updateRecruitmentResultsTabCount();
 };
 
-async function shortlistOneApplicant(appId) {
-  if (!canManage || !activeDriveId || !appId) return;
-  const success = await ApplicationPipeline.shortlist(appId, { quiet: true });
-  if (!success) {
-    toast('Could not shortlist applicant.', 'warn');
+async function shortlistSelectedApplicants() {
+  if (!canManage || !activeDriveId) return;
+  const rows = [...driveApplicantSelection].map(id => (
+    (driveApplicants || []).find(a => String(a.id) === String(id))
+  )).filter(row => row && canShortlistApplicant(row));
+  if (!rows.length) {
+    toast('Select students who are still applied.', 'warn');
     return;
   }
-  toast('Student shortlisted.', 'success');
-  driveApplicants = await ApplicationPipeline.fetchByDrive(activeDriveId);
+  const listHtml = `<ul class="mb-0 ps-3" style="max-height:220px;overflow:auto">${rows.map(a => `<li>${escapeApplyHtml(formatApplicantDisplayName(a.studentName))}</li>`).join('')}</ul>`;
+  const confirmed = await confirmAction({
+    title: 'Shortlist selected students',
+    messageHtml: `<p class="mb-2">The selected students will get a WhatsApp message and an email.</p>${listHtml}`,
+    confirmText: 'Shortlist',
+    cancelText: 'Cancel',
+  });
+  if (!confirmed) return;
+  const applicantsModal = document.getElementById('driveApplicantsModal');
+  if (applicantsModal && !applicantsModal.classList.contains('show')) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    bootstrap.Modal.getOrCreateInstance(applicantsModal).show();
+  }
+  const ids = rows.map(a => String(a.id));
+  const btn = document.getElementById('btnShortlistSelected');
+  if (btn) btn.disabled = true;
+  let ok = 0;
+  let fail = 0;
+  for (const id of ids) {
+    const success = await ApplicationPipeline.shortlist(id, { quiet: true });
+    if (success) {
+      ok += 1;
+      driveApplicantSelection.delete(id);
+    } else {
+      fail += 1;
+    }
+  }
+  if (ok) {
+    toast(ok === 1 ? '1 student shortlisted and notified.' : `${ok} students shortlisted and notified.`, 'success');
+  }
+  if (fail) toast(`${fail} student${fail === 1 ? '' : 's'} could not be shortlisted.`, 'warn');
+  try {
+    driveApplicants = await ApplicationPipeline.fetchByDrive(activeDriveId);
+  } catch {
+    toast('Shortlist saved, but the list could not be refreshed.', 'warn');
+  }
   updateDriveApplicantTabCounts();
   renderDriveApplicantRows();
 }
@@ -3570,7 +3773,7 @@ document.getElementById('driveApplicantTabs')?.addEventListener('click', e => {
   renderDriveApplicantRows();
 });
 
-document.getElementById('driveApplicantRows')?.addEventListener('click', e => {
+document.getElementById('driveApplicantsPanel')?.addEventListener('click', e => {
   const viewBtn = e.target.closest('.drive-view-application');
   if (viewBtn) {
     openViewApplication(viewBtn.dataset.appId);
@@ -3579,11 +3782,37 @@ document.getElementById('driveApplicantRows')?.addEventListener('click', e => {
   const pdfBtn = e.target.closest('.drive-open-pdf');
   if (pdfBtn) {
     openAuthenticatedPdf(pdfBtn.dataset.pdfUrl, pdfBtn.dataset.pdfLabel || 'document');
+  }
+});
+
+document.getElementById('driveApplicantsPanel')?.addEventListener('change', e => {
+  const allBox = e.target.closest('.applicant-select-all');
+  if (allBox) {
+    const ids = visibleShortlistableIds();
+    if (allBox.checked) ids.forEach(id => driveApplicantSelection.add(id));
+    else ids.forEach(id => driveApplicantSelection.delete(id));
+    syncApplicantSelectionUi();
     return;
   }
-  const btn = e.target.closest('.drive-shortlist-one');
-  if (!btn) return;
-  shortlistOneApplicant(btn.dataset.appId);
+  const box = e.target.closest('.applicant-select');
+  if (!box) return;
+  const id = String(box.dataset.appId || '');
+  if (!id) return;
+  if (box.checked) driveApplicantSelection.add(id);
+  else driveApplicantSelection.delete(id);
+  syncApplicantSelectionUi();
+});
+
+document.getElementById('btnShortlistSelected')?.addEventListener('click', () => {
+  shortlistSelectedApplicants();
+});
+
+document.getElementById('btnDownloadApplicants')?.addEventListener('click', () => {
+  downloadAppliedStudentList();
+});
+
+document.getElementById('driveApplicantsModal')?.addEventListener('shown.bs.modal', () => {
+  driveApplicantsDataTable?.columns?.adjust?.();
 });
 
 document.getElementById('viewApplicationBody')?.addEventListener('click', e => {
