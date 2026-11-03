@@ -766,19 +766,19 @@
         const totalMarks = resultType === 'companymock' ? 10 : 7;
         const marksObtained = Math.round((pct / 100) * totalMarks);
         titles.forEach((testTitle, idx) => {
-          rows.push({
+        rows.push({
             attemptId: `demo-company-attempt-${s.userId}-${resultType}-${idx}`,
-            userId: s.userId,
-            name: s.name,
-            registerNumber: s.registerNumber,
-            classBatch: s.classBatch,
-            attemptCount: 1,
+          userId: s.userId,
+          name: s.name,
+          registerNumber: s.registerNumber,
+          classBatch: s.classBatch,
+          attemptCount: 1,
             testTitle,
-            marksObtained,
-            totalMarks,
-            score: marksObtained,
-            percentage: pct,
-            completedAt: new Date().toISOString(),
+          marksObtained,
+          totalMarks,
+          score: marksObtained,
+          percentage: pct,
+          completedAt: new Date().toISOString(),
           });
         });
       });
@@ -806,26 +806,26 @@
         accuracy: r.userId === 'u-s2' ? 65 : 74,
         recentScore: r.userId === 'u-s2' ? 72 : 74,
       }));
-    const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
-    const avg = (key) => {
-      if (!withAttempts.length) return 0;
-      const sum = withAttempts.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
-      return Math.round((sum / withAttempts.length) * 10) / 10;
-    };
-    const bestScores = withAttempts.map((r) => Number(r.bestScore) || 0);
-    return {
-      rows,
-      summary: {
-        students: rows.length,
-        withAttempts: withAttempts.length,
-        totalAttempts: withAttempts.reduce((acc, r) => acc + (Number(r.testsAttempted) || 0), 0),
-        avgPercentage: avg('averageScore'),
-        avgBestScore: avg('bestScore'),
-        highestBestScore: bestScores.length ? Math.max(...bestScores) : 0,
-      },
-      noClass: false,
-    };
-  }
+      const withAttempts = rows.filter((r) => (r.testsAttempted || 0) > 0);
+      const avg = (key) => {
+        if (!withAttempts.length) return 0;
+        const sum = withAttempts.reduce((acc, r) => acc + (Number(r[key]) || 0), 0);
+        return Math.round((sum / withAttempts.length) * 10) / 10;
+      };
+      const bestScores = withAttempts.map((r) => Number(r.bestScore) || 0);
+      return {
+        rows,
+        summary: {
+          students: rows.length,
+          withAttempts: withAttempts.length,
+          totalAttempts: withAttempts.reduce((acc, r) => acc + (Number(r.testsAttempted) || 0), 0),
+          avgPercentage: avg('averageScore'),
+          avgBestScore: avg('bestScore'),
+          highestBestScore: bestScores.length ? Math.max(...bestScores) : 0,
+        },
+        noClass: false,
+      };
+    }
 
     const titles = [
       'Quantitative Aptitude — Basics',
@@ -1128,7 +1128,7 @@
           ? 'Select your class batch above to view aptitude results for your students.'
           : (progressPanel === 'companymock'
             ? 'No company mock results in your authorized scope yet.'
-            : (progressPanel === 'company'
+          : (progressPanel === 'company'
               ? 'No company problem results in your authorized scope yet.'
               : 'No test results in your authorized scope yet.'))));
 
@@ -2731,7 +2731,7 @@
           let qPanel = panel.querySelector('[data-jd-questions-panel]');
           bindManualQuestionEditEvents(qPanel);
           bindManualQuestionShowAll(qPanel);
-          btn.textContent = 'Hide';
+        btn.textContent = 'Hide';
           if (allowDelete && access.canManage && jdPendingAnswerCount(detail) > 0) {
             const statusEl = panel.querySelector('[data-jd-infer-status]') || panel;
             detail = await resumeJdAnswerInferenceIfNeeded(id, detail, statusEl);
@@ -6327,7 +6327,7 @@
       if (isCompanyMockTest(t)) {
         applyTakeListPanel('companymock');
       } else {
-        studentJdBlockView = 'tests';
+      studentJdBlockView = 'tests';
         applyTakeListPanel('jdblock');
       }
       await loadStudentJdBlock();
@@ -6526,21 +6526,21 @@
       <div class="border rounded-3 p-3">
         <div class="d-flex flex-wrap align-items-start gap-2">
           <div class="d-flex align-items-start gap-2 min-w-0 flex-grow-1 text-start">
-            ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
+          ${selectable ? `<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" data-manage-test-select="${esc(id)}" ${checked ? 'checked' : ''} aria-label="Select test"/>` : ''}
             <div class="min-w-0 flex-grow-1 text-start">
           <strong>${esc(t.title)}</strong>
-            <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
-            ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
+          <div class="small text-muted-2">${(t.status || 'unpublished') === 'published' ? 'Published' : 'Unpublished (hidden from students)'} · ${testMetaLine(t)}</div>
+          ${showCompanyBadge ? companyTestBadgeHtml(t) : ''}
           ${showContestBadge ? contestBadgeHtml(t) : ''}
-            ${showContestBadge ? contestScheduleControls(t) : ''}
-        </div>
+          ${showContestBadge ? contestScheduleControls(t) : ''}
           </div>
+        </div>
           <div class="d-flex flex-wrap gap-2 flex-shrink-0 ms-auto">
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-secondary" data-jd-doc="${esc(docSetId)}">Document</button>` : ''}
             ${docSetId ? `<button type="button" class="btn btn-sm btn-outline-primary" data-jd-view="${esc(docSetId)}">Questions</button>` : ''}
             ${docSetId ? '' : `<button type="button" class="btn btn-sm btn-outline-secondary" data-copy-test-link="${esc(t.id)}" title="Copy student link"><i class="bi bi-link-45deg"></i></button>`}
           <button type="button" class="btn btn-sm btn-outline-primary" data-edit="${esc(t.id)}">Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-delete-test="${esc(t.id)}">Delete</button>
         </div>
         </div>
         ${docSetId ? `<div class="d-none mt-3" data-jd-doc-panel="${esc(docSetId)}"></div><div class="d-none mt-3" data-jd-questions="${esc(docSetId)}"></div>` : ''}
@@ -7171,28 +7171,28 @@
     const force = options.force === true;
     if (testsInflight && !force) return testsInflight;
     testsInflight = (async () => {
-    if (Auth.hasRealAuth() && !Auth.isDemo()) {
-      const res = await api('/aptitude/tests').catch(() => null);
-      if (res?.success) {
-        tests = res.data?.tests || [];
+      if (Auth.hasRealAuth() && !Auth.isDemo()) {
+        const res = await api('/aptitude/tests').catch(() => null);
+        if (res?.success) {
+          tests = res.data?.tests || [];
           writeSessionCache(APT_TESTS_CACHE_KEY, tests);
-        return;
-      }
+          return;
+        }
         if (!tests.length) {
           tests = [];
           toast(res?.message || 'Could not load aptitude tests from the server.', 'error');
         }
         return;
-    }
-    tests = loadDemoTestsStore().map((t) => {
-      const copy = JSON.parse(JSON.stringify(t));
+      }
+      tests = loadDemoTestsStore().map((t) => {
+        const copy = JSON.parse(JSON.stringify(t));
         if (!access.canManage && typeof AptitudeExam !== 'undefined' && AptitudeExam.stripExamQuestions) {
           copy.questions = AptitudeExam.stripExamQuestions(copy.questions || []);
         } else if (!access.canManage) {
-        copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
-      }
-      return copy;
-    });
+          copy.questions = (copy.questions || []).map(({ correctIndex, explanation, ...q }) => q);
+        }
+        return copy;
+      });
     })().finally(() => {
       testsInflight = null;
     });
@@ -7256,7 +7256,7 @@
       ? `No ${contestLabel} challenge attempts yet.`
       : (myResultsPanel === 'companymock'
         ? 'No company mock test attempts yet.'
-        : (myResultsPanel === 'company'
+      : (myResultsPanel === 'company'
           ? 'No company problem attempts yet.'
           : 'No attempts yet. Select a test on the left to begin.'));
     document.getElementById('myHistory').innerHTML = filtered.length
@@ -7351,7 +7351,7 @@
           ? `No ${contestLabel} challenges are open today, or you have already taken them.`
           : `No ${contestLabel} aptitude challenges are available yet.`)
         : (Auth.role() === 'student'
-        ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
+          ? 'No aptitude mocks are published yet. Check back later or contact your placement officer.'
           : 'No published aptitude tests yet.');
       root.innerHTML = `<p class="text-muted-2 mb-0 px-3 px-md-4 pb-3">${msg}</p>`;
       return;
@@ -7887,8 +7887,8 @@
       } else {
         testsBulkBar?.classList.remove('d-none');
         testsRoot.innerHTML = regular.map((t) => renderManageRow(t, { selectable: true })).join('');
-      bindManageListActions(testsRoot);
-    }
+        bindManageListActions(testsRoot);
+      }
       updateManageTestsSelectionToolbar();
     }
 
@@ -7968,7 +7968,7 @@
     if (cacheKey === dirResultsCacheKey && dirResultsCache) {
       data = dirResultsCache;
     } else {
-    const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
+      const res = await api('/aptitude/progress?' + qs.toString()).catch(() => null);
       if (seq !== dirLoadSeq) return;
       data = res?.success ? res.data : null;
       if (data) {
@@ -8594,7 +8594,7 @@
       if (payload.status !== 'published') {
         toast('Test saved as unpublished. Set status to Published for students to see it.', 'info');
       } else {
-      toast('Test saved.', 'success');
+        toast('Test saved.', 'success');
       }
       testFormModal.hide();
       await loadTests();

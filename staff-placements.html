@@ -343,7 +343,8 @@
         </div>
 
         <style>
-          .registry-table-wrap {
+          .table-wrap.registry-table-wrap {
+            overflow-x: hidden;
             border: 1px solid #dee2e6;
             border-radius: 0;
             background: #fff
@@ -351,6 +352,8 @@
 
           .registry-table {
             width: 100%;
+            max-width: 100%;
+            table-layout: fixed;
             border-collapse: collapse;
             margin: 0
           }
@@ -358,14 +361,15 @@
           .registry-table thead th {
             background: #f1f3f5;
             color: #212529;
-            font-size: .875rem;
+            font-size: .8125rem;
             font-weight: 600;
-            padding: .65rem .75rem;
+            padding: .55rem .45rem;
             border: 1px solid #dee2e6;
             text-align: left;
             text-transform: uppercase;
-            letter-spacing: .02em;
-            white-space: nowrap;
+            letter-spacing: .01em;
+            white-space: normal;
+            overflow-wrap: anywhere;
             vertical-align: middle;
           }
 
@@ -411,16 +415,24 @@
 
           .registry-cell-cno-email .registry-email-line {
             color: #495057;
-            font-size: .8125rem
+            font-size: .8125rem;
+            overflow-wrap: anywhere;
+            word-break: break-word
           }
 
           .registry-table tbody td {
-            padding: .65rem .75rem;
+            padding: .55rem .45rem;
             border: 1px solid #dee2e6;
             font-size: .875rem;
             color: #212529;
             vertical-align: middle;
             background: #fff;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+          }
+
+          .registry-table .badge-soft {
+            white-space: normal;
           }
 
           .registry-table tbody tr:hover td {
@@ -447,15 +459,15 @@
           }
 
           .registry-actions-col {
-            width: 8.5rem;
-            min-width: 8.5rem;
-            white-space: nowrap
+            width: 4.75rem;
+            min-width: 0;
+            white-space: normal
           }
 
           .registry-actions {
             display: flex;
             flex-direction: row;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
             gap: 4px;
             align-items: center;
             justify-content: center
@@ -705,7 +717,32 @@
       }).join('');
 
       thead.innerHTML = `<tr id="registryTableHeadRow">${labelRow}<th class="registry-actions-col text-center">Actions</th></tr>`;
+      syncRegistryColgroup(columns);
       updateSortHeaders();
+    }
+
+    const REGISTRY_COL_WIDTH = {
+      _sl: '3.1rem',
+      student: '16%',
+      admno: '5.4rem',
+      stud_role: '5rem',
+      cno: '24%',
+      year: '7.6rem',
+      offerLetterStatus: '7.4rem',
+    };
+
+    function syncRegistryColgroup(columns) {
+      const table = document.getElementById('registryTable');
+      if (!table) return;
+      let group = document.getElementById('registryColgroup');
+      if (!group) {
+        group = document.createElement('colgroup');
+        group.id = 'registryColgroup';
+        table.insertBefore(group, table.firstChild);
+      }
+      const cols = columns.map((col) => `<col style="width:${REGISTRY_COL_WIDTH[col.key] || 'auto'}">`);
+      cols.push('<col style="width:4.75rem">');
+      group.innerHTML = cols.join('');
     }
 
     function rowHasPlacement(r) {
