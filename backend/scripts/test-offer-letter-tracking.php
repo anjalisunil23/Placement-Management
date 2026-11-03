@@ -12,6 +12,7 @@ require_once $root . '/vendor/autoload.php';
 require_once dirname(__DIR__) . '/bootstrap-services.php';
 pms_load_backend_services(dirname(__DIR__));
 
+use PMS\Services\AlumniEmploymentOfferIndex;
 use PMS\Services\OfferLetterTracking;
 
 $failed = 0;
@@ -83,6 +84,27 @@ $summary = OfferLetterTracking::summarize([
 ]);
 $ok(($summary['needsOfferLetterFollowUp'] ?? false) === true, 'confidentiality needs follow-up');
 $ok(!isset($summary['offerLetter']), 'summary does not invent offerLetter path');
+$ok(OfferLetterTracking::displayLabel(OfferLetterTracking::PENDING_UPLOAD) === 'Not Uploaded', 'pending displays as Not Uploaded');
+$ok(OfferLetterTracking::displayLabel(OfferLetterTracking::UPLOADED) === 'Uploaded', 'uploaded display label');
+$ok(
+    OfferLetterTracking::displayLabel(OfferLetterTracking::CONFIDENTIALITY_EXCEPTION) === 'Confidentiality Exception',
+    'confidentiality display label'
+);
+$match = AlumniEmploymentOfferIndex::matchingEntryIndex([
+    ['type' => 'Placement', 'employer' => 'Bitvion Technologies'],
+    ['type' => 'Placement', 'employer' => 'Other Co'],
+], 'BITVION TECHNOLOGIES');
+$ok($match === 0, 'alumni letter attaches to the matching company');
+$unmatched = AlumniEmploymentOfferIndex::matchingEntryIndex([
+    ['type' => 'Placement', 'employer' => 'One'],
+    ['type' => 'Placement', 'employer' => 'Two'],
+], 'Somewhere Else');
+$ok($unmatched === null, 'unmatched alumni letter is not copied onto another placement');
+$only = AlumniEmploymentOfferIndex::matchingEntryIndex([
+    ['type' => 'Higher Education', 'employer' => 'University'],
+    ['type' => 'Placement', 'employer' => 'Only Job'],
+], '');
+$ok($only === 1, 'single placement entry receives the alumni letter');
 $ok(OfferLetterTracking::needsFollowUp(OfferLetterTracking::PENDING_UPLOAD), 'pending needs follow-up');
 $ok(!OfferLetterTracking::needsFollowUp(OfferLetterTracking::VERIFIED), 'verified does not need follow-up');
 

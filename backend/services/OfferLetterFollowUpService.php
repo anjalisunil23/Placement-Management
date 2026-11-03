@@ -43,8 +43,10 @@ final class OfferLetterFollowUpService
 
         $placed = $this->officerData->listPlacedStudents($ctx, $query !== '' ? $query : null);
         $detailsByAdmno = $this->detailsOfferLetterMap();
+        $offerIndex = AlumniEmploymentOfferIndex::load();
 
         $rows = [];
+        $seenRegisters = [];
         $counts = [
             'pending_upload' => 0,
             'confidentiality_exception' => 0,
@@ -61,6 +63,9 @@ final class OfferLetterFollowUpService
             $self = is_array($student['selfPlacement'] ?? null) ? $student['selfPlacement'] : [];
             $doc = array_merge($placement, $self);
 
+            if ($register !== '') {
+                $seenRegisters[$register] = true;
+            }
             $details = $register !== '' ? ($detailsByAdmno[$register] ?? null) : null;
             if (is_array($details)) {
                 if (trim((string) ($details['offer_letter'] ?? '')) !== '' && trim((string) ($doc['offerLetter'] ?? '')) === '') {
@@ -77,6 +82,22 @@ final class OfferLetterFollowUpService
                 }
                 if (trim((string) ($details['offer_letter_followup_note'] ?? '')) !== '') {
                     $doc['offerLetterFollowUpNote'] = (string) $details['offer_letter_followup_note'];
+                }
+            }
+            if (trim((string) ($doc['offerLetter'] ?? '')) === '') {
+                $personal = is_array($student['personal'] ?? null) ? $student['personal'] : [];
+                $user = is_array($student['user'] ?? null) ? $student['user'] : [];
+                $email = strtolower(trim((string) (
+                    $student['email']
+                    ?? $student['collegeEmail']
+                    ?? $personal['collegeEmail']
+                    ?? $user['email']
+                    ?? ''
+                )));
+                $hit = $offerIndex->find($register, $email);
+                if (is_array($hit) && trim((string) ($hit['path'] ?? '')) !== '') {
+                    $doc['offerLetter'] = (string) $hit['path'];
+                    unset($doc['offerLetterVerified'], $doc['verificationDate']);
                 }
             }
 
@@ -154,7 +175,7 @@ final class OfferLetterFollowUpService
                 'reportedBy' => $reportedBy,
                 'reportedByRole' => trim((string) ($doc['reportedByRole'] ?? $self['reportedByRole'] ?? '')),
                 'offerLetterStatus' => $status,
-                'offerLetterStatusLabel' => OfferLetterTracking::label($status),
+                'offerLetterStatusLabel' => OfferLetterTracking::displayLabel($status),
                 'offerLetterException' => (string) ($tracking['offerLetterException'] ?? ''),
                 'offerLetterExceptionNote' => (string) ($tracking['offerLetterExceptionNote'] ?? ''),
                 'offerLetterFollowUpAt' => (string) ($tracking['offerLetterFollowUpAt'] ?? ''),
@@ -164,6 +185,21 @@ final class OfferLetterFollowUpService
                 'studRole' => $roleHint !== '' ? $roleHint : 'student',
             ];
         }
+
+        $this->appendRegistryOfferRows(
+            $rows,
+            $counts,
+            $detailsByAdmno,
+            $seenRegisters,
+            $offerIndex,
+            $ctx,
+            $statusFilter,
+            $departmentId,
+            $batch,
+            $company,
+            $studRole,
+            $query
+        );
 
         usort($rows, static function (array $a, array $b): int {
             $byDate = strcmp((string) ($b['reportedAt'] ?? ''), (string) ($a['reportedAt'] ?? ''));
@@ -198,6 +234,10 @@ final class OfferLetterFollowUpService
      */
     public function recordFollowUp(string $studentRef, array $ctx, array $input): array
     {
+        $existingStudent = $this->officerData->resolveStudentRef($studentRef);
+        if (!is_array($existingStudent)) {
+            return $this->recordFollowUpOnRegistry($studentRef, $ctx, $input);
+        }
         $student = $this->resolveScopedStudent($studentRef, $ctx);
         $studentId = (string) ($student['_id'] ?? '');
 
@@ -248,6 +288,10 @@ final class OfferLetterFollowUpService
      */
     public function recordConfidentialityException(string $studentRef, array $ctx, array $input): array
     {
+        $existingStudent = $this->officerData->resolveStudentRef($studentRef);
+        if (!is_array($existingStudent)) {
+            return $this->recordExceptionOnRegistry($studentRef, $ctx, $input);
+        }
         $student = $this->resolveScopedStudent($studentRef, $ctx);
         $studentId = (string) ($student['_id'] ?? '');
         $parsed = OfferLetterTracking::parseExceptionInput(array_merge($input, [
@@ -321,12 +365,247 @@ final class OfferLetterFollowUpService
                 if ($admno === '') {
                     continue;
                 }
-                $map[$admno] = $row;
+                if (!isset($map[$admno])) {
+                    $map[$admno] = $row;
+                    continue;
+                }
+                foreach ([
+                    'offer_letter',
+                    'offer_letter_exception',
+                    'offer_letter_exception_note',
+                    'offer_letter_followup_at',
+                    'offer_letter_followup_note',
+                ] as $column) {
+                    if (trim((string) ($map[$admno][$column] ?? '')) === '' && trim((string) ($row[$column] ?? '')) !== '') {
+                        $map[$admno][$column] = $row[$column];
+                    }
+                }
             }
         } catch (\Throwable) {
             return [];
         }
 
         return $map;
+    }
+
+    /**
+     * Placed registry rows that are not already in the student placement collection.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @param array<string, int> $counts
+     * @param array<string, array<string, mixed>> $detailsByAdmno
+     * @param array<string, bool> $seenRegisters
+     * @param array<string, mixed> $ctx
+     */
+    private function appendRegistryOfferRows(
+        array &$rows,
+        array &$counts,
+        array $detailsByAdmno,
+        array $seenRegisters,
+        AlumniEmploymentOfferIndex $offerIndex,
+        array $ctx,
+        string $statusFilter,
+        string $departmentId,
+        string $batch,
+        string $company,
+        string $studRole,
+        string $query
+    ): void {
+        foreach ($detailsByAdmno as $admno => $details) {
+            if (!is_array($details) || isset($seenRegisters[$admno])) {
+                continue;
+            }
+            $type = trim((string) ($details['type'] ?? ''));
+            $employer = trim((string) ($details['employer'] ?? ''));
+            if ($employer === '' || in_array($type, ['Higher Education', 'Research'], true)) {
+                continue;
+            }
+            if (!$this->registryDetailsInScope($ctx, $details, $admno)) {
+                continue;
+            }
+            $doc = [
+                'offerLetter' => trim((string) ($details['offer_letter'] ?? '')),
+                'offerLetterException' => trim((string) ($details['offer_letter_exception'] ?? '')),
+                'offerLetterExceptionNote' => trim((string) ($details['offer_letter_exception_note'] ?? '')),
+                'offerLetterFollowUpAt' => trim((string) ($details['offer_letter_followup_at'] ?? '')),
+                'offerLetterFollowUpNote' => trim((string) ($details['offer_letter_followup_note'] ?? '')),
+            ];
+            if ($doc['offerLetter'] === '') {
+                $hit = $offerIndex->find($admno, (string) ($details['email'] ?? ''));
+                if (is_array($hit) && trim((string) ($hit['path'] ?? '')) !== '') {
+                    $doc['offerLetter'] = (string) $hit['path'];
+                }
+            }
+            $tracking = OfferLetterTracking::summarize($doc);
+            $status = (string) $tracking['offerLetterStatus'];
+            $counts['total']++;
+            if (isset($counts[$status])) {
+                $counts[$status]++;
+            }
+            if (OfferLetterTracking::needsFollowUp($status)) {
+                $counts['follow_up']++;
+            }
+
+            $classBatch = trim((string) ($details['year'] ?? ''));
+            if ($batch !== '' && strcasecmp($classBatch, $batch) !== 0) {
+                continue;
+            }
+            if ($departmentId !== '') {
+                $rowDepartment = (new StaffPlacementRegistryService())->admnoDepartmentId($admno);
+                if ($rowDepartment !== '' && strcasecmp($rowDepartment, $departmentId) !== 0) {
+                    continue;
+                }
+            }
+            if ($company !== '' && !str_contains(strtolower($employer), $company)) {
+                continue;
+            }
+            $roleHint = strtolower(trim((string) ($details['stud_role'] ?? '')));
+            if ($studRole === 'student' && str_contains($roleHint, 'alumni')) {
+                continue;
+            }
+            if ($studRole === 'alumni' && $roleHint !== '' && !str_contains($roleHint, 'alumni')) {
+                continue;
+            }
+            $name = trim((string) ($details['student'] ?? ''));
+            if ($query !== '') {
+                $haystack = strtolower($name . ' ' . $admno . ' ' . $employer);
+                if (!str_contains($haystack, strtolower($query))) {
+                    continue;
+                }
+            }
+            $include = match ($statusFilter) {
+                'follow_up', 'pending' => OfferLetterTracking::needsFollowUp($status),
+                'all' => true,
+                default => $status === $statusFilter,
+            };
+            if (!$include) {
+                continue;
+            }
+
+            $rows[] = [
+                'studentId' => $admno,
+                'registerNumber' => $admno,
+                'studentName' => $name,
+                'department' => '',
+                'departmentId' => '',
+                'batch' => $classBatch,
+                'company' => $employer,
+                'role' => '',
+                'reportedAt' => trim((string) ($details['createdate'] ?? $details['updatedate'] ?? '')),
+                'reportedBy' => 'Placement registry',
+                'reportedByRole' => '',
+                'offerLetterStatus' => $status,
+                'offerLetterStatusLabel' => OfferLetterTracking::displayLabel($status),
+                'offerLetterException' => (string) ($tracking['offerLetterException'] ?? ''),
+                'offerLetterExceptionNote' => (string) ($tracking['offerLetterExceptionNote'] ?? ''),
+                'offerLetterFollowUpAt' => (string) ($tracking['offerLetterFollowUpAt'] ?? ''),
+                'offerLetterFollowUpNote' => (string) ($tracking['offerLetterFollowUpNote'] ?? ''),
+                'hasOfferLetter' => (bool) ($tracking['hasOfferLetter'] ?? false),
+                'needsOfferLetterFollowUp' => OfferLetterTracking::needsFollowUp($status),
+                'studRole' => $roleHint !== '' ? $roleHint : 'alumni',
+            ];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @param array<string, mixed> $details
+     */
+    private function registryDetailsInScope(array $ctx, array $details, string $admno): bool
+    {
+        if (!empty($ctx['isAdmin']) || !empty($ctx['campusWide'])) {
+            return true;
+        }
+        $user = is_array($ctx['user'] ?? null) ? $ctx['user'] : [];
+        $isClassStaff = (string) ($user['role'] ?? '') === 'staff' || !empty($ctx['staffScope']);
+        if ($isClassStaff) {
+            $batches = StaffContext::assignedClassBatches($ctx);
+            if ($batches !== []) {
+                if (!StaffContext::classBatchMatchesAssigned(trim((string) ($details['year'] ?? '')), $batches)) {
+                    return false;
+                }
+            }
+        }
+        $departmentId = trim((string) ($ctx['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            return false;
+        }
+        $rowDepartment = (new StaffPlacementRegistryService())->admnoDepartmentId($admno);
+        if ($rowDepartment !== '' && strcasecmp($rowDepartment, $departmentId) !== 0) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function recordFollowUpOnRegistry(string $studentRef, array $ctx, array $input): array
+    {
+        $details = new StudentPlacementDetailsTable();
+        $row = $details->findByAdmnoOrId($studentRef);
+        if (!is_array($row)) {
+            Response::notFound('Student not found.');
+        }
+        $admno = strtoupper(trim((string) ($row['admno'] ?? '')));
+        if (!$this->registryDetailsInScope($ctx, $row, $admno)) {
+            Response::forbidden('This student is outside your scope.');
+        }
+        $followUpAt = trim((string) ($input['offerLetterFollowUpAt'] ?? $input['followUpAt'] ?? ''));
+        $followUpNote = trim((string) ($input['offerLetterFollowUpNote'] ?? $input['followUpNote'] ?? ''));
+        if ($followUpAt === '') {
+            $followUpAt = date('Y-m-d');
+        }
+        if (strlen($followUpNote) > 500) {
+            $followUpNote = substr($followUpNote, 0, 500);
+        }
+        if (!$details->saveOfferLetterFollowUp($admno, $followUpAt, $followUpNote)) {
+            Response::error('Could not record this follow-up.', 500);
+        }
+
+        return [
+            'studentId' => $admno,
+            'offerLetterFollowUpAt' => $followUpAt,
+            'offerLetterFollowUpNote' => $followUpNote,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $ctx
+     * @param array<string, mixed> $input
+     * @return array<string, mixed>
+     */
+    private function recordExceptionOnRegistry(string $studentRef, array $ctx, array $input): array
+    {
+        $details = new StudentPlacementDetailsTable();
+        $row = $details->findByAdmnoOrId($studentRef);
+        if (!is_array($row)) {
+            Response::notFound('Student not found.');
+        }
+        $admno = strtoupper(trim((string) ($row['admno'] ?? '')));
+        if (!$this->registryDetailsInScope($ctx, $row, $admno)) {
+            Response::forbidden('This student is outside your scope.');
+        }
+        if (trim((string) ($row['offer_letter'] ?? '')) !== '' || $details->firstOfferLetterPath($admno) !== '') {
+            Response::error('An offer letter is already on file for this placement.', 409);
+        }
+        $hit = AlumniEmploymentOfferIndex::load()->find($admno, (string) ($row['email'] ?? ''));
+        if (is_array($hit) && trim((string) ($hit['path'] ?? '')) !== '') {
+            Response::error('An offer letter is already on file for this placement.', 409);
+        }
+        $parsed = OfferLetterTracking::parseExceptionInput(array_merge($input, [
+            'offerLetterException' => OfferLetterTracking::EXCEPTION_COMPANY_CONFIDENTIALITY,
+        ]));
+        if (!$details->saveOfferLetterException($admno, $parsed['exception'], $parsed['note'])) {
+            Response::error('Could not record the confidentiality exception.', 500);
+        }
+
+        return OfferLetterTracking::summarize([
+            'offerLetterException' => $parsed['exception'],
+            'offerLetterExceptionNote' => $parsed['note'],
+        ]);
     }
 }

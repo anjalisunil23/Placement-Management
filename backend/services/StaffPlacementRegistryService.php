@@ -927,18 +927,17 @@ final class StaffPlacementRegistryService
                 'createdate' => trim((string) ($row['createdate'] ?? '')),
                 'createdAt' => trim((string) ($row['createdate'] ?? '')),
                 'offerLetter' => trim((string) ($row['offer_letter'] ?? '')),
-                'hasOfferLetter' => trim((string) ($row['offer_letter'] ?? '')) !== '',
                 'offerLetterException' => trim((string) ($row['offer_letter_exception'] ?? '')),
                 'offerLetterExceptionNote' => trim((string) ($row['offer_letter_exception_note'] ?? '')),
                 'offerLetterFollowUpAt' => trim((string) ($row['offer_letter_followup_at'] ?? '')),
                 'offerLetterFollowUpNote' => trim((string) ($row['offer_letter_followup_note'] ?? '')),
-                'offerLetterStatus' => OfferLetterTracking::status([
-                    'offerLetter' => trim((string) ($row['offer_letter'] ?? '')),
-                    'offerLetterException' => trim((string) ($row['offer_letter_exception'] ?? '')),
-                    'offerLetterVerified' => false,
-                ]),
                 'source' => 'student_placement_details',
             ];
+        }
+        $offerIndex = AlumniEmploymentOfferIndex::load();
+        foreach ($rows as $idx => $row) {
+            $hit = $offerIndex->find((string) ($row['admno'] ?? ''), (string) ($row['email'] ?? ''));
+            $rows[$idx] = $this->presentOfferLetterRow($row, $hit);
         }
         usort($rows, static function (array $a, array $b): int {
             $byName = strcasecmp((string) ($a['student'] ?? ''), (string) ($b['student'] ?? ''));
@@ -952,14 +951,68 @@ final class StaffPlacementRegistryService
             $key = strtoupper(trim((string) ($row['admno'] ?? '')));
             if ($key !== '') {
                 if (isset($seen[$key])) {
+                    $kept = $seen[$key];
+                    if (empty($unique[$kept]['hasOfferLetter']) && !empty($row['hasOfferLetter'])) {
+                        foreach ([
+                            'hasOfferLetter', 'canViewOfferLetter', 'offerLetterStatus', 'offerLetterStatusLabel',
+                            'offerLetterUploadedAt', 'offerLetterSource', 'offerLetterException', 'offerLetterExceptionNote',
+                        ] as $field) {
+                            $unique[$kept][$field] = $row[$field] ?? $unique[$kept][$field] ?? '';
+                        }
+                    }
                     continue;
                 }
-                $seen[$key] = true;
+                $seen[$key] = count($unique);
             }
+            unset($row['offerLetter']);
             $unique[] = $row;
         }
 
         return $unique;
+    }
+
+    /**
+     * Offer-letter status for one registry person. File paths are not returned.
+     *
+     * @param array<string, mixed> $row
+     * @param array{path:string,updatedAt:string,company:string}|null $alumniHit
+     * @return array<string, mixed>
+     */
+    private function presentOfferLetterRow(array $row, ?array $alumniHit): array
+    {
+        $path = trim((string) ($row['offerLetter'] ?? ''));
+        $type = trim((string) ($row['type'] ?? ''));
+        $employer = trim((string) ($row['employer'] ?? ''));
+        $expectsLetter = $employer !== '' && !in_array($type, ['Higher Education', 'Research'], true);
+        $source = '';
+        $uploadedAt = '';
+        $doc = [
+            'offerLetter' => $path,
+            'offerLetterException' => (string) ($row['offerLetterException'] ?? ''),
+            'offerLetterExceptionNote' => (string) ($row['offerLetterExceptionNote'] ?? ''),
+        ];
+        if ($path !== '') {
+            $source = 'placement_details';
+        } elseif (is_array($alumniHit) && trim((string) ($alumniHit['path'] ?? '')) !== '') {
+            $doc['offerLetter'] = (string) $alumniHit['path'];
+            $source = 'alumni_employment';
+            $uploadedAt = trim((string) ($alumniHit['updatedAt'] ?? ''));
+        }
+
+        $status = '';
+        if ($doc['offerLetter'] !== '' || OfferLetterTracking::exceptionReason($doc) !== '' || $expectsLetter) {
+            $status = OfferLetterTracking::status($doc);
+        }
+
+        $row['hasOfferLetter'] = $doc['offerLetter'] !== '';
+        $row['canViewOfferLetter'] = $row['hasOfferLetter'];
+        $row['offerLetterStatus'] = $status;
+        $row['offerLetterStatusLabel'] = $status === '' ? '' : OfferLetterTracking::displayLabel($status);
+        $row['offerLetterUploadedAt'] = $uploadedAt;
+        $row['offerLetterSource'] = $source;
+        unset($row['offerLetter']);
+
+        return $row;
     }
 
     private function listFromStudentPlacements(array $listCtx, array $filters, bool $tableOnly = true): array
@@ -1153,14 +1206,14 @@ final class StaffPlacementRegistryService
     {
         $keys = [
             'student', 'admno', 'stud_role', 'cno', 'email', 'year', 'courseid', 'branchid',
-            'employer', 'empcno', 'empadr', 'payscale', 'status', 'createdBy',
+            'employer', 'empcno', 'empadr', 'payscale', 'status', 'offerLetterStatus', 'createdBy',
             'updatedBy', 'updatedate', 'fordvv', 'type', 'includedvv', 'createdate',
         ];
         $columns = [];
         foreach ($keys as $key) {
             $columns[] = [
                 'key' => $key,
-                'label' => $key,
+                'label' => $key === 'offerLetterStatus' ? 'Offer Letter' : $key,
                 'sortable' => true,
                 'sortKey' => $key,
                 'source' => 'student_placement_details',
@@ -3323,7 +3376,7 @@ final class StaffPlacementRegistryService
         return [
             'studentId' => $key,
             'entryId' => $entryId,
-            'entries' => $details->listEntriesByAdmno((string) ($existing['admno'] ?? '')),
+            'entries' => $this->presentPlacementEntries($existing, $details->listEntriesByAdmno((string) ($existing['admno'] ?? ''))),
         ];
     }
 
@@ -3340,8 +3393,51 @@ final class StaffPlacementRegistryService
 
         return [
             'studentId' => $this->detailsRowKey($existing),
-            'entries' => $details->listEntriesByAdmno((string) ($existing['admno'] ?? '')),
+            'entries' => $this->presentPlacementEntries($existing, $details->listEntriesByAdmno((string) ($existing['admno'] ?? ''))),
         ];
+    }
+
+    /**
+     * Per-entry offer status. Storage paths are removed before the response.
+     *
+     * @param array<string, mixed> $existing
+     * @param list<array<string, mixed>> $entries
+     * @return list<array<string, mixed>>
+     */
+    private function presentPlacementEntries(array $existing, array $entries): array
+    {
+        $alumni = AlumniEmploymentOfferIndex::load()->find(
+            (string) ($existing['admno'] ?? ''),
+            (string) ($existing['email'] ?? '')
+        );
+        $alumniIndex = is_array($alumni)
+            ? AlumniEmploymentOfferIndex::matchingEntryIndex($entries, (string) ($alumni['company'] ?? ''))
+            : null;
+        $presented = [];
+        foreach ($entries as $index => $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $path = trim((string) ($entry['offer_letter'] ?? ''));
+            $source = '';
+            $uploadedAt = '';
+            if ($path !== '') {
+                $source = 'placement_details';
+            } elseif ($alumniIndex === $index && is_array($alumni)) {
+                $path = trim((string) ($alumni['path'] ?? ''));
+                $source = $path !== '' ? 'alumni_employment' : '';
+                $uploadedAt = trim((string) ($alumni['updatedAt'] ?? ''));
+            }
+            unset($entry['offer_letter']);
+            $entry['hasOfferLetter'] = $path !== '';
+            $entry['offerLetterStatus'] = $path !== '' ? OfferLetterTracking::UPLOADED : '';
+            $entry['offerLetterStatusLabel'] = $path !== '' ? OfferLetterTracking::displayLabel(OfferLetterTracking::UPLOADED) : '';
+            $entry['offerLetterUploadedAt'] = $uploadedAt;
+            $entry['offerLetterSource'] = $source;
+            $presented[] = $entry;
+        }
+
+        return $presented;
     }
 
     /**
@@ -3420,11 +3516,69 @@ final class StaffPlacementRegistryService
         if ($existing === null) {
             Response::notFound('This student is not in student_placement_details.');
         }
-        $path = trim((string) ($existing['offer_letter'] ?? ''));
+        $this->assertCanViewOfferLetter($staffCtx, $existing);
+        $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+        $path = $details->firstOfferLetterPath($admno);
+        $folder = ObjectStorageService::FOLDER_OFFER_LETTERS;
+        if ($path === '') {
+            $hit = AlumniEmploymentOfferIndex::load()->find($admno, (string) ($existing['email'] ?? ''));
+            $path = trim((string) ($hit['path'] ?? ''));
+            $folder = ObjectStorageService::FOLDER_ALUMNI_EMPLOYMENT;
+        }
         if ($path === '') {
             Response::notFound('No offer letter uploaded.');
         }
-        (new ObjectStorageService())->stream($path, 'offer-letter.pdf', 'application/pdf', false);
+        $inline = isset($_GET['inline']) && (string) $_GET['inline'] !== '0' && (string) $_GET['inline'] !== 'false';
+        $storedName = basename(str_replace('\\', '/', $path));
+        $downloadName = $storedName !== '' && $storedName !== '.' ? $storedName : 'offer-letter.pdf';
+        $storage = new ObjectStorageService();
+        $mime = $storage->guessMime(basename(str_replace('\\', '/', $path)));
+        if ($mime === '' || $mime === 'application/octet-stream') {
+            $mime = 'application/pdf';
+        }
+        try {
+            $storage->streamWithFallback($path, $downloadName, $mime, $inline, $folder);
+        } catch (\Throwable) {
+            Response::notFound('Offer letter file is missing.');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $staffCtx
+     * @param array<string, mixed> $existing
+     */
+    private function assertCanViewOfferLetter(array $staffCtx, array $existing): void
+    {
+        if (!empty($staffCtx['isAdmin']) || !empty($staffCtx['campusWide'])) {
+            return;
+        }
+        $user = is_array($staffCtx['user'] ?? null) ? $staffCtx['user'] : [];
+        $isClassStaff = (string) ($user['role'] ?? '') === 'staff' || !empty($staffCtx['staffScope']);
+        if ($isClassStaff) {
+            $batches = StaffContext::assignedClassBatches($staffCtx);
+            if ($batches !== []) {
+                $year = trim((string) ($existing['year'] ?? ''));
+                if (!StaffContext::classBatchMatchesAssigned($year, $batches)) {
+                    Response::forbidden('This offer letter is outside your assigned class.');
+                }
+            }
+        }
+        $departmentId = trim((string) ($staffCtx['departmentId'] ?? ''));
+        if ($departmentId === '') {
+            return;
+        }
+        $admno = strtoupper(trim((string) ($existing['admno'] ?? '')));
+        $rowDepartment = $this->admnoDepartmentId($admno);
+        if ($rowDepartment !== '' && strcasecmp($rowDepartment, $departmentId) !== 0) {
+            Response::forbidden('This offer letter is outside your department.');
+        }
+    }
+
+    public function admnoDepartmentId(string $admno): string
+    {
+        $index = $this->admnoDepartmentIdIndex();
+
+        return trim((string) ($index[strtoupper(trim($admno))] ?? ''));
     }
 
     /**

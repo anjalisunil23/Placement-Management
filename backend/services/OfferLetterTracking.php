@@ -94,6 +94,18 @@ final class OfferLetterTracking
     }
 
     /**
+     * Registry / follow-up wording. Pending upload is shown as Not Uploaded.
+     */
+    public static function displayLabel(string $status): string
+    {
+        return match ($status) {
+            self::PENDING_UPLOAD => 'Not Uploaded',
+            self::CONFIDENTIALITY_EXCEPTION => 'Confidentiality Exception',
+            default => self::label($status),
+        };
+    }
+
+    /**
      * @return list<string>
      */
     public static function followUpStatuses(): array

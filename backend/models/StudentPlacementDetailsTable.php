@@ -800,7 +800,7 @@ class StudentPlacementDetailsTable
             return [];
         }
         $statement = $this->db->prepare(
-            'SELECT `id`, `type`, `employer`, `empcno`, `empadr`, `payscale`, `status`, `fordvv`, `includedvv`
+            'SELECT `id`, `type`, `employer`, `empcno`, `empadr`, `payscale`, `status`, `fordvv`, `includedvv`, `offer_letter`
              FROM `student_placement_details`
              WHERE UPPER(TRIM(`admno`)) = ?
              ORDER BY `id` ASC'
@@ -821,6 +821,7 @@ class StudentPlacementDetailsTable
                     $filled = true;
                 }
             }
+            $entry['offer_letter'] = trim((string) ($row['offer_letter'] ?? ''));
             if ($filled) {
                 $signature = strtolower(implode("\n", [
                     $entry['type'],
@@ -831,6 +832,7 @@ class StudentPlacementDetailsTable
                     $entry['status'],
                     $entry['fordvv'],
                     $entry['includedvv'],
+                    $entry['offer_letter'] !== '' ? '1' : '0',
                 ]));
                 if (isset($seen[$signature])) {
                     continue;
@@ -841,6 +843,23 @@ class StudentPlacementDetailsTable
         }
 
         return $entries;
+    }
+
+    public function firstOfferLetterPath(string $admno): string
+    {
+        $admno = strtoupper(trim($admno));
+        if ($admno === '' || !$this->ensure()) {
+            return '';
+        }
+        $statement = $this->db->prepare(
+            'SELECT `offer_letter` FROM `student_placement_details`
+             WHERE UPPER(TRIM(`admno`)) = ? AND TRIM(`offer_letter`) <> \'\'
+             ORDER BY `id` ASC LIMIT 1'
+        );
+        $statement->execute([$admno]);
+        $row = $statement->fetch();
+
+        return is_array($row) ? trim((string) ($row['offer_letter'] ?? '')) : '';
     }
 
     private function dropSourceTable(): void
